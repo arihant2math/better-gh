@@ -27,6 +27,9 @@ Web client (`/_bgh`):
 | `GET /_bgh/repos/{o}/{r}/issue-templates[?ref=]` | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, projects, issue_type, body, form}], config: {blank_issues_enabled, contact_links: [{name, url, about}]}, errors: [{filename, message}]}` — parsed from `.github/ISSUE_TEMPLATE/*.md|yml|yaml` + `config.yml` (legacy `ISSUE_TEMPLATE.md` fallback), forms validated (types, unique ids/labels, options), cached in Redis by commit SHA |
 | `GET /_bgh/repos/{o}/{r}/pinned-issues` | array of issues (GitHub shape) |
 | `PUT/DELETE /_bgh/repos/{o}/{r}/issues/{n}/pin` | 204 (max 3 per repo → 422; write permission) |
+| `GET /_bgh/repos/{o}/{r}/issues/{n}/links` | `{links: [{id, repoId, repository, number, title, state, stateReason, isPr, draft, merged, htmlUrl, source: "keyword"\|"manual", createdAt}], branches: [{name}]}` — linked PRs of an issue / issues of a PR (`issue_pr_links`, readable ones only) and `{n}-…` branches (P4, `links.rs`) |
+| `POST /_bgh/repos/{o}/{r}/issues/{n}/links` `{repository?, number}` | 201 (200 if already linked) with the linked item; issue ↔ PR only (422), write access on both sides |
+| `DELETE /_bgh/repos/{o}/{r}/issues/{n}/links/{linked_id}` | 204; manual links only (keyword links → 422), write access on both |
 | `GET /_bgh/repos/{o}/{r}/issues/{n}/viewer-reactions` | `{issue: [content], comments: {"<id>": [content]}}` — the viewer's own reactions (added by issues-web) |
 | `DELETE /_bgh/repos/{o}/{r}/issues/{n}/reactions/{content}`, `DELETE /_bgh/repos/{o}/{r}/issues/comments/{id}/reactions/{content}` | 204; delete the viewer's reaction by content (idempotent; added by issues-web) |
 
