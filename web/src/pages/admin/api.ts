@@ -332,6 +332,7 @@ export interface SiteSettings {
   git_maintenance: GitMaintenanceSettings;
   /** Push hardening; `null` disables a limit. */
   git: { fsck_on_push: boolean; max_object_size_mb: number | null; warn_object_size_mb: number | null; max_push_size_mb: number | null };
+  actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
   /** Access policy: private mode, anonymous directory, allowed visibilities. */
   privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
 }

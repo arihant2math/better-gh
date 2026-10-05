@@ -234,7 +234,12 @@ and octokit-style raw requests.
   repo)` / batched `repo_permissions(db, user_id, &repos)` →
   `Permission { None, Read, Triage, Write, Maintain, Admin }`. Token scopes
   then cap it (`perms::effective`: private repos need `repo`; writes to
-  public repos need `repo` or `public_repo`). Handlers use
+  public repos need `repo` or `public_repo`). Actions job tokens
+  (`GITHUB_TOKEN`, owned by `github-actions[bot]`, `bgh_core::bots`) are
+  limited to their repository and to a per-category permission map
+  (`bgh_core::token_permissions`: route-category table applied by a
+  middleware on every route, `contents` checked by git transport, GraphQL
+  mutations checked in the mutation guard). Handlers use
   `perms::RepoAccess::load(&state, auth, owner, name)` which returns 404
   without read access, then `access.require(Permission::Write)` (403).
 * Role names are stored as `read|triage|write|maintain|admin` everywhere

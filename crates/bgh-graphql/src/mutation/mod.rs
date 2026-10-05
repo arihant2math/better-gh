@@ -33,7 +33,14 @@ pub fn guard<'a>(ctx: &Context<'a>) -> GResult<&'a AuthContext> {
     if ctx.data_opt::<ReadOnly>().is_some() {
         return Err(err("FORBIDDEN", "Mutations are not allowed over GET."));
     }
-    gql(ctx).require_auth()
+    let auth = gql(ctx).require_auth()?;
+    // Actions job tokens: the mutation must be covered by `permissions:`.
+    if let Some(perms) = bgh_core::token_permissions::TokenPermissions::of(auth) {
+        perms
+            .check_graphql_mutation(ctx.field().name())
+            .map_err(api_err)?;
+    }
+    Ok(auth)
 }
 
 #[derive(MergedObject, Default)]

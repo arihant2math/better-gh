@@ -290,8 +290,11 @@ pub async fn users_repo_permissions(
 /// * writes to public repos need `repo` or `public_repo`, otherwise Read.
 ///
 /// Actions job tokens (`GITHUB_TOKEN`) carry a [`JOB_TOKEN_SCOPE_PREFIX`]
-/// scope: they are limited to that repository (at most Write) and see other
-/// repositories like an anonymous caller.
+/// scope: on that repository they get Write (Read when their permission map
+/// has no write, see [`crate::token_permissions`]) whatever the token's
+/// user (`github-actions[bot]`) could do; other repositories they see like
+/// an anonymous caller. The per-category map itself is enforced by
+/// [`crate::token_permissions::middleware`] and the git transport.
 pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permission) -> Permission {
     let Some(auth) = auth else {
         return raw;
@@ -309,7 +312,7 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
         return if job_repo != repo.id {
             public_floor(repo)
         } else {
-            raw.min(cap)
+            cap
         };
     }
     if auth.has_scope("repo") {
@@ -329,6 +332,19 @@ pub const JOB_TOKEN_SCOPE_PREFIX: &str = "actions:repo:";
 
 /// Extra scope making an Actions job token read-only (fork pull requests).
 pub const JOB_TOKEN_READ_ONLY_SCOPE: &str = "actions:read-only";
+
+/// Scope prefix recording who triggered the workflow run of an Actions job
+/// token (`actions:actor:{user_id}`), for the audit log.
+pub const JOB_TOKEN_ACTOR_SCOPE_PREFIX: &str = "actions:actor:";
+
+/// The user who triggered the run an Actions job token belongs to.
+pub fn job_token_actor(auth: &AuthContext) -> Option<i64> {
+    job_token_repo(auth)?;
+    auth.scopes
+        .as_ref()?
+        .iter()
+        .find_map(|s| s.strip_prefix(JOB_TOKEN_ACTOR_SCOPE_PREFIX)?.parse().ok())
+}
 
 /// Repository an Actions job token is restricted to, if `auth` is one.
 pub fn job_token_repo(auth: &AuthContext) -> Option<i64> {
