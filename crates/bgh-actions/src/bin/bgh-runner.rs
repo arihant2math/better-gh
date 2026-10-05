@@ -12,7 +12,7 @@ use std::sync::Arc;
 use anyhow::{Context, bail};
 use bgh_actions::protocol::{Backend, RegisterRequest};
 use bgh_actions::runner::http::{HttpBackend, register, unregister};
-use bgh_actions::runner::{RunnerConfig, worker_loop};
+use bgh_actions::runner::{ExecutorKind, RunnerConfig, worker_loop};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -207,7 +207,17 @@ async fn main() -> anyhow::Result<()> {
             github_url,
         } => {
             let saved = load(&config)?;
-            let kind = RunnerConfig::detect_executor(&executor, &docker).await;
+            // A dedicated runner host may run jobs on itself (like GitHub's
+            // runner); the built-in runner never does that implicitly.
+            let kind = match RunnerConfig::detect_executor(&executor, &docker).await {
+                Some(kind) => kind,
+                None => {
+                    tracing::warn!(
+                        "docker is not available: running jobs with the shell executor on this host"
+                    );
+                    ExecutorKind::Shell
+                }
+            };
             std::fs::create_dir_all(&work_dir)
                 .with_context(|| format!("cannot create {}", work_dir.display()))?;
             let work_dir = std::fs::canonicalize(&work_dir)?;

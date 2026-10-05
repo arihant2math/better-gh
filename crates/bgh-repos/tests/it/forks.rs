@@ -48,12 +48,13 @@ async fn fork_list_and_existing_fork() {
     let res = app
         .post("/api/v3/repos/bob/lib/forks")
         .auth(&carol)
-        .json(&json!({"name": "my-lib", "default_branch_only": true}))
+        .json(&json!({"name": "my-lib", "default_branch_only": true, "description": " Carol's copy "}))
         .send()
         .await;
     res.assert_status(202);
     let v = res.json();
     assert_eq!(v["full_name"], "carol/my-lib");
+    assert_eq!(v["description"], "Carol's copy");
     assert_eq!(v["parent"]["full_name"], "bob/lib");
     assert_eq!(v["source"]["full_name"], "alice/lib");
     let branches = app

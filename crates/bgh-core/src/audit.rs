@@ -60,9 +60,18 @@ pub async fn log_with_ip(
     ip: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     let (target_type, target_id, org_id, repo_id) = target.parts();
+    // Writes made with an Actions job token are attributed to
+    // github-actions[bot]; record who triggered the workflow run too.
+    let triggering_actor = crate::sync::context::actions_actor()
+        .filter(|_| crate::bots::is_actions_bot(actor.map(|a| a.id)) && data.is_object());
     sqlx::query(
         "INSERT INTO audit_log (actor_id, actor_login, action, target_type, target_id, org_id, repo_id, data, ip)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN $10::bigint IS NULL THEN $8
+                      ELSE $8 || jsonb_build_object(
+                          'triggering_actor_id', $10::bigint,
+                          'triggering_actor', (SELECT login FROM users WHERE id = $10)) END,
+                 $9)",
     )
     .bind(actor.map(|a| a.id))
     .bind(actor.map(|a| a.login.as_str()))
@@ -73,6 +82,7 @@ pub async fn log_with_ip(
     .bind(repo_id)
     .bind(data)
     .bind(ip)
+    .bind(triggering_actor)
     .execute(db)
     .await?;
     Ok(())

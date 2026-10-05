@@ -893,6 +893,7 @@ async fn put_file(
     access.require_not_mirror()?;
     let path = normalize(&path);
     valid_path(&path)?;
+    crate::workflow_scope::check_path(&state, &auth, &path).await?;
     let message = body
         .message
         .clone()
@@ -985,6 +986,7 @@ async fn delete_file(
     access.require_not_mirror()?;
     let path = normalize(&path);
     valid_path(&path)?;
+    crate::workflow_scope::check_path(&state, &auth, &path).await?;
     let message = body
         .message
         .clone()

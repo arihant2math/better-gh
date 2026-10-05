@@ -1308,6 +1308,18 @@ impl JobRunner {
                 self.cfg.name
             ),
         );
+        if !self.spec.token_permissions.is_empty() {
+            let mut perms = String::from("##[group]GITHUB_TOKEN Permissions");
+            for (category, access) in &self.spec.token_permissions {
+                let mut name = category.replace('_', "-");
+                if let Some(first) = name.get_mut(..1) {
+                    first.make_ascii_uppercase();
+                }
+                perms.push_str(&format!("\n{name}: {access}"));
+            }
+            perms.push_str("\n##[endgroup]");
+            self.log(s, &perms);
+        }
         self.log(s, "Prepare workflow directory");
         for d in [
             "_temp/_github_workflow",
