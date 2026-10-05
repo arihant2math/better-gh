@@ -13,6 +13,7 @@
 
 pub mod assets;
 pub mod git;
+pub mod import;
 pub mod model;
 pub mod notes;
 pub mod reactions;

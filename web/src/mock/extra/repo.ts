@@ -9,6 +9,7 @@
 import type { ID, Permission, Repo, Team } from '../../sync/models';
 import { fakeSha } from '../rng';
 import type { Ctx, MockServer, Resp } from '../server';
+import { rulesetProtects } from './rulesets';
 import { invalid, noContent, notFound, ok, param, simpleUser, state } from './util';
 
 // ------------------------------------------------------------------ state
@@ -705,7 +706,7 @@ export function installRepoSettingsMocks(server: MockServer): void {
       const list = branchNames(server, repo).map((name) => ({
         name,
         commit: { sha: name === repo.defaultBranch ? fakeSha(`${repo.id}:main`) : (heads.find((h) => h.headRef === name)?.headSha ?? fakeSha(name)) },
-        protected: rules.has(name),
+        protected: rules.has(name) || rulesetProtects(server, repo, name),
       }));
       return ok(want === null ? list : list.filter((b) => b.protected === (want === 'true')));
     },

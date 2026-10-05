@@ -379,6 +379,8 @@ export interface SiteSettings {
   /** Data retention windows in days; 0 keeps rows forever. */
   retention: RetentionSettings;
   actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
+  /** Access policy: private mode, anonymous directory, allowed visibilities. */
+  privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
 }
 
 export interface RetentionSettings {

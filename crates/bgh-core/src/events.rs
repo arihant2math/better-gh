@@ -65,10 +65,18 @@ pub struct PushEvent {
 impl PushEvent {
     pub const ORIGIN_MIRROR: &'static str = "mirror";
     pub const ORIGIN_IMPORT: &'static str = "import";
+    /// Git step of a metadata import (P18): like an import, and also no
+    /// webhooks, notifications, activity or commit-keyword closing.
+    pub const ORIGIN_METADATA_IMPORT: &'static str = "metadata-import";
 
     /// Refs fetched from a remote (mirror sync or import), not pushed.
     pub fn is_fetched(&self) -> bool {
         self.origin.is_some()
+    }
+
+    /// Refs of a metadata import: only indexing reacts to them.
+    pub fn is_quiet(&self) -> bool {
+        self.origin.as_deref() == Some(Self::ORIGIN_METADATA_IMPORT)
     }
 }
 
@@ -866,6 +874,13 @@ pub enum Event {
 }
 
 impl Event {
+    /// A metadata import's git push ([`PushEvent::is_quiet`]): listeners
+    /// with user-visible effects (webhooks, notifications, activity,
+    /// commit-keyword closing) skip it.
+    pub fn is_quiet(&self) -> bool {
+        matches!(self, Event::Push(p) if p.is_quiet())
+    }
+
     /// Stable snake_case name (`"issue_opened"`), same as the serde tag.
     pub fn name(&self) -> &'static str {
         match self {

@@ -110,6 +110,12 @@ pub(crate) async fn process_ref_updates(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     if default_moved {
         crate::stats::enqueue_languages(&mut tx, repo.id).await?;
+        crate::insights::refresh_if_cached(&mut tx, repo.id).await?;
+    }
+    if origin != Some(PushEvent::ORIGIN_IMPORT) {
+        let git = store.cli(repo.id).ok();
+        crate::activity::record(&mut tx, git.as_ref(), repo.id, job.pusher_id, &job.updates)
+            .await?;
     }
     tx.emit(Event::Push(PushEvent {
         repo_id: repo.id,

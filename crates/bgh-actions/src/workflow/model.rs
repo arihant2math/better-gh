@@ -107,7 +107,9 @@ pub struct Job {
     /// Reusable workflow reference (`owner/repo/.github/workflows/x.yml@ref`
     /// or `./.github/workflows/x.yml`).
     pub uses: Option<String>,
-    pub with: IndexMap<String, String>,
+    /// Inputs of the called workflow; raw YAML values (types are checked
+    /// against `on.workflow_call.inputs`), strings may hold expressions.
+    pub with: IndexMap<String, Value>,
     /// `"inherit"` or a mapping; raw.
     pub secrets: Option<Value>,
 }

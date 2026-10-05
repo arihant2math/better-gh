@@ -3,7 +3,9 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { invalidate, useResource } from '../../api/cache';
 import { createRepo, generateRepo, getOrg, listAccessibleRepos, profileKeys, repoExists, type RestRepo } from '../../api/profile';
 import { session } from '../../app/session';
+import { site, visibilityPolicy } from '../../app/site';
 import { apiFieldErrors, Banner, ButtonRow, Checkbox, FormStack, PageHeader, RadioCards, Section, useDebounced, type FieldErrors } from '../../components/settings/kit';
+import { getBoot } from '../../boot';
 import { Link, navigate, useQuery } from '../../router';
 import { formatKeys } from '../../shortcuts/manager';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -33,7 +35,7 @@ export default observer(function NewRepoPage() {
   const owner = owners.find((o) => o.login === ownerLogin) ?? owners[0];
   const [rawName, setRawName] = useState('');
   const [description, setDescription] = useState('');
-  const [chosenVisibility, setVisibility] = useState<Visibility>('public');
+  const [chosenVisibility, setVisibility] = useState<Visibility | null>(null);
   const [readme, setReadme] = useState(false);
   const [includeAllBranches, setIncludeAllBranches] = useState(false);
   const [template, setTemplate] = useState(() => {
@@ -62,8 +64,15 @@ export default observer(function NewRepoPage() {
     return list;
   }, [accessible.data, template]);
 
-  // "Internal" only exists for organizations (and not for template generation).
-  const visibility: Visibility = chosenVisibility === 'internal' && (!owner?.isOrg || template) ? 'private' : chosenVisibility;
+  // Site policy (allowed visibilities, default). "Internal" only exists for
+  // organizations (and not for template generation).
+  const { allowed, preferred } = visibilityPolicy(site.info, !!owner?.isOrg && !template);
+  const picked = chosenVisibility ?? preferred;
+  const visibility: Visibility = allowed.includes(picked)
+    ? picked
+    : picked === 'internal' && allowed.includes('private')
+      ? 'private'
+      : preferred;
 
   // Organization policy for members (owners can always create).
   const orgPolicy = useResource(owner?.isOrg && owner.role !== 'admin' ? profileKeys.org(owner.login) : null, () => getOrg(owner!.login));
@@ -71,7 +80,9 @@ export default observer(function NewRepoPage() {
   const memberBlocked = !!policy && policy.members_can_create_repositories === false;
   const visibilityBlocked =
     !!policy &&
-    ((visibility === 'public' && policy.members_can_create_public_repositories === false) || (visibility !== 'public' && policy.members_can_create_private_repositories === false));
+    ((visibility === 'public' && policy.members_can_create_public_repositories === false) ||
+      (visibility === 'internal' && policy.members_can_create_internal_repositories === false) ||
+      (visibility === 'private' && policy.members_can_create_private_repositories === false));
 
 
   const name = normalizeRepoName(rawName);
@@ -149,12 +160,15 @@ export default observer(function NewRepoPage() {
   if (!me) return null;
   const canSubmit = !busy && !!owner && !!rawName.trim() && !nameErr && availability !== 'taken' && !memberBlocked && !visibilityBlocked;
   const visibilityOptions = [
-    { value: 'public' as const, label: 'Public', icon: GlobeIcon, description: 'Anyone on the internet can see this repository. You choose who can commit.' },
-    ...(owner?.isOrg && !template
-      ? [{ value: 'internal' as const, label: 'Internal', icon: OrganizationIcon, description: `Members of ${owner.login} can see this repository. You choose who can commit.` }]
-      : []),
+    { value: 'public' as const, label: 'Public', icon: GlobeIcon, description: 'Anyone who can reach this site can see this repository. You choose who can commit.' },
+    {
+      value: 'internal' as const,
+      label: 'Internal',
+      icon: OrganizationIcon,
+      description: `Everyone signed in to ${getBoot().config.siteName} can see this repository. You choose who can commit.`,
+    },
     { value: 'private' as const, label: 'Private', icon: LockIcon, description: 'You choose who can see and commit to this repository.' },
-  ];
+  ].filter((o) => allowed.includes(o.value));
 
   return (
     <div className={styles.page}>
@@ -310,7 +324,7 @@ export default observer(function NewRepoPage() {
           {visibilityBlocked && !memberBlocked && (
             <div className={styles.inlineWarning}>
               <Banner tone="warning" icon={AlertIcon}>
-                Members of {owner?.login} can’t create {visibility === 'public' ? 'public' : 'private'} repositories.
+                Members of {owner?.login} can’t create {visibility} repositories.
               </Banner>
             </div>
           )}

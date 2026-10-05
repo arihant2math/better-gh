@@ -381,12 +381,16 @@ pub async fn update_org(
         body.members_can_create_repositories,
         body.members_can_create_public_repositories,
         body.members_can_create_private_repositories,
+        body.members_can_create_internal_repositories,
     );
+    let internal = body.members_can_create_internal_repositories;
     match body.members_allowed_repository_creation_type.as_deref() {
         None => {}
-        Some("all") => create_flags = (Some(true), Some(true), Some(true)),
-        Some("private") => create_flags = (Some(true), Some(false), Some(true)),
-        Some("none") => create_flags = (Some(false), Some(false), Some(false)),
+        Some("all") => create_flags = (Some(true), Some(true), Some(true), internal.or(Some(true))),
+        Some("private") => {
+            create_flags = (Some(true), Some(false), Some(true), internal.or(Some(true)))
+        }
+        Some("none") => create_flags = (Some(false), Some(false), Some(false), Some(false)),
         Some(_) => errors.push(FieldError::invalid(
             "Organization",
             "members_allowed_repository_creation_type",
@@ -451,6 +455,7 @@ pub async fn update_org(
             members_can_create_public_repositories = coalesce($10, members_can_create_public_repositories),
             members_can_create_private_repositories = coalesce($11, members_can_create_private_repositories),
             members_can_fork_private_repositories = coalesce($12, members_can_fork_private_repositories),
+            members_can_create_internal_repositories = coalesce($15, members_can_create_internal_repositories),
             members_can_create_teams = coalesce($13, members_can_create_teams),
             web_commit_signoff_required = coalesce($14, web_commit_signoff_required)
           WHERE org_id = $1 RETURNING {}",
@@ -470,6 +475,7 @@ pub async fn update_org(
     .bind(body.members_can_fork_private_repositories)
     .bind(body.members_can_create_teams)
     .bind(body.web_commit_signoff_required)
+    .bind(create_flags.3)
     .fetch_one(&mut *tx)
     .await?;
     tx.sync_model(SyncModel::Org, org.id, SyncAction::Update)
@@ -495,9 +501,10 @@ pub struct SinceQuery {
 /// `GET /organizations?since=` → organization-simple list by id.
 pub async fn list_all(
     State(state): State<AppState>,
-    _auth: MaybeUser,
+    auth: MaybeUser,
     Query(q): Query<SinceQuery>,
 ) -> ApiResult<axum::response::Response> {
+    bgh_core::privacy::require_directory_access(&state, auth.as_ref()).await?;
     use axum::response::IntoResponse;
     let per_page = q.per_page.unwrap_or(30).clamp(1, 100);
     let rows: Vec<(i64,)> = sqlx::query_as(

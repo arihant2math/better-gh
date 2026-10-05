@@ -217,8 +217,14 @@ pub async fn update_repo(
         (None, Some(false)) => r.visibility = "public".into(),
         (None, _) => {}
     }
-    if r.visibility != old.visibility && r.is_private() {
-        auth.require_scope("repo")?;
+    if r.visibility != old.visibility {
+        if r.is_private() {
+            auth.require_scope("repo")?;
+        }
+        bgh_core::settings::load(&state)
+            .await?
+            .privacy
+            .check_visibility(&r.visibility)?;
     }
     one_of(
         "squash_merge_commit_title",
@@ -409,9 +415,8 @@ pub async fn transfer(
                 format!("{new_owner_login} does not exist"),
             ))
         })?;
-    if !crate::forks::can_create_in(&state, &auth.user, &new_owner, access.repo.is_private())
-        .await?
-    {
+    let visibility = crate::forks::visibility_for_owner(&access.repo.visibility, &new_owner);
+    if !crate::forks::check_new_repo(&state, &auth.user, &new_owner, &visibility).await? {
         return Err(ApiError::forbidden(format!(
             "You don't have the permission to create repositories on {}",
             new_owner.login
@@ -437,10 +442,6 @@ pub async fn transfer(
     let old_owner = access.owner.clone();
 
     let mut tx = Tx::begin(&state).await?;
-    let mut visibility = old.visibility.clone();
-    if visibility == "internal" && !new_owner.is_org() {
-        visibility = "private".into();
-    }
     let updated: db::Repository = sqlx::query_as(&format!(
         "UPDATE repositories SET owner_id = $2, name = $3, visibility = $4, updated_at = now()
           WHERE id = $1 RETURNING {}",

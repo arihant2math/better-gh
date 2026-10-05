@@ -11,6 +11,7 @@ mod boot;
 mod ldap;
 mod oauth;
 mod orgs;
+mod root;
 mod sso_avatars_ratelimit;
 mod teams;
 mod users;

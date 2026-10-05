@@ -1,0 +1,29 @@
+[
+  {
+    "id": 208045946,
+    "node_id": "MDU6TGFiZWwyMDgwNDU5NDY=",
+    "url": "https://api.github.com/repos/octo-org/hello-world/labels/bug",
+    "name": "bug",
+    "color": "d73a4a",
+    "default": true,
+    "description": "Something isn't working"
+  },
+  {
+    "id": 208045947,
+    "node_id": "MDU6TGFiZWwyMDgwNDU5NDc=",
+    "url": "https://api.github.com/repos/octo-org/hello-world/labels/enhancement",
+    "name": "enhancement",
+    "color": "a2eeef",
+    "default": true,
+    "description": "New feature or request"
+  },
+  {
+    "id": 208045948,
+    "node_id": "MDU6TGFiZWwyMDgwNDU5NDg=",
+    "url": "https://api.github.com/repos/octo-org/hello-world/labels/good%20first%20issue",
+    "name": "good first issue",
+    "color": "7057ff",
+    "default": true,
+    "description": "Good for newcomers"
+  }
+]

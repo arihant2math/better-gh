@@ -350,6 +350,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
             "SELECT 'repo:' || r.id AS scope, r.id, json_build_object(
                  'id', r.id, 'ownerId', r.owner_id, 'owner', o.login, 'name', r.name,
                  'description', r.description, 'private', r.visibility <> 'public',
+                 'visibility', r.visibility,
                  'fork', r.fork, 'archived', r.archived, 'defaultBranch', r.default_branch,
                  'mirrorUrl', r.mirror_url,
                  'language', r.language, 'topics', r.topics, 'stars', r.stargazers_count,

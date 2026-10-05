@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth';
 import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
-import type { PublicSiteInfo } from '../../app/site';
 import { session } from '../../app/session';
+import type { PublicSiteInfo } from '../../app/site';
 import { getBoot, isMockMode } from '../../boot';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
@@ -46,6 +46,8 @@ function Login({ search }: { search: string }) {
   const [ssoBusy, setSsoBusy] = useState<string | null>(null);
   const [site, setSite] = useState<PublicSiteInfo | null>(null);
   const [adminForm, setAdminForm] = useState(false);
+  // Private mode (`/_bgh/site` stays public): explain why sign-in is needed.
+  const privateMode = !!site?.private_mode;
   const passwordRef = useRef<HTMLInputElement>(null);
   const loginRef = useRef<HTMLInputElement>(null);
 
@@ -184,6 +186,11 @@ function Login({ search }: { search: string }) {
         ) : undefined
       }
     >
+      {privateMode && (
+        <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }} data-testid="private-mode-note">
+          {config.siteName} is private. Sign in to see its repositories, people and organizations.
+        </p>
+      )}
       {isMockMode() && (
         <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }}>
           Any credentials work. Passwords <code>wrong</code>, <code>throttle</code> and <code>2fa</code> (code <code>123456</code>) try the other paths.

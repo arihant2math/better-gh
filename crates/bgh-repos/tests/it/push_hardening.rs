@@ -287,15 +287,22 @@ async fn push_size_limit() {
     let alice = app.create_user("alice").await;
     let work = seeded(&app, &alice, "pack", &[("README.md", "hi\n")]).await;
     store_git_settings(&app, json!({"max_push_size_mb": 1})).await;
+    let before = branch_sha(&app, &alice, "pack", "main").await;
     std::fs::write(work.path().join("noise.bin"), noise(3 * 1024 * 1024)).unwrap();
     work.commit(&[], "noise").await;
     let out = push_loud(&work, "main").await;
     assert!(!out.ok, "push larger than receive.maxInputSize is rejected");
+    // git rejects the pack and hangs up while the client may still be
+    // uploading it; under load the client then reports the broken pipe
+    // instead of git's message. Either way nothing was accepted.
+    let disconnected =
+        out.stderr.contains("unexpected disconnect") || out.stderr.contains("hung up unexpectedly");
     assert!(
-        out.stderr.contains("pack exceeds maximum allowed size"),
+        out.stderr.contains("pack exceeds maximum allowed size") || disconnected,
         "{}",
         out.stderr
     );
+    assert_eq!(branch_sha(&app, &alice, "pack", "main").await, before);
 }
 
 #[tokio::test]

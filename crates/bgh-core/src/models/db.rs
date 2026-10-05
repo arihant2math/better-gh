@@ -181,6 +181,7 @@ pub struct OrgSettings {
     pub members_can_create_private_repositories: bool,
     pub members_can_fork_private_repositories: bool,
     pub two_factor_requirement_enabled: bool,
+    pub members_can_create_internal_repositories: bool,
     pub has_organization_projects: bool,
     pub has_repository_projects: bool,
     pub archived_at: Option<DateTime<Utc>>,
@@ -191,6 +192,7 @@ impl OrgSettings {
         default_repository_permission, members_can_create_repositories, \
         members_can_create_public_repositories, members_can_create_private_repositories, \
         members_can_fork_private_repositories, two_factor_requirement_enabled, \
+        members_can_create_internal_repositories, \
         has_organization_projects, has_repository_projects, archived_at";
 
     pub async fn find(
@@ -326,6 +328,12 @@ impl Repository {
 
     pub fn is_private(&self) -> bool {
         self.visibility != "public"
+    }
+
+    /// `internal`: readable by every signed-in, non-suspended user of the
+    /// instance (GHES semantics); still "private" for JSON and token scopes.
+    pub fn is_internal(&self) -> bool {
+        self.visibility == "internal"
     }
 
     pub async fn find(db: impl sqlx::PgExecutor<'_>, id: i64) -> Result<Option<Self>, sqlx::Error> {

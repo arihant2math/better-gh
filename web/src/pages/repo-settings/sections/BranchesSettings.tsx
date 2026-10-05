@@ -57,7 +57,12 @@ const RulesList = observer(function RulesList({ repo, base }: { repo: Repo; base
       </Section>
       <Section
         title="Branch protection rules"
-        description="Define branch protection rules to disable force pushing, prevent branches from being deleted, and optionally require status checks before merging."
+        description={
+          <>
+            Define branch protection rules to disable force pushing, prevent branches from being deleted, and optionally require status checks before merging. To
+            protect branches and tags by pattern, use <Link to={`${base}/rules`}>rulesets</Link>.
+          </>
+        }
         actions={
           <Button size="sm" variant="primary" leadingIcon={PlusIcon} disabled={repo.archived} onClick={() => navigate(`${base}/branch_protection_rules/new`)}>
             Add rule
@@ -214,7 +219,12 @@ const RuleForm = observer(function RuleForm({
                 label="Branch name"
                 htmlFor={ids.branch}
                 error={isNew && touched ? branchError : (errors.fields.branch ?? null)}
-                hint="Classic rules protect one existing branch. Use rulesets for wildcard patterns such as release/*."
+                hint={
+                  <>
+                    Classic rules protect one existing branch. <Link to={`${base}/rules/new?target=branch`}>Create a ruleset</Link> for wildcard patterns such as
+                    release/*.
+                  </>
+                }
               >
                 <Input
                   id={ids.branch}
