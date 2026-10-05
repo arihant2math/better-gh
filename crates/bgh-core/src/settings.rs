@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgExecutor;
 
+use crate::config::Config;
 use crate::error::{ApiError, ApiResult};
 use crate::models::db;
 use crate::state::AppState;
@@ -135,15 +136,26 @@ impl Announcement {
     }
 }
 
-/// API rate limits (GHES: disabled by default).
+/// API rate limits (`crate::ratelimit`). Budgets are always counted and
+/// reported (`X-RateLimit-*`, `GET /rate_limit`); `enabled` turns on
+/// enforcement (off by default, like GHES). Defaults come from the
+/// `BGH_RATE_LIMIT*` environment ([`crate::Config::rate_limits`]); stored
+/// fields override them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RateLimitSettings {
     pub enabled: bool,
-    /// Requests per hour per authenticated user.
+    /// `core` requests per hour per authenticated user.
     pub authenticated_per_hour: i64,
-    /// Requests per hour per client IP for anonymous callers.
+    /// `core` requests per hour per client IP for anonymous callers (also
+    /// the anonymous `graphql` budget).
     pub unauthenticated_per_hour: i64,
+    /// `search` requests per minute per authenticated user.
+    pub search_authenticated_per_minute: i64,
+    /// `search` requests per minute per client IP for anonymous callers.
+    pub search_unauthenticated_per_minute: i64,
+    /// `graphql` requests per hour per authenticated user.
+    pub graphql_per_hour: i64,
 }
 
 impl Default for RateLimitSettings {
@@ -152,12 +164,17 @@ impl Default for RateLimitSettings {
             enabled: false,
             authenticated_per_hour: 5000,
             unauthenticated_per_hour: 60,
+            search_authenticated_per_minute: 30,
+            search_unauthenticated_per_minute: 10,
+            graphql_per_hour: 5000,
         }
     }
 }
 
-/// A generic OIDC provider (consumed by the SSO login in bgh-accounts).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// A generic OIDC provider (consumed by the SSO login in bgh-accounts,
+/// `bgh_accounts::sso`). `BGH_OIDC_*` provide one by default
+/// ([`crate::Config::oidc`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OidcProvider {
     /// Short identifier used in URLs (`/_bgh/sso/{name}`).
@@ -167,9 +184,31 @@ pub struct OidcProvider {
     pub client_id: String,
     /// Secret; never returned by the admin API (write-only).
     pub client_secret: Option<String>,
+    /// Requested scopes; empty = `openid profile email`.
     pub scopes: Vec<String>,
     /// Create accounts on first login.
     pub auto_create_users: bool,
+    /// ID-token / userinfo claim proposing the login of new accounts
+    /// (default `preferred_username`).
+    pub login_claim: Option<String>,
+    /// Lower-case email domains allowed to sign in; empty = any.
+    pub allowed_domains: Vec<String>,
+}
+
+impl Default for OidcProvider {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            display_name: None,
+            issuer: String::new(),
+            client_id: String::new(),
+            client_secret: None,
+            scopes: Vec::new(),
+            auto_create_users: true,
+            login_claim: None,
+            allowed_domains: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,7 +228,8 @@ impl Default for AuthProviderSettings {
     }
 }
 
-/// Outgoing mail (consumed by email notifications in bgh-notify).
+/// Outgoing mail through an SMTP relay (`crate::mail`); when disabled,
+/// `BGH_SMTP_URL` / the dev transport are used.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SmtpSettings {
@@ -271,34 +311,65 @@ impl SiteSettings {
         }
     }
 
-    /// Build from `(key, value)` rows; unknown keys and bad values are
-    /// ignored (logged) so a bad row never takes the site down.
+    /// Defaults before any stored row: the built-in defaults plus the
+    /// environment's (`BGH_RATE_LIMIT*`, `BGH_OIDC_*`).
+    pub fn defaults(config: &Config) -> Self {
+        let mut s = Self::default();
+        s.rate_limits = config.rate_limits.clone();
+        s.auth_providers.oidc = config.oidc.clone().into_iter().collect();
+        s
+    }
+
+    /// Build from `(key, value)` rows over the built-in defaults; see
+    /// [`Self::from_rows_with`].
     pub fn from_rows(rows: impl IntoIterator<Item = (String, Value)>) -> Self {
-        let mut obj = serde_json::Map::new();
-        for (k, v) in rows {
-            if SECTIONS.contains(&k.as_str()) {
-                obj.insert(k, v);
+        Self::from_rows_with(Self::default(), rows)
+    }
+
+    /// Apply stored `(key, value)` rows to `base` ([`Self::defaults`]):
+    /// stored fields override the base field by field, so fields an admin
+    /// never set keep following the environment. Unknown keys and bad values
+    /// are ignored (logged) so a bad row never takes the site down.
+    pub fn from_rows_with(base: Self, rows: impl IntoIterator<Item = (String, Value)>) -> Self {
+        let mut out = base;
+        for (key, v) in rows {
+            if !SECTIONS.contains(&key.as_str()) {
+                continue;
             }
-        }
-        let mut out = Self::default();
-        for key in SECTIONS {
-            let Some(v) = obj.remove(*key) else { continue };
-            let res = match *key {
-                "signup" => serde_json::from_value(v).map(|x| out.signup = x),
-                "repositories" => serde_json::from_value(v).map(|x| out.repositories = x),
-                "organizations" => serde_json::from_value(v).map(|x| out.organizations = x),
-                "announcement" => serde_json::from_value(v).map(|x| out.announcement = x),
-                "rate_limits" => serde_json::from_value(v).map(|x| out.rate_limits = x),
-                "auth_providers" => serde_json::from_value(v).map(|x| out.auth_providers = x),
-                "smtp" => serde_json::from_value(v).map(|x| out.smtp = x),
-                "maintenance" => serde_json::from_value(v).map(|x| out.maintenance = x),
-                _ => Ok(()),
+            let res = match &v {
+                Value::Object(fields) => out.apply_section(&key, fields),
+                _ => Err(serde::de::Error::custom("not an object")),
             };
             if let Err(err) = res {
                 tracing::error!(section = key, %err, "invalid site setting; using defaults");
             }
         }
         out
+    }
+
+    /// Override fields of section `key` (all-or-nothing: on error `self`
+    /// is unchanged).
+    pub fn apply_section(
+        &mut self,
+        key: &str,
+        fields: &serde_json::Map<String, Value>,
+    ) -> Result<(), serde_json::Error> {
+        let mut section = self.section(key).unwrap_or_else(|| json!({}));
+        for (k, v) in fields {
+            section[k] = v.clone();
+        }
+        match key {
+            "signup" => self.signup = serde_json::from_value(section)?,
+            "repositories" => self.repositories = serde_json::from_value(section)?,
+            "organizations" => self.organizations = serde_json::from_value(section)?,
+            "announcement" => self.announcement = serde_json::from_value(section)?,
+            "rate_limits" => self.rate_limits = serde_json::from_value(section)?,
+            "auth_providers" => self.auth_providers = serde_json::from_value(section)?,
+            "smtp" => self.smtp = serde_json::from_value(section)?,
+            "maintenance" => self.maintenance = serde_json::from_value(section)?,
+            _ => {}
+        }
+        Ok(())
     }
 
     /// One section as JSON (`None` for unknown keys).
@@ -317,12 +388,24 @@ fn cache() -> &'static Cache {
     CACHE.get_or_init(Default::default)
 }
 
-/// Read settings straight from the database (no cache).
-pub async fn load_uncached(db: impl PgExecutor<'_>) -> Result<SiteSettings, sqlx::Error> {
-    let rows: Vec<(String, Value)> = sqlx::query_as("SELECT key, value FROM site_settings")
+/// The stored `(key, value)` rows (only the fields admins set).
+pub async fn load_rows(db: impl PgExecutor<'_>) -> Result<Vec<(String, Value)>, sqlx::Error> {
+    sqlx::query_as("SELECT key, value FROM site_settings ORDER BY key")
         .fetch_all(db)
-        .await?;
-    Ok(SiteSettings::from_rows(rows))
+        .await
+}
+
+/// Effective settings straight from the database (no cache): `config`'s
+/// defaults overridden by the stored rows.
+pub async fn load_uncached(
+    config: &Config,
+    db: impl PgExecutor<'_>,
+) -> Result<SiteSettings, sqlx::Error> {
+    let rows = load_rows(db).await?;
+    Ok(SiteSettings::from_rows_with(
+        SiteSettings::defaults(config),
+        rows,
+    ))
 }
 
 /// Current settings, cached per process for a few seconds.
@@ -333,7 +416,7 @@ pub async fn load(state: &AppState) -> ApiResult<Arc<SiteSettings>> {
     {
         return Ok(s.clone());
     }
-    let s = Arc::new(load_uncached(&state.db).await?);
+    let s = Arc::new(load_uncached(&state.config, &state.db).await?);
     cache()
         .lock()
         .expect("settings cache")
@@ -541,6 +624,38 @@ mod tests {
         assert_eq!(s.default_visibility(false), "private");
         assert_eq!(s.smtp, SmtpSettings::default());
         assert!(!s.rate_limits.enabled);
+    }
+
+    #[test]
+    fn stored_fields_override_environment_defaults() {
+        let mut config = Config::default();
+        config.rate_limits.authenticated_per_hour = 100;
+        config.rate_limits.unauthenticated_per_hour = 7;
+        config.oidc = Some(OidcProvider {
+            name: "env".into(),
+            issuer: "https://id.example.com".into(),
+            client_id: "bgh".into(),
+            ..Default::default()
+        });
+        let base = SiteSettings::defaults(&config);
+        assert_eq!(base.auth_providers.oidc[0].name, "env");
+        let s = SiteSettings::from_rows_with(
+            base.clone(),
+            vec![(
+                "rate_limits".into(),
+                json!({"enabled": true, "unauthenticated_per_hour": 3}),
+            )],
+        );
+        assert!(s.rate_limits.enabled);
+        assert_eq!(s.rate_limits.authenticated_per_hour, 100);
+        assert_eq!(s.rate_limits.unauthenticated_per_hour, 3);
+        // Stored providers replace the environment's.
+        let s = SiteSettings::from_rows_with(
+            base,
+            vec![("auth_providers".into(), json!({"oidc": []}))],
+        );
+        assert!(s.auth_providers.oidc.is_empty());
+        assert!(s.auth_providers.password_login);
     }
 
     #[test]
