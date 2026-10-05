@@ -296,6 +296,7 @@ pub async fn authorize(
     if write {
         lfs.access.require(Permission::Write)?;
         lfs.access.require_not_archived()?;
+        lfs.access.require_not_mirror()?;
     }
     Ok(lfs)
 }

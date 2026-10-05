@@ -438,6 +438,17 @@ Site-level account changes also emit `UserAccountChanged` /
   `{data_dir}/lfs` and linked per repository in `lfs_objects`
   (`repositories.lfs_size` accounting), locks in `lfs_locks`; SSH
   `git-lfs-authenticate` issues `RemoteAuth` tokens (Redis, 1 h).
+* Imports and pull mirrors (`bgh_repos::import`, `bgh_repos::mirrors`,
+  `bgh_git::fetch`): `POST /_bgh/imports` creates the repository and a
+  `repo_imports` row; `repos.import` fetches all branches and tags (+ LFS)
+  from an `http(s)` URL with a locked-down git config (no redirects or
+  other protocols, credentials in a header, host pinned to SSRF-checked
+  addresses via `bgh_core::ssrf`, the webhook allow-list). Credentials are
+  sealed with `bgh_core::secretbox`. Mirrors (`repo_mirrors`,
+  `repositories.mirror_url`) are synced by the `repos.mirrors` service
+  with `--prune` and are read-only (`RepoAccess::require_not_mirror`);
+  fetched refs emit `Push` with `origin` `mirror`/`import` (Actions skips
+  them). Details: `docs/packages/p11-import-mirrors.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.
