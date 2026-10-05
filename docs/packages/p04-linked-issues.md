@@ -86,7 +86,9 @@ Status: **done** (branch `bgh/p04-linked-issues`, self-integrated into
   manual links work through the API).
 * "Create a branch" for an issue (GitHub's Development action) is not in
   the UI; linked branches are shown (`{n}-…` naming, as `gh issue develop`).
-* Reconciliation runs in an in-process listener (best effort until P9's
-  durable delivery); the merge path reconciles again before closing.
+* The listener rides P9's durable outbox (at-least-once): reconciliation is
+  diff-based under a row lock, and closing on merge claims an
+  `event_receipts` effect so a redelivery never re-closes an issue reopened
+  in between. The merge path reconciles again before closing.
 * `linkedPullIds` may include ids of PRs the viewer can't read (only ids;
   the list indicator counts them).

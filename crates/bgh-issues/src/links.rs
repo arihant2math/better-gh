@@ -294,6 +294,11 @@ pub async fn close_linked(
     if base_ref != default_branch {
         return Ok(());
     }
+    // Delivery is at-least-once: don't re-close issues reopened since a
+    // previous delivery of this merge.
+    if !bgh_core::events::claim_effect(&mut tx).await? {
+        return Ok(());
+    }
     let pull = service::issue_by_id(&mut *tx, pull_id).await?;
     let issue_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT k.issue_id FROM issue_pr_links k JOIN issues i ON i.id = k.issue_id
