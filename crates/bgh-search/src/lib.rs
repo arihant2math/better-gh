@@ -34,14 +34,8 @@ use bgh_core::{AppState, Registry};
 /// REST API routes. Paths are relative to `/api/v3`.
 pub fn router() -> Router<AppState> {
     use activity::api as ev;
-    Router::new()
-        .route("/search/issues", get(issues::search))
-        .route("/search/repositories", get(repos::search))
-        .route("/search/topics", get(repos::topics))
-        .route("/search/users", get(users::search))
-        .route("/search/labels", get(users::labels))
-        .route("/search/commits", get(commits::search))
-        .route("/search/code", get(code::search::search))
+    // Events API timelines: `Last-Modified` / `If-Modified-Since` → 304.
+    let events = Router::new()
         .route("/events", get(ev::public_events))
         .route("/repos/{owner}/{repo}/events", get(ev::repo_events))
         .route("/networks/{owner}/{repo}/events", get(ev::network_events))
@@ -63,6 +57,16 @@ pub fn router() -> Router<AppState> {
             "/users/{username}/received_events/public",
             get(ev::received_public_events),
         )
+        .route_layer(axum::middleware::from_fn(bgh_core::polling::conditional));
+    Router::new()
+        .route("/search/issues", get(issues::search))
+        .route("/search/repositories", get(repos::search))
+        .route("/search/topics", get(repos::topics))
+        .route("/search/users", get(users::search))
+        .route("/search/labels", get(users::labels))
+        .route("/search/commits", get(commits::search))
+        .route("/search/code", get(code::search::search))
+        .merge(events)
 }
 
 /// Web-client routes (absolute paths).
