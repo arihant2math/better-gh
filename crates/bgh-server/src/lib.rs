@@ -46,6 +46,8 @@ pub fn register(reg: &mut Registry) {
     bgh_sync::register(reg);
     bgh_graphql::register(reg);
     bgh_actions::register(reg);
+    bgh_projects::register(reg);
+    bgh_wiki::register(reg);
 }
 
 /// REST API routes of every crate (relative to `/api/v3`).
@@ -62,6 +64,8 @@ fn api_routes() -> Router<AppState> {
         .merge(bgh_sync::router())
         .merge(bgh_graphql::router())
         .merge(bgh_actions::router())
+        .merge(bgh_projects::router())
+        .merge(bgh_wiki::router())
 }
 
 /// Non-API routes of every crate (absolute paths).
@@ -78,6 +82,8 @@ fn web_routes() -> Router<AppState> {
         .merge(bgh_sync::web_router())
         .merge(bgh_graphql::web_router())
         .merge(bgh_actions::web_router())
+        .merge(bgh_projects::web_router())
+        .merge(bgh_wiki::web_router())
 }
 
 /// Build the complete application router.

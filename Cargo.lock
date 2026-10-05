@@ -402,6 +402,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bgh-projects"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bgh-core",
+ "bgh-server",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "bgh-pulls"
 version = "0.1.0"
 dependencies = [
@@ -479,11 +495,13 @@ dependencies = [
  "bgh-graphql",
  "bgh-issues",
  "bgh-notify",
+ "bgh-projects",
  "bgh-pulls",
  "bgh-releases",
  "bgh-repos",
  "bgh-search",
  "bgh-sync",
+ "bgh-wiki",
  "bytes",
  "clap",
  "futures",
@@ -514,6 +532,24 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "bgh-wiki"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bgh-core",
+ "bgh-git",
+ "bgh-server",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
  "tokio",
  "tracing",
 ]
