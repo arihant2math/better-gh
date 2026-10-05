@@ -157,6 +157,11 @@ lifecycle incl. draft/ready/review requests/pending review + submit/review
 threads/close/reopen/squash merge, auto-merge, repository
 create/update/archive/star/template/refs, permission and error types).
 
+Workspace: `cargo clippy --workspace --all-targets -D warnings` clean;
+`cargo test -p <crate>` for every crate passes except
+`bgh-accounts::rate_limits_are_enforced` (known integration conflict) and a
+`bgh-issues::transfer_issue` failure seen once under load (passes alone).
+
 Schema check against gh's query corpus: every GraphQL operation gh 2.89.0
 sends in its own test suite (~120) was replayed against the server; the
 only remaining unknown fields are github.com-only or out of scope:
