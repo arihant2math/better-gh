@@ -58,6 +58,11 @@ while something runs and the socket is not live, 30 s safety net when live.
 Logs stream over SSE (`/_bgh/actions/jobs/{id}/logs/stream`) read through
 `transport().fetch` (works with the mock).
 
+`workflow_run` / `workflow_job` are deliberately **not** in the client store
+or the bootstrap (runs grow without bound; IndexedDB would keep them all): the
+UI only observes their deltas, so they keep bgh-actions' `tx.sync` shapes
+(acceptable per BACKEND_PATTERNS §8a while nothing bootstraps them).
+
 ### Pages
 
 * **Runs** (`RunsPage`, `RunRow`, `WorkflowsSidebar`, `DispatchPanel`): all
