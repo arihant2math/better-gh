@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P22 done: check/status Link headers, commit node_ids, body media types, HTML-host .diff/.patch; full gate green after merging fc37a0d.
 
 # P22 — Pulls and checks REST correctness

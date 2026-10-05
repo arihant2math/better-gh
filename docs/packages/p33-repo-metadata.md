@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P33 repo metadata: licenses/gitignore endpoints, license detection, create templates + team_id, /repositories, branches-where-head, short SHAs; web pickers.
 
 # P33 repo-metadata — status

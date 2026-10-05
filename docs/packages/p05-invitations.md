@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Invitation pages, dashboard banner and /settings/organizations; full gate green on the latest integration merge.
 
 # P5 invitations — status
