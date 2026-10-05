@@ -4,6 +4,7 @@
  * repository watching.
  */
 import { observable, runInAction } from 'mobx';
+import { mutate } from '../../api/cache';
 import { api } from '../../api/client';
 import { store } from '../../sync';
 import type { ID, Notification, Repo, ViewerRepo } from '../../sync/models';
@@ -145,6 +146,9 @@ export async function loadWatchSettings(repo: Repo): Promise<WatchSettings> {
   }
 }
 
+/** Resource-cache key of `loadWatchSettings` results. */
+export const watchSettingsKey = (repoId: ID) => `watch-settings:${repoId}`;
+
 export function saveWatchSettings(repo: Repo, s: WatchSettings) {
   const watching: ViewerRepo['watching'] = s.state === 'participating' ? 'participating' : s.state === 'ignore' ? 'ignored' : 'subscribed';
   const viewer = store().get('viewerRepo', repo.id);
@@ -153,6 +157,8 @@ export function saveWatchSettings(repo: Repo, s: WatchSettings) {
   const list = [];
   if (viewer) list.push(ops.update('viewerRepo', repo.id, { watching }));
   if (before !== after) list.push(ops.update('repo', repo.id, { watchers: Math.max(0, repo.watchers + (after ? 1 : -1)) }));
+  // The repo header's Watch label reads this (Custom vs Unwatch).
+  mutate<WatchSettings>(watchSettingsKey(repo.id), () => s);
   return commit(`Watch ${repo.name}`, list, {
     method: 'PUT',
     path: watchPath(repo),
