@@ -199,6 +199,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::OrgMemberAdded { .. } => vec!["organization"],
         E::DeploymentCreated { .. } => vec!["deployment"],
         E::DeploymentStatusCreated { .. } => vec!["deployment_status"],
+        E::DeploymentReview { .. } => vec!["deployment_review"],
         E::CommitCommentCreated { .. } => vec!["commit_comment"],
         // Site-level events: delivered to global (site admin) hooks only.
         E::UserAccountChanged { .. } => vec!["user"],
@@ -764,6 +765,16 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                     ("workflow_run", Value::Null),
                 ],
             )])
+        }
+        // bgh-actions renders the payload (environment, reviewers, runs).
+        E::DeploymentReview {
+            action, payload, ..
+        } => {
+            let entries: Vec<(&str, Value)> = payload
+                .as_object()
+                .map(|o| o.iter().map(|(k, v)| (k.as_str(), v.clone())).collect())
+                .unwrap_or_default();
+            Ok(vec![b.emit("deployment_review", Some(action), entries)])
         }
         // ----- commit comments -------------------------------------------------
         E::CommitCommentCreated { comment_id, .. } => {

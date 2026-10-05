@@ -42,6 +42,7 @@ const RULE_TYPES: &[&str] = &[
     "update",
     "deletion",
     "required_linear_history",
+    "required_deployments",
     "required_signatures",
     "non_fast_forward",
     "pull_request",
@@ -252,6 +253,25 @@ fn normalize_rule(v: &Value) -> ApiResult<(String, Value)> {
                 "strict_required_status_checks_policy":
                     bool_param(p, kind, "strict_required_status_checks_policy")?,
             }})
+        }
+        "required_deployments" => {
+            let Some(list) = p["required_deployment_environments"].as_array() else {
+                return Err(invalid(
+                    "rules",
+                    "Rule 'required_deployments' needs parameters.required_deployment_environments",
+                ));
+            };
+            let envs = list
+                .iter()
+                .map(|e| e.as_str().map(String::from))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| {
+                    invalid(
+                        "rules",
+                        "required_deployment_environments must be an array of strings",
+                    )
+                })?;
+            json!({"type": kind, "parameters": {"required_deployment_environments": envs}})
         }
         _ => json!({"type": kind}),
     };

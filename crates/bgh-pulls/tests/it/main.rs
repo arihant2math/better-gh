@@ -8,5 +8,6 @@ mod checks;
 mod governance;
 mod merge;
 mod pulls;
+mod required_deployments;
 mod reviews;
 mod web_client;

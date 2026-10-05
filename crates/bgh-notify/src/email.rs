@@ -49,6 +49,11 @@ pub enum EmailKind {
     CommitComment {
         comment_id: i64,
     },
+    /// A workflow run waits for the recipient to review a deployment.
+    DeploymentReview {
+        run_id: i64,
+        environment: String,
+    },
 }
 
 /// Job: render and queue notification emails for `recipients`.
@@ -309,7 +314,10 @@ async fn content(
                 re,
                 false,
             ),
-            EmailKind::Release { .. } | EmailKind::Ci { .. } | EmailKind::CommitComment { .. } => {
+            EmailKind::Release { .. }
+            | EmailKind::Ci { .. }
+            | EmailKind::CommitComment { .. }
+            | EmailKind::DeploymentReview { .. } => {
                 return Ok(None);
             }
         };
@@ -382,6 +390,23 @@ async fn content(
                 thread_id: Some(format!("<{full}/commit/{sha}@{host}>")),
             }))
         }
+        EmailKind::DeploymentReview {
+            run_id,
+            environment,
+        } => Ok(Some(Content {
+            subject: format!("[{full}] {}", job.title),
+            body_md: format!(
+                "@{actor} triggered a workflow run that is waiting for your review before it \
+                 deploys to **{environment}**.\n\nReview the pending deployment to approve or \
+                 reject it."
+            ),
+            url: format!("{repo_html}/actions/runs/{run_id}"),
+            message_id: format!(
+                "<{full}/actions/runs/{run_id}/deployment-review/{}@{host}>",
+                uuid::Uuid::new_v4()
+            ),
+            thread_id: None,
+        })),
         _ => Ok(None),
     }
 }

@@ -78,9 +78,17 @@ export function Environments({ owner, repo }: { owner: string; repo: string }) {
                     <span className={styles.envName}>{env.name}</span>
                   </button>
                   <span className={styles.spacer} />
+                  {(env.protection_rules?.length ?? 0) > 0 && (
+                    <span className={styles.meta}>
+                      {env.protection_rules!.length} protection rule{env.protection_rules!.length === 1 ? '' : 's'}
+                    </span>
+                  )}
                   <span className={styles.meta}>
                     Updated <RelativeTime date={env.updated_at} />
                   </span>
+                  <Link to={`/${owner}/${repo}/settings/environments/${encodeURIComponent(env.name)}/edit`} className={styles.sectionLink}>
+                    Configure
+                  </Link>
                   <span className={styles.rowActions}>
                     <IconButton icon={TrashIcon} size="sm" label={`Delete environment ${env.name}`} onClick={() => setDeleting(env)} />
                   </span>

@@ -1,4 +1,5 @@
 import { observer } from 'mobx-react-lite';
+import { lazy, Suspense } from 'react';
 import type { SettingsScope } from '../../../api/actions';
 import { Link, useLocation, useParams } from '../../../router';
 import { store } from '../../../sync';
@@ -8,7 +9,11 @@ import { ArrowLeftIcon, CodeIcon, LockIcon, OrganizationIcon, RocketIcon, Server
 import { ConfigList, OrgItemsForRepo } from './ConfigItems';
 import { EnvironmentGroups, Environments } from './Environments';
 import { Runners } from './Runners';
+import { ListSkeleton } from './shared';
 import styles from './Settings.module.css';
+
+// One environment's protection rules: its own chunk.
+const EnvironmentConfig = lazy(() => import('./EnvironmentConfig'));
 
 type SectionId = 'secrets' | 'variables' | 'runners' | 'environments';
 
@@ -30,7 +35,7 @@ const DESCRIPTIONS: Record<SectionId, string> = {
 function sectionOf(pathname: string): SectionId {
   if (pathname.includes('/secrets/')) return 'secrets';
   if (pathname.includes('/variables/')) return 'variables';
-  if (pathname.endsWith('/environments')) return 'environments';
+  if (pathname.endsWith('/environments') || pathname.includes('/settings/environments/')) return 'environments';
   return 'runners';
 }
 
@@ -42,11 +47,11 @@ interface NavItem {
 }
 
 export default function ActionsSettingsPage() {
-  const params = useParams<{ owner?: string; repo?: string; org?: string }>();
+  const params = useParams<{ owner?: string; repo?: string; org?: string; env?: string }>();
   const { pathname } = useLocation();
   const section = sectionOf(pathname);
   if (params.org) return <OrgSettings org={params.org} section={section} />;
-  return <RepoSettings owner={params.owner ?? ''} repo={params.repo ?? ''} section={section} />;
+  return <RepoSettings owner={params.owner ?? ''} repo={params.repo ?? ''} section={section} env={params.env} />;
 }
 
 function Nav({ items, current, back }: { items: NavItem[]; current: SectionId; back: { to: string; label: string } }) {
@@ -67,7 +72,7 @@ function Nav({ items, current, back }: { items: NavItem[]; current: SectionId; b
   );
 }
 
-const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { owner: string; repo: string; section: SectionId }) {
+const RepoSettings = observer(function RepoSettings({ owner, repo, section, env }: { owner: string; repo: string; section: SectionId; env?: string }) {
   const r = repoByName(owner, repo);
   const canAdmin = !!r && store().get('viewerRepo', r.id)?.permission === 'admin';
   const base = `/${r?.owner ?? owner}/${r?.name ?? repo}`;
@@ -103,6 +108,12 @@ const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { 
     );
   } else if (section === 'runners') {
     content = <Runners scope={scope} />;
+  } else if (env) {
+    content = (
+      <Suspense fallback={<ListSkeleton rows={3} />}>
+        <EnvironmentConfig owner={scope.owner} repo={scope.repo} env={env} />
+      </Suspense>
+    );
   } else {
     content = <Environments owner={scope.owner} repo={scope.repo} />;
   }
@@ -115,7 +126,7 @@ const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { 
           <h1 className={styles.title}>{TITLES[section]}</h1>
           <p className={styles.desc}>{DESCRIPTIONS[section]}</p>
         </header>
-        <div key={section} className={styles.sections}>
+        <div key={env ? `env:${env}` : section} className={styles.sections}>
           {content}
         </div>
       </div>

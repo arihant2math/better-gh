@@ -200,10 +200,17 @@ pub struct EnvironmentRow {
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Minutes a job waits before it may start (0 = none).
+    pub wait_timer: i32,
+    pub prevent_self_review: bool,
+    pub can_admins_bypass: bool,
+    /// `None` (any ref), `protected` or `custom`.
+    pub branch_policy: Option<String>,
 }
 
 impl EnvironmentRow {
-    pub const COLUMNS: &'static str = "id, repo_id, name, created_at, updated_at";
+    pub const COLUMNS: &'static str = "id, repo_id, name, created_at, updated_at, wait_timer, \
+        prevent_self_review, can_admins_bypass, branch_policy";
 }
 
 #[derive(Debug, Clone, FromRow)]
