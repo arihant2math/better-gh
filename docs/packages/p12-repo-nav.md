@@ -1,6 +1,8 @@
 # P12 repo-nav — status
 
-**In progress → integrating.** Branch `bgh/p12-repo-nav`. Scope:
+**Done.** Branch `bgh/p12-repo-nav`, self-integrated (fast-forward) into
+`claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build). Scope:
 `docs/PHASE4_PLAN.md` §P12 (no §5 quick fixes are assigned to P12), plus a
 check that the compare page (`/{o}/{r}/compare/{base}...{head}`) works.
 No migrations (2400–2499 unused).
