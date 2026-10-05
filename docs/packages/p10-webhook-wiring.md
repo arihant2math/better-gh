@@ -1,6 +1,8 @@
 # P10 webhook-wiring — status
 
-**Status: in progress (implementation and tests done; self-integration pending).**
+**Done.** Self-integrated (fast-forward) into `claude/sleepy-cray-9jj0t3` with
+the full gate green (fmt, clippy, `cargo test --workspace`, web
+typecheck/lint/test/build, `api-smoke.sh`, `gh-compat.sh`).
 Branch `bgh/p10-webhook-wiring`. Scope: `docs/PHASE4_PLAN.md` §P10 (no §5
 quick fixes are assigned to P10). Builds on P9's outbox: every new emit is
 a `tx.emit` (durable) except wiki writes, which are git commits and use
