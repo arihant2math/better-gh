@@ -1,15 +1,13 @@
 # Phase 4 fleet (foreman-maintained, branch bgh/foreman only)
 
-Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 14:30 UTC.
+Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 14:47 UTC (integration head 925d4b8).
 
 | Pkg | Session | Status | Integrated |
 |---|---|---|---|
-| P1 P2 P3 P4 P6 P9 P10 P11 P15 | (archived) | done | yes |
+| P1 P2 P3 P4 P6 P9 P10 P11 P12 P13 P15 | (archived) | done | yes |
 | P5 | session_01CmrSgPubAQkvP7yknCbei2 | running (integrating) | – |
 | P7 | session_01XxCeLUQoB3PRQT5RkwZY2g | running | – |
 | P8 | session_01UxVpchkgUm79kpMS3ZosPc | running | – |
-| P12 | session_01GJSxosXbhaii8WVNmBuiSr | running | – |
-| P13 | session_01GPrMHMKbX6RqAPqQjrwpfR | running | – |
 | P14 | session_015oaJ6Zeqc1HcMmbx6Ji8Lx | running | – |
 | P16 | session_01B4DTJATdqW1mSJHmmWb9Wa | running | – |
 | P17 | session_01T1AWjzeSErBpHzQDtZKJ4e | running | – |
