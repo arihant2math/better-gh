@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Core",
+    "id": 1,
+    "node_id": "MDQ6VGVhbTE=",
+    "slug": "core",
+    "description": "Core maintainers",
+    "privacy": "closed",
+    "notification_setting": "notifications_enabled",
+    "url": "https://api.github.com/organizations/9919/team/1",
+    "html_url": "https://github.com/orgs/octo-org/teams/core",
+    "members_url": "https://api.github.com/organizations/9919/team/1/members{/member}",
+    "repositories_url": "https://api.github.com/organizations/9919/team/1/repos",
+    "type": "organization",
+    "organization_id": 9919,
+    "permission": "push",
+    "permissions": {
+      "admin": false,
+      "maintain": false,
+      "push": true,
+      "triage": true,
+      "pull": true
+    },
+    "parent": null
+  }
+]

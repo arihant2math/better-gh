@@ -32,6 +32,7 @@ const settings: SiteSettings = {
   },
   retention: { enabled: true, notifications_days: 150, webhook_payload_days: 30, webhook_delivery_days: 90, activity_days: 0 },
   actions: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
+  privacy: { private_mode: false, allow_anonymous_directory: true, allowed_visibilities: ['public', 'internal', 'private'] },
   markdown: { image_proxy: true },
 };
 
@@ -98,5 +99,23 @@ describe('actions settings section', () => {
   it('defaults to read when the server has no actions section', () => {
     const { actions: _a, ...older } = settings;
     expect(toForm(older as SiteSettings).actions.default_workflow_permissions).toBe('read');
+  });
+});
+
+describe('privacy settings form', () => {
+  it('round-trips the policy', () => {
+    const f = toForm({ ...settings, privacy: { private_mode: true, allow_anonymous_directory: false, allowed_visibilities: ['private', 'public'] } });
+    expect(f.privacy).toEqual({ private_mode: true, anonymous_directory: false, allowed: ['public', 'private'] });
+    expect(toPatch(f, ['privacy']).privacy).toEqual({ private_mode: true, allow_anonymous_directory: false, allowed_visibilities: ['public', 'private'] });
+  });
+
+  it('requires an allowed default visibility', () => {
+    const f = toForm(settings);
+    f.privacy.allowed = [];
+    expect(validate(f)['privacy.allowed']).toMatch(/at least one/);
+    f.privacy.allowed = ['private'];
+    expect(validate(f)['privacy.allowed']).toMatch(/default visibility/);
+    f.repositories.default_visibility = 'private';
+    expect(validate(f)).toEqual({});
   });
 });

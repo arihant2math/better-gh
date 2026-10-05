@@ -10,6 +10,8 @@
 //! * Runners claim queued jobs through [`crate::server`]; the job's
 //!   environment/containers are evaluated at claim time (secrets are only
 //!   decrypted then).
+//! * Jobs calling reusable workflows become `call` rows whose called jobs
+//!   are scheduled as a nested [`Scope`] (see [`crate::reusable`]).
 
 use std::collections::{HashMap, HashSet};
 
@@ -29,8 +31,9 @@ use crate::checks;
 use crate::context::{self, RunInfo};
 use crate::expr::{self, JobStatus, MapContext};
 use crate::models::{JobRow, RunRow, StepState};
-use crate::protocol::JobSpec;
-use crate::workflow::{self, Container, Job, Workflow};
+use crate::protocol::{Annotation, JobSpec};
+use crate::reusable::{self, FileCache, SecretsLayer, Source, StoredCall};
+use crate::workflow::{self, Container, Job, Permissions, Workflow};
 
 /// Default `timeout-minutes` of a job.
 pub const DEFAULT_TIMEOUT_MINUTES: i64 = 360;
@@ -48,6 +51,14 @@ pub struct StoredJob {
     /// takes the site default when the token is minted.
     #[serde(default)]
     pub permissions: Option<crate::workflow::Permissions>,
+    /// Secret layers of the reusable workflow calls leading to this job
+    /// (empty for jobs of the run's own workflow).
+    #[serde(default)]
+    pub secret_layers: Vec<SecretsLayer>,
+    /// `permissions:` of the callers leading to this job (`None`: the
+    /// default); the token gets at most their intersection.
+    #[serde(default)]
+    pub permission_caps: Vec<Option<Permissions>>,
 }
 
 /// Durable "re-evaluate this run" job (used when one run unblocks another).
@@ -432,6 +443,32 @@ pub async fn cancel_run_job(state: AppState, job: CancelRun) -> anyhow::Result<(
     cancel_run(&state, job.run_id, false).await
 }
 
+/// Durable cancellation of one job or call row (job-level concurrency
+/// `cancel-in-progress`, or a newer pending row replacing it).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelJob {
+    pub job_id: i64,
+}
+
+impl JobPayload for CancelJob {
+    const KIND: &'static str = "actions.cancel_job";
+}
+
+pub async fn cancel_job_job(state: AppState, job: CancelJob) -> anyhow::Result<()> {
+    let mut tx = Tx::begin(&state).await?;
+    let row: Option<JobRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM actions_jobs WHERE id = $1 AND status <> 'completed' FOR UPDATE",
+        JobRow::COLUMNS
+    ))
+    .bind(job.job_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else { return Ok(()) };
+    cancel_job_row(&mut tx, &mut [], row.id).await?;
+    tx.commit().await?;
+    advance_run(&state, row.run_id).await
+}
+
 // ---------------------------------------------------------------------------
 // Expression helpers
 // ---------------------------------------------------------------------------
@@ -542,6 +579,133 @@ async fn load_run_data(state: &AppState, run: &RunRow) -> anyhow::Result<Option<
     }))
 }
 
+/// A workflow scheduled within a run: the run's own workflow, or a reusable
+/// workflow called by an in-progress `call` row.
+struct Scope {
+    /// Job key prefix of the scope's jobs (`""` for the run's workflow).
+    prefix: String,
+    /// Name prefix of the scope's jobs (`"Build / "`).
+    name_prefix: String,
+    depth: u32,
+    def: Workflow,
+    /// File the workflow was read from (annotations of call errors).
+    path: String,
+    inputs: Value,
+    /// Where `./` calls of this workflow resolve.
+    source: Source,
+    secret_layers: Vec<SecretsLayer>,
+    permission_caps: Vec<Option<Permissions>>,
+    /// The `call` row (`None` for the run's workflow).
+    call_id: Option<i64>,
+    /// The run or one of the calls leading here was cancelled.
+    cancelled: bool,
+    /// `github.job_workflow_sha` of called jobs.
+    job_workflow_sha: Option<String>,
+}
+
+impl Scope {
+    fn top(run: &RunRow, data: &RunData, def: Workflow) -> Scope {
+        Scope {
+            prefix: String::new(),
+            name_prefix: String::new(),
+            depth: 0,
+            def,
+            path: data.workflow_path.clone(),
+            inputs: run.inputs.clone().unwrap_or_else(|| json!({})),
+            source: Source {
+                repo_id: data.repo.id,
+                full_name: format!("{}/{}", data.owner.login, data.repo.name),
+                git_ref: run.git_ref.clone(),
+                sha: run.head_sha.clone(),
+            },
+            secret_layers: Vec::new(),
+            permission_caps: Vec::new(),
+            call_id: None,
+            cancelled: run.cancel_requested,
+            job_workflow_sha: None,
+        }
+    }
+
+    fn of_call(run: &RunRow, row: &JobRow) -> Option<Scope> {
+        let call: StoredCall = serde_json::from_value(row.spec.clone()?)
+            .map_err(|err| tracing::error!(job_id = row.id, ?err, "unreadable call row"))
+            .ok()?;
+        Some(Scope {
+            prefix: call.prefix,
+            name_prefix: call.name_prefix,
+            depth: call.depth,
+            def: call.def,
+            path: call.path,
+            inputs: call.inputs,
+            job_workflow_sha: Some(call.source.sha.clone()),
+            source: call.source,
+            secret_layers: call.secrets,
+            permission_caps: call.permission_caps,
+            call_id: Some(row.id),
+            cancelled: run.cancel_requested || row.cancel_requested,
+        })
+    }
+
+    fn key(&self, inner: &str) -> String {
+        format!("{}{inner}", self.prefix)
+    }
+
+    /// Is `job_key` a direct job of this scope?
+    fn owns(&self, job_key: &str) -> bool {
+        job_key
+            .strip_prefix(self.prefix.as_str())
+            .is_some_and(|rest| !rest.contains('/'))
+    }
+
+    /// `needs`/`jobs`-style context: `{key: {result, outputs}}` of `keys`.
+    fn results(&self, keys: &[String], rows: &[JobRow]) -> Value {
+        let mut out = Map::new();
+        for n in keys {
+            let full = self.key(n);
+            let mine: Vec<&JobRow> = rows.iter().filter(|r| r.job_key == full).collect();
+            let mut outputs = Map::new();
+            for r in &mine {
+                if let Value::Object(o) = &r.outputs {
+                    for (k, v) in o {
+                        if !v.as_str().is_some_and(str::is_empty) || !outputs.contains_key(k) {
+                            outputs.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+            out.insert(
+                n.clone(),
+                json!({"result": aggregate_result(&mine), "outputs": outputs}),
+            );
+        }
+        Value::Object(out)
+    }
+}
+
+/// The run's workflow plus the scopes of its in-progress calls.
+fn scopes_of(top: &Scope, run: &RunRow, rows: &[JobRow]) -> Vec<Scope> {
+    let mut out = vec![Scope {
+        prefix: top.prefix.clone(),
+        name_prefix: top.name_prefix.clone(),
+        depth: top.depth,
+        def: top.def.clone(),
+        path: top.path.clone(),
+        inputs: top.inputs.clone(),
+        source: top.source.clone(),
+        secret_layers: Vec::new(),
+        permission_caps: Vec::new(),
+        call_id: None,
+        cancelled: top.cancelled,
+        job_workflow_sha: None,
+    }];
+    out.extend(
+        rows.iter()
+            .filter(|r| r.is_call() && r.status == "in_progress")
+            .filter_map(|r| Scope::of_call(run, r)),
+    );
+    out
+}
+
 /// Result of a set of job rows (one job key, maybe a matrix).
 fn aggregate_result(rows: &[&JobRow]) -> &'static str {
     let concl = |c: &str| rows.iter().any(|r| r.conclusion.as_deref() == Some(c));
@@ -562,28 +726,6 @@ fn aggregate_result(rows: &[&JobRow]) -> &'static str {
     } else {
         "success"
     }
-}
-
-fn needs_context(job: &Job, rows: &[JobRow]) -> Value {
-    let mut needs = Map::new();
-    for n in &job.needs {
-        let mine: Vec<&JobRow> = rows.iter().filter(|r| &r.job_key == n).collect();
-        let mut outputs = Map::new();
-        for r in &mine {
-            if let Value::Object(o) = &r.outputs {
-                for (k, v) in o {
-                    if !v.as_str().is_some_and(str::is_empty) || !outputs.contains_key(k) {
-                        outputs.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-        }
-        needs.insert(
-            n.clone(),
-            json!({"result": aggregate_result(&mine), "outputs": outputs}),
-        );
-    }
-    Value::Object(needs)
 }
 
 /// Re-evaluate a run: materialize ready jobs, enforce strategy, finish.
@@ -622,95 +764,63 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
     .await?;
 
     let order = def.job_order();
+    let top = Scope::top(&run, &data, def);
+    let mut cache = FileCache::new();
     loop {
         let mut progressed = false;
-        for key in &order {
-            if rows.iter().any(|r| &r.job_key == key) {
-                continue;
+        let scopes = scopes_of(&top, &run, &rows);
+        for scope in &scopes {
+            for key in scope.def.job_order() {
+                if rows.iter().any(|r| r.job_key == scope.key(&key)) {
+                    continue;
+                }
+                let job = &scope.def.jobs[&key];
+                let ready = job.needs.iter().all(|n| {
+                    let full = scope.key(n);
+                    let mine: Vec<&JobRow> = rows.iter().filter(|r| r.job_key == full).collect();
+                    !mine.is_empty() && mine.iter().all(|r| r.status == "completed")
+                });
+                if !ready {
+                    continue;
+                }
+                let new_rows = materialize(
+                    state, &mut tx, &run, &data, scope, &key, job, &rows, &mut cache,
+                )
+                .await?;
+                rows.extend(new_rows);
+                progressed = true;
             }
-            let job = &def.jobs[key];
-            let ready = job.needs.iter().all(|n| {
-                let mine: Vec<&JobRow> = rows.iter().filter(|r| &r.job_key == n).collect();
-                !mine.is_empty() && mine.iter().all(|r| r.status == "completed")
-            });
-            if !ready {
+        }
+        // Calls whose jobs all completed complete themselves.
+        for scope in &scopes {
+            let Some(call_id) = scope.call_id else {
                 continue;
+            };
+            let all_materialized = scope
+                .def
+                .jobs
+                .keys()
+                .all(|k| rows.iter().any(|r| r.job_key == scope.key(k)));
+            if all_materialized
+                && rows
+                    .iter()
+                    .filter(|r| scope.owns(&r.job_key))
+                    .all(|r| r.status == "completed")
+            {
+                finish_call(state, &mut tx, &run, &data, scope, call_id, &mut rows).await?;
+                progressed = true;
             }
-            let new_rows = materialize(state, &mut tx, &run, &data, &def, key, job, &rows).await?;
-            rows.extend(new_rows);
-            progressed = true;
+        }
+        for scope in &scopes {
+            progressed |= apply_strategy(&mut tx, scope, &mut rows).await?;
         }
         if !progressed {
             break;
         }
     }
 
-    // Jobs completed in this run free their concurrency groups; jobs
-    // waiting for a group are left to the group (not max-parallel).
+    // Jobs completed in this run free their concurrency groups.
     release_job_groups(state, &mut tx, &run).await?;
-    let group_pending: HashSet<i64> = sqlx::query_scalar(
-        "SELECT id FROM actions_jobs
-          WHERE run_id = $1 AND run_attempt = $2 AND status = 'pending'
-            AND concurrency_group IS NOT NULL",
-    )
-    .bind(run.id)
-    .bind(run.run_attempt)
-    .fetch_all(&mut *tx)
-    .await?
-    .into_iter()
-    .collect();
-
-    // fail-fast and max-parallel, per job key.
-    for key in &order {
-        let job = &def.jobs[key];
-        let strategy = job.strategy.clone().unwrap_or_default();
-        let ctx = MapContext::new();
-        let has_matrix = strategy.matrix.is_some();
-        let fail_fast = eval_bool(&strategy.fail_fast, &ctx, true);
-        let failed = rows.iter().any(|r| {
-            &r.job_key == key && r.conclusion.as_deref() == Some("failure") && !r.continue_on_error
-        });
-        if has_matrix && fail_fast && failed {
-            let ids: Vec<i64> = rows
-                .iter()
-                .filter(|r| &r.job_key == key && r.status != "completed")
-                .map(|r| r.id)
-                .collect();
-            for id in ids {
-                cancel_job_row(&mut tx, &mut rows, id).await?;
-            }
-        }
-        if let Some(max) = eval_i64(&strategy.max_parallel, &ctx).filter(|m| *m > 0) {
-            let active = rows
-                .iter()
-                .filter(|r| {
-                    &r.job_key == key && matches!(r.status.as_str(), "queued" | "in_progress")
-                })
-                .count() as i64;
-            let promote: Vec<i64> = rows
-                .iter()
-                .filter(|r| {
-                    &r.job_key == key && r.status == "pending" && !group_pending.contains(&r.id)
-                })
-                .take((max - active).max(0) as usize)
-                .map(|r| r.id)
-                .collect();
-            for id in promote {
-                let row: JobRow = sqlx::query_as(&format!(
-                    "UPDATE actions_jobs SET status = 'queued', updated_at = now()
-                      WHERE id = $1 RETURNING {}",
-                    JobRow::COLUMNS
-                ))
-                .bind(id)
-                .fetch_one(&mut *tx)
-                .await?;
-                sync_job(&mut tx, &row, SyncAction::Update).await?;
-                if let Some(r) = rows.iter_mut().find(|r| r.id == id) {
-                    *r = row;
-                }
-            }
-        }
-    }
 
     let all_materialized = order.iter().all(|k| rows.iter().any(|r| &r.job_key == k));
     let all_done = rows.iter().all(|r| r.status == "completed");
@@ -729,8 +839,9 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
         finish_run(state, &mut tx, &mut run, conclusion).await?;
     } else {
         let started = rows.iter().any(|r| {
-            r.status == "in_progress"
-                || (r.status == "completed" && r.conclusion.as_deref() != Some("skipped"))
+            !r.is_call()
+                && (r.status == "in_progress"
+                    || (r.status == "completed" && r.conclusion.as_deref() != Some("skipped")))
         });
         let status = if started { "in_progress" } else { "queued" };
         if run.status != status {
@@ -753,6 +864,149 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
         }
     }
     tx.commit().await?;
+    Ok(())
+}
+
+/// fail-fast and max-parallel (and job-level concurrency waits) for the
+/// jobs of one scope. True when a row changed.
+async fn apply_strategy(tx: &mut Tx, scope: &Scope, rows: &mut [JobRow]) -> anyhow::Result<bool> {
+    let mut changed = false;
+    for key in scope.def.job_order() {
+        let full = scope.key(&key);
+        let job = &scope.def.jobs[&key];
+        let strategy = job.strategy.clone().unwrap_or_default();
+        let ctx = MapContext::new();
+        let has_matrix = strategy.matrix.is_some();
+        let fail_fast = eval_bool(&strategy.fail_fast, &ctx, true);
+        let failed = rows.iter().any(|r| {
+            r.job_key == full && r.conclusion.as_deref() == Some("failure") && !r.continue_on_error
+        });
+        if has_matrix && fail_fast && failed {
+            let ids: Vec<i64> = rows
+                .iter()
+                .filter(|r| r.job_key == full && r.status != "completed" && !r.cancel_requested)
+                .map(|r| r.id)
+                .collect();
+            for id in ids {
+                cancel_job_row(tx, rows, id).await?;
+                changed = true;
+            }
+        }
+        let max = eval_i64(&strategy.max_parallel, &ctx).filter(|m| *m > 0);
+        let active = rows
+            .iter()
+            .filter(|r| r.job_key == full && matches!(r.status.as_str(), "queued" | "in_progress"))
+            .count() as i64;
+        let mut room = max.map(|m| (m - active).max(0));
+        let pending: Vec<(i64, bool, Option<String>)> = rows
+            .iter()
+            .filter(|r| r.job_key == full && r.status == "pending")
+            .map(|r| (r.id, r.is_call(), r.concurrency_group.clone()))
+            .collect();
+        for (id, is_call, group) in pending {
+            if room == Some(0) {
+                break;
+            }
+            if let Some(group) = &group
+                && group_busy(tx, scope_repo(rows, id), group, id).await?
+            {
+                continue;
+            }
+            let row: JobRow = sqlx::query_as(&format!(
+                "UPDATE actions_jobs SET status = $2, updated_at = now(),
+                        started_at = CASE WHEN $3 THEN now() ELSE started_at END
+                  WHERE id = $1 RETURNING {}",
+                JobRow::COLUMNS
+            ))
+            .bind(id)
+            .bind(if is_call { "in_progress" } else { "queued" })
+            .bind(is_call)
+            .fetch_one(&mut **tx)
+            .await?;
+            if !is_call {
+                sync_job(tx, &row, SyncAction::Update).await?;
+            }
+            if let Some(r) = rows.iter_mut().find(|r| r.id == id) {
+                *r = row;
+            }
+            room = room.map(|r| r - 1);
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
+fn scope_repo(rows: &[JobRow], id: i64) -> i64 {
+    rows.iter()
+        .find(|r| r.id == id)
+        .map(|r| r.repo_id)
+        .unwrap_or_default()
+}
+
+/// Is a job-level concurrency group held by another active row?
+async fn group_busy(
+    conn: &mut PgConnection,
+    repo_id: i64,
+    group: &str,
+    except: i64,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM actions_jobs
+                         WHERE repo_id = $1 AND concurrency_group = $2 AND id <> $3
+                           AND status IN ('queued', 'in_progress'))",
+    )
+    .bind(repo_id)
+    .bind(group)
+    .bind(except)
+    .fetch_one(conn)
+    .await
+}
+
+/// Complete a call row: result of its jobs and the called workflow's
+/// outputs (its concurrency group is released by [`release_job_groups`]).
+async fn finish_call(
+    state: &AppState,
+    tx: &mut Tx,
+    run: &RunRow,
+    data: &RunData,
+    scope: &Scope,
+    call_id: i64,
+    rows: &mut [JobRow],
+) -> anyhow::Result<()> {
+    let mine: Vec<&JobRow> = rows.iter().filter(|r| scope.owns(&r.job_key)).collect();
+    let conclusion = match aggregate_result(&mine) {
+        "failure" => "failure",
+        _ if scope.cancelled => "cancelled",
+        other => other,
+    };
+    let keys: Vec<String> = scope.def.jobs.keys().cloned().collect();
+    let info = RunInfo {
+        repo: &data.repo,
+        owner: &data.owner,
+        actor: data.actor.as_ref(),
+        triggering_actor: data.triggering.as_ref(),
+        workflow_path: &data.workflow_path,
+    };
+    let ctx = MapContext::new()
+        .with("github", context::github_context(state, run, &info, None))
+        .with("inputs", scope.inputs.clone())
+        .with("vars", Value::Object(data.vars.clone()))
+        .with("jobs", scope.results(&keys, rows));
+    let outputs = reusable::outputs(&scope.def, &ctx);
+    let row: JobRow = sqlx::query_as(&format!(
+        "UPDATE actions_jobs SET status = 'completed', conclusion = $2, outputs = $3,
+                completed_at = now(), updated_at = now()
+          WHERE id = $1 RETURNING {}",
+        JobRow::COLUMNS
+    ))
+    .bind(call_id)
+    .bind(conclusion)
+    .bind(Value::Object(outputs))
+    .fetch_one(&mut **tx)
+    .await?;
+    if let Some(r) = rows.iter_mut().find(|r| r.id == call_id) {
+        *r = row;
+    }
     Ok(())
 }
 
@@ -812,9 +1066,9 @@ async fn finish_run(
     Ok(())
 }
 
-/// Cancel a not-yet-finished job row: queued/pending ones complete as
+/// Cancel one not-yet-finished row: queued/pending ones complete as
 /// cancelled at once, running ones are asked to stop.
-async fn cancel_job_row(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Result<()> {
+async fn cancel_one(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Result<JobRow> {
     let row: JobRow = sqlx::query_as(&format!(
         "UPDATE actions_jobs SET
              cancel_requested = true,
@@ -828,18 +1082,53 @@ async fn cancel_job_row(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Re
     .bind(id)
     .fetch_one(&mut **tx)
     .await?;
-    if row.status == "completed" && row.conclusion.as_deref() == Some("cancelled") {
-        checks::complete_run(tx, row.check_run_id, "cancelled", None, &[]).await?;
-        if let Some(ev) = checks::check_run_event(row.repo_id, row.check_run_id, "completed", None)
-        {
+    if !row.is_call() {
+        if row.status == "completed" && row.conclusion.as_deref() == Some("cancelled") {
+            checks::complete_run(tx, row.check_run_id, "cancelled", None, &[]).await?;
+            if let Some(ev) =
+                checks::check_run_event(row.repo_id, row.check_run_id, "completed", None)
+            {
+                tx.emit(ev);
+            }
+            let ev = job_event(tx, &row, "completed").await?;
             tx.emit(ev);
         }
-        let ev = job_event(tx, &row, "completed").await?;
-        tx.emit(ev);
+        sync_job(tx, &row, SyncAction::Update).await?;
     }
-    sync_job(tx, &row, SyncAction::Update).await?;
     if let Some(r) = rows.iter_mut().find(|r| r.id == id) {
-        *r = row;
+        *r = row.clone();
+    }
+    Ok(row)
+}
+
+/// Cancel a not-yet-finished row; cancelling a call also cancels every job
+/// of the called workflow (and the calls nested in it).
+async fn cancel_job_row(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Result<()> {
+    let row = cancel_one(tx, rows, id).await?;
+    if !row.is_call() {
+        return Ok(());
+    }
+    let Some(prefix) = row
+        .spec
+        .as_ref()
+        .and_then(|s| s.get("prefix"))
+        .and_then(|p| p.as_str())
+    else {
+        return Ok(());
+    };
+    let nested: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM actions_jobs
+          WHERE run_id = $1 AND run_attempt = $2 AND left(job_key, length($3)) = $3
+            AND status <> 'completed' AND NOT cancel_requested
+          ORDER BY id",
+    )
+    .bind(row.run_id)
+    .bind(row.run_attempt)
+    .bind(prefix)
+    .fetch_all(&mut **tx)
+    .await?;
+    for id in nested {
+        cancel_one(tx, rows, id).await?;
     }
     Ok(())
 }
@@ -874,16 +1163,18 @@ pub fn initial_steps(steps: &[workflow::Step]) -> Vec<StepState> {
     out
 }
 
+/// Materialize the rows of job `key` of `scope` (its `needs` completed).
 #[allow(clippy::too_many_arguments)]
 async fn materialize(
     state: &AppState,
     tx: &mut Tx,
     run: &RunRow,
     data: &RunData,
-    def: &Workflow,
+    scope: &Scope,
     key: &str,
     job: &Job,
     rows: &[JobRow],
+    cache: &mut FileCache,
 ) -> anyhow::Result<Vec<JobRow>> {
     let info = RunInfo {
         repo: &data.repo,
@@ -892,9 +1183,13 @@ async fn materialize(
         triggering_actor: data.triggering.as_ref(),
         workflow_path: &data.workflow_path,
     };
-    let github = context::github_context(state, run, &info, Some(key));
-    let needs = needs_context(job, rows);
-    let inputs = run.inputs.clone().unwrap_or_else(|| json!({}));
+    let mut github = context::github_context(state, run, &info, Some(key));
+    if let Some(sha) = &scope.job_workflow_sha {
+        github["job_workflow_sha"] = json!(sha);
+    }
+    let full_key = scope.key(key);
+    let needs = scope.results(&job.needs, rows);
+    let inputs = scope.inputs.clone();
     let any_failed = needs
         .as_object()
         .map(|o| o.values().any(|v| v["result"] == "failure"))
@@ -903,7 +1198,7 @@ async fn materialize(
         .as_object()
         .map(|o| o.values().any(|v| v["result"] != "success"))
         .unwrap_or(false);
-    let status = if run.cancel_requested {
+    let status = if scope.cancelled {
         JobStatus::Cancelled
     } else if any_failed {
         JobStatus::Failure
@@ -926,13 +1221,13 @@ async fn materialize(
     } else if any_unsuccessful && !any_failed && explicit_status {
         // Evaluate with success() forced false: treat as cancelled-ish only
         // when the run was cancelled; otherwise success() must be false.
-        let ctx = base_ctx.clone().with_status(if run.cancel_requested {
+        let ctx = base_ctx.clone().with_status(if scope.cancelled {
             JobStatus::Cancelled
         } else {
             JobStatus::Failure
         });
         let mut ok = expr::evaluate_condition(&cond, &ctx).unwrap_or(false);
-        if !run.cancel_requested && cond.to_ascii_lowercase().contains("failure()") {
+        if !scope.cancelled && cond.to_ascii_lowercase().contains("failure()") {
             // failure() would be wrongly true: re-check with only always().
             ok = expr::evaluate_condition(
                 &cond.to_ascii_lowercase().replace("failure()", "false"),
@@ -945,7 +1240,7 @@ async fn materialize(
         match expr::evaluate_condition(&cond, &base_ctx) {
             Ok(b) => b,
             Err(err) => {
-                tracing::warn!(run_id = run.id, job = key, %err, "job if: evaluation failed");
+                tracing::warn!(run_id = run.id, job = %full_key, %err, "job if: evaluation failed");
                 false
             }
         }
@@ -958,8 +1253,8 @@ async fn materialize(
             tx,
             run,
             data,
-            key,
-            &name,
+            &full_key,
+            &format!("{}{name}", scope.name_prefix),
             None,
             "completed",
             Some("skipped"),
@@ -970,37 +1265,6 @@ async fn materialize(
             &[],
         )
         .await?;
-        return Ok(vec![row]);
-    }
-
-    if job.is_reusable_call() {
-        let row = insert_job(
-            tx,
-            run,
-            data,
-            key,
-            &display_name,
-            None,
-            "completed",
-            Some("failure"),
-            &[],
-            None,
-            false,
-            DEFAULT_TIMEOUT_MINUTES,
-            &[],
-        )
-        .await?;
-        crate::logs::append(
-            state,
-            row.id,
-            1,
-            &format!(
-                "##[error]Reusable workflow calls (`uses: {}`) are not supported by this server.",
-                job.uses.as_deref().unwrap_or_default()
-            ),
-        )
-        .await
-        .ok();
         return Ok(vec![row]);
     }
 
@@ -1017,30 +1281,18 @@ async fn materialize(
                 Ok(c) if c.is_empty() => vec![],
                 Ok(c) => c.into_iter().map(Some).collect(),
                 Err(err) => {
-                    let row = insert_job(
+                    let row = fail_job(
+                        state,
                         tx,
                         run,
                         data,
-                        key,
-                        &display_name,
+                        &full_key,
+                        &format!("{}{display_name}", scope.name_prefix),
                         None,
-                        "completed",
-                        Some("failure"),
-                        &[],
+                        &format!("Invalid matrix: {err}"),
                         None,
-                        false,
-                        DEFAULT_TIMEOUT_MINUTES,
-                        &[],
                     )
                     .await?;
-                    crate::logs::append(
-                        state,
-                        row.id,
-                        1,
-                        &format!("##[error]Invalid matrix: {err}"),
-                    )
-                    .await
-                    .ok();
                     return Ok(vec![row]);
                 }
             }
@@ -1051,8 +1303,8 @@ async fn materialize(
             tx,
             run,
             data,
-            key,
-            &display_name,
+            &full_key,
+            &format!("{}{display_name}", scope.name_prefix),
             None,
             "completed",
             Some("skipped"),
@@ -1066,9 +1318,10 @@ async fn materialize(
         return Ok(vec![row]);
     }
     let total = combos.len();
+    let has_matrix = strategy.matrix.is_some();
     let max_parallel = eval_i64(&strategy.max_parallel, &base_ctx).filter(|m| *m > 0);
     let fail_fast = eval_bool(&strategy.fail_fast, &base_ctx, true);
-    let mut out = Vec::with_capacity(total);
+    let mut out: Vec<JobRow> = Vec::with_capacity(total);
     for (index, combo) in combos.into_iter().enumerate() {
         let matrix = combo
             .clone()
@@ -1091,6 +1344,34 @@ async fn materialize(
         {
             name = format!("{name} ({})", matrix_suffix(m));
         }
+        let name = format!("{}{name}", scope.name_prefix);
+        let active_here = out
+            .iter()
+            .filter(|r| matches!(r.status.as_str(), "queued" | "in_progress"))
+            .count() as i64;
+        let over_limit = max_parallel.is_some_and(|m| active_here >= m);
+
+        if let Some(uses) = &job.uses {
+            let call = CallSite {
+                scope,
+                key,
+                job,
+                uses,
+                ctx: &ctx,
+                name: &name,
+                combo: combo.clone(),
+                prefix: if has_matrix {
+                    format!("{full_key}.{index}/")
+                } else {
+                    format!("{full_key}/")
+                },
+            };
+            let row =
+                materialize_call(state, tx, run, data, &call, over_limit, rows, cache).await?;
+            out.push(row);
+            continue;
+        }
+
         let labels = labels_of(&expr::evaluate_value(&job.runs_on, &ctx).unwrap_or(Value::Null));
         let timeout = eval_i64(&job.timeout_minutes, &ctx)
             .filter(|t| *t > 0)
@@ -1104,6 +1385,7 @@ async fn materialize(
                 _ => None,
             }
         });
+        let def = &scope.def;
         let defaults = job
             .defaults
             .as_ref()
@@ -1124,7 +1406,7 @@ async fn materialize(
             run_id: run.id,
             run_number: run.run_number,
             run_attempt: run.run_attempt,
-            job_key: key.to_string(),
+            job_key: full_key.clone(),
             name: name.clone(),
             workflow_name: run.name.clone(),
             workflow_path: data.workflow_path.clone(),
@@ -1158,21 +1440,16 @@ async fn materialize(
             container: job.container.clone(),
             services: job.services.clone(),
             permissions: job.permissions.clone().or_else(|| def.permissions.clone()),
+            secret_layers: scope.secret_layers.clone(),
+            permission_caps: scope.permission_caps.clone(),
         };
-        let queued_here = out
-            .iter()
-            .filter(|r: &&JobRow| r.status == "queued")
-            .count() as i64;
-        let status = match max_parallel {
-            Some(m) if queued_here >= m => "pending",
-            _ => "queued",
-        };
+        let status = if over_limit { "pending" } else { "queued" };
         let steps = initial_steps(&job.steps);
         let mut row = insert_job(
             tx,
             run,
             data,
-            key,
+            &full_key,
             &name,
             combo.map(Value::Object),
             status,
@@ -1194,6 +1471,248 @@ async fn materialize(
         out.push(row);
     }
     Ok(out)
+}
+
+/// One matrix instance of a job that calls a reusable workflow.
+struct CallSite<'a> {
+    scope: &'a Scope,
+    key: &'a str,
+    job: &'a Job,
+    uses: &'a str,
+    /// The caller's context (github, needs, inputs, vars, matrix, strategy).
+    ctx: &'a MapContext,
+    /// Full display name (`<scope name prefix><caller name>`).
+    name: &'a str,
+    combo: Option<Map<String, Value>>,
+    /// Key prefix of the called jobs.
+    prefix: String,
+}
+
+/// Resolve and validate a call; `Err(msg)` fails the calling job.
+async fn prepare_call(
+    state: &AppState,
+    tx: &mut Tx,
+    data: &RunData,
+    call: &CallSite<'_>,
+    rows: &[JobRow],
+    cache: &mut FileCache,
+) -> anyhow::Result<Result<StoredCall, String>> {
+    let scope = call.scope;
+    if scope.depth + 1 > reusable::MAX_DEPTH {
+        return Ok(Err(format!(
+            "error parsing called workflow \"{}\": job \"{}\" calls a reusable workflow nested deeper than the maximum of {} levels",
+            call.uses,
+            call.key,
+            reusable::MAX_DEPTH
+        )));
+    }
+    let resolved =
+        match reusable::resolve(state, tx, cache, &data.repo, &scope.source, call.uses).await? {
+            Ok(r) => r,
+            Err(e) => return Ok(Err(e)),
+        };
+    let mut unique: HashSet<String> = rows
+        .iter()
+        .filter(|r| r.is_call())
+        .filter_map(|r| {
+            r.spec
+                .as_ref()?
+                .get("workflow_ref")?
+                .as_str()
+                .map(String::from)
+        })
+        .collect();
+    unique.insert(resolved.workflow_ref.clone());
+    if unique.len() > reusable::MAX_UNIQUE_WORKFLOWS {
+        return Ok(Err(format!(
+            "error parsing called workflow \"{}\": a run may call at most {} unique reusable workflows",
+            call.uses,
+            reusable::MAX_UNIQUE_WORKFLOWS
+        )));
+    }
+    let mut with = IndexMap::new();
+    for (k, v) in &call.job.with {
+        match expr::evaluate_value(v, call.ctx) {
+            Ok(v) => {
+                with.insert(k.clone(), v);
+            }
+            Err(e) => return Ok(Err(format!("Invalid input, {k}: {e}"))),
+        }
+    }
+    let inputs = match reusable::typed_inputs(&resolved.def, &with) {
+        Ok(i) => i,
+        Err(e) => return Ok(Err(e)),
+    };
+    let secrets_ctx: Map<String, Value> = ["matrix", "needs", "inputs", "strategy"]
+        .into_iter()
+        .filter_map(|k| Some((k.to_string(), call.ctx.contexts.get(k)?.clone())))
+        .collect();
+    let layer = match reusable::secrets_layer(&resolved.def, call.job.secrets.as_ref(), secrets_ctx)
+    {
+        Ok(l) => l,
+        Err(e) => return Ok(Err(e)),
+    };
+    let mut secrets = scope.secret_layers.clone();
+    secrets.push(layer);
+    let mut permission_caps = scope.permission_caps.clone();
+    permission_caps.push(
+        call.job
+            .permissions
+            .clone()
+            .or_else(|| scope.def.permissions.clone()),
+    );
+    Ok(Ok(StoredCall {
+        uses: call.uses.to_string(),
+        workflow_ref: resolved.workflow_ref,
+        path: resolved.path,
+        source: resolved.source,
+        prefix: call.prefix.clone(),
+        name_prefix: format!("{} / ", call.name),
+        depth: scope.depth + 1,
+        def: resolved.def,
+        inputs,
+        secrets,
+        permission_caps,
+    }))
+}
+
+/// Insert the `call` row of a calling job (or a failed job when the call
+/// is invalid).
+#[allow(clippy::too_many_arguments)]
+async fn materialize_call(
+    state: &AppState,
+    tx: &mut Tx,
+    run: &RunRow,
+    data: &RunData,
+    call: &CallSite<'_>,
+    over_limit: bool,
+    rows: &[JobRow],
+    cache: &mut FileCache,
+) -> anyhow::Result<JobRow> {
+    let full_key = call.scope.key(call.key);
+    let stored = match prepare_call(state, tx, data, call, rows, cache).await? {
+        Ok(s) => s,
+        Err(msg) => {
+            return fail_job(
+                state,
+                tx,
+                run,
+                data,
+                &full_key,
+                call.name,
+                call.combo.clone().map(Value::Object),
+                &msg,
+                Some(&call.scope.path),
+            )
+            .await;
+        }
+    };
+    // Job-level concurrency of the calling job.
+    let mut status = if over_limit { "pending" } else { "in_progress" };
+    let mut group = None;
+    if let Some(conc) = &call.job.concurrency {
+        let g = expr::interpolate(&conc.group, call.ctx).unwrap_or_else(|_| conc.group.clone());
+        if !g.is_empty() {
+            lock_job_group(tx, run.repo_id, &g).await?;
+            let cancel_in_progress = eval_bool(&conc.cancel_in_progress, call.ctx, false);
+            let others: Vec<(i64, String)> = sqlx::query_as(
+                "SELECT id, status FROM actions_jobs
+                  WHERE repo_id = $1 AND concurrency_group = $2 AND status <> 'completed'
+                  ORDER BY id",
+            )
+            .bind(run.repo_id)
+            .bind(&g)
+            .fetch_all(&mut **tx)
+            .await?;
+            // Like run concurrency: at most one pending row per group (the
+            // newest); cancel-in-progress also cancels the active one.
+            for (id, s) in &others {
+                if cancel_in_progress || s == "pending" {
+                    tx.enqueue(&CancelJob { job_id: *id }).await?;
+                }
+            }
+            if !cancel_in_progress && others.iter().any(|(_, s)| s != "pending") {
+                status = "pending";
+            }
+            group = Some(g);
+        }
+    }
+    let row: JobRow = sqlx::query_as(&format!(
+        "INSERT INTO actions_jobs (run_id, repo_id, run_attempt, job_key, name, matrix, status,
+                                   head_sha, head_branch, spec, kind, concurrency_group,
+                                   started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'call', $11,
+                 CASE WHEN $7 = 'in_progress' THEN now() END)
+         RETURNING {}",
+        JobRow::COLUMNS
+    ))
+    .bind(run.id)
+    .bind(run.repo_id)
+    .bind(run.run_attempt)
+    .bind(&full_key)
+    .bind(call.name)
+    .bind(call.combo.clone().map(Value::Object))
+    .bind(status)
+    .bind(&run.head_sha)
+    .bind(&run.head_branch)
+    .bind(serde_json::to_value(&stored)?)
+    .bind(&group)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(row)
+}
+
+/// Insert a job that failed before it could run, with the error as its log
+/// and as a check run annotation.
+#[allow(clippy::too_many_arguments)]
+async fn fail_job(
+    state: &AppState,
+    tx: &mut Tx,
+    run: &RunRow,
+    data: &RunData,
+    key: &str,
+    name: &str,
+    matrix: Option<Value>,
+    message: &str,
+    path: Option<&str>,
+) -> anyhow::Result<JobRow> {
+    let row = insert_job(
+        tx,
+        run,
+        data,
+        key,
+        name,
+        matrix,
+        "completed",
+        Some("failure"),
+        &[],
+        None,
+        false,
+        DEFAULT_TIMEOUT_MINUTES,
+        &[],
+    )
+    .await?;
+    if let Some(path) = path {
+        let annotation = Annotation {
+            level: "failure".into(),
+            message: message.to_string(),
+            title: Some("Invalid workflow file".into()),
+            path: Some(path.to_string()),
+            ..Default::default()
+        };
+        checks::complete_run(
+            tx,
+            row.check_run_id,
+            "failure",
+            None,
+            std::slice::from_ref(&annotation),
+        )
+        .await?;
+    }
+    crate::logs::append(state, row.id, 1, &format!("##[error]{message}"))
+        .await
+        .ok();
+    Ok(row)
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,7 +1794,9 @@ async fn release_job_groups(_state: &AppState, tx: &mut Tx, run: &RunRow) -> any
     for group in groups {
         lock_job_group(tx, run.repo_id, &group).await?;
         let next: Option<JobRow> = sqlx::query_as(&format!(
-            "UPDATE actions_jobs SET status = 'queued', updated_at = now()
+            "UPDATE actions_jobs SET updated_at = now(),
+                    status = CASE WHEN kind = 'call' THEN 'in_progress' ELSE 'queued' END,
+                    started_at = CASE WHEN kind = 'call' THEN now() ELSE started_at END
               WHERE id = (SELECT id FROM actions_jobs
                            WHERE repo_id = $1 AND concurrency_group = $2 AND status = 'pending'
                            ORDER BY id LIMIT 1)
@@ -1289,40 +1810,23 @@ async fn release_job_groups(_state: &AppState, tx: &mut Tx, run: &RunRow) -> any
         .bind(&group)
         .fetch_optional(&mut **tx)
         .await?;
-        if let Some(next) = next {
-            sync_job(tx, &next, SyncAction::Update).await?;
-            let ev = job_event(tx, &next, "queued").await?;
-            tx.emit(ev);
+        match next {
+            // A reusable workflow call: its run materializes the called jobs.
+            Some(next) if next.is_call() => {
+                tx.enqueue(&AdvanceRun {
+                    run_id: next.run_id,
+                })
+                .await?;
+            }
+            Some(next) => {
+                sync_job(tx, &next, SyncAction::Update).await?;
+                let ev = job_event(tx, &next, "queued").await?;
+                tx.emit(ev);
+            }
+            None => {}
         }
     }
     Ok(())
-}
-
-/// Durable cancellation of one job (job concurrency).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CancelJob {
-    pub job_id: i64,
-}
-
-impl JobPayload for CancelJob {
-    const KIND: &'static str = "actions.cancel_job";
-}
-
-pub async fn cancel_job_job(state: AppState, job: CancelJob) -> anyhow::Result<()> {
-    let mut tx = Tx::begin(&state).await?;
-    let row: Option<JobRow> = sqlx::query_as(&format!(
-        "SELECT {} FROM actions_jobs WHERE id = $1 AND status <> 'completed' FOR UPDATE",
-        JobRow::COLUMNS
-    ))
-    .bind(job.job_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let Some(row) = row else { return Ok(()) };
-    let run_id = row.run_id;
-    let mut rows = vec![row];
-    cancel_job_row(&mut tx, &mut rows, job.job_id).await?;
-    tx.commit().await?;
-    advance_run(&state, run_id).await
 }
 
 fn has_status_function(cond: &str) -> bool {
@@ -1472,7 +1976,11 @@ pub async fn cancel_run(state: &AppState, run_id: i64, force: bool) -> anyhow::R
         cancel_job_row(&mut tx, &mut rows, id).await?;
     }
     if force {
-        for r in rows.iter().filter(|r| r.status != "completed") {
+        // Calls complete on their own once their jobs did.
+        for r in rows
+            .iter()
+            .filter(|r| r.status != "completed" && !r.is_call())
+        {
             crate::server::finish_job_row(&mut tx, r, "cancelled", None, &[], None).await?;
         }
     }
@@ -1485,7 +1993,8 @@ pub async fn cancel_run(state: &AppState, run_id: i64, force: bool) -> anyhow::R
 
 /// Re-run a completed run as a new attempt. `only`: job keys to re-run
 /// (plus everything depending on them); other jobs are copied from the
-/// previous attempt. `None` re-runs everything.
+/// previous attempt. `None` re-runs everything. A job of a called workflow
+/// re-runs the whole calling job.
 pub async fn rerun(
     state: &AppState,
     run_id: i64,
@@ -1528,8 +2037,11 @@ pub async fn rerun(
     checks::set_suite_status(&mut tx, run.check_suite_id, "queued", None).await?;
 
     if let Some(only) = only {
-        // Expand to dependents (transitively).
-        let mut rerun_keys = only;
+        // Calling jobs re-run as a whole; expand to dependents (transitively).
+        let mut rerun_keys: HashSet<String> = only
+            .iter()
+            .map(|k| reusable::root_key(k).to_string())
+            .collect();
         loop {
             let before = rerun_keys.len();
             for (k, j) in &def.jobs {
@@ -1546,7 +2058,7 @@ pub async fn rerun(
             m
         });
         for (key, rows) in by_key {
-            if rerun_keys.contains(key) {
+            if rerun_keys.contains(reusable::root_key(key)) {
                 continue;
             }
             for r in rows {
@@ -1554,11 +2066,11 @@ pub async fn rerun(
                     "INSERT INTO actions_jobs (run_id, repo_id, run_attempt, job_key, name, matrix,
                          status, conclusion, head_sha, head_branch, labels, runner_id, runner_name,
                          check_run_id, spec, steps, outputs, continue_on_error, timeout_minutes,
-                         logs_job_id, started_at, completed_at)
+                         logs_job_id, started_at, completed_at, kind)
                      SELECT run_id, repo_id, $2, job_key, name, matrix, status, conclusion,
                             head_sha, head_branch, labels, runner_id, runner_name, check_run_id,
                             spec, steps, outputs, continue_on_error, timeout_minutes,
-                            coalesce(logs_job_id, id), started_at, completed_at
+                            coalesce(logs_job_id, id), started_at, completed_at, kind
                        FROM actions_jobs WHERE id = $1",
                 )
                 .bind(r.id)

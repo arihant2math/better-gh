@@ -111,8 +111,10 @@ impl AuthContext {
         }
     }
 
-    /// 403 unless the credential grants `scope`.
+    /// 403 unless the credential grants `scope`. Records the scope for the
+    /// `X-Accepted-OAuth-Scopes` response header.
     pub fn require_scope(&self, scope: &str) -> ApiResult<()> {
+        record_accepted_scope(scope);
         if self.has_scope(scope) {
             Ok(())
         } else {
@@ -130,6 +132,78 @@ impl AuthContext {
         }
         self.scopes.as_ref().map(|s| s.join(", "))
     }
+}
+
+/// Classic OAuth scopes, in the order GitHub lists them.
+const KNOWN_SCOPES: &[&str] = &[
+    "admin:enterprise",
+    "admin:gpg_key",
+    "admin:org",
+    "admin:org_hook",
+    "admin:public_key",
+    "admin:repo_hook",
+    "codespace",
+    "delete:packages",
+    "delete_repo",
+    "gist",
+    "manage_runners:org",
+    "notifications",
+    "project",
+    "public_repo",
+    "read:gpg_key",
+    "read:org",
+    "read:packages",
+    "read:project",
+    "read:public_key",
+    "read:repo_hook",
+    "read:user",
+    "repo",
+    "repo:invite",
+    "repo:status",
+    "repo_deployment",
+    "security_events",
+    "site_admin",
+    "user",
+    "user:email",
+    "user:follow",
+    "workflow",
+    "write:gpg_key",
+    "write:org",
+    "write:packages",
+    "write:public_key",
+    "write:repo_hook",
+];
+
+tokio::task_local! {
+    /// Scopes the current request's endpoint checked ([`AuthContext::require_scope`]).
+    static ACCEPTED_SCOPES: Arc<std::sync::Mutex<Vec<String>>>;
+}
+
+fn record_accepted_scope(scope: &str) {
+    let _ = ACCEPTED_SCOPES.try_with(|s| {
+        if let Ok(mut s) = s.lock()
+            && !s.iter().any(|x| x == scope)
+        {
+            s.push(scope.to_string());
+        }
+    });
+}
+
+/// Value of `X-Accepted-OAuth-Scopes` for the scopes an endpoint checked:
+/// each scope plus every scope that implies it (`read:org` → `admin:org,
+/// read:org, write:org`), like GitHub.
+pub fn accepted_scopes_header(wanted: &[String]) -> String {
+    let mut out: Vec<&str> = KNOWN_SCOPES
+        .iter()
+        .copied()
+        .filter(|g| wanted.iter().any(|w| implied(g, w)))
+        .collect();
+    for w in wanted {
+        if !out.contains(&w.as_str()) {
+            out.push(w);
+        }
+    }
+    out.join(", ")
 }
 
 /// Options for [`authenticate`].
@@ -683,11 +757,19 @@ pub async fn csrf_middleware(req: Request, next: Next) -> Response {
 }
 
 /// Middleware: installs an [`AuthSlot`] and, after the handler ran, emits
-/// `X-OAuth-Scopes` for token-authenticated requests (like GitHub).
+/// `X-OAuth-Scopes` for token-authenticated requests and
+/// `X-Accepted-OAuth-Scopes` for scope-gated endpoints (like GitHub).
 pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
     let slot = AuthSlot::default();
     req.extensions_mut().insert(slot.clone());
-    let mut resp = next.run(req).await;
+    let accepted = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut resp = ACCEPTED_SCOPES.scope(accepted.clone(), next.run(req)).await;
+    if let Ok(wanted) = accepted.lock()
+        && !wanted.is_empty()
+        && let Ok(v) = HeaderValue::from_str(&accepted_scopes_header(&wanted))
+    {
+        resp.headers_mut().insert("x-accepted-oauth-scopes", v);
+    }
     if let Some(ctx) = slot.0.get()
         && let Some(scopes) = ctx.scopes_header()
         && let Ok(v) = HeaderValue::from_str(&scopes)
@@ -707,6 +789,16 @@ mod tests {
         assert!(implied("admin:org", "read:org"));
         assert!(!implied("public_repo", "repo"));
         assert!(!implied("read:org", "admin:org"));
+    }
+
+    #[test]
+    fn accepted_scopes_include_implying_scopes() {
+        assert_eq!(
+            accepted_scopes_header(&["read:org".into()]),
+            "admin:org, read:org, write:org"
+        );
+        assert_eq!(accepted_scopes_header(&["repo".into()]), "repo");
+        assert_eq!(accepted_scopes_header(&["custom".into()]), "custom");
     }
 
     #[test]

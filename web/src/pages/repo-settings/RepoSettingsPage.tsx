@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from '../../router';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { EmptyState } from '../../ui/EmptyState';
-import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
+import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, ShieldLockIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
 import styles from './RepoSettings.module.css';
 import { ListSkeleton, type SectionProps } from './shared';
 
@@ -30,6 +30,7 @@ const NAV: { group?: string; items: NavItem[] }[] = [
     group: 'Code and automation',
     items: [
       section('branches', 'Branches', GitBranchIcon, () => import('./sections/BranchesSettings'), ['branch_protection_rules']),
+      section('rules', 'Rulesets', ShieldLockIcon, () => import('./sections/RulesSettings')),
       section('hooks', 'Webhooks', WebhookIcon, () => import('./sections/WebhooksSettings')),
       section('key_links', 'Autolink references', LinkIcon, () => import('./sections/AutolinksSettings')),
     ],

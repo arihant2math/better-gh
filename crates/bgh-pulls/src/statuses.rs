@@ -243,7 +243,9 @@ pub async fn combined(
     auth: MaybeUser,
     p: Pagination,
     Path((owner, repo, rev)): Path<(String, String, String)>,
-) -> ApiResult<axum::Json<CombinedStatus>> {
+) -> ApiResult<crate::checks::Linked<CombinedStatus>> {
+    // GitHub: `per_page` defaults to 100 here (max 100).
+    let p = p.with_default_per_page(100, 100);
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     let sha = resolve(&state, &access, &rev).await?;
     let rows: Vec<StatusRow> = sqlx::query_as(&format!(
@@ -266,7 +268,8 @@ pub async fn combined(
         .collect();
     let o = access.owner.login.as_str();
     let n = access.repo.name.as_str();
-    Ok(axum::Json(CombinedStatus {
+    let len = page.len();
+    let body = CombinedStatus {
         state: combined,
         statuses: render_rows(&state, &access, &page, None),
         total_count: total,
@@ -281,5 +284,6 @@ pub async fn combined(
             .urls
             .api(&format!("/repos/{o}/{n}/commits/{sha}/status")),
         sha,
-    }))
+    };
+    Ok(crate::checks::Linked::new(&p, total, len, body))
 }

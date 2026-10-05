@@ -355,6 +355,9 @@ pub async fn search(
                 "private" => {
                     s.raw(format!("{not}r.visibility <> 'public'"));
                 }
+                "internal" => {
+                    s.raw(format!("{not}r.visibility = 'internal'"));
+                }
                 _ => return Err(invalid("Invalid value for is: qualifier")),
             },
             _ => {}

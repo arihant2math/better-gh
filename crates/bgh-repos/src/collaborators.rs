@@ -20,6 +20,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch};
 use bgh_core::audit;
+use bgh_core::mail;
 use bgh_core::models::api::{MinimalRepository, RepoPermissions, SimpleUser};
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::perms;
@@ -434,6 +435,23 @@ async fn add(
         json!({ "user": user.login, "permission": role.as_str(), "invitation_id": inv.id }),
     )
     .await?;
+    let to: Option<String> =
+        sqlx::query_scalar("SELECT email FROM user_emails WHERE user_id = $1 AND is_primary")
+            .bind(user.id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(to) = to {
+        let html = state.urls.repo_html(&access.owner.login, &access.repo.name);
+        tx.enqueue(&mail::SendEmail::new(mail::templates::repo_invitation(
+            &state.config.site_name,
+            &to,
+            &user.login,
+            &auth.user.login,
+            &format!("{}/{}", access.owner.login, access.repo.name),
+            &format!("{html}/invitations"),
+        )))
+        .await?;
+    }
     tx.commit().await?;
     let mut rendered = render_invitations(&state, vec![inv]).await?;
     let inv = rendered.pop().ok_or(ApiError::NotFound)?;
@@ -765,10 +783,11 @@ async fn accept_invitation(
         json!({ "user": auth.user.login, "permission": inv.permission, "invitation_id": inv.id }),
     )
     .await?;
+    // Like GitHub's `member` event, the inviter is the actor ("alice added bob").
     tx.emit(Event::CollaboratorAdded {
         repo_id: repo.id,
         user_id: auth.user.id,
-        actor_id: auth.user.id,
+        actor_id: inv.inviter_id.unwrap_or(auth.user.id),
         permission: inv.permission.clone(),
     });
     access_changed(&mut tx, repo.id, auth.user.id).await?;

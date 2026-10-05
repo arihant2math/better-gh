@@ -8,8 +8,10 @@
 import type { Repo, User } from '../sync/models';
 import { blobSha, highlight, languageOf } from './content';
 import { installContentsRoutes } from './contents';
+import { repoLicense } from './extra/licenses';
 import { gitFor, splitLines, type MockCommit, type MockGit } from './git';
 import { installCommitCommentRoutes } from './commitComments';
+import { rulesetProtects } from './extra/rulesets';
 import { installReleaseRoutes } from './releases';
 import { fakeSha } from './rng';
 import { pass } from './pass';
@@ -276,7 +278,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
         commit: brief(r.repo, r.git.commit(sha)),
         ahead: ahead.length,
         behind,
-        protected: name === r.repo.defaultBranch,
+        protected: name === r.repo.defaultBranch || rulesetProtects(s, r.repo, name),
         pull: pr ? { number: pr.number, state: pr.state, merged: !!pr.merged, draft: !!pr.draft, title: pr.title } : null,
       };
     });
@@ -359,7 +361,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
         subscribers_count: repo.watchers,
         forks_count: repo.forks,
         open_issues_count: repo.openIssues + repo.openPulls,
-        license: { key: 'mit', name: 'MIT License', spdx_id: 'MIT' },
+        license: repoLicense(s, repo),
         archived: repo.archived,
         fork: repo.fork,
         size: 412,
