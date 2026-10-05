@@ -1046,20 +1046,21 @@ jobs:
     let rs = runs(&app, &alice, "alice/demo").await;
     assert_eq!(rs.len(), before + 2);
     let pr_run = rs.iter().find(|r| r["event"] == "pull_request").unwrap();
-    // The run tests the merge commit refs/pull/1/merge (parents base, head).
-    let merge_sha = pr_run["head_sha"].as_str().unwrap().to_string();
-    assert_ne!(merge_sha, head);
+    // The run (and its check suite) stays on the PR head; GITHUB_SHA is the
+    // test merge commit refs/pull/1/merge (parents base, head).
+    assert_eq!(pr_run["head_sha"], head);
+    let r = "refs/pull/1/merge".to_string();
+    let merge_ref = bgh_actions::trigger::store(&app.state)
+        .read(repo_id, move |g| g.resolve(&r))
+        .await
+        .unwrap();
+    let merge_sha = merge_ref.clone().unwrap();
     let m = merge_sha.clone();
     let merge = bgh_actions::trigger::store(&app.state)
         .read(repo_id, move |r| r.commit(&m))
         .await
         .unwrap();
     assert_eq!(merge.parents, [base.clone(), head.clone()]);
-    let r = "refs/pull/1/merge".to_string();
-    let merge_ref = bgh_actions::trigger::store(&app.state)
-        .read(repo_id, move |g| g.resolve(&r))
-        .await
-        .unwrap();
     assert_eq!(merge_ref.as_deref(), Some(merge_sha.as_str()));
     assert_eq!(pr_run["head_branch"], "feature");
     assert_eq!(pr_run["display_title"], "My PR");

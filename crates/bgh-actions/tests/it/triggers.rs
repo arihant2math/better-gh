@@ -229,27 +229,40 @@ async fn pull_request_activity_types_reviews_and_merge_ref() {
 
     let opened = runs_of(&app, &alice, "pull_request").await;
     assert_eq!(opened.len(), 1);
-    // GITHUB_SHA is the test merge commit (parents base, head) at
-    // refs/pull/N/merge.
-    let merge_sha = opened[0]["head_sha"].as_str().unwrap().to_string();
+    // The run stays on the PR head (its checks belong to the PR); GITHUB_SHA
+    // is the test merge commit (parents base, head) at refs/pull/N/merge.
+    assert_eq!(opened[0]["head_sha"], head);
+    let runner = FakeRunner::register(&app, &alice, "alice/demo", &["x"]).await;
+    let spec = runner.acquire(&app).await.unwrap();
+    let merge_sha = spec["github"]["sha"].as_str().unwrap().to_string();
+    assert_ne!(merge_sha, head);
     let m = merge_sha.clone();
     let commit = bgh_actions::trigger::store(&app.state)
         .read(repo_id, move |r| r.commit(&m))
         .await
         .unwrap();
     assert_eq!(commit.parents, [base.clone(), head.clone()]);
-    let run = run(
-        &app,
-        &alice,
-        "alice/demo",
-        opened[0]["id"].as_i64().unwrap(),
-    )
-    .await;
-    assert_eq!(run["head_sha"], merge_sha);
-    let runner = FakeRunner::register(&app, &alice, "alice/demo", &["x"]).await;
-    let spec = runner.acquire(&app).await.unwrap();
-    assert_eq!(spec["github"]["sha"], merge_sha);
     assert_eq!(spec["github"]["ref"], format!("refs/pull/{number}/merge"));
+    assert_eq!(
+        spec["github"]["event"]["pull_request"]["merge_commit_sha"],
+        merge_sha
+    );
+    let r = format!("refs/pull/{number}/merge");
+    let merge_ref = bgh_actions::trigger::store(&app.state)
+        .read(repo_id, move |g| g.resolve(&r))
+        .await
+        .unwrap();
+    assert_eq!(merge_ref.as_deref(), Some(merge_sha.as_str()));
+    // The run's check suite is on the PR head, so the PR's checks see it.
+    let checks = app
+        .get(&format!(
+            "/api/v3/repos/alice/demo/commits/{head}/check-runs"
+        ))
+        .auth(&alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(checks["total_count"], 1);
     runner
         .complete(&app, spec["job_id"].as_i64().unwrap(), "success", json!({}))
         .await;
@@ -332,7 +345,7 @@ async fn pull_request_activity_types_reviews_and_merge_ref() {
     settle(&app).await;
     let reviews = runs_of(&app, &alice, "pull_request_review").await;
     assert_eq!(reviews.len(), 1);
-    assert_eq!(reviews[0]["head_sha"], merge_sha);
+    assert_eq!(reviews[0]["head_sha"], head);
     let p = payload_of(&app, reviews[0]["id"].as_i64().unwrap()).await;
     assert_eq!(p["action"], "submitted");
     assert_eq!(p["review"]["body"], "looks fine");

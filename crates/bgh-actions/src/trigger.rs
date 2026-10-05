@@ -861,6 +861,9 @@ async fn on_pull_request(
         .flatten()
     };
     if let Some(merge_sha) = merge_sha {
+        // GITHUB_SHA of the runs (see `context::run_sha`); the runs and
+        // their check suites stay on the PR head commit.
+        payload["pull_request"]["merge_commit_sha"] = json!(merge_sha);
         let head_files = load_workflows(state, head_repo_id, &pr.head_sha)
             .await
             .unwrap_or_default();
@@ -885,7 +888,7 @@ async fn on_pull_request(
                     event: event.into(),
                     git_ref: merge_ref.clone(),
                     head_branch: Some(pr.head_ref.clone()),
-                    head_sha: merge_sha.clone(),
+                    head_sha: pr.head_sha.clone(),
                     head_repo_id: Some(head_repo_id),
                     actor_id,
                     payload: payload.clone(),
