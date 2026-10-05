@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Diff viewer: server-side syntax highlighting, context expansion, image/rich diffs, file actions, inline check annotations, generated-file collapse; full gate green after merging the integration branch.
 
 # P37 — Diff viewer

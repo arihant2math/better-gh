@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P41: organization issue types, issue dependencies (blocked by / blocking), close as duplicate — backend, GraphQL, sync, web UI, tests.
 
 # P41 — Issue types, issue dependencies, close as duplicate

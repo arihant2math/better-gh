@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P36 account security: WebAuthn security keys + passkeys, org/site 2FA requirements, sudo mode, encrypted TOTP secrets, PAT expiry mails and header; backend, web UI, tests.
 
 # P36 — Account security

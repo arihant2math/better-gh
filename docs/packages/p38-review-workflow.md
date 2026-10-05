@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Commit-range diffs + "since your last review", server-side viewed files (synced `viewedFile`), batch suggestion commits (server-side, CRLF-safe, co-author trailers, auto-resolve); backend + web + tests, full gate green after merging the integration branch.
 
 # P38 review-workflow — status

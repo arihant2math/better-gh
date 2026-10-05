@@ -17,7 +17,7 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a', group: 'Archive' },
   { id: 'hooks', label: 'Webhooks', icon: WebhookIcon, keys: 'g w', group: 'Code, planning, and automation' },
   { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },
-  { id: 'issue-types', label: 'Issue types', icon: IssueOpenedIcon, keys: 'g y' },
+  { id: 'issue-types', label: 'Issue types', icon: IssueOpenedIcon, keys: 'g e' },
   { id: 'import', label: 'Import', icon: DownloadIcon, keys: 'g p' },
   { id: 'installations', label: 'GitHub Apps', icon: AppsIcon, keys: 'g i', group: 'Third-party Access' },
   { id: 'personal-access-tokens', label: 'Personal access tokens', icon: KeyIcon, keys: 'g k' },

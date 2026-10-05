@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Hide/minimize comments (issue, PR review, review and commit comments), edit history with revision deletion, and issue deletion (REST `/_bgh`, GraphQL, web UI). Full gate green after merging `claude/sleepy-cray-9jj0t3` (e82e659).
 
 # P42 comment-moderation — status
