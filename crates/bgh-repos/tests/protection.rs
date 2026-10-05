@@ -149,6 +149,31 @@ fn full_body() -> Value {
     })
 }
 
+#[test]
+fn splits_protection_paths() {
+    use bgh_repos::protection_api::split_protection_path as split;
+    assert_eq!(split("main/protection"), Some(("main".into(), vec![])));
+    assert_eq!(
+        split("feature/x/protection/required_status_checks/contexts"),
+        Some((
+            "feature/x".into(),
+            vec!["required_status_checks".into(), "contexts".into()]
+        ))
+    );
+    assert_eq!(
+        split("a/protection/restrictions/users"),
+        Some(("a".into(), vec!["restrictions".into(), "users".into()]))
+    );
+    assert_eq!(
+        split("protection/protection"),
+        Some(("protection".into(), vec![]))
+    );
+    assert_eq!(split("main"), None);
+    assert_eq!(split("protection"), None);
+    assert_eq!(split("main/protection/bogus"), None);
+    assert_eq!(split("main/protection/restrictions/robots"), None);
+}
+
 // ----- branch protection -----------------------------------------------------------
 
 #[tokio::test]

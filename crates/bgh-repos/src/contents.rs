@@ -447,8 +447,7 @@ impl Ctx<'_> {
                 let items: Vec<ContentEntry> = entries
                     .iter()
                     .map(|d| {
-                        let mut e =
-                            self.entry(d.kind, &join_path(path, &d.name), &d.sha, d.size);
+                        let mut e = self.entry(d.kind, &join_path(path, &d.name), &d.sha, d.size);
                         if d.kind == TreeEntryKind::Commit {
                             if object {
                                 e.submodule_git_url = d.submodule_url.clone();
@@ -588,7 +587,10 @@ async fn show(
         let found = store
             .read(access.repo.id, move |r| find(r, &c, &p, RAW_LIMIT, true))
             .await?;
-        if let Found::File { path, sha, data, .. } = &found {
+        if let Found::File {
+            path, sha, data, ..
+        } = &found
+        {
             let Some(data) = data.clone() else {
                 return Err(GitError::TooLarge {
                     size: RAW_LIMIT + 1,
@@ -877,7 +879,8 @@ async fn branch_state(
     branch: &str,
     path: &str,
 ) -> ApiResult<(Option<String>, Option<String>, Existing)> {
-    let not_found = || ApiError::Status(StatusCode::NOT_FOUND, format!("Branch {branch} not found"));
+    let not_found =
+        || ApiError::Status(StatusCode::NOT_FOUND, format!("Branch {branch} not found"));
     if !bgh_git::is_valid_ref_name(branch) {
         return Err(not_found());
     }
@@ -1143,7 +1146,13 @@ mod tests {
 
     #[test]
     fn readme_preference() {
-        let mut names = vec!["README", "readme.txt", "README.md", "Readme.rst", "README.x"];
+        let mut names = vec![
+            "README",
+            "readme.txt",
+            "README.md",
+            "Readme.rst",
+            "README.x",
+        ];
         names.sort_by_key(|n| readme_rank(n));
         assert_eq!(names[0], "README.md");
         assert_eq!(readme_rank("READMEish"), None);

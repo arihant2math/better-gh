@@ -240,8 +240,10 @@ async fn rename(
     branch: &str,
     body: RenameBody,
 ) -> ApiResult<(StatusCode, Branch)> {
+    let rules = RepoRules::load(&state.db, &access.repo).await?;
+    // Default and protected branches need admin, others push access.
     let is_default = branch == access.repo.default_branch;
-    access.require(if is_default {
+    access.require(if is_default || rules.protection_for(branch).is_some() {
         Permission::Admin
     } else {
         Permission::Write
@@ -290,22 +292,21 @@ async fn rename(
         true,
     )
     .await?;
-    if let Err(e) = write_ref(
-        state,
-        access,
-        &auth.user,
-        &old_ref,
-        Some(&old.target),
-        None,
-        true,
+    // Not a deletion in protection terms: the rule moves with the branch.
+    bgh_git::write::delete_ref(&store, access.repo.id, &old_ref, Some(&old.target)).await?;
+    bgh_core::jobs::enqueue_job(
+        &state.db,
+        &crate::jobs::PostReceive {
+            repo_id: access.repo.id,
+            pusher_id: Some(auth.user.id),
+            updates: vec![bgh_core::events::RefUpdate {
+                old: old.target.clone(),
+                new: bgh_core::events::ZERO_SHA.into(),
+                refname: old_ref.clone(),
+            }],
+        },
     )
-    .await
-    {
-        // Undo the copy so the rename is all-or-nothing.
-        let _ =
-            bgh_git::write::delete_ref(&store, access.repo.id, &new_ref, Some(&old.target)).await;
-        return Err(e);
-    }
+    .await?;
 
     let mut tx = Tx::begin(state).await?;
     sqlx::query(

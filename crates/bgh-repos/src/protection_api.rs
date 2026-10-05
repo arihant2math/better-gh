@@ -1358,32 +1358,3 @@ fn string_list(body: &[u8], key: &str) -> ApiResult<Vec<String>> {
         .map(|x| x.as_str().map(str::to_string).ok_or_else(invalid))
         .collect()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::split_protection_path as split;
-
-    #[test]
-    fn splits_paths() {
-        assert_eq!(split("main/protection"), Some(("main".into(), vec![])));
-        assert_eq!(
-            split("feature/x/protection/required_status_checks/contexts"),
-            Some((
-                "feature/x".into(),
-                vec!["required_status_checks".into(), "contexts".into()]
-            ))
-        );
-        assert_eq!(
-            split("a/protection/restrictions/users"),
-            Some(("a".into(), vec!["restrictions".into(), "users".into()]))
-        );
-        assert_eq!(
-            split("protection/protection"),
-            Some(("protection".into(), vec![]))
-        );
-        assert_eq!(split("main"), None);
-        assert_eq!(split("protection"), None);
-        assert_eq!(split("main/protection/bogus"), None);
-        assert_eq!(split("main/protection/restrictions/robots"), None);
-    }
-}

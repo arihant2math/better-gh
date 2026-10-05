@@ -391,9 +391,7 @@ async fn create_tree(
                         kind,
                         sha,
                     } => {
-                        if kind != "commit"
-                            && r.header(&sha)?.map(|h| h.0) != Some(kind)
-                        {
+                        if kind != "commit" && r.header(&sha)?.map(|h| h.0) != Some(kind) {
                             return Ok(Err(format!("tree.sha {sha} is not a valid {kind}")));
                         }
                         TreeEdit::Object { path, mode, sha }
@@ -418,7 +416,7 @@ async fn create_tree(
             Ok(Ok((base, edits)))
         })
         .await?;
-    let (base, edits) = checked.map_err(|msg| ApiError::unprocessable(msg))?;
+    let (base, edits) = checked.map_err(ApiError::unprocessable)?;
     let git = store.cli(access.repo.id)?;
     let sha = git.build_tree(base.as_deref(), &edits).await?;
     let entries = git.ls_tree(&sha, false).await?;
