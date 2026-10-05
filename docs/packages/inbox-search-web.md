@@ -7,6 +7,9 @@ Small additive backend changes in `bgh-search` and `bgh-notify` (below).
 
 Complete: scope implemented, web checks green, backend crate tests green,
 real-backend Playwright e2e (`web/scripts/inbox-e2e.sh`) passes all checks.
+Full `cargo test --workspace`: green except bgh-accounts
+`rate_limits_are_enforced` (known integration conflict, being fixed on the
+integration branch).
 
 ## Inbox (`/notifications`, `src/pages/notifications/`)
 
