@@ -110,10 +110,10 @@ async fn owning_org(state: &AppState, repo_id: i64) -> ApiResult<Option<i64>> {
     .await?)
 }
 
-/// Active hooks that may want one of `names` for this repo/org scope.
+/// Active hooks that may want one of `names` for these repo/org scopes.
 async fn candidate_hooks(
     state: &AppState,
-    repo_id: Option<i64>,
+    repo_ids: &[i64],
     org_ids: &[i64],
     names: &[&str],
 ) -> ApiResult<Vec<HookRow>> {
@@ -121,17 +121,60 @@ async fn candidate_hooks(
         "SELECT {} FROM webhooks
           WHERE active
             AND (events && $1 OR '*' = ANY(events))
-            AND ((repo_id IS NOT NULL AND repo_id = $2)
+            AND ((repo_id IS NOT NULL AND repo_id = ANY($2))
                  OR (org_id IS NOT NULL AND org_id = ANY($3))
                  OR (repo_id IS NULL AND org_id IS NULL))
           ORDER BY id",
         HookRow::COLUMNS
     ))
     .bind(names)
-    .bind(repo_id)
+    .bind(repo_ids)
     .bind(org_ids)
     .fetch_all(&state.db)
     .await?)
+}
+
+/// Repositories and organizations whose hooks may receive `event`'s
+/// deliveries: the event's repository (and its organization), plus the
+/// other side of cross-repository events and the organization of
+/// org-level events.
+async fn scopes(state: &AppState, event: &Event) -> ApiResult<(Vec<i64>, Vec<i64>)> {
+    let mut repo_ids: Vec<i64> = event.repo_id().into_iter().collect();
+    let mut org_ids = Vec::new();
+    match event {
+        Event::OrgMemberAdded { org_id, .. }
+        | Event::OrgMemberRemoved { org_id, .. }
+        | Event::OrgMemberInvited { org_id, .. }
+        | Event::TeamCreated { org_id, .. }
+        | Event::TeamEdited { org_id, .. }
+        | Event::TeamDeleted { org_id, .. }
+        | Event::TeamMemberAdded { org_id, .. }
+        | Event::TeamMemberRemoved { org_id, .. }
+        | Event::TeamRepoAdded { org_id, .. }
+        | Event::TeamRepoRemoved { org_id, .. } => org_ids.push(*org_id),
+        Event::RepositoryDeleted { owner_id, .. } => org_ids.push(*owner_id),
+        Event::RepositoryTransferred { old_owner_id, .. } => org_ids.push(*old_owner_id),
+        Event::IssueTransferred { old_repo_id, .. } => repo_ids.push(*old_repo_id),
+        Event::SubIssueAdded { sub_issue_id, .. } | Event::SubIssueRemoved { sub_issue_id, .. } => {
+            let sub_repo: Option<i64> =
+                sqlx::query_scalar("SELECT repo_id FROM issues WHERE id = $1")
+                    .bind(sub_issue_id)
+                    .fetch_optional(&state.db)
+                    .await?;
+            repo_ids.extend(sub_repo);
+        }
+        _ => {}
+    }
+    repo_ids.sort_unstable();
+    repo_ids.dedup();
+    for r in &repo_ids {
+        if let Some(org) = owning_org(state, *r).await? {
+            org_ids.push(org);
+        }
+    }
+    org_ids.sort_unstable();
+    org_ids.dedup();
+    Ok((repo_ids, org_ids))
 }
 
 /// Create deliveries for one domain event. Returns how many were queued.
@@ -143,19 +186,8 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
     if names.is_empty() {
         return Ok(0);
     }
-    let repo_id = event.repo_id();
-    let mut org_ids = Vec::new();
-    if let Some(r) = repo_id
-        && let Some(org) = owning_org(state, r).await?
-    {
-        org_ids.push(org);
-    }
-    match event {
-        Event::OrgMemberAdded { org_id, .. } => org_ids.push(*org_id),
-        Event::RepositoryDeleted { owner_id, .. } => org_ids.push(*owner_id),
-        _ => {}
-    }
-    let hooks = candidate_hooks(state, repo_id, &org_ids, &names).await?;
+    let (repo_ids, org_ids) = scopes(state, event).await?;
+    let hooks = candidate_hooks(state, &repo_ids, &org_ids, &names).await?;
     if hooks.is_empty() {
         return Ok(0);
     }

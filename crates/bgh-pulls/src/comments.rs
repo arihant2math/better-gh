@@ -778,6 +778,7 @@ pub async fn edit(
         pull_id: row.pull_id,
         comment_id: id,
         actor_id: auth.user.id,
+        changes: serde_json::json!({ "body": { "from": c.body } }),
     });
     tx.commit().await?;
     Ok(axum::Json(render(&state, &access, &[row]).await?.remove(0)))
@@ -801,6 +802,16 @@ pub async fn delete(
             .await?
             .unwrap_or(false),
         None => false,
+    };
+    // Webhook `deleted` payloads carry the full comment: snapshot it first.
+    let snapshot = if pending {
+        serde_json::Value::Null
+    } else {
+        serde_json::to_value(
+            render(&state, &access, std::slice::from_ref(&c))
+                .await?
+                .remove(0),
+        )?
     };
     let mut tx = Tx::begin(&state).await?;
     // Promote the first reply to thread root so the thread survives.
@@ -855,6 +866,7 @@ pub async fn delete(
             pull_id: c.pull_id,
             comment_id: id,
             actor_id: auth.user.id,
+            comment: snapshot,
         });
     }
     tx.commit().await?;

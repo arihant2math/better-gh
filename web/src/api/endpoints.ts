@@ -92,6 +92,11 @@ export function rerequestCheckRun(owner: string, repo: string, runId: number): P
   return api.post(v3('repos', owner, repo, 'check-runs', runId, 'rerequest'));
 }
 
+/** Click one of a check run's `actions` buttons (`check_run` `requested_action` webhook). */
+export function requestCheckRunAction(owner: string, repo: string, runId: number, identifier: string): Promise<unknown> {
+  return api.post(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${runId}/requested-action`, { identifier });
+}
+
 export function getCommit(owner: string, repo: string, sha: string): Promise<RestCommitDetail> {
   return api.get<RestCommitDetail>(v3('repos', owner, repo, 'commits', sha));
 }

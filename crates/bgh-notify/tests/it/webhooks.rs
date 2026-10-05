@@ -713,3 +713,60 @@ async fn workflow_job_events_are_delivered() {
     actions.sort();
     assert_eq!(actions, ["completed", "in_progress", "queued"]);
 }
+
+#[tokio::test]
+async fn meta_deleted_is_sent_to_the_deleted_hook() {
+    let app = app_allowing_loopback().await;
+    let rx = Receiver::start().await;
+    let other = Receiver::start().await;
+    let alice = app.create_user("alice").await;
+    app.create_repo(&alice, "hello").await;
+    let hook = create_hook(
+        &app,
+        &alice,
+        "/api/v3/repos/alice/hello/hooks",
+        json!({"events": ["meta", "push"], "config": {"url": rx.url, "content_type": "json", "secret": "s3cret"}}),
+    )
+    .await;
+    // A hook without `meta` gets nothing when deleted.
+    let quiet = create_hook(
+        &app,
+        &alice,
+        "/api/v3/repos/alice/hello/hooks",
+        json!({"events": ["push"], "config": {"url": other.url, "content_type": "json"}}),
+    )
+    .await;
+    app.drain_jobs().await;
+    rx.take();
+    other.take();
+
+    let id = hook["id"].as_i64().unwrap();
+    app.delete(&format!("/api/v3/repos/alice/hello/hooks/{id}"))
+        .auth(&alice)
+        .send()
+        .await
+        .assert_status(204);
+    app.delete(&format!(
+        "/api/v3/repos/alice/hello/hooks/{}",
+        quiet["id"].as_i64().unwrap()
+    ))
+    .auth(&alice)
+    .send()
+    .await
+    .assert_status(204);
+    app.drain_jobs().await;
+    let got = rx.take();
+    assert_eq!(got.len(), 1);
+    assert_eq!(header(&got[0], "x-github-event"), "meta");
+    assert_eq!(header(&got[0], "x-github-hook-id"), id.to_string());
+    assert!(header(&got[0], "x-hub-signature-256").starts_with("sha256="));
+    let p: Value = serde_json::from_slice(&got[0].body).unwrap();
+    assert_eq!(p["action"], "deleted");
+    assert_eq!(p["hook_id"], id);
+    assert_eq!(p["hook"]["id"], id);
+    assert_eq!(p["hook"]["events"], json!(["meta", "push"]));
+    assert_eq!(p["repository"]["full_name"], "alice/hello");
+    assert_eq!(p["sender"]["login"], "alice");
+    assert!(p.get("zen").is_none());
+    assert!(other.take().is_empty());
+}

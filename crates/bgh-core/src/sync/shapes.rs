@@ -507,7 +507,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'headSha', r.head_sha, 'name', r.name, 'status', r.status,
                  'conclusion', r.conclusion, 'detailsUrl', r.details_url,
                  'title', r.output->'title', 'startedAt', bgh_ts(r.started_at),
-                 'completedAt', bgh_ts(r.completed_at))::text AS j
+                 'completedAt', bgh_ts(r.completed_at), 'actions', r.actions)::text AS j
                FROM check_runs r WHERE {}",
             col("r", filter, &[("ids", "id"), ("repos", "repo_id")])?
         ),

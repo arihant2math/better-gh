@@ -694,6 +694,25 @@ pub async fn update(
 pub async fn delete(State(state): State<AppState>, tp: TeamPath) -> ApiResult<StatusCode> {
     let actor = tp.ctx.require_manage()?.user.clone();
     let org_id = tp.ctx.access.org.id;
+    // Webhook `team` `deleted` payloads carry the full team: snapshot the
+    // subtree first.
+    let subtree: Vec<db::Team> = sqlx::query_as(&format!(
+        "WITH RECURSIVE tree AS (
+             SELECT id FROM teams WHERE id = $1
+             UNION
+             SELECT t.id FROM teams t JOIN tree ON t.parent_id = tree.id
+         ) SELECT {} FROM teams WHERE id IN (SELECT id FROM tree)",
+        db::Team::COLUMNS
+    ))
+    .bind(tp.ctx.team.id)
+    .fetch_all(&state.db)
+    .await?;
+    let snapshots: HashMap<i64, serde_json::Value> = subtree
+        .iter()
+        .map(|t| t.id)
+        .zip(render_teams(&state, &tp.ctx.access.org, subtree.clone()).await?)
+        .map(|(id, t)| Ok((id, serde_json::to_value(t)?)))
+        .collect::<ApiResult<_>>()?;
     let mut tx = Tx::begin(&state).await?;
     let deleted: Vec<(i64, String)> = sqlx::query_as(
         "WITH RECURSIVE tree AS (
@@ -713,6 +732,7 @@ pub async fn delete(State(state): State<AppState>, tp: TeamPath) -> ApiResult<St
             team_id: *id,
             slug: slug.clone(),
             actor_id: actor.id,
+            team: snapshots.get(id).cloned().unwrap_or_default(),
         });
     }
     // Pending invitations no longer reference deleted teams.

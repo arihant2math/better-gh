@@ -488,6 +488,51 @@ pub async fn update(
         release_id: row.id,
         actor_id: auth.user.id,
     });
+    // Webhook-facing events: `edited` with GitHub's `changes`, plus the
+    // state transitions (`published` is ReleasePublished below).
+    let mut changes = serde_json::Map::new();
+    if current.name != row.name {
+        changes.insert("name".into(), json!({ "from": current.name }));
+    }
+    if current.body != row.body {
+        changes.insert("body".into(), json!({ "from": current.body }));
+    }
+    if current.tag_name != row.tag_name {
+        changes.insert("tag_name".into(), json!({ "from": current.tag_name }));
+    }
+    if make_latest.is_some() && current.make_latest != row.make_latest {
+        changes.insert(
+            "make_latest".into(),
+            json!({ "to": row.make_latest == Some(true) }),
+        );
+    }
+    if !changes.is_empty() {
+        tx.emit(Event::ReleaseEdited {
+            repo_id: access.repo.id,
+            release_id: row.id,
+            actor_id: auth.user.id,
+            changes: serde_json::Value::Object(changes),
+        });
+    }
+    let state_change = if !current.draft && row.draft {
+        Some("unpublished")
+    } else if !current.draft && current.prerelease != row.prerelease {
+        Some(if row.prerelease {
+            "prereleased"
+        } else {
+            "released"
+        })
+    } else {
+        None
+    };
+    if let Some(action) = state_change {
+        tx.emit(Event::ReleaseStateChanged {
+            repo_id: access.repo.id,
+            release_id: row.id,
+            actor_id: auth.user.id,
+            action: action.into(),
+        });
+    }
     if publishing {
         tx.emit(Event::ReleasePublished {
             repo_id: access.repo.id,
