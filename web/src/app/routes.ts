@@ -4,11 +4,12 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
+import { prefetchProfile } from '../api/profile';
 import { getContents, getPullDiff, listPullCommits } from '../api/endpoints';
 import type { ComponentType } from 'react';
 import { defineRoutes, type Params, type RouteDef } from '../router';
 import { hasSync, sync } from '../sync';
-import { issueByNumber, repoByName } from '../sync/selectors';
+import { issueByNumber, orgByLogin, repoByName } from '../sync/selectors';
 import { preloadMarkdown } from '../ui/Markdown';
 
 const RepoLayout = () => import('../pages/repo/RepoLayout');
@@ -79,7 +80,12 @@ export function registerRoutes(): void {
     { path: '/new/import', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
     { path: '/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
     { path: '/account/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
-    { path: '/:owner', load: () => import('../pages/profile/ProfilePage'), title: (p) => p.owner! },
+    {
+      path: '/:owner',
+      load: () => import('../pages/profile/ProfilePage'),
+      prefetch: (p) => prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
+      title: (p) => p.owner!,
+    },
     {
       path: '/:owner/:repo',
       layout: RepoLayout,
