@@ -1,6 +1,8 @@
 # P9 durable-events — status
 
-**Done.** Branch `bgh/p09-durable-events`. Scope: `docs/PHASE4_PLAN.md` §P9
+**Done.** Branch `bgh/p09-durable-events`, self-integrated (fast-forward)
+into `claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build). Scope: `docs/PHASE4_PLAN.md` §P9
 (no §5 quick fixes are assigned to P9).
 
 ## What changed
@@ -113,6 +115,12 @@ index), `activity_events.event_id/event_seq` (+ unique index).
   and its webhook delivery exists when `serve` returns; leases released.
 
 ## Known gaps / notes
+
+* Listener processing is now a little later than with the in-process
+  broadcast (commit → wake → batch read). Tests that rewrite rows a
+  listener reads should call `app.settle_events()` first; one such race in
+  `bgh-search` `activity::private_events_received_events_orgs_networks_and_feed`
+  was fixed that way.
 
 * Listener handlers still run sequentially per listener (as before); a
   slow handler delays that listener only.
