@@ -13,7 +13,7 @@ import { Menu, type MenuEntry } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
-import { DetailSkeleton, ItemList, LOGIN_RULE, NotFound, QuotaPanel, RefField, RepoBriefList, isNotFound, isValidLogin, modalOpen, usePrompt } from './UserDetailPage';
+import { DetailSkeleton, ItemList, LOGIN_RULE, NotFound, QuotaPanel, RefField, RepoBriefList, isNotFound, isValidLogin, modalOpen, usePrompt } from './detail';
 import { deleteOrg, getOrg, updateOrg, type AccountSummary, type OrgDetail } from './api';
 
 const enc = encodeURIComponent;

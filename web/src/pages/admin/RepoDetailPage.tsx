@@ -31,8 +31,7 @@ import { Menu, type MenuEntry } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
-import { MAINTENANCE_OPS } from './ReposPage';
-import { DetailSkeleton, NotFound, VisibilityPill, isNotFound, isValidLogin, modalOpen, usePrompt } from './UserDetailPage';
+import { DetailSkeleton, MAINTENANCE_OPS, NotFound, VisibilityPill, isNotFound, isValidLogin, modalOpen, usePrompt } from './detail';
 import {
   deleteRepo,
   getRepo,

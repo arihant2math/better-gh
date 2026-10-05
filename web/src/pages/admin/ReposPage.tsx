@@ -16,8 +16,8 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
-import { VisibilityPill } from './UserDetailPage';
-import { reposPath, runMaintenanceAll, type AdminRepo, type MaintenanceOp } from './api';
+import { MAINTENANCE_OPS, VisibilityPill } from './detail';
+import { reposPath, runMaintenanceAll, type AdminRepo } from './api';
 
 const VISIBILITY = [
   { id: '', label: 'All' },
@@ -33,13 +33,6 @@ const FLAGS = [
   { id: 'fork', label: 'Forks' },
 ] as const;
 
-export const MAINTENANCE_OPS: { id: MaintenanceOp; label: string; description: string }[] = [
-  { id: 'gc', label: 'Garbage collect', description: 'git gc: pack loose objects and prune unreachable ones.' },
-  { id: 'repack', label: 'Repack', description: 'git repack -ad: rewrite all objects into a single pack.' },
-  { id: 'fsck', label: 'Check integrity', description: 'git fsck: verify connectivity and validity of objects.' },
-  { id: 'recalculate_size', label: 'Recalculate size', description: 'Measure the repository on disk and update its recorded size.' },
-  { id: 'recalculate_languages', label: 'Recalculate languages', description: 'Re-detect the language breakdown of the default branch.' },
-];
 
 const flags = (r: AdminRepo) => (
   <>
