@@ -3,8 +3,11 @@
 Branch `bgh/p16-reusable-workflows`. Migration
 `2800_actions_reusable_workflows.sql` (range 2800–2899).
 
-**Status:** in progress — backend, web UI and tests done; `permissions:`
-intersection waits for P8's token permissions to land.
+**Status:** integrated into `claude/sleepy-cray-9jj0t3` (full gate,
+`actions-e2e.sh`, `gh-compat.sh`, `api-smoke.sh` green). One scope item is
+outstanding: the `permissions:` intersection, which needs P8's
+`bgh_core::token_permissions` (not on the integration branch yet); the caps
+are already stored per job (see Known gaps).
 
 ## How it works
 
@@ -114,8 +117,14 @@ None outside `bgh-actions` (migration only).
 
 ## Known gaps
 
-* `permissions:` intersection: caps are stored (`StoredJob.permission_caps`)
-  but not applied until P8's token permissions land.
+* `permissions:` intersection: caps are stored per hop
+  (`StoredJob.permission_caps: Vec<Option<Permissions>>`, `None` = the
+  default) but not applied until P8 lands. Planned in `server::prepare_spec`:
+  base = the called job's own permissions, else the innermost cap, else the
+  default; then intersect with every cap (`None` → site default).
+* `runs::pull_request_events_trigger_runs` (pre-existing) failed once under
+  full-workspace load (settle timing); it passed 4/4 in isolation and in the
+  final gate.
 * Job-level `concurrency` is only enforced for calling jobs (normal jobs:
   P26). The called workflow's own top-level `concurrency:` is ignored.
 * Run-name / `on.workflow_call` validation happens when the calling job
