@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useResource } from '../../api/cache';
-import { listCheckRunAnnotations, rerequestCheckRun } from '../../api/endpoints';
+import { listCheckRunAnnotations, requestCheckRunAction, rerequestCheckRun } from '../../api/endpoints';
 import type { CheckAnnotation } from '../../api/types';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -156,6 +156,22 @@ const RunDetail = observer(function RunDetail({ repo, run, writable }: { repo: R
             Re-run
           </Button>
         )}
+        {writable &&
+          (run.actions ?? []).map((a) => (
+            <Button
+              key={a.identifier}
+              size="sm"
+              title={a.description}
+              onClick={() =>
+                requestCheckRunAction(repo.owner, repo.name, run.id, a.identifier).then(
+                  () => toast({ kind: 'success', title: `Requested “${a.label}”` }),
+                  (e: unknown) => toast({ kind: 'error', title: 'Couldn’t request action', description: e instanceof Error ? e.message : undefined }),
+                )
+              }
+            >
+              {a.label}
+            </Button>
+          ))}
       </div>
       <div className={styles.subtle}>
         {run.status === 'completed' ? (

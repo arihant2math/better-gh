@@ -385,6 +385,7 @@ pub async fn update(
             pull_id: pull.id(),
             review_id: id,
             actor_id: auth.user.id,
+            changes: serde_json::json!({ "body": { "from": r.body } }),
         });
     }
     tx.commit().await?;
