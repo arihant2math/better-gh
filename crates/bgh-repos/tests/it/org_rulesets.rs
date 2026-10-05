@@ -401,7 +401,20 @@ async fn push_rulesets_and_bypass_actor_types() {
         v["rules"][3],
         json!({"type": "max_file_size", "parameters": {"max_file_size": 10}})
     );
-    // Push rulesets don't show up as branch rules.
+    // Push rulesets don't protect branches or show up as branch rules.
+    let w = tempfile::tempdir().unwrap();
+    init_work(w.path()).await;
+    commit_files(
+        w.path(),
+        &[("a.txt", b"a")],
+        "first",
+        ("A", "a@example.com"),
+    )
+    .await;
+    push(&app, &alice, w.path(), "alice", "r", &["main"]).await;
+    let res = app.get("/api/v3/repos/alice/r/branches/main").send().await;
+    res.assert_status(200);
+    assert_eq!(res.json()["protected"], false);
     let res = app
         .get("/api/v3/repos/alice/r/rules/branches/main")
         .send()

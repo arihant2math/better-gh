@@ -317,8 +317,20 @@ impl RepoRules {
             })
     }
 
-    /// Active rulesets selecting `refname`.
+    /// Active branch / tag rulesets selecting `refname` (push rulesets,
+    /// which only restrict pushed content, are left out: see
+    /// [`Self::push_rulesets_for`]).
     pub fn rulesets_for<'a>(&'a self, refname: &'a str) -> impl Iterator<Item = &'a RulesetRow> {
+        self.push_rulesets_for(refname)
+            .filter(|r| r.target != "push")
+    }
+
+    /// Every active ruleset evaluated on a push to `refname`, push
+    /// rulesets included.
+    pub fn push_rulesets_for<'a>(
+        &'a self,
+        refname: &'a str,
+    ) -> impl Iterator<Item = &'a RulesetRow> {
         self.rulesets
             .iter()
             .filter(move |r| r.applies_to(refname, &self.default_branch))

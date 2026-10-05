@@ -104,7 +104,7 @@ fn rulesets_for<'a>(
     refname: &'a str,
 ) -> impl Iterator<Item = &'a RulesetRow> {
     rules
-        .rulesets_for(refname)
+        .push_rulesets_for(refname)
         .chain(rules.evaluate_for(refname))
 }
 

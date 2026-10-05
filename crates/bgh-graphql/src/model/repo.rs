@@ -698,6 +698,28 @@ impl Repository {
         pull::by_number(ctx, self, i64::from(number)).await
     }
 
+    // --- rulesets ----------------------------------------------------------
+
+    pub async fn rulesets(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+        #[graphql(default = true)] include_parents: bool,
+        targets: Option<Vec<super::ruleset::RepositoryRulesetTarget>>,
+    ) -> GResult<super::ruleset::RepositoryRulesetConnection> {
+        super::ruleset::repo_rulesets(
+            ctx,
+            self,
+            ConnArgs::new(first, last, after, before),
+            include_parents,
+            targets,
+        )
+        .await
+    }
+
     // --- labels, milestones, people --------------------------------------
 
     pub async fn labels(
