@@ -188,6 +188,11 @@ tx.emit(Event::RepositoryUpdated { repo_id: access.repo.id, actor_id: auth.user.
 tx.commit().await?;   // commit → publish sync deltas to Redis → emit events
 ```
 
+* Audit every security-relevant write (`audit::log`, or
+  `audit::log_with_ip(.., bgh_core::auth::client_ip(&headers).as_deref())`
+  when the request headers are at hand).
+* Site-wide behaviour switches come from `bgh_core::settings::load(&state)`
+  (typed, cached); never read `site_settings` directly.
 * Every synced model change calls `tx.sync` **in the same transaction**.
   Scopes: `sync::repo_scope(id)`, `sync::user_scope(id)`, `sync::org_scope(id)`.
   `data` is the compact client shape (not the REST shape), deletes send

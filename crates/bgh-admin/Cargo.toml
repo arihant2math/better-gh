@@ -8,10 +8,16 @@ publish.workspace = true
 
 [dependencies]
 bgh-core.workspace = true
+bgh-git.workspace = true
+bgh-accounts.workspace = true
+bgh-repos.workspace = true
 axum.workspace = true
+tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+chrono.workspace = true
+redis.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
 
@@ -19,3 +25,6 @@ anyhow.workspace = true
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
 tokio.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+sqlx.workspace = true

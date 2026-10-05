@@ -424,6 +424,31 @@ pub enum Event {
         /// GitHub REST JSON of the workflow (`workflow` key), if available.
         workflow: Option<serde_json::Value>,
     },
+    /// Site-level user account change (GHES global webhook `user` event).
+    /// `action`: `created` | `deleted` | `renamed` | `suspended` |
+    /// `unsuspended` | `promoted` | `demoted`. `login` is the current login
+    /// (the old one for `deleted`); `data` holds extras (`{"from": old}`).
+    UserAccountChanged {
+        user_id: i64,
+        login: String,
+        action: String,
+        actor_id: i64,
+        data: serde_json::Value,
+    },
+    /// Site-level organization change (GHES global webhook `organization`
+    /// event). `action`: `created` | `deleted` | `renamed`.
+    OrganizationChanged {
+        org_id: i64,
+        login: String,
+        action: String,
+        actor_id: i64,
+        data: serde_json::Value,
+    },
+    /// `POST /admin/hooks/{id}/pings`: deliver a `ping` to a global webhook.
+    GlobalHookPing {
+        hook_id: i64,
+        actor_id: i64,
+    },
 }
 
 impl Event {
@@ -493,6 +518,9 @@ impl Event {
             Self::CheckRunUpdated { .. } => "check_run_updated",
             Self::CheckSuiteUpdated { .. } => "check_suite_updated",
             Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
+            Self::UserAccountChanged { .. } => "user_account_changed",
+            Self::OrganizationChanged { .. } => "organization_changed",
+            Self::GlobalHookPing { .. } => "global_hook_ping",
         }
     }
 
@@ -561,7 +589,10 @@ impl Event {
             | Self::CheckRunUpdated { repo_id, .. }
             | Self::CheckSuiteUpdated { repo_id, .. }
             | Self::WorkflowRunUpdated { repo_id, .. } => Some(*repo_id),
-            Self::OrgMemberAdded { .. } => None,
+            Self::OrgMemberAdded { .. }
+            | Self::UserAccountChanged { .. }
+            | Self::OrganizationChanged { .. }
+            | Self::GlobalHookPing { .. } => None,
         }
     }
 
@@ -630,7 +661,10 @@ impl Event {
             | Self::MilestoneDeleted { actor_id, .. }
             | Self::ReleaseCreated { actor_id, .. }
             | Self::ReleaseEdited { actor_id, .. }
-            | Self::ReleaseDeleted { actor_id, .. } => Some(*actor_id),
+            | Self::ReleaseDeleted { actor_id, .. }
+            | Self::UserAccountChanged { actor_id, .. }
+            | Self::OrganizationChanged { actor_id, .. }
+            | Self::GlobalHookPing { actor_id, .. } => Some(*actor_id),
         }
     }
 }

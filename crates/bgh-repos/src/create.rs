@@ -133,8 +133,12 @@ async fn create(
     state: &AppState,
     auth: &AuthContext,
     owner: db::User,
-    body: CreateRepoBody,
+    mut body: CreateRepoBody,
 ) -> ApiResult<(StatusCode, Json<Repository>)> {
+    if body.visibility.is_none() && body.private.is_none() {
+        let settings = bgh_core::settings::load(state).await?;
+        body.visibility = Some(settings.default_visibility(owner.is_org()).to_string());
+    }
     let private = wants_private(&body);
     auth.require_scope(if private { "repo" } else { "public_repo" })?;
 
