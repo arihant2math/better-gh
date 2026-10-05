@@ -23,7 +23,7 @@ class Session {
   ready = false;
 
   constructor() {
-    makeAutoObservable(this);
+    makeAutoObservable<Session, 'starting'>(this, { starting: false });
   }
 
   /** Read the (final) boot data. Called once by main.tsx. */
@@ -31,10 +31,21 @@ class Session {
     this.user = getBoot().user;
   }
 
-  async start(): Promise<void> {
-    const user = this.user;
-    if (!user || hasSync()) return;
+  private starting: Promise<void> | null = null;
+
+  /** Start the sync client for the signed-in user (idempotent). */
+  start(): Promise<void> {
+    if (!this.user || hasSync()) return Promise.resolve();
+    this.starting ??= this.doStart(this.user).finally(() => (this.starting = null));
+    return this.starting;
+  }
+
+  private async doStart(user: BootUser): Promise<void> {
     const persistence = await openPersistence(dbName(user.id));
+    if (this.user?.id !== user.id) {
+      persistence.close();
+      return;
+    }
     const client = new SyncClient({
       userId: user.id,
       transport: transport(),

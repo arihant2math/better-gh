@@ -52,7 +52,7 @@ export function chordFromEvent(e: KeyboardEvent): string | null {
 }
 
 export function isEditable(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
+  if (typeof HTMLElement === 'undefined' || !(el instanceof HTMLElement)) return false;
   if (el.isContentEditable) return true;
   const tag = el.tagName;
   if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
