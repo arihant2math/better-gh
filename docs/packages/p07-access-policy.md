@@ -1,6 +1,6 @@
 # P7 access-policy — status
 
-**In progress.** Branch `bgh/p07-access-policy`. Scope: `docs/PHASE4_PLAN.md`
+**Done.** Branch `bgh/p07-access-policy`. Scope: `docs/PHASE4_PLAN.md`
 §P7 (no §5 quick fixes are assigned to P7). Evidence: `docs/AUDIT.md`
 ("internal visibility behaves like private", "No private mode").
 
@@ -170,6 +170,11 @@
   `scripts/gh-compat.sh` run is 40/40 and `scripts/api-smoke.sh` 45/45.
 
 ## Known gaps / notes
+
+* Made P2's `push_hardening::push_size_limit` robust: under load git
+  hangs up while the client is still uploading the oversized pack, so the
+  client reports a broken pipe instead of git's message. The test now
+  accepts either, and asserts the branch didn't move.
 
 * Anonymous GraphQL outside private mode keeps working as before (GitHub
   requires auth for GraphQL; not part of P7).
