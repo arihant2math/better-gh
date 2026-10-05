@@ -8,8 +8,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bgh_core::models::db;
-use bgh_core::perms::{JOB_TOKEN_READ_ONLY_SCOPE, JOB_TOKEN_SCOPE_PREFIX};
+use bgh_core::perms::{
+    JOB_TOKEN_ACTOR_SCOPE_PREFIX, JOB_TOKEN_READ_ONLY_SCOPE, JOB_TOKEN_SCOPE_PREFIX,
+};
 use bgh_core::prelude::{SyncAction, Tx};
+use bgh_core::token_permissions::{Access, Category, TokenPermissions};
 use bgh_core::{AppState, crypto as core_crypto};
 use chrono::Utc;
 use indexmap::IndexMap;
@@ -216,36 +219,70 @@ async fn prepare_spec(
     spec.run_attempt = job.run_attempt;
     spec.github["run_attempt"] = json!(job.run_attempt.to_string());
 
-    // GITHUB_TOKEN: a short-lived token of the triggering actor restricted
-    // to this repository (see bgh_core::perms::effective).
-    let token_user = run
+    // GITHUB_TOKEN: a short-lived token of github-actions[bot] restricted
+    // to this repository and to the workflow's `permissions:` (see
+    // bgh_core::perms::effective and bgh_core::token_permissions). Writes
+    // made with it are attributed to the bot; the triggering actor is kept
+    // in a scope for the audit log.
+    let triggering_actor = run
         .triggering_actor_id
         .or(run.actor_id)
         .unwrap_or(repo.owner_id);
     let expires = Utc::now() + chrono::Duration::minutes(spec.timeout_minutes as i64 + 60);
     // Pull requests from forks get no secrets and a read-only token.
     let from_fork = run.event == "pull_request" && run.head_repo_id.is_some_and(|h| h != repo.id);
+    let settings = bgh_core::settings::load(state)
+        .await
+        .map_err(|e| anyhow::anyhow!("loading settings: {e}"))?;
+    let default = || TokenPermissions::default_for(&settings.actions.default_workflow_permissions);
+    let resolve = |p: &Option<crate::workflow::Permissions>| match p {
+        Some(p) => token_permissions(p),
+        None => default(),
+    };
+    // A called job (reusable workflow) without its own `permissions:`
+    // inherits its caller's; every caller on the way caps it.
+    let mut permissions = match (&stored.permissions, stored.permission_caps.last()) {
+        (Some(p), _) => token_permissions(p),
+        (None, Some(cap)) => resolve(cap),
+        (None, None) => default(),
+    };
+    for cap in &stored.permission_caps {
+        permissions = intersect(&permissions, &resolve(cap));
+    }
+    if from_fork {
+        permissions = permissions.read_only();
+    }
     let mut scopes = vec![
         "repo".to_string(),
-        "workflow".to_string(),
         format!("{JOB_TOKEN_SCOPE_PREFIX}{}", repo.id),
+        format!("{JOB_TOKEN_ACTOR_SCOPE_PREFIX}{triggering_actor}"),
     ];
-    if from_fork {
+    if !permissions.has_write() {
         scopes.push(JOB_TOKEN_READ_ONLY_SCOPE.to_string());
     }
+    scopes.extend(permissions.to_scopes());
+    let bot = bgh_core::bots::ensure_actions_bot(tx).await?;
     let (token_row, token) = bgh_core::auth::create_access_token(
         &mut **tx,
-        token_user,
+        bot,
         &format!("GITHUB_TOKEN (job {})", job.id),
         &scopes,
         Some(expires),
     )
     .await
     .map_err(|e| anyhow::anyhow!("creating job token: {e}"))?;
-    sqlx::query("UPDATE access_tokens SET kind = 'app' WHERE id = $1")
-        .bind(token_row.id)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE access_tokens SET kind = 'app', permissions = $2, created_by_id = $3 WHERE id = $1",
+    )
+    .bind(token_row.id)
+    .bind(serde_json::to_value(&permissions)?)
+    .bind(triggering_actor)
+    .execute(&mut **tx)
+    .await?;
+    spec.token_permissions = permissions
+        .iter()
+        .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))
+        .collect();
 
     let vars = crate::scoped::vars_for(state, &repo, spec.environment.as_deref()).await?;
     spec.vars = Value::Object(vars);
@@ -323,6 +360,26 @@ async fn prepare_spec(
         first.started_at = Some(Utc::now());
     }
     Ok((spec, token_row.id, steps))
+}
+
+/// Per category, the lower of the two levels.
+fn intersect(a: &TokenPermissions, b: &TokenPermissions) -> TokenPermissions {
+    TokenPermissions::from_pairs(a.iter().map(|(c, x)| (c, x.min(b.get(c)))))
+}
+
+/// The token permission map of a workflow `permissions:` value. Listed
+/// categories get their level, unlisted ones `none`; unknown category names
+/// are ignored (the parser already validated the levels).
+pub fn token_permissions(p: &crate::workflow::Permissions) -> TokenPermissions {
+    use crate::workflow::Permissions;
+    match p {
+        Permissions::ReadAll => TokenPermissions::read_all(),
+        Permissions::WriteAll => TokenPermissions::write_all(),
+        Permissions::Map(m) => TokenPermissions::from_pairs(
+            m.iter()
+                .filter_map(|(k, v)| Some((Category::parse(k)?, Access::parse(v)?))),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

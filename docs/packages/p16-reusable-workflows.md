@@ -3,11 +3,9 @@
 Branch `bgh/p16-reusable-workflows`. Migration
 `2800_actions_reusable_workflows.sql` (range 2800–2899).
 
-**Status:** integrated into `claude/sleepy-cray-9jj0t3` (full gate,
-`actions-e2e.sh`, `gh-compat.sh`, `api-smoke.sh` green). One scope item is
-outstanding: the `permissions:` intersection, which needs P8's
-`bgh_core::token_permissions` (not on the integration branch yet); the caps
-are already stored per job (see Known gaps).
+**Status:** complete — scope and acceptance met; integrated into
+`claude/sleepy-cray-9jj0t3` (full gate, `actions-e2e.sh`, `gh-compat.sh`,
+`api-smoke.sh` green).
 
 ## How it works
 
@@ -54,6 +52,12 @@ are already stored per job (see Known gaps).
   top-level file, `event`, `sha`...); `github.job` is the called job id;
   `github.job_workflow_sha` is the commit of the called workflow; `inputs.*`
   are the typed inputs.
+* `permissions:`: each hop stores the caller's `permissions:` (job level,
+  else workflow level; `None` = site default) in
+  `StoredJob.permission_caps`. At claim time (`server::prepare_spec`, on top
+  of P8's token permissions) a called job's token starts from its own
+  `permissions:`, else the innermost caller's, and is intersected with every
+  caller's (per category, the lower level).
 * Caller `concurrency` (job level): the call row waits as `pending` while
   another active row holds the group (newer pending rows replace older
   ones, `cancel-in-progress` cancels the holder through the durable
@@ -104,7 +108,7 @@ are already stored per job (see Known gaps).
   then allowed through the access endpoint; other owners denied); errors
   (missing workflow, missing ref, input type, unknown input, not reusable,
   depth limit; dependent skipped); 20-unique limit; caller concurrency and
-  cancel cascade.
+  cancel cascade; permissions capped by the caller and inherited.
 * Unit tests in `reusable.rs` (ref parsing, input typing, secret layers,
   outputs) and the workflow parser test (`with` raw values).
 * `scripts/actions-e2e.sh`: CI calls `./.github/workflows/package.yml`; the
@@ -117,11 +121,6 @@ None outside `bgh-actions` (migration only).
 
 ## Known gaps
 
-* `permissions:` intersection: caps are stored per hop
-  (`StoredJob.permission_caps: Vec<Option<Permissions>>`, `None` = the
-  default) but not applied until P8 lands. Planned in `server::prepare_spec`:
-  base = the called job's own permissions, else the innermost cap, else the
-  default; then intersect with every cap (`None` → site default).
 * `runs::pull_request_events_trigger_runs` (pre-existing) failed once under
   full-workspace load (settle timing); it passed 4/4 in isolation and in the
   final gate.

@@ -793,3 +793,63 @@ async fn caller_concurrency_waits_and_cancel_cascades() {
         ("completed".to_string(), Some("cancelled".to_string()))
     );
 }
+
+#[tokio::test]
+async fn called_job_permissions_are_capped_by_the_caller() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    app.create_private_repo(&alice, "proj").await;
+    let wc = WorkingCopy::new(&app, &alice, "alice", "proj").await;
+    wc.commit(
+        &[
+            (
+                ".github/workflows/ci.yml",
+                r###"
+name: CI
+on: push
+jobs:
+  call:
+    permissions:
+      contents: read
+      issues: write
+    uses: ./.github/workflows/p.yml
+"###,
+            ),
+            (
+                ".github/workflows/p.yml",
+                r###"
+on: workflow_call
+jobs:
+  asks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - run: 'true'
+  inherits:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'true'
+"###,
+            ),
+        ],
+        "ci",
+    )
+    .await;
+    wc.push("main").await;
+    settle(&app).await;
+    let run_id = run_named(&app, &alice, "alice/proj", "CI").await["id"]
+        .as_i64()
+        .unwrap();
+    run_all(&app).await;
+    for j in jobs(&app, &alice, "alice/proj", run_id).await {
+        assert_eq!(j["conclusion"], "success", "{j:#}");
+        let log = bgh_actions::logs::read_job(&app.state, j["id"].as_i64().unwrap()).await;
+        assert!(log.contains("Contents: read"), "{}: {log}", j["name"]);
+        assert!(log.contains("Issues: write"), "{}: {log}", j["name"]);
+        assert!(!log.contains("Contents: write"), "{}: {log}", j["name"]);
+        assert!(!log.contains("Pull-requests"), "{}: {log}", j["name"]);
+    }
+}

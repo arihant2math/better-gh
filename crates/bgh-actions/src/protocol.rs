@@ -74,6 +74,10 @@ pub struct JobSpec {
     pub outputs: IndexMap<String, String>,
     pub timeout_minutes: u64,
     pub environment: Option<String>,
+    /// `GITHUB_TOKEN` permission map (`{"contents": "read"}`), filled in
+    /// when the job is acquired; shown in the "Set up job" log.
+    #[serde(default)]
+    pub token_permissions: IndexMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -7,6 +7,7 @@ mod common;
 mod e2e;
 mod reusable;
 mod runs;
+mod security;
 mod settings;
 mod smoke;
 mod ui;

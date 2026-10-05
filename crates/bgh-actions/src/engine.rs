@@ -47,6 +47,10 @@ pub struct StoredJob {
     pub job_env: IndexMap<String, String>,
     pub container: Option<Container>,
     pub services: IndexMap<String, Container>,
+    /// Effective `permissions:` (job-level, else workflow-level); `None`
+    /// takes the site default when the token is minted.
+    #[serde(default)]
+    pub permissions: Option<crate::workflow::Permissions>,
     /// Secret layers of the reusable workflow calls leading to this job
     /// (empty for jobs of the run's own workflow).
     #[serde(default)]
@@ -1444,6 +1448,7 @@ async fn materialize(
             outputs: job.outputs.clone(),
             timeout_minutes: timeout as u64,
             environment,
+            token_permissions: IndexMap::new(),
         };
         let stored = StoredJob {
             spec,
@@ -1451,6 +1456,7 @@ async fn materialize(
             job_env: job.env.clone(),
             container: job.container.clone(),
             services: job.services.clone(),
+            permissions: job.permissions.clone().or_else(|| def.permissions.clone()),
             secret_layers: scope.secret_layers.clone(),
             permission_caps: scope.permission_caps.clone(),
         };
