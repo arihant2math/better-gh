@@ -38,9 +38,15 @@ pub async fn insert(
         ),
         None => (repo.name.clone(), None),
     };
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO activity_events (type, actor_id, repo_id, repo_name, org_id, public, payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+    // Events are delivered at least once: key the row by the outbox event
+    // (and its position within this invocation) so redelivery is a no-op.
+    let (event_id, event_seq) = bgh_core::events::effect_key().unzip();
+    let id: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO activity_events
+                (type, actor_id, repo_id, repo_name, org_id, public, payload, event_id, event_seq)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (event_id, event_seq) WHERE event_id IS NOT NULL DO NOTHING
+         RETURNING id",
     )
     .bind(kind)
     .bind(actor_id)
@@ -49,9 +55,20 @@ pub async fn insert(
     .bind(org_id)
     .bind(!repo.is_private())
     .bind(payload)
-    .fetch_one(&state.db)
+    .bind(event_id)
+    .bind(event_seq)
+    .fetch_optional(&state.db)
     .await?;
-    Ok(id)
+    match id {
+        Some(id) => Ok(id),
+        None => Ok(sqlx::query_scalar(
+            "SELECT id FROM activity_events WHERE event_id = $1 AND event_seq = $2",
+        )
+        .bind(event_id)
+        .bind(event_seq)
+        .fetch_one(&state.db)
+        .await?),
+    }
 }
 
 async fn repo(state: &AppState, id: i64) -> anyhow::Result<Option<db::Repository>> {

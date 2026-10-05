@@ -135,6 +135,8 @@ start-up with an error naming the variable.
 | `BGH_SIGNUP_ENABLED` | `true` | Allow self-service sign-up. The first account ever created becomes site admin, so create the admin first (or keep this `false` and use `bgh admin create-user`). |
 | `BGH_SESSION_TTL_DAYS` | `30` | Lifetime of web sessions. |
 | `BGH_JOB_WORKERS` | `4` | Concurrent background job workers per process (webhooks, post-receive, repo deletion, ...). `0` disables job processing in this process. |
+| `BGH_EVENT_RETENTION_DAYS` | `7` | How long processed domain events stay in the `event_outbox` table (and redelivery receipts in `event_receipts`) before pruning. Unprocessed events are never pruned. |
+| `BGH_SHUTDOWN_TIMEOUT_SECS` | `30` | On SIGTERM, how long to wait for in-flight HTTP requests before stopping background work anyway. |
 | `BGH_GIT_BIN` | `git` | git executable (≥ 2.38). |
 | `BGH_MAX_BLOB_SIZE` | `10485760` (10 MiB) | Larger blobs are not loaded into memory by API/rendering code (they are still served raw and over git). |
 | `BGH_SITE_NAME` | `Better GitHub` | Instance name shown in the UI. |
@@ -322,7 +324,17 @@ URLs are generated on the fly, nothing stores the old one).
 * **Logs:** structured lines on stderr, one per request with a
   `request_id` (also returned as `X-Request-Id`); tune with `RUST_LOG`.
 * **Shutdown:** SIGTERM/SIGINT stop accepting connections, finish in-flight
-  requests, stop job workers, then exit.
+  requests (up to `BGH_SHUTDOWN_TIMEOUT_SECS`), then stop background work:
+  job workers finish their current job, event listeners deliver every
+  event already committed (bounded at 15 s) and release their leases,
+  then the process exits. Nothing is lost if it is killed instead:
+  events wait in `event_outbox` and are delivered after the restart.
+* **Events:** webhooks, notifications, activity and CI triggers are fed by
+  a transactional outbox (`event_outbox`); each listener keeps a cursor in
+  `event_listener_cursors` and is consumed by one process at a time (a
+  30 s lease), so several `bgh` processes can share a database. Lag per
+  listener: `SELECT listener, last_id, lease_owner, updated_at FROM
+  event_listener_cursors` against `SELECT max(id) FROM event_outbox`.
 * **Background jobs** live in the `jobs` table; failed jobs are retried
   with exponential backoff and kept with `failed_at` after the last attempt.
 * **Resources:** the process is mostly I/O bound; git operations run as

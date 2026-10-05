@@ -239,6 +239,9 @@ between parallel work:
 | 0500-0599 | notify    | 1200-1299 | wiki/misc  |
 | 0600-0699 | releases  | 1300+     | later      |
 
+Phase 4 packages use `{1200+100·n}`–`{1299+100·n}` for package Pn
+(`docs/PHASE4_PLAN.md` §0), e.g. 2100–2199 for P9 (event outbox).
+
 Never edit a migration that has been merged to the integration branch;
 add a new one.
 
@@ -331,10 +334,25 @@ Site-level account changes also emit `UserAccountChanged` /
   repo deletion, archive generation, CI dispatch.
 * Event bus: domain events (`bgh_core::events::Event`, a `#[non_exhaustive]`
   enum carrying ids) emitted after commit via `tx.emit`; consumers register
-  `reg.on_event(name, handler)` and receive every event in order (one task
-  per listener). Delivery is in-process and best-effort: listeners that
-  must not lose work enqueue a job. Consumers: webhooks, notifications,
-  timeline, search indexing.
+  `reg.on_event(name, handler)` and receive every event in commit order.
+  Delivery is durable and at-least-once through a transactional outbox
+  (`bgh_core::outbox`): `Tx::commit` appends the events to `event_outbox`
+  under the sync advisory lock (ids become visible in order) and
+  `NOTIFY bgh_events`; each listener is a consumer with a cursor in
+  `event_listener_cursors`, held by one process at a time through a 30 s
+  lease, reading batches of 200 and advancing the cursor per batch.
+  Handlers are idempotent via `events::effect_key()` / `claim_effect`
+  (unique `(hook_id, event_id, event_seq)` on webhook deliveries,
+  `(event_id, event_seq)` on activity, `event_receipts` for notifications,
+  workflow triggers and counters). Failed handlers are retried 3 times,
+  then skipped. Processed rows older than `BGH_EVENT_RETENTION_DAYS` are
+  pruned; `outbox::consumer_lag` reports lag per listener. The in-memory
+  broadcast (`events.subscribe()`) remains only for ephemeral subscribers.
+  Shutdown (`bgh_server::serve`): stop accepting, finish in-flight
+  requests, flush direct emits, then cancel the separate background token
+  (workers finish the current job, listeners drain committed events and
+  release their leases). Consumers: webhooks, notifications, activity,
+  CI triggers, search indexing, sync access changes.
 
 ## Git
 

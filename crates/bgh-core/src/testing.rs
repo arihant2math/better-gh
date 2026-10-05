@@ -40,7 +40,7 @@ use tower::ServiceExt;
 
 use crate::config::Config;
 use crate::models::db;
-use crate::registry::{AppFactory, Registry, spawn_listeners};
+use crate::registry::{AppFactory, Registry, start_listeners};
 use crate::state::{AppState, connect_redis};
 
 /// Name of the template database holding the migrated schema:
@@ -234,6 +234,9 @@ pub struct TestApp {
     pub base_url: String,
     pub db_name: String,
     shutdown: CancellationToken,
+    /// Durable event consumers: their own token (child of `shutdown`) and
+    /// task handles, so tests can stop and restart them.
+    consumers: tokio::sync::Mutex<(CancellationToken, Vec<tokio::task::JoinHandle<()>>)>,
     _data_dir: tempfile::TempDir,
 }
 
@@ -315,7 +318,10 @@ impl TestApp {
         let router = (factory.router)(state.clone());
 
         let shutdown = CancellationToken::new();
-        spawn_listeners(&state, &registry.listeners, shutdown.clone());
+        let consumer_token = shutdown.child_token();
+        let handles = start_listeners(&state, &registry.listeners, consumer_token.clone())
+            .await
+            .expect("start event listeners");
         {
             let router = router.clone();
             let shutdown = shutdown.clone();
@@ -334,8 +340,44 @@ impl TestApp {
             base_url,
             db_name,
             shutdown,
+            consumers: tokio::sync::Mutex::new((consumer_token, handles)),
             _data_dir: data_dir,
         }
+    }
+
+    /// Stop the registry's durable event consumers (after they drain what
+    /// is committed). Events emitted afterwards stay in the outbox until
+    /// [`Self::start_listeners`].
+    pub async fn stop_listeners(&self) {
+        let mut guard = self.consumers.lock().await;
+        guard.0.cancel();
+        for h in guard.1.drain(..) {
+            let _ = h.await;
+        }
+    }
+
+    /// (Re)start the registry's durable event consumers (no-op if running).
+    pub async fn start_listeners(&self) {
+        let mut guard = self.consumers.lock().await;
+        if !guard.0.is_cancelled() {
+            return;
+        }
+        let token = self.shutdown.child_token();
+        guard.1 = start_listeners(&self.state, &self.registry.listeners, token.clone())
+            .await
+            .expect("start event listeners");
+        guard.0 = token;
+    }
+
+    /// Wait until every registered listener has processed all events
+    /// emitted so far (panics after 30 s).
+    pub async fn settle_events(&self) {
+        let names: Vec<&str> = self.registry.listeners.iter().map(|l| l.name).collect();
+        assert!(
+            crate::outbox::wait_caught_up(&self.state, &names, std::time::Duration::from_secs(30))
+                .await,
+            "event listeners did not catch up"
+        );
     }
 
     /// Absolute URL for a path on the TCP listener.

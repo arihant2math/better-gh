@@ -22,7 +22,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     /// URL builder for GitHub-style `url` / `html_url` / `*_url` fields.
     pub urls: Arc<Urls>,
-    /// In-process domain event bus (see [`crate::events`]).
+    /// Domain event bus (see [`crate::events`]).
     pub events: EventBus,
     ext: Arc<http::Extensions>,
 }
@@ -39,12 +39,13 @@ impl AppState {
     /// Assemble state from already-open connections.
     pub fn new(config: Config, db: PgPool, redis: ConnectionManager) -> Self {
         let config = Arc::new(config);
+        let events = EventBus::durable(db.clone());
         Self {
             db,
             redis,
             urls: Arc::new(Urls::new(&config)),
             config,
-            events: EventBus::new(),
+            events,
             ext: Arc::new(http::Extensions::new()),
         }
     }
