@@ -164,6 +164,9 @@ function markedInstance(): Marked {
 
 let instance: Marked | null = null;
 
+/** Own instance: hooks must not leak into other DOMPurify users (mermaid). */
+const purify = DOMPurify(typeof window === 'undefined' ? undefined : window);
+
 let tasksEnabled = false;
 /** Origin of this instance during a sanitize call (external images go through camo). */
 let imageOrigin = '';
@@ -173,7 +176,7 @@ function isExternal(src: string): boolean {
   if (!/^https?:\/\//i.test(src)) return false;
   return !imageOrigin || !src.toLowerCase().startsWith(`${imageOrigin.toLowerCase()}/`);
 }
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+purify.addHook('afterSanitizeAttributes', (node) => {
   const el = node as Element;
   switch (el.tagName) {
     case 'INPUT':
@@ -270,7 +273,7 @@ export function renderMarkdown(src: string, ctx: RenderContext = {}): string {
   const html = instance.parse(src) as string;
   tasksEnabled = !!ctx.tasks;
   imageOrigin = (ctx.origin ?? (typeof location === 'undefined' ? '' : location.origin)).replace(/\/+$/, '');
-  const clean = DOMPurify.sanitize(html, {
+  const clean = purify.sanitize(html, {
     ADD_TAGS: ['g-emoji'],
     ADD_ATTR: ['target', 'controls', 'preload', 'loading', 'decoding', 'alias', 'lang'],
     FORBID_TAGS: ['style', 'form'],

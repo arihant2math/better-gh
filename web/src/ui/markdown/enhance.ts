@@ -23,6 +23,7 @@ async function highlight(root: HTMLElement) {
     return !SKIP_HIGHLIGHT.has(lang) && !c.dataset.hl;
   });
   if (!blocks.length) return;
+  for (const c of blocks) c.dataset.hl = 'pending';
   const items = blocks.map((c) => ({ el: c, lang: c.parentElement!.getAttribute('lang')!, code: c.textContent ?? '' }));
   const missing = items.filter((b) => !highlighted.has(key(b.lang, b.code)));
   const unique = [...new Map(missing.map((b) => [key(b.lang, b.code), b])).values()].slice(0, 50);
@@ -46,10 +47,12 @@ async function highlight(root: HTMLElement) {
 }
 
 async function math(root: HTMLElement) {
+  // Claim nodes before awaiting: enhance() may run again on the same DOM meanwhile.
   const spans = [...root.querySelectorAll<HTMLElement>('[data-math-style]:not([data-typeset])')];
-  const fences = [...root.querySelectorAll<HTMLElement>('pre[lang="math"]')];
+  const fences = [...root.querySelectorAll<HTMLElement>('pre[lang="math"]:not([data-typeset])')];
   if (!spans.length && !fences.length) return;
-  const temml = await import('temml');
+  for (const el of [...spans, ...fences]) el.dataset.typeset = '1';
+  const { default: temml } = await import('temml');
   const typeset = (el: HTMLElement, tex: string, displayMode: boolean) => {
     try {
       temml.render(tex.trim(), el, { displayMode, throwOnError: false });
@@ -59,7 +62,6 @@ async function math(root: HTMLElement) {
     }
   };
   for (const s of spans) {
-    s.dataset.typeset = '1';
     typeset(s, s.textContent ?? '', s.dataset.mathStyle === 'display');
   }
   for (const pre of fences) {
@@ -73,8 +75,9 @@ async function math(root: HTMLElement) {
 let mermaidSeq = 0;
 
 async function mermaid(root: HTMLElement) {
-  const pres = [...root.querySelectorAll<HTMLElement>('pre[lang="mermaid"]')];
+  const pres = [...root.querySelectorAll<HTMLElement>('pre[lang="mermaid"]:not([data-typeset])')];
   if (!pres.length) return;
+  for (const pre of pres) pre.dataset.typeset = '1';
   const { default: m } = await import('mermaid');
   const dark = matchMedia('(prefers-color-scheme: dark)').matches || document.documentElement.dataset.theme === 'dark';
   m.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' });
