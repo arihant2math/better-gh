@@ -625,7 +625,7 @@ pub async fn check_upload_quota(state: &AppState, owner_id: i64, add_bytes: u64)
     let (_, total) = storage_limits_kb(state, owner_id).await?;
     let Some(limit) = total else { return Ok(()) };
     let used: i64 = sqlx::query_scalar(
-        "SELECT (SELECT coalesce(sum(size), 0) FROM repositories WHERE owner_id = $1)::bigint
+        "SELECT (SELECT coalesce(sum(size + lfs_size / 1024), 0) FROM repositories WHERE owner_id = $1)::bigint
               + ((SELECT coalesce(sum(size), 0) FROM attachments WHERE owner_id = $1) / 1024)::bigint",
     )
     .bind(owner_id)
