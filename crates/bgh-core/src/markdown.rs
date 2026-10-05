@@ -1152,6 +1152,20 @@ mod tests {
     }
 
     #[test]
+    fn proxies_external_images_and_keeps_emoji_without_references() {
+        let html = render("![a](https://img.example/a.png) ![b](http://h/x.png)", &ctx());
+        assert!(html.contains("src=\"http://h/_bgh/camo/"), "{html}");
+        assert!(html.contains("src=\"http://h/x.png\""), "{html}");
+        assert_eq!(html.matches("loading=\"lazy\" decoding=\"async\"").count(), 2);
+        let mut plain = ctx();
+        plain.references = false;
+        let html = render("#1 @a :tada:", &plain);
+        assert!(!html.contains("<a"), "{html}");
+        assert!(html.contains("alias=\"tada\""), "{html}");
+        assert!(emoji_names().count() > 1800);
+    }
+
+    #[test]
     fn renders_gfm() {
         let html = render(
             "# Title\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n- [ ] todo\n\n~~gone~~ https://example.com",

@@ -335,6 +335,8 @@ export interface SiteSettings {
   /** Data retention windows in days; 0 keeps rows forever. */
   retention: RetentionSettings;
   actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
+  /** Rendered Markdown: proxy external images through `/_bgh/camo`. */
+  markdown: { image_proxy: boolean };
 }
 
 export interface RetentionSettings {

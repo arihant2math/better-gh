@@ -22,6 +22,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'retention', title: 'Data retention', anchor: 'retention' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
   { key: 'actions', title: 'Actions', anchor: 'actions' },
+  { key: 'markdown', title: 'Markdown', anchor: 'markdown' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -73,6 +74,7 @@ export interface SettingsForm {
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
   retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
   actions: SiteSettings['actions'];
+  markdown: SiteSettings['markdown'];
 }
 
 /** Retention windows (days); off = keep forever (0 in the API). */
@@ -184,6 +186,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       >),
     },
     actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
+    markdown: { ...(s.markdown ?? { image_proxy: true }) },
   };
 }
 
@@ -362,6 +365,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
         break;
       case 'actions':
         out.actions = { ...f.actions };
+        break;
+      case 'markdown':
+        out.markdown = { ...f.markdown };
         break;
     }
   }
