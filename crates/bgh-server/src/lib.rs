@@ -56,6 +56,7 @@ pub fn register(reg: &mut Registry) {
     bgh_actions::register(reg);
     bgh_projects::register(reg);
     bgh_wiki::register(reg);
+    bgh_packages::register(reg);
     bgh_uploads::register(reg);
 }
 
@@ -75,6 +76,7 @@ fn api_routes() -> Router<AppState> {
         .merge(bgh_actions::router())
         .merge(bgh_projects::router())
         .merge(bgh_wiki::router())
+        .merge(bgh_packages::router())
         .merge(bgh_uploads::router())
 }
 
@@ -94,6 +96,7 @@ fn web_routes() -> Router<AppState> {
         .merge(bgh_actions::web_router())
         .merge(bgh_projects::web_router())
         .merge(bgh_wiki::web_router())
+        .merge(bgh_packages::web_router())
         .merge(bgh_uploads::web_router())
 }
 
@@ -129,7 +132,10 @@ pub fn app(state: AppState) -> Router {
         // Already compressed or binary downloads (archives, LFS objects).
         .and(NotForContentType::const_new("application/zip"))
         .and(NotForContentType::const_new("application/x-gzip"))
-        .and(NotForContentType::const_new("application/octet-stream"));
+        .and(NotForContentType::const_new("application/octet-stream"))
+        // Registry manifests: clients verify the digest of the exact bytes.
+        .and(NotForContentType::const_new("application/vnd.oci."))
+        .and(NotForContentType::const_new("application/vnd.docker."));
 
     Router::new()
         .route("/healthz", get(healthz))
