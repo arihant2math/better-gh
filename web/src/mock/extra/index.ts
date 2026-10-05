@@ -10,6 +10,7 @@ import { installAppsMocks } from './apps';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
+import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
@@ -26,6 +27,7 @@ export function installExtraMocks(server: MockServer): void {
   installRepoNavMocks(server);
   installUploadMocks(server);
   installImportMocks(server);
+  installMetadataImportMocks(server);
   installDeploymentMocks(server);
   installPackageMocks(server);
   installAppsMocks(server);

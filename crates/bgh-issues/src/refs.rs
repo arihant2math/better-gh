@@ -335,6 +335,9 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     let Event::Push(push) = &*event else {
         return Ok(());
     };
+    if push.is_quiet() {
+        return Ok(());
+    }
     let Some(repo) = db::Repository::find(&state.db, push.repo_id).await? else {
         return Ok(());
     };

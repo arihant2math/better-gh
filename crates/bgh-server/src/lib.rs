@@ -53,6 +53,7 @@ pub fn register(reg: &mut Registry) {
     bgh_actions::register(reg);
     bgh_projects::register(reg);
     bgh_wiki::register(reg);
+    bgh_import::register(reg);
     bgh_packages::register(reg);
     bgh_uploads::register(reg);
 }
@@ -73,6 +74,7 @@ fn api_routes() -> Router<AppState> {
         .merge(bgh_actions::router())
         .merge(bgh_projects::router())
         .merge(bgh_wiki::router())
+        .merge(bgh_import::router())
         .merge(bgh_packages::router())
         .merge(bgh_uploads::router())
 }
@@ -93,6 +95,7 @@ fn web_routes() -> Router<AppState> {
         .merge(bgh_actions::web_router())
         .merge(bgh_projects::web_router())
         .merge(bgh_wiki::web_router())
+        .merge(bgh_import::web_router())
         .merge(bgh_packages::web_router())
         .merge(bgh_uploads::web_router())
 }

@@ -1074,6 +1074,9 @@ async fn retitle(state: &AppState, issue: &db::Issue) -> ApiResult<()> {
 
 /// Event listener (`notify.notifications`).
 pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
+    if event.is_quiet() {
+        return Ok(());
+    }
     let acts = activities(&state, &event)
         .await
         .map_err(|e| anyhow::anyhow!("building notifications for {}: {e:?}", event.name()))?;

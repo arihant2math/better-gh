@@ -257,6 +257,9 @@ async fn ping_global(state: &AppState, hook_id: i64, actor_id: i64) -> ApiResult
 
 /// Event listener (`notify.webhooks`).
 pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
+    if event.is_quiet() {
+        return Ok(());
+    }
     dispatch(&state, &event)
         .await
         .map(|_| ())
