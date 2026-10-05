@@ -273,8 +273,16 @@ model names to these.
 
 ## Known gaps / TODO
 
-- The `gh` login also needs GraphQL `viewer { login }` (owned by B9) for the
-  username after `gh auth login`.
+- **The `gh` login needs GraphQL `viewer { login }` (B9).** Verified with
+  the real `gh` 2.x through `scripts/lib/tls-proxy.py`.
+  `gh auth login --hostname H --web` completes the device flow: the code is
+  issued, approved through `/_bgh/device`, and the token is exchanged
+  (`POST /login/oauth/access_token` 200). gh then calls
+  `POST /api/graphql` for the username, which returns 404 until B9 lands;
+  `--with-token` stops at the same call. REST calls with the token already
+  work (`gh api user`). This package does not add a stub `/api/graphql`
+  route, because it would conflict with B9's route at merge time (axum
+  panics on duplicate routes).
 - The HTML pages for `/login/oauth/authorize` and `/login/device` are
   minimal server-rendered fallbacks. The SPA (F1) can use the
   `/_bgh/oauth/authorize` and `/_bgh/device` JSON endpoints instead and must
