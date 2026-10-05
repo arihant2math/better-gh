@@ -6,10 +6,14 @@
 //! payloads built ([`crate::payloads::for_event`]). Each matching hook gets
 //! a `webhook_deliveries` row (exact body stored) and a
 //! `notify.deliver_webhook` job, all in one transaction.
+//!
+//! Domain events are delivered at least once, so deliveries created for an
+//! outbox event carry `(event_id, event_seq)` under a unique index per hook:
+//! a redelivered event creates no second delivery.
 
 use std::sync::Arc;
 
-use bgh_core::events::Event;
+use bgh_core::events::{self, Event};
 use bgh_core::prelude::*;
 use serde_json::Value;
 
@@ -27,12 +31,32 @@ pub async fn queue_delivery(
     payload: &Value,
     redelivery: bool,
 ) -> ApiResult<i64> {
+    let id = insert_delivery(tx, hook, event, action, repo_id, payload, redelivery, None).await?;
+    Ok(id.expect("unkeyed deliveries always insert"))
+}
+
+/// [`queue_delivery`] keyed by the outbox event `(event_id, seq)` that
+/// produced it; `None` (nothing queued) if that key was already delivered.
+#[allow(clippy::too_many_arguments)]
+async fn insert_delivery(
+    tx: &mut Tx,
+    hook: &HookRow,
+    event: &str,
+    action: Option<&str>,
+    repo_id: Option<i64>,
+    payload: &Value,
+    redelivery: bool,
+    key: Option<(i64, i32)>,
+) -> ApiResult<Option<i64>> {
     let raw = serde_json::to_string(payload)?;
-    let id: i64 = sqlx::query_scalar(
+    let (event_id, event_seq) = key.unzip();
+    let id: Option<i64> = sqlx::query_scalar(
         "INSERT INTO webhook_deliveries
                 (hook_id, guid, event, action, repo_id, redelivery, status, url,
-                 payload_raw, content_type)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9) RETURNING id",
+                 payload_raw, content_type, event_id, event_seq)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10, $11)
+         ON CONFLICT (hook_id, event_id, event_seq) WHERE event_id IS NOT NULL DO NOTHING
+         RETURNING id",
     )
     .bind(hook.id)
     .bind(uuid::Uuid::new_v4())
@@ -43,9 +67,13 @@ pub async fn queue_delivery(
     .bind(&hook.url)
     .bind(&raw)
     .bind(&hook.content_type)
-    .fetch_one(&mut **tx)
+    .bind(event_id)
+    .bind(event_seq)
+    .fetch_optional(&mut **tx)
     .await?;
-    tx.enqueue(&DeliverWebhook { delivery_id: id }).await?;
+    if let Some(id) = id {
+        tx.enqueue(&DeliverWebhook { delivery_id: id }).await?;
+    }
     Ok(id)
 }
 
@@ -134,17 +162,20 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
     let deliveries = payloads::for_event(state, event)
         .await
         .map_err(ApiError::internal)?;
+    let event_id = events::current_event_id();
     let mut tx = Tx::begin(state).await?;
     let mut n = 0;
-    for d in &deliveries {
+    for (seq, d) in deliveries.iter().enumerate() {
+        let key = event_id.map(|id| (id, seq as i32));
         for h in &hooks {
             let in_scope = match (h.repo_id, h.org_id) {
                 (Some(r), _) => d.repo_id == Some(r),
                 (None, Some(o)) => d.org_id == Some(o),
                 (None, None) => true,
             };
-            if in_scope && h.wants(d.event) {
-                queue_delivery(
+            if in_scope
+                && h.wants(d.event)
+                && insert_delivery(
                     &mut tx,
                     h,
                     d.event,
@@ -152,8 +183,11 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
                     d.repo_id,
                     &d.payload,
                     false,
+                    key,
                 )
-                .await?;
+                .await?
+                .is_some()
+            {
                 n += 1;
             }
         }
@@ -177,10 +211,11 @@ async fn ping_global(state: &AppState, hook_id: i64, actor_id: i64) -> ApiResult
     let payload = payloads::ping(state, hook.id, hook_value, None, None, Some(actor_id))
         .await
         .map_err(ApiError::internal)?;
+    let key = events::current_event_id().map(|id| (id, 0));
     let mut tx = Tx::begin(state).await?;
-    queue_delivery(&mut tx, &hook, "ping", None, None, &payload, false).await?;
+    let queued = insert_delivery(&mut tx, &hook, "ping", None, None, &payload, false, key).await?;
     tx.commit().await?;
-    Ok(1)
+    Ok(usize::from(queued.is_some()))
 }
 
 /// Event listener (`notify.webhooks`).

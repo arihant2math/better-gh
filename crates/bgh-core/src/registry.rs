@@ -2,14 +2,14 @@
 //!
 //! Every domain crate exposes `pub fn register(reg: &mut Registry)`;
 //! `bgh-server` calls them all once at startup (and the test harness does
-//! the same), then runs workers and the event dispatcher.
+//! the same), then runs workers and the durable event consumers
+//! ([`crate::outbox`]).
 
 use std::future::Future;
 use std::sync::Arc;
 
 use futures::FutureExt;
 use futures::future::BoxFuture;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -25,6 +25,17 @@ type ListenerFn =
 pub struct Listener {
     pub name: &'static str,
     handler: ListenerFn,
+}
+
+impl Listener {
+    /// Invoke the handler for one event.
+    pub fn call(
+        &self,
+        state: AppState,
+        event: Arc<Event>,
+    ) -> BoxFuture<'static, anyhow::Result<()>> {
+        (self.handler)(state, event)
+    }
 }
 
 /// How to assemble the application: the router builder and the
@@ -74,8 +85,11 @@ impl Registry {
         self
     }
 
-    /// Register an event listener. It receives every event (match on the
-    /// variants you care about) in emission order. `name` is used in logs.
+    /// Register a durable event listener. It receives every event (match on
+    /// the variants you care about) in commit order, at least once: the
+    /// handler must be idempotent (see [`crate::events::effect_key`]).
+    /// `name` keys the listener's cursor in `event_listener_cursors`, so
+    /// keep it stable (renaming starts a new cursor at the current head).
     pub fn on_event<F, Fut>(&mut self, name: &'static str, handler: F) -> &mut Self
     where
         F: Fn(AppState, Arc<Event>) -> Fut + Send + Sync + 'static,
@@ -132,55 +146,36 @@ pub fn spawn_services(
         .collect()
 }
 
-/// Spawn one task per listener, each consuming the event bus in order until
-/// `shutdown` is cancelled. Subscriptions are taken before returning, so no
-/// event emitted after this call is missed.
+/// Start the durable consumer of every listener (see
+/// [`crate::outbox::start_listeners`]); events committed after this returns
+/// are delivered. The tasks return once `shutdown` is cancelled, after
+/// draining committed events.
+pub async fn start_listeners(
+    state: &AppState,
+    listeners: &[Listener],
+    shutdown: CancellationToken,
+) -> anyhow::Result<Vec<JoinHandle<()>>> {
+    crate::outbox::start_listeners(state, listeners, shutdown).await
+}
+
+/// Synchronous variant of [`start_listeners`] (cursor setup runs in the
+/// background, so events emitted right after this call may predate a new
+/// listener's cursor). Prefer `start_listeners(..).await`.
 pub fn spawn_listeners(
     state: &AppState,
     listeners: &[Listener],
     shutdown: CancellationToken,
 ) -> Vec<JoinHandle<()>> {
-    listeners
-        .iter()
-        .cloned()
-        .map(|listener| {
-            let mut rx = state.events.subscribe();
-            let state = state.clone();
-            let shutdown = shutdown.clone();
-            tokio::spawn(async move {
-                loop {
-                    let event = tokio::select! {
-                        _ = shutdown.cancelled() => return,
-                        ev = rx.recv() => ev,
-                    };
-                    match event {
-                        Ok(event) => {
-                            let fut = (listener.handler)(state.clone(), event.clone());
-                            match tokio::spawn(fut).await {
-                                Ok(Ok(())) => {}
-                                Ok(Err(err)) => tracing::error!(
-                                    listener = listener.name,
-                                    event = event.name(),
-                                    ?err,
-                                    "event listener failed"
-                                ),
-                                Err(err) => tracing::error!(
-                                    listener = listener.name, event = event.name(), %err,
-                                    "event listener panicked"
-                                ),
-                            }
-                        }
-                        Err(RecvError::Lagged(n)) => {
-                            tracing::warn!(
-                                listener = listener.name,
-                                skipped = n,
-                                "event listener lagged"
-                            );
-                        }
-                        Err(RecvError::Closed) => return,
-                    }
+    let state = state.clone();
+    let listeners = listeners.to_vec();
+    vec![tokio::spawn(async move {
+        match start_listeners(&state, &listeners, shutdown).await {
+            Ok(handles) => {
+                for h in handles {
+                    let _ = h.await;
                 }
-            })
-        })
-        .collect()
+            }
+            Err(err) => tracing::error!(?err, "starting event listeners failed"),
+        }
+    })]
 }
