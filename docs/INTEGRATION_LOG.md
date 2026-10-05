@@ -9,3 +9,4 @@ batch landed on `claude/sleepy-cray-9jj0t3` (see `docs/WORKER_GUIDE.md`,
 | 2026-10-05 16:00 | — | queue opened at `fc37a0d`; no branch marked ready | — | — |
 | 2026-10-05 16:20 | P18 metadata-import, P24 rulesets-ui | green (P24: additive conflicts in routes.ts, mock/code.ts, OrgSettingsLayout.tsx resolved; Rulesets nav kept in its group) | `ce257f2` | rust 967 passed / 12 ignored; web 407 passed |
 | 2026-10-05 16:45 | P16 reusable-workflows, P34 api-compat, P07 access-policy, P31 insights | green, clean merges | `d7e5e85` | rust 1020 passed / 12 ignored; web 422 passed |
+| 2026-10-05 16:55 | P22 pulls-rest, P33 repo-metadata, P05 invitations | green (P33: additive conflicts in bgh-repos create.rs/jobs.rs and mock/extra/index.ts; P05: mock index). P14 ldap-auth bounced (non-additive conflict with P07 in bgh-core auth.rs, settings.rs, LoginPage.tsx); worker fixed at e5cb309 | `58386b7` | rust 1041 passed / 12 ignored; web 432 passed |
