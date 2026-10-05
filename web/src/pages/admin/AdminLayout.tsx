@@ -15,6 +15,7 @@ import {
   ServerIcon,
   ShieldIcon,
   StackIcon,
+  ToolsIcon,
   WebhookIcon,
   type Icon,
 } from '../../ui/icons';
@@ -28,6 +29,7 @@ const NAV: { to: string; label: string; icon: Icon; keys: string; group?: string
   { to: '/site-admin/settings', label: 'Site settings', icon: GearIcon, keys: 'g e', group: 'Instance' },
   { to: '/site-admin/audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a' },
   { to: '/site-admin/jobs', label: 'Background jobs', icon: StackIcon, keys: 'g j' },
+  { to: '/site-admin/maintenance', label: 'Git maintenance', icon: ToolsIcon, keys: 'g m' },
   { to: '/site-admin/hooks', label: 'Global webhooks', icon: WebhookIcon, keys: 'g w' },
 ];
 

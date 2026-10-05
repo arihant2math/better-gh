@@ -380,8 +380,12 @@ export function QuotaPanel({ login, quota, onChange }: { login: string; quota: Q
 
 
 export const MAINTENANCE_OPS: { id: MaintenanceOp; label: string; description: string }[] = [
-  { id: 'gc', label: 'Garbage collect', description: 'git gc: pack loose objects and prune unreachable ones.' },
-  { id: 'repack', label: 'Repack', description: 'git repack -ad: rewrite all objects into a single pack.' },
+  {
+    id: 'gc',
+    label: 'Garbage collect',
+    description: 'Fork-aware gc: pack objects; unreachable ones are pruned only after the grace period, and never in repositories forks borrow from.',
+  },
+  { id: 'repack', label: 'Repack', description: 'Rewrite all objects into a single pack, keeping unreachable ones.' },
   { id: 'fsck', label: 'Check integrity', description: 'git fsck: verify connectivity and validity of objects.' },
   { id: 'recalculate_size', label: 'Recalculate size', description: 'Measure the repository on disk and update its recorded size.' },
   { id: 'recalculate_languages', label: 'Recalculate languages', description: 'Re-detect the language breakdown of the default branch.' },

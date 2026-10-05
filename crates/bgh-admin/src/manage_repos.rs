@@ -221,9 +221,18 @@ pub async fn get(
         .await?,
         None => None,
     };
+    let git_maintenance = crate::maintenance::repo_status(&state, repo.id).await?;
+    let role = bgh_repos::maintenance::network_role(&state, repo.id)
+        .await
+        .map_err(ApiError::internal)?;
     Ok(Json(json!({
         "repository": render(&state, &repo, &owner.login, &owner.kind),
         "parent": parent,
+        "git_maintenance": git_maintenance,
+        "network": {
+            "has_alternates": role.has_alternates,
+            "has_dependents": role.has_dependents,
+        },
         "storage": {
             "path": store.path(repo.id).display().to_string(),
             "exists": disk_kb.is_some(),

@@ -18,6 +18,7 @@ mod git_transport;
 mod gitdb;
 mod keys;
 mod lfs;
+mod maintenance;
 mod protection;
 mod push_hardening;
 mod push_rules;
