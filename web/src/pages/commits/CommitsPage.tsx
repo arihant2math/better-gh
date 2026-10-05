@@ -19,6 +19,7 @@ import { VirtualList } from '../../ui/VirtualList';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
 import { commitDate, groupByDay, splitMessage, type CommitListRow } from './group';
 import { CiIcon, Person, copyText, samePerson } from './parts';
+import { SignatureBadge, useSignatures, type CommitSignature } from './Signature';
 import styles from './Commits.module.css';
 
 const enc = encodeURIComponent;
@@ -152,6 +153,11 @@ type Row = CommitListRow | { kind: 'more' };
 function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
   const { first, pages, hasMore, loadMore, loadingMore, moreError } = useHistoryPages(repo, refName, path);
   const ci = useCiStatuses(repo, pages);
+  const sigs = useSignatures(
+    repo.owner,
+    repo.name,
+    pages.map((p) => p.commits.map((c) => c.sha)),
+  );
   const [cursor, setCursor] = useState(-1);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -223,6 +229,7 @@ function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path
             repo={repo}
             commit={r.commit}
             ci={ci[r.commit.sha]}
+            signature={sigs[r.commit.sha]}
             active={r.index === cursor}
             first={rows[i - 1]?.kind !== 'commit'}
             last={rows[i + 1]?.kind !== 'commit'}
@@ -240,6 +247,7 @@ function CommitRow({
   repo,
   commit: c,
   ci,
+  signature,
   active,
   first,
   last,
@@ -250,6 +258,7 @@ function CommitRow({
   repo: Repo;
   commit: BrowseCommit;
   ci: CommitStatusRollup | undefined;
+  signature: CommitSignature | undefined;
   active: boolean;
   first: boolean;
   last: boolean;
@@ -289,8 +298,7 @@ function CommitRow({
         </div>
       </div>
       <div className={styles.actions}>
-        {/* Signature info isn't in the compact history shape; reserved slot keeps rows aligned. */}
-        <span className={styles.verifySlot} aria-hidden />
+        {signature ? <SignatureBadge signature={signature} /> : <span className={styles.verifySlot} aria-hidden />}
         <span className={styles.shaGroup}>
           <Link to={`${base}/commit/${c.sha}`} className={styles.sha} title={c.sha}>
             {c.sha.slice(0, 7)}

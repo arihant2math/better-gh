@@ -63,8 +63,9 @@ impl From<&Signature> for GitActor {
     }
 }
 
-/// Signature verification status. Signatures are reported but not
-/// verified (`reason: unknown_key` for signed objects).
+/// Signature verification status (GitHub's `verification` object). Built
+/// by [`crate::signatures`]; [`Verification::for_signature`] is the
+/// placeholder before verification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Verification {
     pub verified: bool,
@@ -75,6 +76,7 @@ pub struct Verification {
 }
 
 impl Verification {
+    /// Unverified placeholder (`unsigned`, or `unknown_key` when signed).
     pub fn for_signature(sig: Option<&str>) -> Self {
         Self {
             verified: false,
@@ -87,6 +89,26 @@ impl Verification {
             signature: sig.map(str::to_string),
             payload: None,
             verified_at: None,
+        }
+    }
+
+    pub fn unsigned() -> Self {
+        Self::for_signature(None)
+    }
+
+    /// The verification of `o` with a computed result.
+    pub fn new(
+        o: &crate::signatures::Object,
+        verified: bool,
+        reason: &str,
+        verified_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Self {
+        Self {
+            verified,
+            reason: reason.to_string(),
+            signature: o.signature.map(str::to_string),
+            payload: o.signature.map(|_| o.payload.to_string()),
+            verified_at: verified_at.map(Into::into),
         }
     }
 }

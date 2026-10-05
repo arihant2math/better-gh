@@ -1,0 +1,84 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  height: 20px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.md {
+  height: 22px;
+  font-size: var(--fs-sm);
+}
+
+.verified {
+  color: var(--success);
+}
+
+.unverified {
+  color: var(--warning);
+}
+
+.badge:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.1));
+}
+
+.badge:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+}
+
+.pop {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+
+.popBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 8px);
+  padding: var(--sp-3, 12px);
+  font-size: var(--fs-sm);
+}
+
+.title {
+  font-weight: 600;
+}
+
+.titleOk {
+  color: var(--success);
+}
+
+.titleBad {
+  color: var(--warning);
+}
+
+.detail {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.signer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  word-break: break-all;
+}
+
+.help {
+  font-size: var(--fs-xs);
+}

@@ -185,6 +185,8 @@ pub async fn commit_changes(
         )
         .await?;
         let commit = String::from_utf8_lossy(&commit).trim().to_string();
+        let commit =
+            crate::signing::sign_commit(bin, &dir, store.signer.as_deref(), commit).await?;
 
         let refname = format!("refs/heads/{}", req.branch);
         let old = req.parent.unwrap_or(ZERO_SHA);

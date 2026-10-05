@@ -48,6 +48,7 @@ pub mod rule_eval;
 pub mod rule_suites;
 pub mod rulesets;
 pub mod settings;
+pub mod signatures;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
@@ -132,6 +133,11 @@ pub fn web_router() -> Router<AppState> {
         .merge(traffic::web_routes())
         .merge(autolinks::web_routes())
         .merge(lifecycle::web_routes())
+        .route("/web-flow.gpg", get(signatures::web_flow_gpg))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/commit-signatures",
+            get(signatures::commit_signatures),
+        )
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;

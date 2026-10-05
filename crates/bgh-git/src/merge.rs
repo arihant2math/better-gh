@@ -223,7 +223,13 @@ pub async fn commit_tree(
         Some(message.as_bytes()),
     )
     .await?;
-    Ok(stdout_line(&out))
+    crate::signing::sign_commit(
+        &store.git_bin,
+        &dir,
+        store.signer.as_deref(),
+        stdout_line(&out),
+    )
+    .await
 }
 
 /// Commits reachable from `head` but not from `base`, oldest first
@@ -528,8 +534,22 @@ pub async fn test_merge(
             let mut person = Person::from(committer);
             person.when = when;
             let msg = format!("Merge {head} into {base}");
-            let sha =
-                commit_tree(store, repo_id, &tree, &[base, head], &msg, &person, &person).await?;
+            // Unsigned: the test merge must be reproducible (bgh-pulls and
+            // Actions compute the same sha), and a signature is not.
+            let unsigned = RepoStore {
+                signer: None,
+                ..store.clone()
+            };
+            let sha = commit_tree(
+                &unsigned,
+                repo_id,
+                &tree,
+                &[base, head],
+                &msg,
+                &person,
+                &person,
+            )
+            .await?;
             force_ref(store, repo_id, refname, &sha).await?;
             Ok(Some(sha))
         }

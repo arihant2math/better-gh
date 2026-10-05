@@ -167,6 +167,7 @@ pub async fn add(
             _ => e.into(),
         })?;
         send_verification(&state, &mut tx, &auth.user, row.id, &row.email).await?;
+        bgh_core::signatures::forget_email(&mut tx, &row.email).await?;
         out.push(Email::from(&row));
     }
     audit::log(
@@ -218,6 +219,9 @@ pub async fn remove(
         .bind(&ids)
         .execute(&mut *tx)
         .await?;
+    for r in &rows {
+        bgh_core::signatures::forget_email(&mut tx, &r.email).await?;
+    }
     // A deleted address can't stay the public profile email.
     let user: db::User = sqlx::query_as(&format!(
         "UPDATE users SET email = NULL, updated_at = now()
@@ -331,6 +335,7 @@ pub async fn verify(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    bgh_core::signatures::forget_email(&mut tx, &row.email).await?;
     tx.commit().await?;
     Ok(Json(Email::from(&row)))
 }

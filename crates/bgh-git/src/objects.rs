@@ -65,6 +65,33 @@ pub struct Commit {
     pub message: String,
     /// Raw signature block (`gpgsig` header), if signed.
     pub signature: Option<String>,
+    /// The signed data (the object without its signature) when signed,
+    /// else empty. Required in serialized form so cached commits from
+    /// before signature verification are recomputed.
+    pub payload: String,
+}
+
+/// The commit object without its `header` (and continuation lines).
+fn strip_header(data: &[u8], header: &str) -> Vec<u8> {
+    let head_end = data
+        .windows(2)
+        .position(|w| w == b"\n\n")
+        .map_or(data.len(), |i| i + 1);
+    let (head, rest) = data.split_at(head_end);
+    let prefix = format!("{header} ");
+    let mut out = Vec::with_capacity(data.len());
+    let mut skipping = false;
+    for line in head.split_inclusive(|b| *b == b'\n') {
+        if skipping && line.first() == Some(&b' ') {
+            continue;
+        }
+        skipping = line.starts_with(prefix.as_bytes());
+        if !skipping {
+            out.extend_from_slice(line);
+        }
+    }
+    out.extend_from_slice(rest);
+    out
 }
 
 /// Split raw object bytes into headers (with continuation lines joined by
@@ -99,16 +126,29 @@ impl Commit {
         let mut author = None;
         let mut committer = None;
         let mut signature = None;
+        let mut sig_header = "";
         for (k, v) in headers {
             match k.as_str() {
                 "tree" => tree = Some(v),
                 "parent" => parents.push(v),
                 "author" => author = Some(Signature::parse(&v)?),
                 "committer" => committer = Some(Signature::parse(&v)?),
-                "gpgsig" | "gpgsig-sha256" => signature = Some(v),
+                "gpgsig" if sig_header != "gpgsig" => {
+                    sig_header = "gpgsig";
+                    signature = Some(v);
+                }
+                "gpgsig-sha256" if signature.is_none() => {
+                    sig_header = "gpgsig-sha256";
+                    signature = Some(v);
+                }
                 _ => {}
             }
         }
+        let payload = if signature.is_some() {
+            String::from_utf8_lossy(&strip_header(data, sig_header)).into_owned()
+        } else {
+            String::new()
+        };
         let missing = |f: &str| GitError::Object(format!("commit {sha} has no {f}"));
         let author = author.ok_or_else(|| missing("author"))?;
         Ok(Self {
@@ -119,6 +159,7 @@ impl Commit {
             author,
             message,
             signature,
+            payload,
         })
     }
 
@@ -140,6 +181,9 @@ pub struct Tag {
     pub tagger: Option<Signature>,
     pub message: String,
     pub signature: Option<String>,
+    /// The signed data (the tag object up to its signature) when signed,
+    /// else empty.
+    pub payload: String,
 }
 
 impl Tag {
@@ -158,9 +202,15 @@ impl Tag {
                 _ => {}
             }
         }
-        let signature = message.find("-----BEGIN ").map(|i| {
+        let start = message
+            .find("-----BEGIN ")
+            .filter(|i| *i == 0 || message.as_bytes()[i - 1] == b'\n');
+        let mut payload = String::new();
+        let signature = start.map(|i| {
             let sig = message[i..].to_string();
             message.truncate(i);
+            let text = String::from_utf8_lossy(data);
+            payload = text[..text.len() - sig.len()].to_string();
             sig
         });
         Ok(Self {
@@ -171,6 +221,7 @@ impl Tag {
             tagger,
             message,
             signature,
+            payload,
         })
     }
 }
@@ -283,6 +334,26 @@ Subject line\n\nBody\n";
         assert_eq!(c.author.when.timestamp(), 1_700_000_000);
         assert_eq!(c.summary(), "Subject line");
         assert!(c.signature.unwrap().contains("abc"));
+        assert_eq!(
+            c.payload,
+            "tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n\
+parent 1111111111111111111111111111111111111111\n\
+author A U Thor <a@example.com> 1700000000 +0130\n\
+committer C O Mitter <c@example.com> 1700000100 -0500\n\
+\n\
+Subject line\n\nBody\n"
+        );
+    }
+
+    #[test]
+    fn signed_tag_payload() {
+        let raw = b"object 1111111111111111111111111111111111111111\ntype commit\ntag v1\n\
+tagger T <t@example.com> 1700000000 +0000\n\nmsg\n-----BEGIN PGP SIGNATURE-----\nabc\n-----END PGP SIGNATURE-----\n";
+        let t = Tag::parse("x", raw).unwrap();
+        assert_eq!(t.message, "msg\n");
+        assert!(t.signature.unwrap().starts_with("-----BEGIN PGP"));
+        assert!(t.payload.ends_with("\n\nmsg\n"));
+        assert!(t.payload.starts_with("object "));
     }
 
     #[test]

@@ -118,6 +118,20 @@ export const SCOPES: ScopeInfo[] = [
     description: 'Read public user GPG keys',
     parent: 'admin:gpg_key',
   },
+  {
+    id: 'admin:ssh_signing_key',
+    description: 'Full control of public user SSH signing keys',
+  },
+  {
+    id: 'write:ssh_signing_key',
+    description: 'Write public user SSH signing keys',
+    parent: 'admin:ssh_signing_key',
+  },
+  {
+    id: 'read:ssh_signing_key',
+    description: 'Read public user SSH signing keys',
+    parent: 'admin:ssh_signing_key',
+  },
   { id: 'project', description: 'Full control of projects' },
   {
     id: 'read:project',
@@ -138,7 +152,6 @@ const EXTRA: Record<string, string> = {
   codespace: 'Full control of codespaces',
   'admin:enterprise': 'Full control of enterprises',
   copilot: 'Full control of GitHub Copilot settings and seat assignments',
-  'admin:ssh_signing_key': 'Full control of public user SSH signing keys',
   audit_log: 'Full control of audit log',
 };
 

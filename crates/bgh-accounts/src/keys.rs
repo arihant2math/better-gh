@@ -2,7 +2,12 @@
 //!
 //! `GET|POST /user/keys`, `GET|DELETE /user/keys/{id}`,
 //! `GET /users/{username}/keys`; `GET|POST /user/gpg_keys`,
-//! `GET|DELETE /user/gpg_keys/{id}`, `GET /users/{username}/gpg_keys`.
+//! `GET|DELETE /user/gpg_keys/{id}`, `GET /users/{username}/gpg_keys`;
+//! `GET|POST /user/ssh_signing_keys`, `GET|DELETE /user/ssh_signing_keys/{id}`,
+//! `GET /users/{username}/ssh_signing_keys`.
+//!
+//! Key writes forget cached commit signature verifications that named the
+//! key (`bgh_core::signatures`).
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -318,14 +323,39 @@ async fn gpg_page(state: &AppState, user_id: i64, p: &Pagination) -> ApiResult<P
     .bind(&ids)
     .fetch_all(&state.db)
     .await?;
+    let verified = verified_emails(state, user_id).await?;
     let page = p.page(primaries);
     Ok(page.map(|k| {
         let subs: Vec<&GpgKeyRow> = subkeys
             .iter()
             .filter(|s| s.primary_key_id == Some(k.id))
             .collect();
-        GpgKey::new(&k, &subs)
+        with_verified_emails(GpgKey::new(&k, &subs), &verified)
     }))
+}
+
+/// Lowercased verified e-mails of `user_id`.
+async fn verified_emails(state: &AppState, user_id: i64) -> ApiResult<Vec<String>> {
+    Ok(
+        sqlx::query_scalar("SELECT lower(email) FROM user_emails WHERE user_id = $1 AND verified")
+            .bind(user_id)
+            .fetch_all(&state.db)
+            .await?,
+    )
+}
+
+/// A key's `emails[].verified` reflect the owner's e-mails now (they may
+/// have been verified, or removed, since the key was added).
+fn with_verified_emails(mut key: GpgKey, verified: &[String]) -> GpgKey {
+    if let Some(list) = key.emails.as_array_mut() {
+        for e in list {
+            let ok = e["email"]
+                .as_str()
+                .is_some_and(|m| verified.contains(&m.to_lowercase()));
+            e["verified"] = serde_json::Value::Bool(ok);
+        }
+    }
+    key
 }
 
 /// `GET /user/gpg_keys` (scope `read:gpg_key`).
@@ -359,10 +389,14 @@ async fn load_gpg(state: &AppState, user_id: i64, id: i64) -> ApiResult<GpgKey> 
     .bind(id)
     .fetch_all(&state.db)
     .await?;
-    GpgKey::group(&rows)
+    let key = GpgKey::group(&rows)
         .into_iter()
         .find(|k| k.id == id)
-        .ok_or(ApiError::NotFound)
+        .ok_or(ApiError::NotFound)?;
+    Ok(with_verified_emails(
+        key,
+        &verified_emails(state, user_id).await?,
+    ))
 }
 
 /// `GET /user/gpg_keys/{gpg_key_id}` (scope `read:gpg_key`).
@@ -466,6 +500,9 @@ pub async fn create_gpg(
         .execute(&mut *tx)
         .await?;
     }
+    let mut key_ids = vec![parsed.key_id.clone()];
+    key_ids.extend(parsed.subkeys.iter().map(|s| s.key_id.clone()));
+    bgh_core::signatures::forget_keys(&mut tx, &key_ids).await?;
     audit::log(
         &mut *tx,
         Some(&auth.user),
@@ -489,6 +526,14 @@ pub async fn delete_gpg(
 ) -> ApiResult<StatusCode> {
     auth.require_scope("admin:gpg_key")?;
     let mut tx = Tx::begin(&state).await?;
+    let key_ids: Vec<String> = sqlx::query_scalar(
+        "SELECT key_id FROM gpg_keys WHERE user_id = $1 AND (id = $2 OR primary_key_id = $2)",
+    )
+    .bind(auth.user.id)
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await?;
+    bgh_core::signatures::forget_keys(&mut tx, &key_ids).await?;
     let key_id: String = sqlx::query_scalar(
         "DELETE FROM gpg_keys WHERE id = $1 AND user_id = $2 AND primary_key_id IS NULL
          RETURNING key_id",
@@ -504,6 +549,182 @@ pub async fn delete_gpg(
         "gpg_key.delete",
         audit::Target::User(auth.user.id),
         json!({ "key_id": key_id }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// SSH signing keys
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SshSigningKeyRow {
+    pub id: i64,
+    pub user_id: i64,
+    pub title: String,
+    pub key: String,
+    pub fingerprint: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl SshSigningKeyRow {
+    pub const COLUMNS: &'static str = "id, user_id, title, key, fingerprint, created_at";
+}
+
+/// `ssh-signing-key`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SshSigningKey {
+    pub key: String,
+    pub id: i64,
+    pub title: String,
+    pub created_at: Timestamp,
+}
+
+impl From<&SshSigningKeyRow> for SshSigningKey {
+    fn from(k: &SshSigningKeyRow) -> Self {
+        Self {
+            key: k.key.clone(),
+            id: k.id,
+            title: k.title.clone(),
+            created_at: k.created_at.into(),
+        }
+    }
+}
+
+async fn signing_key_page(
+    state: &AppState,
+    user_id: i64,
+    p: &Pagination,
+) -> ApiResult<Page<SshSigningKey>> {
+    let rows: Vec<SshSigningKeyRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM ssh_signing_keys WHERE user_id = $1 ORDER BY id LIMIT $2 OFFSET $3",
+        SshSigningKeyRow::COLUMNS
+    ))
+    .bind(user_id)
+    .bind(p.limit_plus_one())
+    .bind(p.offset())
+    .fetch_all(&state.db)
+    .await?;
+    Ok(p.page(rows).map(|k| SshSigningKey::from(&k)))
+}
+
+/// `GET /user/ssh_signing_keys` (scope `read:ssh_signing_key`).
+pub async fn list_signing(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    p: Pagination,
+) -> ApiResult<Page<SshSigningKey>> {
+    auth.require_scope("read:ssh_signing_key")?;
+    signing_key_page(&state, auth.user.id, &p).await
+}
+
+/// `GET /users/{username}/ssh_signing_keys` (public).
+pub async fn list_user_signing(
+    State(state): State<AppState>,
+    _auth: MaybeUser,
+    Path(username): Path<String>,
+    p: Pagination,
+) -> ApiResult<Page<SshSigningKey>> {
+    let user = util::find_account(&state, &username).await?;
+    signing_key_page(&state, user.id, &p).await
+}
+
+/// `GET /user/ssh_signing_keys/{id}` (scope `read:ssh_signing_key`).
+pub async fn get_signing(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<SshSigningKey>> {
+    auth.require_scope("read:ssh_signing_key")?;
+    let row: SshSigningKeyRow = sqlx::query_as(&format!(
+        "SELECT {} FROM ssh_signing_keys WHERE id = $1 AND user_id = $2",
+        SshSigningKeyRow::COLUMNS
+    ))
+    .bind(id)
+    .bind(auth.user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    Ok(Json(SshSigningKey::from(&row)))
+}
+
+fn signing_key_error(message: &str) -> ApiError {
+    ApiError::invalid_field(FieldError::custom("SshSigningKey", "key", message))
+}
+
+/// `POST /user/ssh_signing_keys` (scope `write:ssh_signing_key`) → 201.
+pub async fn create_signing(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Json(body): Json<CreateSshKeyBody>,
+) -> ApiResult<(StatusCode, Json<SshSigningKey>)> {
+    auth.require_scope("write:ssh_signing_key")?;
+    if body.key.trim().is_empty() {
+        return Err(ApiError::invalid_field(FieldError::missing_field(
+            "SshSigningKey",
+            "key",
+        )));
+    }
+    let key = parse_ssh_key(&body.key).ok_or_else(|| {
+        signing_key_error("key is invalid. You must supply a key in OpenSSH public key format")
+    })?;
+    let title = util::non_empty(body.title)
+        .or_else(|| key.comment.clone())
+        .unwrap_or_default();
+    let mut tx = Tx::begin(&state).await?;
+    let row: SshSigningKeyRow = sqlx::query_as(&format!(
+        "INSERT INTO ssh_signing_keys (user_id, title, key, fingerprint) VALUES ($1, $2, $3, $4)
+         RETURNING {}",
+        SshSigningKeyRow::COLUMNS
+    ))
+    .bind(auth.user.id)
+    .bind(&title)
+    .bind(&key.normalized)
+    .bind(&key.fingerprint)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| match unique_violation(&e).as_deref() {
+        Some("ssh_signing_keys_fingerprint_key") => signing_key_error("key is already in use"),
+        _ => e.into(),
+    })?;
+    bgh_core::signatures::forget_keys(&mut tx, std::slice::from_ref(&key.fingerprint)).await?;
+    audit::log(
+        &mut *tx,
+        Some(&auth.user),
+        "ssh_signing_key.create",
+        audit::Target::User(auth.user.id),
+        json!({ "title": title, "fingerprint": key.fingerprint }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(SshSigningKey::from(&row))))
+}
+
+/// `DELETE /user/ssh_signing_keys/{id}` (scope `admin:ssh_signing_key`) → 204.
+pub async fn delete_signing(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    auth.require_scope("admin:ssh_signing_key")?;
+    let mut tx = Tx::begin(&state).await?;
+    let fingerprint: String = sqlx::query_scalar(
+        "DELETE FROM ssh_signing_keys WHERE id = $1 AND user_id = $2 RETURNING fingerprint",
+    )
+    .bind(id)
+    .bind(auth.user.id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    bgh_core::signatures::forget_keys(&mut tx, std::slice::from_ref(&fingerprint)).await?;
+    audit::log(
+        &mut *tx,
+        Some(&auth.user),
+        "ssh_signing_key.delete",
+        audit::Target::User(auth.user.id),
+        json!({ "fingerprint": fingerprint }),
     )
     .await?;
     tx.commit().await?;

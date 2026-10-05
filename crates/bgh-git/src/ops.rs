@@ -32,6 +32,18 @@ pub struct GitCli {
     bin: String,
     dir: PathBuf,
     alternates: Vec<PathBuf>,
+    signer: Option<std::sync::Arc<crate::signing::WebFlowKey>>,
+}
+
+impl GitCli {
+    /// The same helper without the web-flow signer: commits it creates
+    /// stay unsigned (the git database API).
+    pub fn without_signing(&self) -> GitCli {
+        GitCli {
+            signer: None,
+            ..self.clone()
+        }
+    }
 }
 
 impl RepoStore {
@@ -41,6 +53,7 @@ impl RepoStore {
             bin: self.git_bin.clone(),
             dir: self.git_dir(repo_id)?,
             alternates: Vec::new(),
+            signer: self.signer.clone(),
         })
     }
 }
@@ -396,6 +409,16 @@ impl GitCli {
     /// Read raw objects in one `git cat-file --batch`. Missing objects are
     /// skipped. Returns `(sha, type, data)` in input order.
     pub async fn cat_objects(&self, shas: &[String]) -> GitResult<Vec<(String, String, Vec<u8>)>> {
+        self.cat_objects_with(shas, &[]).await
+    }
+
+    /// [`Self::cat_objects`] with extra environment (e.g. a push's
+    /// quarantined object directories).
+    pub async fn cat_objects_with(
+        &self,
+        shas: &[String],
+        envs: &[(&str, &str)],
+    ) -> GitResult<Vec<(String, String, Vec<u8>)>> {
         if shas.is_empty() {
             return Ok(vec![]);
         }
@@ -405,7 +428,7 @@ impl GitCli {
             input.push(b'\n');
         }
         let out = self
-            .run(&["cat-file", "--batch"], &[], Some(&input))
+            .run(&["cat-file", "--batch"], envs, Some(&input))
             .await?;
         let mut res = Vec::with_capacity(shas.len());
         let mut i = 0;
@@ -726,8 +749,20 @@ impl GitCli {
             args.push("-p");
             args.push(p);
         }
+        let sha = trimmed(self.run(&args, &env_ref, Some(message.as_bytes())).await?);
+        let Some(key) = self.signer.clone() else {
+            return Ok(sha);
+        };
+        // Through `self.run`: alternates (e.g. a template's objects) apply.
+        let raw = self.run(&["cat-file", "commit", &sha], &[], None).await?;
+        let signed = crate::signing::signed_commit(&key, &raw)?;
         Ok(trimmed(
-            self.run(&args, &env_ref, Some(message.as_bytes())).await?,
+            self.run(
+                &["hash-object", "-t", "commit", "-w", "--stdin"],
+                &[],
+                Some(&signed),
+            )
+            .await?,
         ))
     }
 

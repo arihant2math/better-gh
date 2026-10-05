@@ -1,5 +1,18 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { createGpgKey, createSshKey, deleteGpgKey, deleteSshKey, listGpgKeys, listSshKeys, type GpgKey, type SshKey } from '../../../api/developerSettings';
+import {
+  createGpgKey,
+  createSshKey,
+  createSshSigningKey,
+  deleteGpgKey,
+  deleteSshKey,
+  deleteSshSigningKey,
+  listGpgKeys,
+  listSshKeys,
+  listSshSigningKeys,
+  type GpgKey,
+  type SshKey,
+  type SshSigningKey,
+} from '../../../api/developerSettings';
 import { apiFieldErrors, ButtonRow, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section } from '../../../components/settings/kit';
 import { Button } from '../../../ui/Button';
 import { KeyIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
@@ -10,12 +23,13 @@ import { formatDate } from '../developer/logic';
 import { checkArmoredGpg, fingerprintOf, keyTypeLabel, parseSshKey } from '../developer/sshKey';
 import { useList } from '../developer/useList';
 
-/** `/settings/keys`: SSH authentication keys and GPG signing keys. */
+/** `/settings/keys`: SSH authentication keys, SSH signing keys and GPG keys. */
 export default function KeySettings() {
   return (
     <>
       <PageHeader title="SSH and GPG keys" description="Keys let you push over SSH and show commits you sign as verified." />
       <SshKeys />
+      <SshSigningKeys />
       <GpgKeys />
     </>
   );
@@ -42,6 +56,7 @@ function SshKeys() {
     >
       {adding && (
         <AddSshKey
+          create={createSshKey}
           onCancel={() => setAdding(false)}
           onAdded={(k) => {
             list.add(k);
@@ -105,7 +120,89 @@ function SshKeys() {
   );
 }
 
-function useFingerprints(keys: SshKey[] | undefined): Record<number, string> {
+// ------------------------------------------------------------------ SSH signing keys
+
+function SshSigningKeys() {
+  const list = useList<SshSigningKey>('dev:ssh-signing-keys', listSshSigningKeys);
+  const [adding, setAdding] = useState(false);
+  const [confirm, setConfirm] = useState<SshSigningKey | null>(null);
+  const fps = useFingerprints(list.items);
+  return (
+    <Section
+      title="SSH signing keys"
+      description="Commits and tags signed with these keys (git config gpg.format ssh) show as verified."
+      actions={
+        !adding && (
+          <Button variant="primary" size="sm" leadingIcon={PlusIcon} onClick={() => setAdding(true)}>
+            New signing key
+          </Button>
+        )
+      }
+    >
+      {adding && (
+        <AddSshKey
+          kind="signing"
+          create={createSshSigningKey}
+          onCancel={() => setAdding(false)}
+          onAdded={(k) => {
+            list.add(k);
+            setAdding(false);
+          }}
+        />
+      )}
+      {list.items ? (
+        <ItemList aria-label="SSH signing keys" empty="There are no SSH signing keys associated with your account.">
+          {list.items.map((k) => (
+            <ItemRow
+              key={k.id}
+              leading={
+                <span className={styles.keyIcon} aria-hidden>
+                  <KeyIcon size={24} />
+                  <span className={styles.keyType}>{keyTypeLabel(k.key)}</span>
+                </span>
+              }
+              title={k.title || <em>Untitled key</em>}
+              actions={
+                <Button size="sm" variant="danger" leadingIcon={TrashIcon} onClick={() => setConfirm(k)} aria-label={`Delete SSH signing key ${k.title}`}>
+                  Delete
+                </Button>
+              }
+            >
+              <div className={styles.metaLines}>
+                <span className={styles.mono}>{fps[k.id] ?? ' '}</span>
+                <span>Added on {formatDate(k.created_at)}</span>
+              </div>
+            </ItemRow>
+          ))}
+        </ItemList>
+      ) : list.error ? (
+        <ItemList empty="Could not load your SSH signing keys." />
+      ) : (
+        <ListSkeleton />
+      )}
+      <p className={styles.help}>
+        Sign with <code>git config gpg.format ssh</code> and <code>git config user.signingkey ~/.ssh/id_ed25519.pub</code>, then commit with <code>-S</code>. The
+        committer email must be a verified email of your account.
+      </p>
+      <ConfirmDialog
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        title="Delete SSH signing key"
+        confirmLabel="I understand, delete this signing key"
+        onConfirm={() => {
+          const k = confirm!;
+          void list.remove(k.id, () => deleteSshSigningKey(k.id), 'SSH signing key deleted');
+        }}
+      >
+        <p>
+          This action <strong>cannot be undone</strong>. Commits signed with <strong>{confirm?.title || 'this key'}</strong> will no longer show as verified.
+        </p>
+      </ConfirmDialog>
+    </Section>
+  );
+}
+
+function useFingerprints(keys: { id: number; key: string }[] | undefined): Record<number, string> {
   const [fps, setFps] = useState<Record<number, string>>({});
   const sig = keys?.map((k) => k.id).join(',');
   useEffect(() => {
@@ -122,7 +219,17 @@ function useFingerprints(keys: SshKey[] | undefined): Record<number, string> {
   return fps;
 }
 
-function AddSshKey({ onCancel, onAdded }: { onCancel: () => void; onAdded: (k: SshKey) => void }) {
+function AddSshKey<K>({
+  kind = 'authentication',
+  create,
+  onCancel,
+  onAdded,
+}: {
+  kind?: 'authentication' | 'signing';
+  create: (body: { title?: string; key: string }) => Promise<K>;
+  onCancel: () => void;
+  onAdded: (k: K) => void;
+}) {
   const id = useId();
   const [title, setTitle] = useState('');
   const [titleTouched, setTitleTouched] = useState(false);
@@ -156,7 +263,7 @@ function AddSshKey({ onCancel, onAdded }: { onCancel: () => void; onAdded: (k: S
     }
     setBusy(true);
     try {
-      const created = await createSshKey({
+      const created = await create({
         title: title.trim() || undefined,
         key: key.trim(),
       });
@@ -179,7 +286,7 @@ function AddSshKey({ onCancel, onAdded }: { onCancel: () => void; onAdded: (k: S
       className={styles.formCard}
       onSubmit={(e) => void submit(e)}
       onKeyDown={(e) => e.key === 'Escape' && onCancel()}
-      aria-label="Add new SSH key"
+      aria-label={kind === 'signing' ? 'Add new SSH signing key' : 'Add new SSH key'}
       noValidate
     >
       <Field label="Title" htmlFor={`${id}-title`} error={errors.title} hint="A name to recognize this key by, e.g. the machine it lives on.">
@@ -224,7 +331,7 @@ function AddSshKey({ onCancel, onAdded }: { onCancel: () => void; onAdded: (k: S
       )}
       <ButtonRow>
         <Button type="submit" variant="primary" loading={busy} disabled={!key.trim()}>
-          Add SSH key
+          {kind === 'signing' ? 'Add signing key' : 'Add SSH key'}
         </Button>
         <Button onClick={onCancel}>Cancel</Button>
       </ButtonRow>

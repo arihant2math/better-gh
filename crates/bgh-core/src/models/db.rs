@@ -135,6 +135,7 @@ impl NewUser<'_> {
             .bind(email)
             .execute(&mut *conn)
             .await?;
+            crate::signatures::forget_email(&mut *conn, email).await?;
         }
         Ok(user)
     }

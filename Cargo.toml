@@ -99,6 +99,9 @@ hex = "0.4"
 # GitHub App JWTs (RS256) and key generation
 rsa = { version = "0.9", features = ["sha2", "pem"] }
 rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+# commit/tag signatures (P25): OpenPGP and SSH (sshsig) verification, web-flow signing
+pgp = { version = "0.21", default-features = false }
+ssh-key = { version = "0.7.0-rc.11", default-features = false, features = ["alloc", "std", "ed25519", "p256", "p384", "p521"] }
 
 # content
 comrak = { version = "0.55", default-features = false }

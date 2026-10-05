@@ -14,10 +14,12 @@
 //!   metadata rules (`commit_message_pattern`,
 //!   `commit_author_email_pattern`, `committer_email_pattern`) and the
 //!   push rules (`file_path_restriction`, `max_file_size`,
-//!   `file_extension_restriction`, `max_file_path_length`).
+//!   `file_extension_restriction`, `max_file_path_length`);
+//!   `required_signatures` in the same phase by [`signature_evals`] (P25,
+//!   needs the database for keys).
 //!
-//! `merge_queue`, `required_deployments`, `workflows`, `code_scanning` and
-//! `required_signatures` are stored but not evaluated here.
+//! `merge_queue`, `required_deployments`, `workflows` and `code_scanning`
+//! are stored but not evaluated here.
 
 use bgh_core::events::RefUpdate;
 use bgh_core::prelude::*;
@@ -37,6 +39,8 @@ pub const OBJECT_RULES: &[&str] = &[
     "max_file_size",
     "file_extension_restriction",
     "max_file_path_length",
+    // Evaluated by `signature_evals` (skipped by `object_evals`).
+    "required_signatures",
 ];
 
 /// Outcome of one rule of one ruleset for one ref update.
@@ -465,6 +469,51 @@ pub async fn object_evals(
             };
             out.push(Eval::new(r, bypassed, ty, failure));
         }
+    }
+    out
+}
+
+/// Evaluate `required_signatures` (P25): every commit the update introduces
+/// must have a verified signature (`envs`: the quarantine).
+pub async fn signature_evals(
+    state: &AppState,
+    git: &GitCli,
+    envs: &[(&str, &str)],
+    rules: &RepoRules,
+    actor: &Actor,
+    u: &RefUpdate,
+) -> Vec<Eval> {
+    let mut out = Vec::new();
+    if u.is_delete() {
+        return out;
+    }
+    let mut unverified: Option<Result<Vec<String>, ()>> = None;
+    for r in rulesets_for(rules, &u.refname) {
+        if r.find_rule("required_signatures").is_none() {
+            continue;
+        }
+        if unverified.is_none() {
+            unverified = Some(
+                match crate::protection::unverified_pushed(state, git, u, envs).await {
+                    Ok(v) => v,
+                    Err(err) => {
+                        tracing::error!(?err, "required_signatures: verification failed");
+                        Err(())
+                    }
+                },
+            );
+        }
+        let failure = match unverified.as_ref().expect("computed above") {
+            Ok(bad) => violations(crate::protection::SIGNATURES_REQUIRED.into(), bad.clone()),
+            // Too many commits, or an internal error: fail closed.
+            Err(()) => Some(Violation::new(crate::protection::SIGNATURES_REQUIRED)),
+        };
+        out.push(Eval::new(
+            r,
+            r.bypassed_by(actor),
+            "required_signatures",
+            failure,
+        ));
     }
     out
 }

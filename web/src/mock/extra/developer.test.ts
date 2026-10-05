@@ -40,6 +40,25 @@ describe('developer mocks', () => {
     expect((await call(s, 'DELETE', `/api/v3/user/keys/${created.body!.id as number}`)).status).toBe(204);
   });
 
+  it('manages SSH signing keys', async () => {
+    const s = new MockServer(null, {});
+    expect((await call(s, 'GET', '/api/v3/user/ssh_signing_keys')).body).toEqual([]);
+    const missing = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { title: 'x' });
+    expect(missing.status).toBe(422);
+    const key = fakeSshKey('ed25519', 42);
+    const created = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { key: `${key} me@box` });
+    expect(created.status).toBe(201);
+    expect(Object.keys(created.body!).sort()).toEqual(['created_at', 'id', 'key', 'title']);
+    expect(created.body!.title).toBe('me@box');
+    const dup = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { key });
+    expect(dup.status).toBe(422);
+    expect(JSON.stringify(dup.body)).toContain('SshSigningKey');
+    const id = created.body!.id as number;
+    expect((await call(s, 'GET', `/api/v3/user/ssh_signing_keys/${id}`)).status).toBe(200);
+    expect((await call(s, 'DELETE', `/api/v3/user/ssh_signing_keys/${id}`)).status).toBe(204);
+    expect((await call(s, 'GET', `/api/v3/user/ssh_signing_keys/${id}`)).status).toBe(404);
+  });
+
   it('creates tokens that show the secret once', async () => {
     const s = new MockServer(null, {});
     const t = await call(s, 'POST', '/_bgh/tokens', {

@@ -36,6 +36,7 @@ pub mod registry;
 pub mod secret_scanning;
 pub mod secretbox;
 pub mod settings;
+pub mod signatures;
 pub mod ssrf;
 pub mod state;
 pub mod sudo;

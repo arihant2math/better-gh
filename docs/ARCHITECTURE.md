@@ -588,6 +588,20 @@ Site-level account changes also emit `UserAccountChanged` /
   client is SSRF-pinned, uses conditional requests and backs off on rate
   limits. Details: `docs/packages/p18-metadata-import.md`,
   `docs/packages/p51-metadata-import-2.md`.
+* Signatures (`bgh_git::signing`, `bgh_repos::signatures`): commit and tag
+  signatures (OpenPGP via rPGP against `/user/gpg_keys` incl. subkeys and
+  expiry, SSH `sshsig` against `/user/ssh_signing_keys`) are verified on
+  read with GitHub's `verification.reason` codes; the committer e-mail must
+  be a verified e-mail of the key owner. Results are cached per object SHA
+  in `signature_verifications` and invalidated by key and e-mail writes
+  (`bgh_core::signatures`). Every commit the server creates (web edits,
+  merges, squash/rebase, update-branch, suggestions) is signed with the
+  web-flow key (`{data_dir}/signing/`, published at `/web-flow.gpg`;
+  `RepoStore::signer`); git database API commits stay unsigned, like
+  GitHub. `required_signatures` (classic and ruleset) is enforced on push
+  by a pre-receive callback over the quarantined commits (GH006/GH013), on
+  API ref updates (`verify_needs`) and on merge (PR evaluator). Details:
+  `docs/packages/p25-signatures.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.

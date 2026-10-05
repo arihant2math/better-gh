@@ -13,4 +13,5 @@ mod required_deployments;
 mod rest_compat;
 mod review_flow;
 mod reviews;
+mod signatures;
 mod web_client;

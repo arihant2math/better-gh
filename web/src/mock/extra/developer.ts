@@ -1,6 +1,6 @@
 /**
  * Mock backend for developer settings: SSH / GPG keys (`/user/keys`,
- * `/user/gpg_keys`), personal access tokens (`/_bgh/tokens`), OAuth apps
+ * `/user/ssh_signing_keys`, `/user/gpg_keys`), personal access tokens (`/_bgh/tokens`), OAuth apps
  * (`/_bgh/applications`), authorized apps (`/_bgh/authorizations`) and
  * notification settings (`/_bgh/notifications/settings`). Same shapes,
  * status codes and validation messages as bgh-accounts / bgh-notify.
@@ -82,6 +82,8 @@ interface GrantRow {
 }
 interface DevState {
   ssh: SshRow[];
+  /** SSH signing keys (absent in state persisted before they existed). */
+  signing?: SshRow[];
   gpg: GpgRow[];
   tokens: TokenRow[];
   apps: AppRow[];
@@ -443,6 +445,48 @@ export function installDeveloperMocks(server: MockServer): void {
     const i = s.ssh.findIndex((x) => x.id === Number(param(c, 1)));
     if (i < 0) return notFound();
     s.ssh.splice(i, 1);
+    save();
+    return noContent();
+  });
+
+  // -------------------------------------------------------------- SSH signing keys
+  const signing = () => (S().signing ??= []);
+  const signingJson = (k: SshRow) => ({ key: k.key, id: k.id, title: k.title, created_at: k.created_at });
+  server.route('GET', '/api/v3/user/ssh_signing_keys', () => ok(signing().map(signingJson)));
+  server.route('GET', '/api/v3/user/ssh_signing_keys/:id', (c) => {
+    const k = signing().find((x) => x.id === Number(param(c, 1)));
+    return k ? ok(signingJson(k)) : notFound();
+  });
+  server.route('POST', '/api/v3/user/ssh_signing_keys', async (c) => {
+    const raw = str(c.body.key) ?? '';
+    if (!raw.trim()) return missing('SshSigningKey', 'key');
+    const p = parseSshKey(raw);
+    if (!p.ok) return custom('SshSigningKey', 'key', 'key is invalid. You must supply a key in OpenSSH public key format');
+    const fingerprint = await sshFingerprint(p.key.blob);
+    for (const k of signing()) {
+      if (!k.fingerprint) {
+        const q = parseSshKey(k.key);
+        if (q.ok) k.fingerprint = await sshFingerprint(q.key.blob);
+      }
+    }
+    if (signing().some((k) => k.fingerprint === fingerprint)) return custom('SshSigningKey', 'key', 'key is already in use');
+    const row: SshRow = {
+      id: id(),
+      title: str(c.body.title)?.trim() || p.key.comment || '',
+      key: p.key.normalized,
+      fingerprint,
+      created_at: server.now(),
+      last_used: null,
+    };
+    signing().push(row);
+    save();
+    return ok(signingJson(row), 201);
+  });
+  server.route('DELETE', '/api/v3/user/ssh_signing_keys/:id', (c) => {
+    const list = signing();
+    const i = list.findIndex((x) => x.id === Number(param(c, 1)));
+    if (i < 0) return notFound();
+    list.splice(i, 1);
     save();
     return noContent();
   });

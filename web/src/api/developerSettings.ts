@@ -46,6 +46,18 @@ export const listSshKeys = () => api.get<SshKey[]>('/api/v3/user/keys?per_page=1
 export const createSshKey = (body: { title?: string; key: string }) => api.post<SshKey>('/api/v3/user/keys', body);
 export const deleteSshKey = (id: number) => api.delete<null>(`/api/v3/user/keys/${id}`);
 
+/** `ssh-signing-key` (`/user/ssh_signing_keys`): verifies SSH-signed commits. */
+export interface SshSigningKey {
+  id: number;
+  key: string;
+  title: string;
+  created_at: string;
+}
+
+export const listSshSigningKeys = () => api.get<SshSigningKey[]>('/api/v3/user/ssh_signing_keys?per_page=100');
+export const createSshSigningKey = (body: { title?: string; key: string }) => api.post<SshSigningKey>('/api/v3/user/ssh_signing_keys', body);
+export const deleteSshSigningKey = (id: number) => api.delete<null>(`/api/v3/user/ssh_signing_keys/${id}`);
+
 export const listGpgKeys = () => api.get<GpgKey[]>('/api/v3/user/gpg_keys?per_page=100');
 export const createGpgKey = (body: { name?: string; armored_public_key: string }) => api.post<GpgKey>('/api/v3/user/gpg_keys', body);
 export const deleteGpgKey = (id: number) => api.delete<null>(`/api/v3/user/gpg_keys/${id}`);

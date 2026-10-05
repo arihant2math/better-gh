@@ -173,6 +173,19 @@ pub struct RepoStore {
     /// Directory name suffix: `.git` for repositories, `.wiki.git` for
     /// their wikis (see [`Self::wiki`]).
     pub suffix: &'static str,
+    /// Signs commits the server creates (`None`: they stay unsigned).
+    pub signer: Option<std::sync::Arc<crate::signing::WebFlowKey>>,
+}
+
+/// The web-flow key in `{data_dir}/signing/` (generated on first use).
+pub fn web_flow_signer(config: &Config) -> Option<std::sync::Arc<crate::signing::WebFlowKey>> {
+    match crate::signing::web_flow_key(&config.data_dir.join("signing")) {
+        Ok(k) => Some(k),
+        Err(err) => {
+            tracing::warn!(%err, "web-flow signing key unavailable; server commits stay unsigned");
+            None
+        }
+    }
 }
 
 /// Directory suffix of main repositories.
@@ -187,6 +200,7 @@ impl RepoStore {
             git_bin: git_bin.into(),
             max_blob_size: 10 * 1024 * 1024,
             suffix: REPO_SUFFIX,
+            signer: None,
         }
     }
 
@@ -196,6 +210,7 @@ impl RepoStore {
             git_bin: config.git_bin.clone(),
             max_blob_size: config.max_blob_size,
             suffix: REPO_SUFFIX,
+            signer: web_flow_signer(config),
         }
     }
 

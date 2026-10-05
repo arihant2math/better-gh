@@ -356,8 +356,9 @@ async fn commits() {
         app.url(&format!("/api/v3/repos/alice/r/git/commits/{h}"))
     );
     assert_eq!(c["html_url"], app.url(&format!("/alice/r/commit/{h}")));
-    assert_eq!(c["verification"]["verified"], false);
-    assert_eq!(c["verification"]["reason"], "unsigned");
+    // auto_init commits are signed by web-flow (P25).
+    assert_eq!(c["verification"]["verified"], true);
+    assert_eq!(c["verification"]["reason"], "valid");
     assert_eq!(
         res.header("cache-control"),
         Some("public, max-age=31536000, immutable")
@@ -419,7 +420,8 @@ async fn commits() {
         json!({"message": "signed", "tree": tree, "parents": [h], "signature": sig}),
     )
     .await;
-    assert_eq!(v["verification"]["reason"], "unknown_key");
+    // Not a parseable OpenPGP signature (P25 verifies signatures).
+    assert_eq!(v["verification"]["reason"], "malformed_signature");
     assert!(
         v["verification"]["signature"]
             .as_str()
