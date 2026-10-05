@@ -48,6 +48,20 @@ pub struct Config {
     pub max_blob_size: u64,
     /// `BGH_SITE_NAME` (default `Better GitHub`).
     pub site_name: String,
+    /// `BGH_SMTP_URL` (e.g. `smtps://user:pass@smtp.example.com:465`,
+    /// `smtp://localhost:25`). Unset: mail is logged and written to
+    /// `{data_dir}/mail/` (see [`crate::mail`]).
+    pub smtp_url: Option<String>,
+    /// `BGH_MAIL_FROM` (default `Better GitHub <noreply@{hostname}>`).
+    pub mail_from: Option<String>,
+    /// `BGH_RATE_LIMIT` requests per hour for authenticated callers
+    /// (default 5000; 0 disables rate limiting).
+    pub rate_limit_authenticated: u32,
+    /// `BGH_RATE_LIMIT_ANONYMOUS` requests per hour per IP (default 60).
+    pub rate_limit_anonymous: u32,
+    /// `BGH_TRUST_PROXY` (default false): take the client IP from
+    /// `X-Forwarded-For` / `X-Real-IP` (set when behind a reverse proxy).
+    pub trust_proxy: bool,
 }
 
 impl Default for Config {
@@ -69,6 +83,11 @@ impl Default for Config {
             git_bin: "git".into(),
             max_blob_size: 10 * 1024 * 1024,
             site_name: "Better GitHub".into(),
+            smtp_url: None,
+            mail_from: None,
+            rate_limit_authenticated: 5000,
+            rate_limit_anonymous: 60,
+            trust_proxy: false,
         }
     }
 }
@@ -144,6 +163,19 @@ impl Config {
                 d.max_blob_size,
             )?,
             site_name: parse("BGH_SITE_NAME")?.unwrap_or(d.site_name),
+            smtp_url: parse("BGH_SMTP_URL")?,
+            mail_from: parse("BGH_MAIL_FROM")?,
+            rate_limit_authenticated: typed(
+                "BGH_RATE_LIMIT",
+                parse("BGH_RATE_LIMIT")?,
+                d.rate_limit_authenticated,
+            )?,
+            rate_limit_anonymous: typed(
+                "BGH_RATE_LIMIT_ANONYMOUS",
+                parse("BGH_RATE_LIMIT_ANONYMOUS")?,
+                d.rate_limit_anonymous,
+            )?,
+            trust_proxy: boolean("BGH_TRUST_PROXY", d.trust_proxy)?,
         })
     }
 
@@ -174,6 +206,13 @@ impl Config {
     /// Whether cookies should carry the `Secure` attribute.
     pub fn secure_cookies(&self) -> bool {
         self.base_url.starts_with("https://")
+    }
+
+    /// `From:` address for outgoing mail.
+    pub fn mail_from(&self) -> String {
+        self.mail_from
+            .clone()
+            .unwrap_or_else(|| format!("{} <noreply@{}>", self.site_name, self.hostname()))
     }
 
     /// Directory holding bare git repositories.

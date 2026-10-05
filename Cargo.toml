@@ -85,6 +85,23 @@ comrak = { version = "0.55", default-features = false }
 ammonia = "4"
 gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
 
+# mail / http clients
+lettre = { version = "0.11", default-features = false, features = [
+    "smtp-transport",
+    "pool",
+    "hostname",
+    "builder",
+    "tokio1",
+    "tokio1-rustls",
+    "rustls-tls",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+hmac = "0.12"
+sha1 = "0.10"
+flate2 = "1"
+crc32fast = "1"
+url = "2"
+
 # testing
 tempfile = "3"
 
