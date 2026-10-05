@@ -192,10 +192,8 @@ export default function DashboardPage() {
                     detail={`${formatBytes(fs.used_bytes)} used of ${formatBytes(fs.total_bytes)} · ${formatBytes(fs.available_bytes)} free`}
                   />
                   <StackedBar
-                    label="Data volume usage"
+                    label="Used space by content"
                     format={(n) => formatBytes(n)}
-                    total={fs.total_bytes}
-                    remainderLabel="Unused"
                     segments={[
                       { label: 'Repositories', value: Math.min(h.storage.repositories_bytes, fs.used_bytes), slot: 1 },
                       { label: 'Other', value: Math.max(0, fs.used_bytes - h.storage.repositories_bytes), slot: 'muted' },
