@@ -66,8 +66,13 @@ RUN apt-get update \
  && chown bgh:bgh /data
 COPY --from=builder /usr/local/bin/bgh /usr/local/bin/bgh
 
+# Actions: this image has no docker, so with BGH_ACTIONS_EXECUTOR=auto the
+# built-in runner takes no jobs (it never runs workflow code inside the
+# server container). Use external runners (`bgh-runner`), or mount a docker
+# socket and set BGH_ACTIONS_EXECUTOR=docker. See docs/SELF_HOSTING.md.
 ENV BGH_LISTEN=0.0.0.0:3000 \
     BGH_DATA_DIR=/data \
+    BGH_ACTIONS_EXECUTOR=auto \
     RUST_LOG=info,sqlx=warn
 
 USER bgh
