@@ -1,7 +1,10 @@
 # P14 ldap-auth — status
 
-**In progress.** Branch `bgh/p14-ldap-auth`. Scope: `docs/PHASE4_PLAN.md`
-§P14 (no §5 quick fixes are assigned to P14). Migrations: 2600–2699
+**Done.** Branch `bgh/p14-ldap-auth`, self-integrated (fast-forward) into
+`claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build, `api-smoke.sh`
+45/45, `gh-compat.sh` 41/41). Scope: `docs/PHASE4_PLAN.md` §P14 (no §5
+quick fixes are assigned to P14). Migrations: 2600–2699
 (`2600_directory_auth.sql`).
 
 ## What changed
@@ -153,6 +156,14 @@ filters) through the real `ldap3` client. No system slapd needed.
   429, audit rows with `transport: "git"`, lockout shared with web.
 * `sso_avatars_ratelimit.rs`: OIDC groups claim + team-sync REST.
 * Web: `settingsForm.test.ts` (LDAP round trip, validation).
+* UI verified with Playwright against a real `bgh serve` (built web):
+  admin Settings → Authentication LDAP block (client validation, "Test
+  connection" error against a closed port, save, write-only bind password
+  after reload), password sign-in off + admin exemption; sign-in page shows
+  "LDAP username" with LDAP, SSO-only mode hides the password form, and the
+  "Site administrator sign-in" link reveals it for break-glass sign-in.
+* Git password errors are plain text since the push-hardening merge (git
+  shows them as `remote: …`); the test reads the text body.
 
 ## Known gaps / TODO
 

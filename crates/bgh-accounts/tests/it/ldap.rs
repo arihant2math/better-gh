@@ -502,12 +502,8 @@ async fn password_login_disabled_is_enforced() {
     let refs = "/bob/code.git/info/refs?service=git-upload-pack";
     let res = app.get(refs).basic("bob", &bob.password).send().await;
     res.assert_status(403);
-    assert!(
-        res.json()["message"]
-            .as_str()
-            .unwrap()
-            .contains("personal access token")
-    );
+    // Git clients get the message as text (shown as `remote: ...`).
+    assert!(res.text().contains("personal access token"));
     // Tokens keep working (git basic with a PAT, API).
     app.get(refs)
         .basic("bob", &bob.token)
