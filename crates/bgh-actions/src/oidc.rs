@@ -204,7 +204,14 @@ fn generate(dir: &FsPath) -> anyhow::Result<String> {
     let key = RsaPrivateKey::new(&mut rng, 2048)?;
     let der = RsaPublicKey::from(&key).to_public_key_der()?;
     let kid = hex::encode(&Sha256::digest(der.as_bytes())[..16]);
-    let now = chrono::Utc::now().timestamp();
+    // Strictly after the newest existing key, so name order = age order
+    // even for rotations within one second.
+    let newest = list(dir)?
+        .iter()
+        .filter_map(|n| n.split_once('-')?.0.parse::<i64>().ok())
+        .max()
+        .unwrap_or(0);
+    let now = chrono::Utc::now().timestamp().max(newest + 1);
     std::fs::create_dir_all(dir)?;
     let name = format!("{now:012}-{kid}.pem");
     crate::crypto::write_private(
