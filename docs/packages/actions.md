@@ -17,6 +17,7 @@ Branch `bgh/actions`.
 | `runner/` | Job executor shared by the built-in runner and `bgh-runner` (see below). |
 | `web.rs` | `/_bgh/actions/runner/*` HTTP protocol, `/_bgh/actions/download/{token}` signed downloads, `/_bgh/actions/jobs/{id}/logs/stream` SSE live logs. |
 | `api/` | GitHub REST endpoints (list below). |
+| `reusable.rs` | Reusable workflows (P16): `uses:` parsing and resolution (local at the caller's commit, `owner/repo/path@ref` from this server with the `/actions/permissions/access` rule), typed `with:`, `secrets:` layers (mapping or `inherit`), `on.workflow_call.outputs`. The engine schedules each call as a nested scope (`call` rows). |
 | `services.rs` | Background services: maintenance loop (cron, reaper, artifact expiry) and the built-in runner. |
 
 ### Runner
@@ -74,6 +75,8 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   `{name}/repositories[/{repo_id}]`).
 * Variables: same three levels (`/actions/variables`, `…/organization-variables`,
   `/environments/{env}/variables`, `/orgs/{org}/actions/variables…`).
+* Reusable workflow access: `GET|PUT /repos/{o}/{r}/actions/permissions/access`
+  (`access_level` none/user/organization/enterprise).
 * Environments (minimal, no protection rules): `GET /repos/{o}/{r}/environments`,
   `GET|PUT|DELETE …/environments/{name}`.
 * Runners: repo and org — `GET …/actions/runners`, `GET …/runners/downloads`
@@ -85,7 +88,7 @@ Web (`/_bgh/actions`): runner protocol (`register`, `self`, `acquire`,
 `jobs/{id}/logs|steps|complete|artifacts…`), `download/{token}`,
 `jobs/{id}/logs/stream` (SSE).
 
-## Tables (migration 1000)
+## Tables (migration 1000; 2800 adds `actions_jobs.kind`/`concurrency_group` and `actions_repo_access`)
 
 `actions_workflows`, `actions_runs`, `actions_jobs`, `actions_runners`,
 `actions_runner_tokens`, `actions_artifacts`, `actions_environments`,
@@ -148,11 +151,12 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 
 ## Known gaps / TODO
 
-* Reusable workflows (`jobs.<id>.uses`) are parsed but fail the job with a
-  clear error. `workflow_run` trigger not wired.
+* `workflow_run` trigger not wired. (Reusable workflows: see
+  `docs/packages/p16-reusable-workflows.md`.)
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
-* Job-level `concurrency` is parsed but not enforced (workflow-level is).
+* Job-level `concurrency` is enforced only on jobs calling a reusable
+  workflow (workflow-level is enforced everywhere).
 * `actions/cache` is a no-op; no cache API (`/actions/caches`).
 * `permissions:` is not applied to `GITHUB_TOKEN` (always repo-scoped Write).
 * PR runs use the head commit (no `refs/pull/N/merge` merge commit is
