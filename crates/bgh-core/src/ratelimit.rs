@@ -132,11 +132,18 @@ impl Quota {
     }
 }
 
-/// Rate-limit identity: the user, or the client IP.
+/// Rate-limit identity: the installation (GitHub App installation tokens
+/// get a bucket each), the app (JWT), the user, or the client IP.
 fn caller_key(ctx: Option<&AuthContext>, ip: &str) -> String {
-    match ctx {
-        Some(c) => format!("u:{}", c.user.id),
-        None => format!("ip:{ip}"),
+    let Some(c) = ctx else {
+        return format!("ip:{ip}");
+    };
+    if let Some(i) = crate::apps::installation_id(c) {
+        format!("i:{i}")
+    } else if let Some(a) = crate::apps::jwt_app_id(c) {
+        format!("a:{a}")
+    } else {
+        format!("u:{}", c.user.id)
     }
 }
 

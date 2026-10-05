@@ -2,6 +2,7 @@
 //!
 //! See `docs/BACKEND_PATTERNS.md` for how the pieces fit together.
 
+pub mod apps;
 pub mod audit;
 pub mod auth;
 pub mod bots;

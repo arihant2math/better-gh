@@ -39,7 +39,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "projects_v2_item",
     "registry_package",
     "repository_advisory",
-    "repository_dispatch",
     "repository_import",
     "repository_vulnerability_alert",
     "secret_scanning_alert",
@@ -394,6 +393,13 @@ fn samples() -> Vec<Event> {
             repo_id: 1,
             actor_id: 1,
             pages: json!([]),
+        },
+        Event::RepositoryDispatch {
+            repo_id: 1,
+            actor_id: 1,
+            event_type: "deploy".into(),
+            client_payload: json!({}),
+            branch: "main".into(),
         },
         Event::OrgMemberAdded {
             org_id: 1,

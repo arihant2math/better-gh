@@ -12,6 +12,10 @@ pub const PAT_PREFIX: &str = "bghp_";
 /// Prefix of OAuth app access tokens (`bgho_…`).
 pub const OAUTH_TOKEN_PREFIX: &str = "bgho_";
 
+/// Prefix of GitHub App installation access tokens (`bghs_…`, GitHub's
+/// `ghs_`).
+pub const INSTALLATION_TOKEN_PREFIX: &str = "bghs_";
+
 /// Hash a password with Argon2id (PHC string format).
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
@@ -50,6 +54,11 @@ pub fn new_pat() -> String {
 /// New OAuth access token: `bgho_` + 40 alphanumerics.
 pub fn new_oauth_token() -> String {
     format!("{OAUTH_TOKEN_PREFIX}{}", random_token(40))
+}
+
+/// New installation access token: `bghs_` + 40 alphanumerics.
+pub fn new_installation_token() -> String {
+    format!("{INSTALLATION_TOKEN_PREFIX}{}", random_token(40))
 }
 
 /// Constant-time string comparison (for secrets compared in memory).

@@ -128,6 +128,21 @@ pub fn ref_name(git_ref: &str) -> (&str, &str) {
     }
 }
 
+/// `GITHUB_SHA` of a run. Like GitHub, a `pull_request` run keeps the PR
+/// head commit as its `head_sha` (its check suite belongs to the PR head)
+/// but checks out and reports the test merge commit of `refs/pull/N/merge`,
+/// recorded as `pull_request.merge_commit_sha` in the event payload.
+pub fn run_sha(run: &RunRow) -> &str {
+    if run.git_ref.starts_with("refs/pull/")
+        && run.git_ref.ends_with("/merge")
+        && let Some(sha) = run.event_payload["pull_request"]["merge_commit_sha"].as_str()
+        && !sha.is_empty()
+    {
+        return sha;
+    }
+    &run.head_sha
+}
+
 /// Inputs needed to build the `github` context of a run.
 pub struct RunInfo<'a> {
     pub repo: &'a db::Repository,
@@ -162,7 +177,7 @@ pub fn github_context(
     json!({
         "event_name": run.event,
         "event": ev,
-        "sha": run.head_sha,
+        "sha": run_sha(run),
         "ref": run.git_ref,
         "ref_name": ref_name,
         "ref_type": ref_type,
@@ -183,7 +198,7 @@ pub fn github_context(
         "retention_days": state.config.actions.artifact_retention_days.to_string(),
         "workflow": run.name,
         "workflow_ref": format!("{full_name}/{}@{}", info.workflow_path, run.git_ref),
-        "workflow_sha": run.head_sha,
+        "workflow_sha": run_sha(run),
         "server_url": base,
         "api_url": state.config.api_url(),
         "graphql_url": format!("{base}/api/graphql"),
