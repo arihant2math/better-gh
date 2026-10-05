@@ -4,6 +4,7 @@
  */
 import DOMPurify from 'dompurify';
 import { Marked, type TokenizerAndRendererExtension } from 'marked';
+import { attachmentVideo } from './video';
 
 const EMOJI: Record<string, string> = {
   '+1': '👍',
@@ -76,6 +77,9 @@ function markedFor(ctx: RenderContext): Marked {
     m.use({ extensions: extensions(ctx) });
     m.use({
       renderer: {
+        paragraph({ text }) {
+          return attachmentVideo(text) ?? false;
+        },
         link({ href, title, tokens }) {
           const text = this.parser.parseInline(tokens);
           const external = /^https?:\/\//.test(href);
@@ -97,7 +101,7 @@ export function renderMarkdown(src: string, ctx: RenderContext = {}): string {
   const html = markedFor(ctx).parse(src) as string;
   return DOMPurify.sanitize(html, {
     ADD_TAGS: ['g-emoji'],
-    ADD_ATTR: ['target'],
+    ADD_ATTR: ['target', 'controls', 'preload'],
     FORBID_TAGS: ['style', 'form'],
   });
 }

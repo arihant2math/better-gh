@@ -11,6 +11,7 @@ import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
+import { installUploadMocks } from './uploads';
 import { installUserMocks } from './user';
 
 export function installExtraMocks(server: MockServer): void {
@@ -20,5 +21,6 @@ export function installExtraMocks(server: MockServer): void {
   installProfileMocks(server);
   installRepoSettingsMocks(server);
   installInvitationMocks(server);
+  installUploadMocks(server);
   installImportMocks(server);
 }

@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { formatKeys } from '../../shortcuts/manager';
 import { store } from '../../sync';
 import type { ID } from '../../sync/models';
@@ -9,10 +9,10 @@ import { fuzzyScore } from '../../ui/fuzzy';
 import { Textarea } from '../../ui/Input';
 import { Markdown } from '../../ui/Markdown';
 import { Tabs } from '../../ui/Tabs';
-import { toast } from '../../ui/Toast';
 import { caretCoordinates } from './caret';
 import { activeToken, continueList, link, prefixLines, wrap, type Edit } from './format';
 import styles from './MarkdownEditor.module.css';
+import { UploadStatus, useAttachments } from './useAttachments';
 import { BoldIcon, CodeIcon, ItalicIcon, LinkIcon, ListOrderedIcon, ListUnorderedIcon, QuoteIcon, TasklistIcon } from '../../ui/icons';
 
 interface Suggestion {
@@ -77,8 +77,8 @@ function suggestions(trigger: '@' | '#', query: string, repoId: ID | undefined):
 /**
  * Markdown editor used for issue bodies, comments and descriptions:
  * Write/Preview, toolbar + shortcuts (⌘B/⌘I/⌘E/⌘K, list continuation),
- * `@mention` and `#issue` autocomplete from the local store.
- * Image paste/drop needs an upload endpoint, which the server doesn't have yet.
+ * `@mention` and `#issue` autocomplete from the local store, and file
+ * attachments (paste, drop or the paperclip; see useAttachments).
  */
 export const MarkdownEditor = observer(function MarkdownEditor({
   value,
@@ -234,17 +234,7 @@ export const MarkdownEditor = observer(function MarkdownEditor({
     }
   };
 
-  const rejectFiles = (files: FileList | null | undefined) => {
-    if (!files || !Array.from(files).some((f) => f.type.startsWith('image/') || f.size > 0)) return false;
-    toast({ kind: 'error', title: 'File uploads are not supported yet', description: 'Link to an image URL instead: ![alt](https://…)' });
-    return true;
-  };
-  const onPaste = (e: ClipboardEvent) => {
-    if (e.clipboardData.files.length && rejectFiles(e.clipboardData.files)) e.preventDefault();
-  };
-  const onDrop = (e: DragEvent) => {
-    if (e.dataTransfer.files.length && rejectFiles(e.dataTransfer.files)) e.preventDefault();
-  };
+  const attachments = useAttachments({ textarea: ta, value, onChange, repo, apply });
 
   const tools: { label: string; keys?: string; icon: typeof BoldIcon; fn: (e: Edit) => Edit }[] = [
     { label: 'Bold', keys: 'mod+b', icon: BoldIcon, fn: (x) => wrap(x, '**', '**', 'bold') },
@@ -282,6 +272,7 @@ export const MarkdownEditor = observer(function MarkdownEditor({
                 onClick={() => run(t.fn)}
               />
             ))}
+            {attachments.button}
           </div>
         )}
       </div>
@@ -300,14 +291,17 @@ export const MarkdownEditor = observer(function MarkdownEditor({
             onKeyUp={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && updateToken()}
             onClick={updateToken}
             onBlur={() => setTimeout(() => setToken(null), 120)}
-            onPaste={onPaste}
-            onDrop={onDrop}
+            onPaste={attachments.onPaste}
+            onDrop={attachments.onDrop}
+            onDragOver={attachments.onDragOver}
+            onDragLeave={attachments.onDragLeave}
             rows={rows}
             aria-label={ariaLabel}
             aria-autocomplete="list"
             aria-expanded={open}
-            className={styles.textarea}
+            className={cx(styles.textarea, attachments.dragging && styles.dragging)}
           />
+          <UploadStatus a={attachments} className={styles.uploadStatus} />
           {open && pos && (
             <div className={styles.suggestions} style={{ top: pos.top, left: Math.max(0, pos.left) }} role="listbox" aria-label={token?.trigger === '@' ? 'Users' : 'Issues'}>
               {items.map((s, i) => (
@@ -337,7 +331,7 @@ export const MarkdownEditor = observer(function MarkdownEditor({
       )}
       {!hideActions && (
         <div className={styles.actions}>
-          <span className={styles.hint}>Markdown · @ to mention · # to reference</span>
+          <span className={styles.hint}>Markdown · @ to mention · # to reference · paste or drop files to attach</span>
           {extraActions}
           <span className={styles.spacer} />
           {onCancel && (
