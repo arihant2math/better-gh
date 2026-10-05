@@ -358,7 +358,7 @@ pub fn runner_json(r: &RunnerRow) -> Value {
         "status": if r.online() { "online" } else { "offline" },
         "busy": r.busy,
         "ephemeral": r.ephemeral,
-        "runner_group_id": 1,
+        "runner_group_id": r.runner_group_id.unwrap_or(1),
         "labels": labels,
     })
 }

@@ -2,6 +2,10 @@
 //!
 //! * `GET|POST /repos/{o}/{r}/autolinks`
 //! * `GET|DELETE /repos/{o}/{r}/autolinks/{id}`
+//!
+//! Plus `GET /_bgh/repos/{o}/{r}/autolinks` (read access): the rules the
+//! web client's Markdown renderer applies, mirroring the server renderer
+//! (P35). They are visible in every rendered body anyway.
 
 use axum::Router;
 use axum::extract::State;
@@ -19,6 +23,27 @@ pub fn routes() -> Router<AppState> {
             "/repos/{owner}/{repo}/autolinks/{id}",
             get(get_one).delete(delete),
         )
+}
+
+/// Absolute paths (web client).
+pub fn web_routes() -> Router<AppState> {
+    Router::new().route("/_bgh/repos/{owner}/{repo}/autolinks", get(rules))
+}
+
+/// `GET /_bgh/repos/{owner}/{repo}/autolinks`: `[{key_prefix, url_template,
+/// is_alphanumeric}]`, longest prefix first (the matching order).
+async fn rules(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo)): Path<(String, String)>,
+) -> ApiResult<Json<Vec<bgh_core::markdown::AutolinkRule>>> {
+    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
+    Ok(Json(
+        bgh_core::markdown::load_autolinks(&state.db, &[access.repo.id])
+            .await?
+            .remove(&access.repo.id)
+            .unwrap_or_default(),
+    ))
 }
 
 /// `autolink` (also the row shape).

@@ -65,12 +65,13 @@ async fn ruleset_required_deployments_blocks_merge_until_success() {
         json!([{"type": "required_deployments",
                 "parameters": {"required_deployment_environments": ["staging"]}}])
     );
-    // Parameters are required.
+    // Environments must be strings.
     app.post("/api/v3/repos/alice/demo/rulesets")
         .auth(&f.alice)
         .json(
             &json!({"name": "Bad", "target": "branch", "enforcement": "active",
-                      "rules": [{"type": "required_deployments"}]}),
+                      "rules": [{"type": "required_deployments",
+                                 "parameters": {"required_deployment_environments": [1]}}]}),
         )
         .send()
         .await

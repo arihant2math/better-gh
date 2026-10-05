@@ -82,24 +82,255 @@ async fn token_inner(
     o: Owner,
     kind: &str,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    let (repo_id, org_id) = match o {
+        Owner::Repo(id) => (Some(id), None),
+        Owner::Org(id) => (None, Some(id)),
+    };
+    mint_token(state, kind, repo_id, org_id).await
+}
+
+/// Mint a registration / removal token for a repository, an organization,
+/// or (both `None`) the site.
+pub(crate) async fn mint_token(
+    state: &AppState,
+    kind: &str,
+    repo_id: Option<i64>,
+    org_id: Option<i64>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
     let token = core_crypto::random_token(29).to_ascii_uppercase();
     let expires = Utc::now() + chrono::Duration::hours(1);
     sqlx::query("DELETE FROM actions_runner_tokens WHERE expires_at < now()")
         .execute(&state.db)
         .await?;
-    sqlx::query(&format!(
-        "INSERT INTO actions_runner_tokens (kind, token_hash, {}, expires_at) VALUES ($1, $2, $3, $4)",
-        o.column()
-    ))
+    sqlx::query(
+        "INSERT INTO actions_runner_tokens (kind, token_hash, repo_id, org_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
     .bind(kind)
     .bind(core_crypto::sha256_hex(&token))
-    .bind(o.id())
+    .bind(repo_id)
+    .bind(org_id)
     .bind(expires)
     .execute(&state.db)
     .await?;
     Ok((
         StatusCode::CREATED,
         Json(json!({"token": token, "expires_at": Timestamp(expires)})),
+    ))
+}
+
+/// A runner to create (registration or JIT config).
+pub(crate) struct NewRunner<'a> {
+    pub repo_id: Option<i64>,
+    pub org_id: Option<i64>,
+    pub name: &'a str,
+    pub labels: &'a [String],
+    pub os: Option<&'a str>,
+    pub arch: Option<&'a str>,
+    pub ephemeral: bool,
+    pub group_id: Option<i64>,
+    pub group_name: Option<&'a str>,
+}
+
+/// A created runner, its secret token and its group (`None` for
+/// repository runners).
+pub(crate) struct CreatedRunner {
+    pub runner: RunnerRow,
+    pub token: String,
+    pub group: Option<(i64, String)>,
+}
+
+/// Create a runner: OS/arch system labels, group, token. Re-registering a
+/// name in the same scope replaces the old runner (like `--replace`).
+pub(crate) async fn create_runner(state: &AppState, n: NewRunner<'_>) -> ApiResult<CreatedRunner> {
+    let name = n.name.trim();
+    if name.is_empty() || name.chars().count() > 64 {
+        return Err(ApiError::invalid_field(FieldError::invalid(
+            "Runner", "name",
+        )));
+    }
+    let os = match n.os {
+        Some(v) => crate::runner::normalize_os(v)
+            .ok_or_else(|| ApiError::invalid_field(FieldError::invalid("Runner", "os")))?,
+        None => "Linux",
+    };
+    let arch = match n.arch {
+        Some(v) => crate::runner::normalize_arch(v)
+            .ok_or_else(|| ApiError::invalid_field(FieldError::invalid("Runner", "arch")))?,
+        None => "X64",
+    };
+    let system: Vec<String> = vec![
+        "self-hosted".into(),
+        os.to_ascii_lowercase(),
+        arch.to_ascii_lowercase(),
+    ];
+    let given: Vec<String> = n
+        .labels
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .cloned()
+        .collect();
+    let labels: Vec<String> = clean_labels(&given)?
+        .into_iter()
+        .filter(|l| !system.contains(l))
+        .collect();
+    let token = core_crypto::random_token(48);
+    let mut tx = Tx::begin(state).await?;
+    let group: Option<(i64, String)> = if n.repo_id.is_some() {
+        None
+    } else if let Some(gname) = n.group_name.filter(|g| !g.trim().is_empty()) {
+        crate::api::runner_groups::ensure_default_group(&mut tx, n.org_id).await?;
+        let g: Option<(i64, String)> = sqlx::query_as(
+            "SELECT id, name FROM actions_runner_groups
+              WHERE org_id IS NOT DISTINCT FROM $1 AND lower(name) = lower($2)",
+        )
+        .bind(n.org_id)
+        .bind(gname.trim())
+        .fetch_optional(&mut *tx)
+        .await?;
+        Some(g.ok_or_else(|| {
+            ApiError::invalid_field(FieldError::invalid("Runner", "runner_group"))
+        })?)
+    } else {
+        let id =
+            crate::api::runner_groups::group_for_new_runner(&mut tx, n.org_id, n.group_id).await?;
+        let gname: String =
+            sqlx::query_scalar("SELECT name FROM actions_runner_groups WHERE id = $1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        Some((id, gname))
+    };
+    sqlx::query(
+        "DELETE FROM actions_runners
+          WHERE name = $1 AND repo_id IS NOT DISTINCT FROM $2 AND org_id IS NOT DISTINCT FROM $3
+            AND NOT builtin AND NOT busy",
+    )
+    .bind(name)
+    .bind(n.repo_id)
+    .bind(n.org_id)
+    .execute(&mut *tx)
+    .await?;
+    let runner: RunnerRow = sqlx::query_as(&format!(
+        "INSERT INTO actions_runners (repo_id, org_id, name, os, arch, system_labels, labels,
+                                      token_hash, ephemeral, runner_group_id, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now()) RETURNING {}",
+        RunnerRow::COLUMNS
+    ))
+    .bind(n.repo_id)
+    .bind(n.org_id)
+    .bind(name)
+    .bind(os)
+    .bind(arch)
+    .bind(&system)
+    .bind(&labels)
+    .bind(core_crypto::sha256_hex(&token))
+    .bind(n.ephemeral)
+    .bind(group.as_ref().map(|g| g.0))
+    .fetch_one(&mut *tx)
+    .await?;
+    let target = match (n.repo_id, n.org_id) {
+        (Some(id), _) => bgh_core::audit::Target::Repo { id, org_id: None },
+        (None, Some(id)) => bgh_core::audit::Target::Org(id),
+        (None, None) => bgh_core::audit::Target::Site,
+    };
+    bgh_core::audit::log(
+        &mut *tx,
+        None,
+        "runner.register",
+        target,
+        json!({"runner": runner.name, "runner_id": runner.id, "ephemeral": runner.ephemeral,
+               "os": os, "arch": arch}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(CreatedRunner {
+        runner,
+        token,
+        group,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct JitBody {
+    pub name: Option<String>,
+    pub runner_group_id: Option<i64>,
+    pub labels: Option<Vec<String>>,
+    pub work_folder: Option<String>,
+}
+
+/// `generate-jitconfig`: an ephemeral runner for one job, ready to run.
+pub(crate) async fn jit_inner(
+    state: &AppState,
+    repo_id: Option<i64>,
+    org_id: Option<i64>,
+    github_url: String,
+    body: JitBody,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let name = body
+        .name
+        .ok_or_else(|| ApiError::invalid_field(FieldError::missing_field("Runner", "name")))?;
+    let labels = body
+        .labels
+        .ok_or_else(|| ApiError::invalid_field(FieldError::missing_field("Runner", "labels")))?;
+    if labels.is_empty() || labels.len() > 100 {
+        return Err(ApiError::invalid_field(FieldError::invalid(
+            "Runner", "labels",
+        )));
+    }
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM actions_runners
+                         WHERE name = $1 AND repo_id IS NOT DISTINCT FROM $2
+                           AND org_id IS NOT DISTINCT FROM $3)",
+    )
+    .bind(name.trim())
+    .bind(repo_id)
+    .bind(org_id)
+    .fetch_one(&state.db)
+    .await?;
+    if exists {
+        return Err(ApiError::conflict(
+            "Already exists - A runner with this name already exists",
+        ));
+    }
+    let lower: Vec<String> = labels.iter().map(|l| l.to_ascii_lowercase()).collect();
+    let os = lower.iter().find_map(|l| crate::runner::normalize_os(l));
+    let arch = lower.iter().find_map(|l| crate::runner::normalize_arch(l));
+    let created = create_runner(
+        state,
+        NewRunner {
+            repo_id,
+            org_id,
+            name: &name,
+            labels: &labels,
+            os,
+            arch,
+            ephemeral: true,
+            group_id: body.runner_group_id,
+            group_name: None,
+        },
+    )
+    .await?;
+    let (group_id, group_name) = created.group.clone().unwrap_or((1, "Default".into()));
+    let config = crate::protocol::JitConfig {
+        runner_id: created.runner.id,
+        runner_name: created.runner.name.clone(),
+        runner_group_id: group_id,
+        runner_group_name: group_name,
+        server_url: state.config.base_url.trim_end_matches('/').to_string(),
+        github_url,
+        work_folder: body
+            .work_folder
+            .filter(|w| !w.trim().is_empty())
+            .unwrap_or_else(|| "_work".into()),
+        token: created.token,
+    };
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "runner": runner_json(&created.runner),
+            "encoded_jit_config": config.encode(),
+        })),
     ))
 }
 
@@ -218,6 +449,30 @@ macro_rules! runner_handlers {
 }
 
 runner_handlers!(repo, repo_owner, (owner, repo), (String, String));
+
+/// `POST /repos/{owner}/{repo}/actions/runners/generate-jitconfig`
+pub async fn repo_jitconfig(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(body): Json<JitBody>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let o = repo_owner(&state, &auth, &owner, &repo).await?;
+    let url = state.urls.html(&format!("/{owner}/{repo}"));
+    jit_inner(&state, Some(o.id()), None, url, body).await
+}
+
+/// `POST /orgs/{org}/actions/runners/generate-jitconfig`
+pub async fn org_jitconfig(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(org): Path<String>,
+    Json(body): Json<JitBody>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let o = org_owner(&state, &auth, &org).await?;
+    let url = state.urls.html(&format!("/{org}"));
+    jit_inner(&state, None, Some(o.id()), url, body).await
+}
 runner_handlers!(org, org_owner, (org), String);
 
 macro_rules! runner_item_handlers {

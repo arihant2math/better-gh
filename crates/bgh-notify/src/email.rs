@@ -425,6 +425,7 @@ fn render_email(
     reason: Reason,
     unsub_thread: &str,
     unsub_all: &str,
+    autolinks: &[markdown::AutolinkRule],
 ) -> Email {
     let site = &state.config.site_name;
     let text = format!(
@@ -435,7 +436,9 @@ fn render_email(
     );
     let rendered = markdown::render(
         &content.body_md,
-        &RenderContext::new(&state.config.base_url).with_repo(owner, repo),
+        &RenderContext::new(&state.config.base_url)
+            .with_repo(owner, repo)
+            .with_autolinks(autolinks),
     );
     let body_html = format!(
         "<div>{rendered}</div><p style=\"color:#656d76;font-size:12px;margin-top:24px\">\u{2014}<br>\
@@ -527,6 +530,7 @@ async fn run(state: &AppState, job: &NotificationEmail) -> ApiResult<()> {
     .await?;
     let people: HashMap<i64, Recipient> = people.into_iter().map(|p| (p.id, p)).collect();
 
+    let autolinks = markdown::repo_autolinks(&state.db, repo.id).await;
     let secret = settings::secret(state).await?;
     let full = format!("{}/{}", owner.login, repo.name);
     let mut tx = Tx::begin(state).await?;
@@ -564,6 +568,7 @@ async fn run(state: &AppState, job: &NotificationEmail) -> ApiResult<()> {
             *reason,
             &unsub_thread,
             &unsub_all,
+            &autolinks,
         );
         tx.enqueue(&SendEmail::new(email)).await?;
     }

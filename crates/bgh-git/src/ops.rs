@@ -280,10 +280,21 @@ impl GitCli {
 
     /// Whether `ancestor` is reachable from `descendant`.
     pub async fn is_ancestor(&self, ancestor: &str, descendant: &str) -> GitResult<bool> {
+        self.is_ancestor_with(ancestor, descendant, &[]).await
+    }
+
+    /// [`Self::is_ancestor`] with extra environment (e.g. quarantined
+    /// objects of a push).
+    pub async fn is_ancestor_with(
+        &self,
+        ancestor: &str,
+        descendant: &str,
+        envs: &[(&str, &str)],
+    ) -> GitResult<bool> {
         let (code, _, err) = self
             .exec(
                 &["merge-base", "--is-ancestor", ancestor, descendant],
-                &[],
+                envs,
                 None,
             )
             .await?;

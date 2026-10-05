@@ -5,10 +5,19 @@
 //! `@user` / `@org/team` mentions, `#123` and `owner/repo#123` issue
 //! references, and commit SHAs (7–40 hex chars containing a digit).
 //!
+//! Also (P35, kept in parity with the web client renderer
+//! `web/src/ui/markdown/render.ts`, see `testdata/markdown/`): `GH-123`
+//! references, repository custom autolinks ([`AutolinkRule`]), gemoji
+//! `:shortcodes:` (shared table `web/src/ui/markdown/emoji.json`),
+//! issue/commit URL shortening, math markers (`$…$`, `$$…$$`,
+//! ```` ```math ````), lazy images and the camo image proxy
+//! ([`crate::camo`]).
+//!
 //! References are linked syntactically (no existence checks); callers that
 //! need validated links can post-process or extend [`RenderContext`].
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use comrak::nodes::{AstNode, NodeValue};
@@ -24,6 +33,71 @@ pub struct RenderContext<'a> {
     /// Link `@mentions` and references (disable for e.g. commit messages
     /// rendered elsewhere).
     pub references: bool,
+    /// Repository custom autolinks (`JIRA-123` → URL), see
+    /// [`load_autolinks`].
+    pub autolinks: &'a [AutolinkRule],
+}
+
+/// A repository autolink reference (`repo_autolinks` row).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, sqlx::FromRow)]
+pub struct AutolinkRule {
+    pub key_prefix: String,
+    /// Contains `<num>`, replaced by the reference id.
+    pub url_template: String,
+    /// Ids are `[A-Za-z0-9]+` (else digits only).
+    pub is_alphanumeric: bool,
+}
+
+/// Autolinks of `repo_ids`, batched (one query).
+pub async fn load_autolinks(
+    db: &sqlx::PgPool,
+    repo_ids: &[i64],
+) -> Result<HashMap<i64, Vec<AutolinkRule>>, sqlx::Error> {
+    let mut out: HashMap<i64, Vec<AutolinkRule>> = HashMap::new();
+    if repo_ids.is_empty() {
+        return Ok(out);
+    }
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        repo_id: i64,
+        #[sqlx(flatten)]
+        rule: AutolinkRule,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT repo_id, key_prefix, url_template, is_alphanumeric FROM repo_autolinks \
+         WHERE repo_id = ANY($1) ORDER BY repo_id, length(key_prefix) DESC, id",
+    )
+    .bind(repo_ids)
+    .fetch_all(db)
+    .await?;
+    for r in rows {
+        out.entry(r.repo_id).or_default().push(r.rule);
+    }
+    Ok(out)
+}
+
+/// Autolinks of one repository (empty on error: rendering never fails).
+pub async fn repo_autolinks(db: &sqlx::PgPool, repo_id: i64) -> Vec<AutolinkRule> {
+    load_autolinks(db, &[repo_id])
+        .await
+        .map(|mut m| m.remove(&repo_id).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+/// gemoji shortcode → emoji, shared with the web client.
+static EMOJI: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../web/src/ui/markdown/emoji.json"))
+        .expect("emoji.json is valid")
+});
+
+/// The emoji for a `:shortcode:` name.
+pub fn emoji(name: &str) -> Option<&'static str> {
+    EMOJI.get(name).map(String::as_str)
+}
+
+/// All shortcodes (e.g. for `GET /emojis`).
+pub fn emoji_names() -> impl Iterator<Item = &'static str> {
+    EMOJI.keys().map(String::as_str)
 }
 
 impl<'a> RenderContext<'a> {
@@ -32,7 +106,13 @@ impl<'a> RenderContext<'a> {
             base_url,
             repo: None,
             references: true,
+            autolinks: &[],
         }
+    }
+
+    pub fn with_autolinks(mut self, autolinks: &'a [AutolinkRule]) -> Self {
+        self.autolinks = autolinks;
+        self
     }
 
     pub fn with_repo(mut self, owner: &'a str, name: &'a str) -> Self {
@@ -49,9 +129,12 @@ fn options() -> Options<'static> {
     o.extension.tasklist = true;
     o.extension.footnotes = true;
     o.extension.alerts = true;
+    o.extension.math_dollars = true;
+    o.extension.math_code = true;
     o.extension.header_id_prefix = Some(String::new());
     o.parse.relaxed_tasklist_matching = true;
     o.render.github_pre_lang = true;
+    o.render.tasklist_classes = true;
     // Raw HTML is passed through and then sanitized by ammonia below.
     o.render.r#unsafe = true;
     o
@@ -62,7 +145,10 @@ static OPTIONS: LazyLock<Options<'static>> = LazyLock::new(options);
 static SANITIZER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
     let mut b = ammonia::Builder::default();
     b.add_tags(["input", "section", "picture", "source", "g-emoji"])
-        .add_tag_attributes("input", ["type", "checked", "disabled"])
+        .add_tag_attributes("g-emoji", ["class", "alias"])
+        .add_tag_attributes("span", ["data-math-style"])
+        .add_tag_attributes("code", ["data-math-style"])
+        .add_tag_attributes("input", ["type", "checked", "disabled", "class"])
         .add_tag_attributes("a", ["class", "id", "aria-hidden"])
         .add_tag_attributes("code", ["class"])
         .add_tag_attributes("pre", ["lang"])
@@ -115,6 +201,8 @@ fn allowed_class(c: &str) -> bool {
                 | "footnote-backref"
                 | "wiki-link"
                 | "wiki-missing"
+                | "g-emoji"
+                | "autolink"
         )
 }
 
@@ -122,14 +210,12 @@ fn allowed_class(c: &str) -> bool {
 pub fn render(text: &str, ctx: &RenderContext<'_>) -> String {
     let arena = Arena::new();
     let root = parse_document(&arena, text, &OPTIONS);
-    if ctx.references {
-        link_references(&arena, root, ctx);
-    }
+    link_references(&arena, root, ctx);
     let mut html = String::new();
     if format_html(root, &OPTIONS, &mut html).is_err() {
         return String::new();
     }
-    sanitize(&html)
+    finish(&sanitize(&html), ctx.base_url)
 }
 
 /// Link resolution hook for [`render_with_links`] (used by wikis).
@@ -152,14 +238,12 @@ pub fn render_with_links(text: &str, ctx: &RenderContext<'_>, links: &dyn LinkRe
     merge_text_nodes(root);
     link_wiki_pages(&arena, root, links);
     rewrite_links(&arena, root, links);
-    if ctx.references {
-        link_references(&arena, root, ctx);
-    }
+    link_references(&arena, root, ctx);
     let mut html = String::new();
     if format_html(root, &OPTIONS, &mut html).is_err() {
         return String::new();
     }
-    sanitize(&html)
+    finish(&sanitize(&html), ctx.base_url)
 }
 
 fn is_text(n: &AstNode<'_>) -> bool {
@@ -366,6 +450,9 @@ fn inside_link_or_code<'a>(node: &'a AstNode<'a>) -> bool {
 }
 
 fn link_references<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, ctx: &RenderContext<'_>) {
+    if ctx.references {
+        shorten_urls(arena, root, ctx);
+    }
     let text_nodes: Vec<&'a AstNode<'a>> = root
         .descendants()
         .filter(|n| matches!(n.data.borrow().value, NodeValue::Text(_)))
@@ -387,6 +474,10 @@ fn link_references<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, ctx: &Render
                     "<a class=\"{class}\" href=\"{}\">{}</a>",
                     escape_html(&url),
                     escape_html(&text)
+                )),
+                Segment::Emoji { name, emoji } => NodeValue::HtmlInline(format!(
+                    "<g-emoji class=\"g-emoji\" alias=\"{}\">{emoji}</g-emoji>",
+                    escape_html(&name)
                 )),
             };
             let new = arena.alloc(value.into());
@@ -419,6 +510,141 @@ enum Segment {
         text: String,
         class: &'static str,
     },
+    Emoji {
+        name: String,
+        emoji: &'static str,
+    },
+}
+
+/// Autolinked bare URLs to issues, pull requests and commits on this
+/// instance get GitHub's short text: `#12` / `owner/repo#12` (plus
+/// ` (comment)` for comment anchors), `abc1234` / `owner/repo@abc1234`.
+fn shorten_urls<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, ctx: &RenderContext<'_>) {
+    let base = ctx.base_url.trim_end_matches('/');
+    if base.is_empty() {
+        return;
+    }
+    let links: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|n| matches!(n.data.borrow().value, NodeValue::Link(_)))
+        .collect();
+    for node in links {
+        let url = match &node.data.borrow().value {
+            NodeValue::Link(l) => l.url.to_string(),
+            _ => continue,
+        };
+        let text: String = node
+            .children()
+            .map(|c| match &c.data.borrow().value {
+                NodeValue::Text(t) => t.to_string(),
+                _ => "\0".to_string(),
+            })
+            .collect();
+        if text != url {
+            continue;
+        }
+        let Some((short, class)) = short_url(base, ctx.repo, &url) else {
+            continue;
+        };
+        node.insert_before(
+            arena.alloc(
+                NodeValue::HtmlInline(format!(
+                    "<a class=\"{class}\" href=\"{}\">{}</a>",
+                    escape_html(&url),
+                    escape_html(&short)
+                ))
+                .into(),
+            ),
+        );
+        node.detach();
+    }
+}
+
+/// Short text and class for an instance URL (see [`shorten_urls`]).
+fn short_url(base: &str, repo: Option<(&str, &str)>, url: &str) -> Option<(String, &'static str)> {
+    let rest = url.strip_prefix(base)?.strip_prefix('/')?;
+    let (path, frag) = match rest.split_once('#') {
+        Some((p, f)) => (p, Some(f)),
+        None => (rest, None),
+    };
+    if path.contains('?') {
+        return None;
+    }
+    let parts: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+    let [owner, name, kind, id] = parts.as_slice() else {
+        return None;
+    };
+    let same =
+        repo.is_some_and(|(o, r)| o.eq_ignore_ascii_case(owner) && r.eq_ignore_ascii_case(name));
+    let prefix = if same {
+        String::new()
+    } else {
+        format!("{owner}/{name}")
+    };
+    match *kind {
+        "issues" | "pull" if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) => {
+            let comment = frag
+                .is_some_and(|f| f.starts_with("issuecomment-") || f.starts_with("discussion_r"));
+            if frag.is_some() && !comment {
+                return None;
+            }
+            let suffix = if comment { " (comment)" } else { "" };
+            Some((format!("{prefix}#{id}{suffix}"), "issue-link"))
+        }
+        "commit"
+            if frag.is_none()
+                && (7..=40).contains(&id.len())
+                && id.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            let sha = &id[..7];
+            let text = if same {
+                sha.to_string()
+            } else {
+                format!("{prefix}@{sha}")
+            };
+            Some((text, "commit-link"))
+        }
+        _ => None,
+    }
+}
+
+/// Post-process sanitized HTML: footnote links point at the
+/// `user-content-` prefixed ids, images get `loading="lazy"
+/// decoding="async"` and external `src` go through the camo proxy when
+/// enabled.
+fn finish(html: &str, base: &str) -> String {
+    let html = if html.contains("href=\"#fn") {
+        rewrite_urls(html, |href, kind| {
+            (kind == UrlAttr::Href && (href.starts_with("#fn-") || href.starts_with("#fnref-")))
+                .then(|| format!("#user-content-{}", &href[1..]))
+        })
+    } else {
+        html.to_string()
+    };
+    if !html.contains("<img") {
+        return html;
+    }
+    let camo = crate::camo::enabled() && !base.is_empty();
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut rest = html.as_str();
+    while let Some(at) = rest.find("<img") {
+        let tag_end = rest[at..].find('>').map_or(rest.len(), |e| at + e + 1);
+        out.push_str(&rest[..at]);
+        let tag = &rest[at..tag_end];
+        let tag = if camo {
+            rewrite_urls(tag, |src, kind| {
+                (kind == UrlAttr::Src && crate::camo::is_external(base, src))
+                    .then(|| crate::camo::url(base, src))
+            })
+        } else {
+            tag.to_string()
+        };
+        out.push_str("<img loading=\"lazy\" decoding=\"async\"");
+        out.push_str(&tag[4..]);
+        rest = &rest[tag_end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn is_word(b: u8) -> bool {
@@ -451,10 +677,70 @@ fn scan(text: &str, ctx: &RenderContext<'_>) -> Vec<Segment> {
         out.push(seg);
         *plain_start = end;
     };
+    let refs = ctx.references;
     while i < b.len() {
         let prev_ok = i == 0 || !is_word(b[i - 1]) && b[i - 1] != b'/' && b[i - 1] != b'@';
+        // :emoji:
+        if b[i] == b':' {
+            let mut j = i + 1;
+            while j < b.len() && (is_word(b[j]) || b[j] == b'+' || b[j] == b'-') {
+                j += 1;
+            }
+            if j > i + 1
+                && j < b.len()
+                && b[j] == b':'
+                && let Some(e) = emoji(&text[i + 1..j])
+            {
+                push(
+                    &mut out,
+                    &mut plain_start,
+                    i,
+                    j + 1,
+                    Segment::Emoji {
+                        name: text[i + 1..j].to_string(),
+                        emoji: e,
+                    },
+                );
+                i = j + 1;
+                continue;
+            }
+        }
+        // custom autolinks (longest prefix first, see `load_autolinks`)
+        if refs && prev_ok && !ctx.autolinks.is_empty() {
+            let hit = ctx.autolinks.iter().find_map(|rule| {
+                let p = rule.key_prefix.as_bytes();
+                let end = i + p.len();
+                if p.is_empty() || end >= b.len() || !b[i..end].eq_ignore_ascii_case(p) {
+                    return None;
+                }
+                let mut j = end;
+                while j < b.len()
+                    && (b[j].is_ascii_digit()
+                        || rule.is_alphanumeric && b[j].is_ascii_alphanumeric())
+                {
+                    j += 1;
+                }
+                (j > end && (j == b.len() || !is_word(b[j])))
+                    .then(|| (j, rule.url_template.replace("<num>", &text[end..j])))
+            });
+            if let Some((j, url)) = hit {
+                push(
+                    &mut out,
+                    &mut plain_start,
+                    i,
+                    j,
+                    Segment::Link {
+                        url,
+                        text: text[i..j].to_string(),
+                        class: "autolink",
+                    },
+                );
+                i = j;
+                continue;
+            }
+        }
         // @mention or @org/team
-        if b[i] == b'@' && prev_ok && i + 1 < b.len() && b[i + 1].is_ascii_alphanumeric() {
+        if refs && b[i] == b'@' && prev_ok && i + 1 < b.len() && b[i + 1].is_ascii_alphanumeric() {
             let mut j = i + 1;
             while j < b.len() && is_login_char(b[j]) && j - i <= 39 {
                 j += 1;
@@ -501,7 +787,7 @@ fn scan(text: &str, ctx: &RenderContext<'_>) -> Vec<Segment> {
             }
         }
         // owner/repo#123
-        if prev_ok && b[i].is_ascii_alphanumeric() {
+        if refs && prev_ok && b[i].is_ascii_alphanumeric() {
             let mut j = i;
             while j < b.len() && is_login_char(b[j]) {
                 j += 1;
@@ -535,7 +821,30 @@ fn scan(text: &str, ctx: &RenderContext<'_>) -> Vec<Segment> {
                 }
             }
         }
-        if let Some((owner, repo)) = ctx.repo {
+        if let Some((owner, repo)) = ctx.repo.filter(|_| refs) {
+            // GH-123
+            if prev_ok && b[i..].starts_with(b"GH-") && i + 3 < b.len() && b[i + 3].is_ascii_digit()
+            {
+                let mut j = i + 3;
+                while j < b.len() && b[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j == b.len() || !is_word(b[j]) {
+                    push(
+                        &mut out,
+                        &mut plain_start,
+                        i,
+                        j,
+                        Segment::Link {
+                            url: format!("{base}/{owner}/{repo}/issues/{}", &text[i + 3..j]),
+                            text: text[i..j].to_string(),
+                            class: "issue-link",
+                        },
+                    );
+                    i = j;
+                    continue;
+                }
+            }
             // #123
             if b[i] == b'#' && prev_ok && i + 1 < b.len() && b[i + 1].is_ascii_digit() {
                 let mut j = i + 1;
@@ -701,6 +1010,13 @@ pub fn extract_references(text: &str, base_url: &str) -> References {
 }
 
 fn parse_issue_ref(text: &str) -> Option<IssueRef> {
+    if let Some(n) = text.strip_prefix("GH-") {
+        return Some(IssueRef {
+            owner: None,
+            repo: None,
+            number: n.parse().ok()?,
+        });
+    }
     let (path, num) = text.rsplit_once('#')?;
     let number = num.parse().ok()?;
     if path.is_empty() {
@@ -794,6 +1110,65 @@ mod tests {
 
     fn ctx() -> RenderContext<'static> {
         RenderContext::new("http://h").with_repo("o", "r")
+    }
+
+    /// `testdata/markdown/*.md` → `*.html` snapshots shared with the web
+    /// client's parity test (see `testdata/markdown/README.md`).
+    #[test]
+    fn golden_corpus() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/markdown");
+        let rules = [AutolinkRule {
+            key_prefix: "JIRA-".into(),
+            url_template: "https://jira.example/browse/<num>".into(),
+            is_alphanumeric: true,
+        }];
+        let ctx = RenderContext::new("https://bgh.example")
+            .with_repo("octo", "demo")
+            .with_autolinks(&rules);
+        let update = std::env::var_os("BGH_UPDATE_GOLDEN").is_some();
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "md"))
+            .filter(|p| p.file_stem().is_some_and(|s| s != "README"))
+            .collect();
+        names.sort();
+        assert!(names.len() >= 6, "corpus missing in {}", dir.display());
+        for md in names {
+            let html = render(&std::fs::read_to_string(&md).unwrap(), &ctx);
+            let golden = md.with_extension("html");
+            if update {
+                std::fs::write(&golden, &html).unwrap();
+                continue;
+            }
+            let want = std::fs::read_to_string(&golden).unwrap_or_default();
+            assert_eq!(
+                html,
+                want,
+                "{} (BGH_UPDATE_GOLDEN=1 to refresh)",
+                md.display()
+            );
+        }
+    }
+
+    #[test]
+    fn proxies_external_images_and_keeps_emoji_without_references() {
+        let html = render(
+            "![a](https://img.example/a.png) ![b](http://h/x.png)",
+            &ctx(),
+        );
+        assert!(html.contains("src=\"http://h/_bgh/camo/"), "{html}");
+        assert!(html.contains("src=\"http://h/x.png\""), "{html}");
+        assert_eq!(
+            html.matches("loading=\"lazy\" decoding=\"async\"").count(),
+            2
+        );
+        let mut plain = ctx();
+        plain.references = false;
+        let html = render("#1 @a :tada:", &plain);
+        assert!(!html.contains("<a"), "{html}");
+        assert!(html.contains("alias=\"tada\""), "{html}");
+        assert!(emoji_names().count() > 1800);
     }
 
     #[test]

@@ -58,6 +58,16 @@ impl ServerKey {
         Ok(Self::from_bytes(key))
     }
 
+    /// A 32-byte subkey for `label` (HMAC-SHA256 of the label), e.g. for
+    /// signing runtime tokens and blob URLs without exposing the key itself.
+    pub fn derive(&self, label: &str) -> [u8; 32] {
+        use hmac::{Hmac, Mac};
+        let mut mac =
+            <Hmac<Sha256> as Mac>::new_from_slice(self.0.as_ref()).expect("any key length");
+        mac.update(label.as_bytes());
+        mac.finalize().into_bytes().into()
+    }
+
     pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
         let cipher = XChaCha20Poly1305::new(self.0.as_ref().into());
         let nonce: [u8; 24] = rand::random();

@@ -73,8 +73,8 @@ repository admin when `can_admins_bypass`.
 
 ## required_deployments (bgh-pulls evaluator)
 
-* Ruleset rule `required_deployments` (`parameters.required_deployment_environments`)
-  is accepted by `bgh-repos` rulesets (validated) and enforced.
+* Ruleset rule `required_deployments` (`parameters.required_deployment_environments`;
+  stored and validated by P23's `rulesets.rs`) is enforced.
 * Classic protection: new column
   `branch_protections.required_deployment_environments`, settable through
   an extension key `required_deployment_environments` in `PUT
@@ -127,8 +127,7 @@ repository admin when `can_admins_bypass`.
 * `bgh_core::events::Event::DeploymentReview`.
 * `bgh_core::node_id::NodeType::{DeploymentBranchPolicy, EnvironmentProtectionRule}`.
 * `bgh_repos::protection::ProtectionRow.required_deployment_environments`;
-  `rulesets.rs` `RULE_TYPES` + `required_deployments` normalization
-  (P23's branch adds the same rule type: keep P23's version on merge).
+  `rulesets.rs` is P23's version (its `required_deployments` arm).
 * `bgh_notify`: `Reason::ApprovalRequested`, `EmailKind::DeploymentReview`,
   fanout arm, webhook arm.
 * `bgh_pulls::protection::SourceRules.required_deployments` + evaluator.

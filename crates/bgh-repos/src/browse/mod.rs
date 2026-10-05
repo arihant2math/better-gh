@@ -56,6 +56,7 @@ pub(crate) const SHORT_TTL_SECS: u32 = 30;
 pub fn web_router() -> Router<AppState> {
     Router::new()
         .route("/_bgh/render/blob/{owner}/{repo}/{sha}", get(render::blob))
+        .route("/_bgh/render/code", axum::routing::post(render::code))
         .route("/_bgh/repos/{owner}/{repo}/refs", get(refs::list))
         .route("/_bgh/repos/{owner}/{repo}/tree", get(tree::root))
         .route("/_bgh/repos/{owner}/{repo}/tree/{*spec}", get(tree::get))

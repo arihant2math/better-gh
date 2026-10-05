@@ -526,6 +526,20 @@ impl Default for RetentionSettings {
     }
 }
 
+/// Markdown rendering (P35).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MarkdownSettings {
+    /// Proxy external images in rendered Markdown through `/_bgh/camo`.
+    pub image_proxy: bool,
+}
+
+impl Default for MarkdownSettings {
+    fn default() -> Self {
+        Self { image_proxy: true }
+    }
+}
+
 /// All site settings, with defaults for anything not stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -543,6 +557,7 @@ pub struct SiteSettings {
     pub retention: RetentionSettings,
     pub actions: ActionsSettings,
     pub privacy: PrivacySettings,
+    pub markdown: MarkdownSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -560,6 +575,7 @@ pub const SECTIONS: &[&str] = &[
     "retention",
     "actions",
     "privacy",
+    "markdown",
 ];
 
 impl SiteSettings {
@@ -678,6 +694,7 @@ impl SiteSettings {
             "git_maintenance" => self.git_maintenance = serde_json::from_value(section)?,
             "git" => self.git = serde_json::from_value(section)?,
             "retention" => self.retention = serde_json::from_value(section)?,
+            "markdown" => self.markdown = serde_json::from_value(section)?,
             "actions" => {
                 let a: ActionsSettings = serde_json::from_value(section)?;
                 if !matches!(a.default_workflow_permissions.as_str(), "read" | "write") {
@@ -738,6 +755,7 @@ pub async fn load(state: &AppState) -> ApiResult<Arc<SiteSettings>> {
         return Ok(s.clone());
     }
     let s = Arc::new(load_uncached(&state.config, &state.db).await?);
+    crate::camo::set_enabled(s.markdown.image_proxy);
     cache()
         .lock()
         .expect("settings cache")

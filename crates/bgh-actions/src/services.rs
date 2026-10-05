@@ -8,7 +8,8 @@ use bgh_core::AppState;
 use tokio_util::sync::CancellationToken;
 
 /// Every 30 s: fire due cron schedules, start jobs whose environment wait
-/// timer elapsed, fail jobs of vanished runners and expire artifacts.
+/// timer elapsed, fail jobs of vanished runners and expire artifacts and
+/// caches.
 pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
     let mut tick = tokio::time::interval(Duration::from_secs(30));
     loop {
@@ -29,6 +30,9 @@ pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
         }
         if let Err(err) = crate::server::expire_artifacts(&state).await {
             tracing::warn!(?err, "expiring artifacts failed");
+        }
+        if let Err(err) = crate::cache::expire(&state).await {
+            tracing::warn!(?err, "expiring actions caches failed");
         }
     }
 }
