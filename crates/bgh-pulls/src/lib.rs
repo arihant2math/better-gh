@@ -9,6 +9,7 @@
 //! Migrations: 0400-0499. See `docs/packages/pulls.md`.
 
 pub mod automerge;
+pub mod body;
 pub mod checks;
 pub mod codeowners;
 pub mod comments;
@@ -31,6 +32,7 @@ pub mod web;
 use axum::Router;
 use axum::routing::{get, patch, post, put};
 use bgh_core::{AppState, Registry};
+use body::formatted as f;
 
 /// REST API routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
@@ -38,8 +40,11 @@ pub fn router() -> Router<AppState> {
     let r = |p: &str| format!("{R}{p}");
     Router::new()
         // pulls
-        .route(&r("/pulls"), get(pulls::list).post(pulls::create))
-        .route(&r("/pulls/{number}"), get(pulls::get).patch(pulls::update))
+        .route(&r("/pulls"), get(f(pulls::list)).post(f(pulls::create)))
+        .route(
+            &r("/pulls/{number}"),
+            get(f(pulls::get)).patch(f(pulls::update)),
+        )
         .route(&r("/pulls/{number}/commits"), get(pulls::commits))
         .route(&r("/pulls/{number}/files"), get(pulls::files))
         .route(
@@ -51,11 +56,11 @@ pub fn router() -> Router<AppState> {
             put(merge::update_branch),
         )
         // review comments
-        .route(&r("/pulls/comments"), get(comments::list_for_repo))
+        .route(&r("/pulls/comments"), get(f(comments::list_for_repo)))
         .route(
             &r("/pulls/comments/{id}"),
-            get(comments::get)
-                .patch(comments::edit)
+            get(f(comments::get))
+                .patch(f(comments::edit))
                 .delete(comments::delete),
         )
         .route(
@@ -68,34 +73,34 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             &r("/pulls/{number}/comments"),
-            get(comments::list_for_pull).post(comments::create),
+            get(f(comments::list_for_pull)).post(f(comments::create)),
         )
         .route(
             &r("/pulls/{number}/comments/{id}/replies"),
-            post(comments::reply),
+            post(f(comments::reply)),
         )
         // reviews
         .route(
             &r("/pulls/{number}/reviews"),
-            get(reviews::list).post(reviews::create),
+            get(f(reviews::list)).post(f(reviews::create)),
         )
         .route(
             &r("/pulls/{number}/reviews/{id}"),
-            get(reviews::get)
-                .put(reviews::update)
-                .delete(reviews::delete_pending),
+            get(f(reviews::get))
+                .put(f(reviews::update))
+                .delete(f(reviews::delete_pending)),
         )
         .route(
             &r("/pulls/{number}/reviews/{id}/comments"),
-            get(reviews::comments),
+            get(f(reviews::comments)),
         )
         .route(
             &r("/pulls/{number}/reviews/{id}/events"),
-            post(reviews::submit),
+            post(f(reviews::submit)),
         )
         .route(
             &r("/pulls/{number}/reviews/{id}/dismissals"),
-            put(reviews::dismiss),
+            put(f(reviews::dismiss)),
         )
         // requested reviewers
         .route(
@@ -111,7 +116,7 @@ pub fn router() -> Router<AppState> {
         )
         .route(&r("/commits/{ref}/statuses"), get(statuses::list))
         .route(&r("/commits/{ref}/status"), get(statuses::combined))
-        .route(&r("/commits/{ref}/pulls"), get(pulls::for_commit))
+        .route(&r("/commits/{ref}/pulls"), get(f(pulls::for_commit)))
         // checks
         .route(&r("/check-runs"), post(checks::create))
         .route(

@@ -7,6 +7,9 @@
 //! * `/api/v3/...`: each crate's `router()` nested here (JSON 404 fallback,
 //!   ETag/304, `X-GitHub-Media-Type`, CORS)
 //! * each crate's `web_router()` merged at the root (`/_bgh/...`, git HTTP)
+//! * `/{o}/{r}/pull/{n}.diff|.patch`, `/{o}/{r}/commit/{sha}.diff|.patch`,
+//!   `/{o}/{r}/compare/{a}...{b}.diff|.patch`: the matching API handler
+//!   with the diff/patch media type (read access checked there)
 //! * everything else: the web client from `BGH_WEB_DIR` with SPA fallback
 
 pub mod embedded;
@@ -110,6 +113,8 @@ pub fn app(state: AppState) -> Router {
                 .max_age(Duration::from_secs(86_400)),
         );
 
+    // `/{o}/{r}/pull/{n}.diff` & co. are answered by the API handlers.
+    let diff_api = api.clone().with_state(state.clone());
     let web_files = WebFiles::new(state.config.web_dir.clone());
     let shell_state = state.clone();
     let spa_files = web_files.clone();
@@ -128,10 +133,17 @@ pub fn app(state: AppState) -> Router {
         .nest("/api/v3", api)
         .merge(web_routes())
         .route("/_bgh/{*rest}", any(api_not_found))
-        .fallback(move |req: Request| {
+        .fallback(move |mut req: Request| {
             let web_files = web_files.clone();
             let state = shell_state.clone();
-            async move { web_files.serve(&state, req).await }
+            let diff_api = diff_api.clone();
+            async move {
+                if web::rewrite_diff_request(&mut req) {
+                    web::serve_diff(diff_api, req).await
+                } else {
+                    web_files.serve(&state, req).await
+                }
+            }
         })
         // API endpoints outside the nested `/api/v3` router (`/api/graphql`,
         // `/api/v3/`) get the same rate limiting.
