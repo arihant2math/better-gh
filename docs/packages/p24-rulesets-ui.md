@@ -104,15 +104,12 @@ in memory (lost on reload), like the other repo-settings mocks.
   push appears in Rule insights with the failed "Restrict creations" rule.
   All checks pass.
 
-## Notes for P23 (not P24 code; reported to the P23 session)
+## Notes for P23
 
-* On `origin/bgh/p23-rulesets` @ a121775 (integration merged in), an active
-  `push` ruleset with `max_file_size: 1` (repo or org) did **not** reject a
-  smart-HTTP push of a 3 MB blob, neither for a site admin nor for a write
-  collaborator without bypass, although `push_rules_reject_with_gh013`
-  passes in P23's tests. Ref-based rules (`creation` on `release/*`) are
-  enforced with GH013. Possibly P2's receive quarantine vs. P23's new-object
-  enumeration.
+* An early local test saw push rules (`max_file_size`) not enforced; P23
+  could not reproduce it, and the cause was a stale pre-receive hook in a
+  data dir reused across database resets in this container (not a P23 or
+  P24 bug). P23 is making the hook install fail closed.
 
 ## Known gaps
 
