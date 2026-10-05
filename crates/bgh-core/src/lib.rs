@@ -43,6 +43,11 @@ pub use error::{ApiError, ApiResult, FieldError};
 pub use registry::Registry;
 pub use state::AppState;
 
+/// REST API versions accepted in `X-GitHub-Api-Version` (`GET /versions`);
+/// the first is selected when the header is absent. Responses use the same
+/// shapes for both.
+pub const API_VERSIONS: &[&str] = &["2022-11-28", "2026-03-10"];
+
 /// Common imports for handler modules: `use bgh_core::prelude::*;`
 pub mod prelude {
     pub use crate::auth::{AuthContext, MaybeUser, RequireSiteAdmin, RequireUser};

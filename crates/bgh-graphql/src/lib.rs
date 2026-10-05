@@ -72,13 +72,22 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/meta", get(meta))
 }
 
-/// `GET /meta` (GitHub Enterprise Server shape).
-async fn meta() -> axum::Json<Value> {
+/// `GET /meta` (GitHub Enterprise Server shape), including the SSH host
+/// keys (`ssh_keys`, `ssh_key_fingerprints.SHA256_<ALG>`) for pinning
+/// `known_hosts`.
+async fn meta(State(state): State<AppState>) -> axum::Json<Value> {
+    let host_keys = bgh_repos::ssh::host_public_keys(&state);
+    let fingerprints: serde_json::Map<String, Value> = host_keys
+        .iter()
+        .map(|(alg, _, fp)| (format!("SHA256_{alg}"), Value::from(fp.as_str())))
+        .collect();
+    let ssh_keys: Vec<&str> = host_keys.iter().map(|(_, k, _)| k.as_str()).collect();
     axum::Json(json!({
         "verifiable_password_authentication": false,
         "installed_version": COMPAT_GHES_VERSION,
         "bgh_version": env!("CARGO_PKG_VERSION"),
-        "ssh_key_fingerprints": {},
+        "ssh_key_fingerprints": fingerprints,
+        "ssh_keys": ssh_keys,
         "hooks": [], "web": [], "api": [], "git": [], "packages": [],
         "pages": [], "importer": [], "actions": [], "dependabot": [],
     }))

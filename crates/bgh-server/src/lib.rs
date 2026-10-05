@@ -4,8 +4,11 @@
 //!
 //! Routing layout:
 //! * `/healthz`
-//! * `/api/v3/...`: each crate's `router()` nested here (JSON 404 fallback,
-//!   ETag/304, `X-GitHub-Media-Type`, CORS)
+//! * `/api/v3/...`: each crate's `router()` nested here (JSON 404 fallback
+//!   for unknown paths and wrong methods, ETag/Last-Modified/304 inside the
+//!   rate limiter, `X-GitHub-Media-Type`, CORS)
+//! * every `/api/...` path: `X-GitHub-Enterprise-Version`,
+//!   `X-GitHub-Request-Id`, `X-GitHub-Api-Version` validation ([`api_compat`])
 //! * each crate's `web_router()` merged at the root (`/_bgh/...`, git HTTP)
 //! * everything else: the web client from `BGH_WEB_DIR` with SPA fallback
 
@@ -16,7 +19,7 @@ mod web;
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, HttpBody};
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
@@ -25,6 +28,7 @@ use axum::routing::{any, get};
 use bgh_core::error::ApiError;
 use bgh_core::registry::{AppFactory, Registry};
 use bgh_core::state::AppState;
+use chrono::{DateTime, Utc};
 use http_body_util::BodyExt;
 use sha2::{Digest, Sha256};
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
@@ -101,12 +105,16 @@ fn web_routes() -> Router<AppState> {
 pub fn app(state: AppState) -> Router {
     let api = api_routes()
         .fallback(api_not_found)
+        // A known path with the wrong method is a JSON 404, like GitHub
+        // (not axum's empty 405).
+        .method_not_allowed_fallback(api_not_found)
+        // ETag/304 inside the rate limiter, so 304s are not counted.
+        .layer(middleware::from_fn(etag))
+        .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bgh_core::ratelimit::middleware,
         ))
-        .layer(middleware::from_fn(api_headers))
-        .layer(middleware::from_fn(etag))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -148,6 +156,8 @@ pub fn app(state: AppState) -> Router {
             state.clone(),
             bgh_core::ratelimit::root_middleware,
         ))
+        // GHES headers and `X-GitHub-Api-Version` checks on every API path.
+        .layer(middleware::from_fn(api_compat))
         // GitHub App JWTs may only call the app endpoints.
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -252,10 +262,22 @@ async fn api_headers(req: Request, next: Next) -> Response {
     resp
 }
 
-/// Weak ETags for successful GET JSON responses; `If-None-Match` → 304.
+/// Largest response body that gets an ETag (and `Last-Modified`) without
+/// a conditional request header; bigger or streamed bodies aren't buffered
+/// just to hash them.
+const ETAG_MAX_BYTES: u64 = 1 << 20;
+
+/// Validators for successful GET JSON responses: a weak `ETag`, plus
+/// `Last-Modified` from a top-level `updated_at`. `If-None-Match` (or,
+/// without it, `If-Modified-Since`) → 304.
 async fn etag(req: Request, next: Next) -> Response {
     let cacheable_method = matches!(*req.method(), Method::GET | Method::HEAD);
     let if_none_match = req.headers().get(header::IF_NONE_MATCH).cloned();
+    let if_modified_since = req
+        .headers()
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_http_date);
     let resp = next.run(req).await;
     let is_json = resp
         .headers()
@@ -269,6 +291,15 @@ async fn etag(req: Request, next: Next) -> Response {
     {
         return resp;
     }
+    let conditional = if_none_match.is_some() || if_modified_since.is_some();
+    let small = resp
+        .body()
+        .size_hint()
+        .exact()
+        .is_some_and(|n| n <= ETAG_MAX_BYTES);
+    if !conditional && !small {
+        return resp;
+    }
     let (mut parts, body) = resp.into_parts();
     let bytes = match body.collect().await {
         Ok(b) => b.to_bytes(),
@@ -279,13 +310,30 @@ async fn etag(req: Request, next: Next) -> Response {
     };
     let digest = Sha256::digest(&bytes);
     let tag = format!("W/\"{}\"", hex_prefix(&digest));
-    let matches = if_none_match
-        .as_ref()
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.split(',').any(|t| t.trim() == tag || t.trim() == "*"));
     if let Ok(v) = HeaderValue::from_str(&tag) {
         parts.headers.insert(header::ETAG, v);
     }
+    let last_modified = match parts.headers.get(header::LAST_MODIFIED) {
+        Some(v) => v.to_str().ok().and_then(parse_http_date),
+        None => {
+            let t = updated_at(&bytes);
+            if let Some(t) = t
+                && let Ok(v) = HeaderValue::from_str(&http_date(t))
+            {
+                parts.headers.insert(header::LAST_MODIFIED, v);
+            }
+            t
+        }
+    };
+    // `If-None-Match` takes precedence over `If-Modified-Since` (RFC 9110).
+    let matches = match (&if_none_match, if_modified_since, last_modified) {
+        (Some(inm), _, _) => inm
+            .to_str()
+            .ok()
+            .is_some_and(|v| v.split(',').any(|t| t.trim() == tag || t.trim() == "*")),
+        (None, Some(since), Some(modified)) => modified.timestamp() <= since.timestamp(),
+        _ => false,
+    };
     parts
         .headers
         .entry(header::CACHE_CONTROL)
@@ -300,6 +348,83 @@ async fn etag(req: Request, next: Next) -> Response {
         return Response::from_parts(parts, Body::empty());
     }
     Response::from_parts(parts, Body::from(bytes))
+}
+
+/// The top-level `updated_at` of a JSON object body.
+fn updated_at(body: &[u8]) -> Option<DateTime<Utc>> {
+    #[derive(serde::Deserialize)]
+    struct UpdatedAt {
+        updated_at: Option<serde_json::Value>,
+    }
+    if body.first() != Some(&b'{') {
+        return None;
+    }
+    let v: UpdatedAt = serde_json::from_slice(body).ok()?;
+    let t = v.updated_at?;
+    DateTime::parse_from_rfc3339(t.as_str()?)
+        .ok()
+        .map(|t| t.with_timezone(&Utc))
+}
+
+/// IMF-fixdate (`Tue, 15 Nov 1994 08:12:31 GMT`).
+fn http_date(t: DateTime<Utc>) -> String {
+    t.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+}
+
+fn parse_http_date(s: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc2822(s.trim())
+        .ok()
+        .map(|t| t.with_timezone(&Utc))
+}
+
+/// GitHub Enterprise compatibility on every API path (`/api/v3...`,
+/// `/api/graphql`, `/api/uploads...`):
+/// * `X-GitHub-Enterprise-Version` (Renovate's `HEAD /api/v3/` reads it)
+///   and `X-GitHub-Request-Id` (the `x-request-id`);
+/// * REST: an unsupported `X-GitHub-Api-Version` → 400; a supported one is
+///   echoed in `X-GitHub-Api-Version-Selected`;
+/// * a known path with the wrong method → JSON 404 (routes mounted outside
+///   the nested API router, e.g. `/api/v3/`).
+async fn api_compat(req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    if !path.starts_with("/api/") && path != "/api" {
+        return next.run(req).await;
+    }
+    let rest = path == "/api/v3" || path.starts_with("/api/v3/");
+    let request_id = req.headers().get("x-request-id").cloned();
+    let mut selected = None;
+    if rest && let Some(v) = req.headers().get("x-github-api-version") {
+        let v = v.to_str().unwrap_or("").trim();
+        if bgh_core::API_VERSIONS.contains(&v) {
+            selected = HeaderValue::from_str(v).ok();
+        } else {
+            let mut resp =
+                ApiError::bad_request(format!("API version {v} is not supported.")).into_response();
+            api_compat_headers(&mut resp, request_id);
+            return resp;
+        }
+    }
+    let mut resp = next.run(req).await;
+    if resp.status() == StatusCode::METHOD_NOT_ALLOWED {
+        resp = ApiError::NotFound.into_response();
+    }
+    if let Some(v) = selected {
+        resp.headers_mut()
+            .insert("x-github-api-version-selected", v);
+    }
+    api_compat_headers(&mut resp, request_id);
+    resp
+}
+
+fn api_compat_headers(resp: &mut Response, request_id: Option<HeaderValue>) {
+    let h = resp.headers_mut();
+    h.insert(
+        "x-github-enterprise-version",
+        HeaderValue::from_static(bgh_graphql::COMPAT_GHES_VERSION),
+    );
+    if let Some(id) = request_id {
+        h.insert("x-github-request-id", id);
+    }
 }
 
 fn hex_prefix(bytes: &[u8]) -> String {
