@@ -41,6 +41,7 @@ export default tseslint.config(
   {
     files: ['scripts/**/*.mjs'],
     extends: [js.configs.recommended],
-    languageOptions: { globals: { ...globals.node } },
+    // screenshots.mjs evaluates callbacks in the page, so browser globals too.
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );
