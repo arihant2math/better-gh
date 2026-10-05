@@ -30,6 +30,7 @@ const settings: SiteSettings = {
     archive_cache_max_age_days: 7,
     archive_cache_max_size_mb: 2048,
   },
+  retention: { enabled: true, notifications_days: 150, webhook_payload_days: 30, webhook_delivery_days: 90, activity_days: 0 },
 };
 
 describe('git settings form', () => {
@@ -49,5 +50,26 @@ describe('git settings form', () => {
     expect(validate(f)['git.warn_object']).toMatch(/below the maximum/);
     f.git.max_object = { on: true, mb: '' };
     expect(validate(f)['git.max_object']).toMatch(/greater than 0/);
+  });
+});
+
+describe('retention settings form', () => {
+  it('round-trips windows, 0 meaning keep forever', () => {
+    const f = toForm(settings);
+    expect(f.retention.activity_days).toEqual({ on: false, mb: '90' });
+    expect(f.retention.notifications_days).toEqual({ on: true, mb: '150' });
+    expect(validate(f)).toEqual({});
+    expect(toPatch(f, ['retention']).retention).toEqual(settings.retention);
+    f.retention.activity_days.on = true;
+    f.retention.notifications_days.on = false;
+    expect(toPatch(f, ['retention']).retention).toEqual({ ...settings.retention, activity_days: 90, notifications_days: 0 });
+  });
+
+  it('validates windows', () => {
+    const f = toForm(settings);
+    f.retention.webhook_payload_days = { on: true, mb: '120' };
+    expect(validate(f)['retention.webhook_payload_days']).toMatch(/outlive/);
+    f.retention.notifications_days = { on: true, mb: '0' };
+    expect(validate(f)['retention.notifications_days']).toMatch(/between 1 and 36500/);
   });
 });

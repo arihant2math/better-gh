@@ -19,6 +19,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'rate_limits', title: 'Rate limits', anchor: 'rate-limits' },
   { key: 'auth_providers', title: 'Authentication', anchor: 'authentication' },
   { key: 'smtp', title: 'Email (SMTP)', anchor: 'smtp' },
+  { key: 'retention', title: 'Data retention', anchor: 'retention' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
 ];
 
@@ -69,7 +70,19 @@ export interface SettingsForm {
   };
   maintenance: { enabled: boolean; message: string; scheduled: string };
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
+  retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
 }
+
+/** Retention windows (days); off = keep forever (0 in the API). */
+export const RETENTION_WINDOWS = ['notifications_days', 'webhook_payload_days', 'webhook_delivery_days', 'activity_days'] as const;
+export type RetentionWindow = (typeof RETENTION_WINDOWS)[number];
+
+const RETENTION_DEFAULTS: Record<RetentionWindow, number> = {
+  notifications_days: 150,
+  webhook_payload_days: 30,
+  webhook_delivery_days: 90,
+  activity_days: 90,
+};
 
 /** An optional megabyte limit: on/off plus the typed value. */
 export interface Limit {
@@ -160,6 +173,13 @@ export function toForm(s: SiteSettings): SettingsForm {
       warn_object: limitForm(s.git.warn_object_size_mb, 50),
       max_push: limitForm(s.git.max_push_size_mb, 2048),
     },
+    retention: {
+      enabled: s.retention.enabled,
+      ...(Object.fromEntries(RETENTION_WINDOWS.map((k) => [k, limitForm(s.retention[k] > 0 ? s.retention[k] : null, RETENTION_DEFAULTS[k])])) as Record<
+        RetentionWindow,
+        Limit
+      >),
+    },
   };
 }
 
@@ -227,6 +247,13 @@ export function validate(f: SettingsForm): Errors {
   if (f.maintenance.scheduled && !fromLocalInput(f.maintenance.scheduled)) e['maintenance.scheduled'] = 'Enter a valid date and time.';
   for (const k of ['max_object', 'warn_object', 'max_push'] as const)
     if (f.git[k].on && !POSITIVE_INT.test(f.git[k].mb.trim())) e[`git.${k}`] = 'Enter a whole number of megabytes greater than 0.';
+  for (const k of RETENTION_WINDOWS) {
+    const w = f.retention[k];
+    if (w.on && (!POSITIVE_INT.test(w.mb.trim()) || Number(w.mb) > 36500)) e[`retention.${k}`] = 'Enter a whole number of days between 1 and 36500.';
+  }
+  const { webhook_payload_days: payload, webhook_delivery_days: delivery } = f.retention;
+  if (payload.on && delivery.on && !e['retention.webhook_payload_days'] && !e['retention.webhook_delivery_days'] && Number(payload.mb) > Number(delivery.mb))
+    e['retention.webhook_payload_days'] = 'Payloads can’t outlive the deliveries they belong to.';
   const { max_object: max, warn_object: warn } = f.git;
   if (max.on && warn.on && !e['git.max_object'] && !e['git.warn_object'] && Number(warn.mb) >= Number(max.mb))
     e['git.warn_object'] = 'The warning size must be below the maximum file size.';
@@ -321,6 +348,12 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           max_object_size_mb: limitValue(f.git.max_object),
           warn_object_size_mb: limitValue(f.git.warn_object),
           max_push_size_mb: limitValue(f.git.max_push),
+        };
+        break;
+      case 'retention':
+        out.retention = {
+          enabled: f.retention.enabled,
+          ...(Object.fromEntries(RETENTION_WINDOWS.map((k) => [k, limitValue(f.retention[k]) ?? 0])) as Record<RetentionWindow, number>),
         };
         break;
     }

@@ -332,6 +332,16 @@ export interface SiteSettings {
   git_maintenance: GitMaintenanceSettings;
   /** Push hardening; `null` disables a limit. */
   git: { fsck_on_push: boolean; max_object_size_mb: number | null; warn_object_size_mb: number | null; max_push_size_mb: number | null };
+  /** Data retention windows in days; 0 keeps rows forever. */
+  retention: RetentionSettings;
+}
+
+export interface RetentionSettings {
+  enabled: boolean;
+  notifications_days: number;
+  webhook_payload_days: number;
+  webhook_delivery_days: number;
+  activity_days: number;
 }
 
 /** Placeholder the server returns for stored secrets; sending it back keeps them. */
