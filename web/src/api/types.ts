@@ -57,6 +57,20 @@ export interface PullRequirements {
   linear_history: boolean;
   allowed_merge_methods: ('merge' | 'squash' | 'rebase')[];
   can_bypass: boolean;
+  /** Latest deployment of the head commit per environment (P19). */
+  deployments?: PullDeployment[];
+}
+
+/** `PullRequirements.deployments` item. */
+export interface PullDeployment {
+  deployment_id: number;
+  environment: string;
+  state: 'error' | 'failure' | 'inactive' | 'in_progress' | 'queued' | 'pending' | 'success' | null;
+  environment_url: string | null;
+  log_url: string | null;
+  production_environment: boolean;
+  transient_environment: boolean;
+  updated_at: string;
 }
 
 export interface RestBranch {

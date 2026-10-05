@@ -9,6 +9,7 @@ import type { Comment, ID, Issue, IssueEvent, Label, Milestone, ModelMap, ModelN
 import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '../sync/protocol';
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
+import { deploymentsForSha } from './deployments';
 import { blobSha, highlight, languageOf, repoFiles, type MockFile } from './content';
 import { loadMockFeatures, mockFeatures } from './features';
 import { PASS_STATUS } from './pass';
@@ -1135,6 +1136,7 @@ export class MockServer implements Transport {
           linear_history: false,
           allowed_merge_methods: ['merge', 'squash', 'rebase'],
           can_bypass: true,
+          deployments: deploymentsForSha(this, r[0], pr.headSha),
         },
       };
     });
