@@ -52,6 +52,7 @@ pub enum NodeType {
     ProjectV2Field,
     ProjectV2View,
     DraftIssue,
+    CommitComment,
     /// GitHub App (`Integration`).
     Integration,
 }
@@ -99,6 +100,7 @@ impl NodeType {
         Self::ProjectV2Field,
         Self::ProjectV2View,
         Self::DraftIssue,
+        Self::CommitComment,
         Self::Integration,
     ];
 
@@ -145,6 +147,7 @@ impl NodeType {
             Self::ProjectV2Field => "ProjectV2Field",
             Self::ProjectV2View => "ProjectV2View",
             Self::DraftIssue => "DraftIssue",
+            Self::CommitComment => "CommitComment",
             Self::Integration => "Integration",
         }
     }

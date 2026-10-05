@@ -222,6 +222,12 @@ pub async fn record(state: &AppState, event: &Event) -> anyhow::Result<()> {
             release_id,
             actor_id,
         } => release_event(state, *repo_id, *release_id, *actor_id).await,
+        Event::CommitCommentCreated {
+            repo_id,
+            comment_id,
+            actor_id,
+            ..
+        } => commit_comment_event(state, *repo_id, *comment_id, *actor_id).await,
         _ => Ok(()),
     }
 }
@@ -486,6 +492,45 @@ struct AssetRow {
     download_count: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+async fn commit_comment_event(
+    state: &AppState,
+    repo_id: i64,
+    comment_id: i64,
+    actor_id: i64,
+) -> anyhow::Result<()> {
+    use bgh_core::commit_comments::{BodyFormat, CommitCommentRow, render};
+    let Some(r) = repo(state, repo_id).await? else {
+        return Ok(());
+    };
+    let Some(owner) = db::User::find(&state.db, r.owner_id).await? else {
+        return Ok(());
+    };
+    let Some(c) = CommitCommentRow::find(&state.db, repo_id, comment_id).await? else {
+        return Ok(());
+    };
+    let Some(comment) = render(
+        state,
+        &owner.login,
+        &r,
+        std::slice::from_ref(&c),
+        BodyFormat::RAW,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("rendering commit comment {comment_id}: {e:?}"))?
+    .pop() else {
+        return Ok(());
+    };
+    insert(
+        state,
+        "CommitCommentEvent",
+        actor_id,
+        &r,
+        json!({ "action": "created", "comment": comment }),
+    )
+    .await?;
+    Ok(())
 }
 
 async fn release_event(
