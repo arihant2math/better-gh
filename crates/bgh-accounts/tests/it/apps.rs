@@ -869,3 +869,96 @@ async fn separate_rate_limit_bucket() {
         .await;
     assert!(used(&c) > 2);
 }
+
+#[tokio::test]
+async fn pagination_and_isolation() {
+    let s = setup(json!({"issues": "read"})).await;
+    let app = &s.app;
+    // Make the app public and install it on three accounts.
+    app.patch("/_bgh/apps/my-bot")
+        .cookie(&s.cookie)
+        .json(&json!({"public": true}))
+        .send()
+        .await
+        .assert_status(200);
+    install(&s, &["one"]).await;
+    for login in ["bob", "carol"] {
+        let u = app.create_user(login).await;
+        let cookie = app.session_cookie(&u).await;
+        app.post("/_bgh/apps/my-bot/installations")
+            .cookie(&cookie)
+            .json(&json!({}))
+            .send()
+            .await
+            .assert_status(201);
+    }
+    let bearer = format!("Bearer {}", jwt(&s.pem, json!(s.app_id)));
+    let res = app
+        .get("/api/v3/app/installations?per_page=2")
+        .header("authorization", &bearer)
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(res.json().as_array().unwrap().len(), 2);
+    let link = res.header("link").unwrap().to_string();
+    assert!(link.contains("rel=\"next\""), "{link}");
+    let res = app
+        .get("/api/v3/app/installations?per_page=2&page=2")
+        .header("authorization", &bearer)
+        .send()
+        .await;
+    assert_eq!(res.json().as_array().unwrap().len(), 1);
+    assert!(res.header("link").unwrap().contains("rel=\"prev\""));
+
+    // Another app's JWT can't see these installations.
+    let res = app
+        .post("/_bgh/apps")
+        .cookie(&s.cookie)
+        .json(&json!({"name": "Other", "homepage_url": "https://x.test"}))
+        .send()
+        .await;
+    res.assert_status(201);
+    let other_id = res.json()["id"].as_i64().unwrap();
+    let key = app
+        .post("/_bgh/apps/other/keys")
+        .cookie(&s.cookie)
+        .send()
+        .await
+        .json();
+    let other = format!(
+        "Bearer {}",
+        jwt(key["pem"].as_str().unwrap(), json!(other_id))
+    );
+    let res = app
+        .get("/api/v3/app/installations")
+        .header("authorization", &other)
+        .send()
+        .await;
+    assert_eq!(res.json(), json!([]));
+    let first = app
+        .get("/api/v3/app/installations")
+        .header("authorization", &bearer)
+        .send()
+        .await
+        .json()[0]["id"]
+        .as_i64()
+        .unwrap();
+    let res = app
+        .post(&format!("/api/v3/app/installations/{first}/access_tokens"))
+        .header("authorization", &other)
+        .send()
+        .await;
+    res.assert_status(404);
+    assert_eq!(res.json()["message"], "Not Found");
+    assert!(res.json()["documentation_url"].is_string());
+
+    // `/user/installations` paginates with `last`.
+    let res = app
+        .get("/api/v3/user/installations?per_page=1")
+        .auth(&s.alice)
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(res.json()["total_count"], 1);
+    assert!(res.header("link").is_none());
+}
