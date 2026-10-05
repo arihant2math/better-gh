@@ -424,3 +424,22 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.mirrorStatus {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0 0 var(--sp-3);
+}
+
+.mirrorStatus dt {
+  color: var(--fg-muted);
+}
+
+.mirrorStatus dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}

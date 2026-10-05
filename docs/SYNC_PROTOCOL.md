@@ -119,6 +119,7 @@ interface Repo {
   fork: boolean;
   archived: boolean;
   defaultBranch: string;
+  mirrorUrl: string | null;   // upstream of a pull mirror (git writes refused)
   language: string | null;
   topics: string[];
   stars: number;
@@ -183,6 +184,7 @@ interface Issue {             // issues and pull requests share this model
   parentId?: ID | null;       // sub-issues: parent issue id
   subIssueIds?: ID[];         // sub-issues in priority order (may be in other repos)
   pinned?: boolean;           // pinned to the repo's issue list
+  linkedPullIds?: ID[];       // PRs that close this issue (keyword or manual link; may be in other repos)
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
@@ -334,8 +336,11 @@ are built by the same shape loader as everything else
 * `issue` rows of pull requests also carry `mergeCommitSha` (string |
   null), `rebaseable` (boolean | null), `maintainerCanModify` (boolean),
   `autoMerge` (`{enabledById, mergeMethod}` | null) and `reviewComments`
-  (number). Every `issue` row carries `activeLockReason`, `parentId` and
-  `pinned` (declared optional above).
+  (number) and `closingIssueIds` (ID[]: issues the PR closes on merge,
+  possibly in other repositories). Every `issue` row carries
+  `activeLockReason`, `parentId`, `pinned` and `linkedPullIds` (declared
+  optional above). Both id lists come from `issue_pr_links`; a link change
+  re-syncs the issue and the PR row.
 * `issueEvent.data` may also carry `teamId` (team review requests),
   `before`/`after` (force pushes), `ref` (head ref deleted/restored),
   `reviewId`/`dismissalMessage` (review dismissed) and `mergeMethod`
@@ -353,6 +358,10 @@ are built by the same shape loader as everything else
   `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
   conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
   state, context, description, targetUrl, creatorId, createdAt`).
+* `repoImport` (delta-only, `repo:{repoId}`): `id, repoId, status, phase,
+  error` when a repository import changes status (queued, importing,
+  complete, failed, cancelled). Progress counters are polled from
+  `GET /_bgh/repos/{o}/{r}/import`.
 * Reactions have no model: the reacted `issue`, `comment` or
   `reviewComment` row is re-sent with its `reactions` counts. (The PR
   page's `/sync` snapshot also lists per-user `Reaction` rows of review

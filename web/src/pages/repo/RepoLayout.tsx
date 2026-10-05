@@ -126,6 +126,7 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
           </h1>
           <Tag>{visibilityLabel(repo)}</Tag>
           {repo.archived && <Tag>Archived</Tag>}
+          {repo.mirrorUrl && <Tag>Mirror</Tag>}
           <div className={styles.actions}>
             <Button size="sm" leadingIcon={EyeIcon}>
               {viewer?.watching === 'ignored' ? 'Ignoring' : 'Watch'} <span className={styles.count}>{compact(repo.watchers)}</span>
@@ -144,6 +145,14 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
             </Button>
           </div>
         </div>
+        {repo.mirrorUrl && (
+          <p className={styles.mirrored}>
+            mirrored from{' '}
+            <a href={repo.mirrorUrl} rel="noreferrer noopener" target="_blank">
+              {repo.mirrorUrl}
+            </a>
+          </p>
+        )}
         <TabNav items={tabs} current={current} aria-label="Repository" className={styles.tabs} />
       </header>
       <div ref={setBody} className={styles.body}>

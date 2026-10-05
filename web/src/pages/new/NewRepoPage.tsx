@@ -6,10 +6,10 @@ import { session } from '../../app/session';
 import { site, visibilityPolicy } from '../../app/site';
 import { apiFieldErrors, Banner, ButtonRow, Checkbox, FormStack, PageHeader, RadioCards, Section, useDebounced, type FieldErrors } from '../../components/settings/kit';
 import { getBoot } from '../../boot';
-import { navigate, useQuery } from '../../router';
+import { Link, navigate, useQuery } from '../../router';
 import { formatKeys } from '../../shortcuts/manager';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
-import { hasSync, store, sync } from '../../sync';
+import { hasSync, sync } from '../../sync';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { AlertIcon, CheckIcon, ChevronDownIcon, GlobeIcon, LockIcon, OrganizationIcon, XIcon } from '../../ui/icons';
@@ -18,34 +18,10 @@ import { Menu } from '../../ui/Menu';
 import { Spinner } from '../../ui/Spinner';
 import { GITIGNORE_TEMPLATES, LICENSE_TEMPLATES, normalizeRepoName, repoNameError } from './names';
 import styles from './New.module.css';
-
-interface OwnerOption {
-  login: string;
-  avatarUrl: string;
-  name: string | null;
-  isOrg: boolean;
-  role?: 'admin' | 'member';
-}
+import { useOwners } from './owners';
 
 type Visibility = 'public' | 'private' | 'internal';
 type Availability = { key: string; state: 'checking' | 'available' | 'taken' | 'error' } | null;
-
-/** Owners the viewer can create repositories for: themself + their organizations. */
-function useOwners(): OwnerOption[] {
-  const me = session.user;
-  if (!me) return [];
-  const s = store();
-  const viewerRow = s.get('user', me.id);
-  const orgs = s
-    .byIndex('membership', 'userId', me.id)
-    .map((m): OwnerOption | null => {
-      const o = s.get('org', m.orgId);
-      return o ? { login: o.login, avatarUrl: o.avatarUrl, name: o.name, isOrg: true, role: m.role } : null;
-    })
-    .filter((o): o is OwnerOption => !!o)
-    .sort((a, b) => a.login.localeCompare(b.login));
-  return [{ login: me.login, avatarUrl: viewerRow?.avatarUrl ?? me.avatarUrl ?? '', name: me.name ?? null, isOrg: false }, ...orgs];
-}
 
 /** `/new`: create a repository (optionally from a template). */
 export default observer(function NewRepoPage() {
@@ -198,7 +174,12 @@ export default observer(function NewRepoPage() {
     <div className={styles.page}>
       <PageHeader
         title="Create a new repository"
-        description="A repository contains all project files, including the revision history."
+        description={
+          <>
+            A repository contains all project files, including the revision history. Already have a project repository elsewhere?{' '}
+            <Link to="/new/import">Import a repository</Link>.
+          </>
+        }
       />
       <form
         className={styles.form}

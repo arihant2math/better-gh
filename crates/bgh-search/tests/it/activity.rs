@@ -52,6 +52,7 @@ async fn records_and_serves_github_events() {
             new: c2.clone(),
             refname: "refs/heads/main".into(),
         }],
+        origin: None,
     }));
     // New branch with one new commit, then a tag, then a deletion.
     bgh_git::write::update_ref(&store(&app), demo, "refs/heads/feature", &c2, None)
@@ -81,6 +82,7 @@ async fn records_and_serves_github_events() {
                 refname: "refs/heads/old".into(),
             },
         ],
+        origin: None,
     }));
     // created(1) + push main: Create(branch)+Push(2) + feature: Create+Push(2) + Delete(1)
     wait_events(&app, 6).await;

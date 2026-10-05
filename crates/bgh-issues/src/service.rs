@@ -219,6 +219,27 @@ pub async fn set_state(
     reason: Option<&str>,
     commit_id: Option<&str>,
 ) -> ApiResult<bool> {
+    set_state_with(tx, issue, actor_id, new_state, reason, commit_id, json!({})).await
+}
+
+/// [`set_state`] with `extra` fields merged into the `closed` / `reopened`
+/// event's data (e.g. the pull request that closed the issue).
+pub async fn set_state_with(
+    tx: &mut Tx,
+    issue: &db::Issue,
+    actor_id: i64,
+    new_state: &str,
+    reason: Option<&str>,
+    commit_id: Option<&str>,
+    extra: Value,
+) -> ApiResult<bool> {
+    let event_data = |reason: &str| {
+        let mut d = json!({ "state_reason": reason });
+        if let (Value::Object(m), Value::Object(x)) = (&mut d, &extra) {
+            m.extend(x.clone());
+        }
+        d
+    };
     if issue.state == new_state {
         if new_state == "closed"
             && let Some(r) = reason
@@ -252,7 +273,7 @@ pub async fn set_state(
             Some(actor_id),
             "closed",
             commit_id,
-            json!({ "state_reason": reason }),
+            event_data(reason),
         )
         .await?;
         tx.emit(if issue.is_pull_request {
@@ -283,7 +304,7 @@ pub async fn set_state(
             Some(actor_id),
             "reopened",
             commit_id,
-            json!({ "state_reason": "reopened" }),
+            event_data("reopened"),
         )
         .await?;
         tx.emit(if issue.is_pull_request {
