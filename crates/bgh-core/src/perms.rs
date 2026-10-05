@@ -196,10 +196,19 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
         return raw;
     };
     if let Some(job_repo) = job_token_repo(auth) {
+        let cap = if auth
+            .scopes
+            .as_ref()
+            .is_some_and(|s| s.iter().any(|s| s == JOB_TOKEN_READ_ONLY_SCOPE))
+        {
+            Permission::Read
+        } else {
+            Permission::Write
+        };
         return if job_repo != repo.id {
             public_floor(repo)
         } else {
-            raw.min(Permission::Write)
+            raw.min(cap)
         };
     }
     if auth.has_scope("repo") {
@@ -216,6 +225,9 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
 
 /// Scope prefix marking an Actions job token: `actions:repo:{repo_id}`.
 pub const JOB_TOKEN_SCOPE_PREFIX: &str = "actions:repo:";
+
+/// Extra scope making an Actions job token read-only (fork pull requests).
+pub const JOB_TOKEN_READ_ONLY_SCOPE: &str = "actions:read-only";
 
 /// Repository an Actions job token is restricted to, if `auth` is one.
 pub fn job_token_repo(auth: &AuthContext) -> Option<i64> {

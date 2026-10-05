@@ -9,7 +9,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bgh_core::events::Event;
 use bgh_core::models::db;
-use bgh_core::perms::JOB_TOKEN_SCOPE_PREFIX;
+use bgh_core::perms::{JOB_TOKEN_READ_ONLY_SCOPE, JOB_TOKEN_SCOPE_PREFIX};
 use bgh_core::prelude::{SyncAction, Tx};
 use bgh_core::{AppState, crypto as core_crypto};
 use chrono::Utc;
@@ -228,11 +228,16 @@ async fn prepare_spec(
         .or(run.actor_id)
         .unwrap_or(repo.owner_id);
     let expires = Utc::now() + chrono::Duration::minutes(spec.timeout_minutes as i64 + 60);
-    let scopes = vec![
+    // Pull requests from forks get no secrets and a read-only token.
+    let from_fork = run.event == "pull_request" && run.head_repo_id.is_some_and(|h| h != repo.id);
+    let mut scopes = vec![
         "repo".to_string(),
         "workflow".to_string(),
         format!("{JOB_TOKEN_SCOPE_PREFIX}{}", repo.id),
     ];
+    if from_fork {
+        scopes.push(JOB_TOKEN_READ_ONLY_SCOPE.to_string());
+    }
     let (token_row, token) = bgh_core::auth::create_access_token(
         &mut **tx,
         token_user,
@@ -247,7 +252,11 @@ async fn prepare_spec(
         .execute(&mut **tx)
         .await?;
 
-    let mut secrets = crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?;
+    let mut secrets = if from_fork {
+        IndexMap::new()
+    } else {
+        crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
+    };
     secrets.insert("GITHUB_TOKEN".into(), token.clone());
     let vars = crate::scoped::vars_for(state, &repo, spec.environment.as_deref()).await?;
     spec.vars = Value::Object(vars);
