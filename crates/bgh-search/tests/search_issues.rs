@@ -328,12 +328,10 @@ async fn issue_search_respects_permissions_and_validates() {
     assert_eq!(res.json()["errors"][0]["field"], "q");
     assert_eq!(res.json()["errors"][0]["code"], "missing");
     // Beyond the first 1000 results.
-    app.get(&format!(
-        "/api/v3/search/issues?q=launch&per_page=100&page=11"
-    ))
-    .send()
-    .await
-    .assert_status(422);
+    app.get("/api/v3/search/issues?q=launch&per_page=100&page=11")
+        .send()
+        .await
+        .assert_status(422);
     // Bad qualifier values.
     app.get(&format!(
         "/api/v3/search/issues?q={}",

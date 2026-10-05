@@ -24,6 +24,7 @@ const MAX_REFS: usize = 50;
 /// * issue references: a `cross-referenced` event on each referenced issue
 ///   the actor can read (once per source issue) and
 ///   [`Event::IssueCrossReferenced`].
+#[allow(clippy::too_many_arguments)]
 pub async fn process(
     tx: &mut Tx,
     state: &AppState,
@@ -236,7 +237,7 @@ pub fn closing_refs(message: &str) -> Vec<i64> {
         if !CLOSING.contains(&kw.as_str()) {
             continue;
         }
-        let target = w[1].trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ')' | '!'));
+        let target = w[1].trim_end_matches(['.', ',', ';', ')', '!']);
         if let Some(n) = target.strip_prefix('#').and_then(|n| n.parse::<i64>().ok())
             && !out.contains(&n)
         {

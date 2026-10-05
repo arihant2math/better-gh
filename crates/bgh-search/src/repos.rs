@@ -226,10 +226,8 @@ pub async fn filters(
                     .text(value.to_lowercase())
                     .raw(", false)");
             }
-            "mirror" => {
-                if value.eq_ignore_ascii_case("true") != neg {
-                    s.raw("FALSE");
-                }
+            "mirror" if value.eq_ignore_ascii_case("true") != neg => {
+                s.raw("FALSE");
             }
             _ => {}
         }
