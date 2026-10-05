@@ -1,0 +1,136 @@
+.dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.dialog > div {
+  padding: 0 !important;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, 70vh);
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 52px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-subtle);
+}
+
+.input {
+  flex: 1;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-lg);
+}
+
+.input::placeholder {
+  color: var(--fg-subtle);
+  font-size: var(--fs-base);
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.group {
+  padding: 8px 10px 4px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.item[data-active='true'] {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.itemIcon {
+  display: inline-flex;
+  width: 16px;
+  color: var(--fg-subtle);
+}
+
+.itemTitle {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSub {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.itemKeys {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.itemKeys kbd,
+.footer kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+}
+
+.empty {
+  padding: 28px;
+  color: var(--fg-subtle);
+  text-align: center;
+}
+
+.footer {
+  display: flex;
+  gap: 16px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+}
+
+.footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

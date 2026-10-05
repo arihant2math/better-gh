@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+target
+data
+**/node_modules
+web/dist
+web/tsconfig.tsbuildinfo
+*.log
+.env
+Dockerfile
+docker-compose.yml
+deploy
+docs
+scripts
+**/*.md

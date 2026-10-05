@@ -1,0 +1,252 @@
+/**
+ * Compact client model shapes. Normative spec: docs/SYNC_PROTOCOL.md §3.
+ * Keep this file and the doc in sync.
+ */
+
+export type ID = number;
+/** `YYYY-MM-DDTHH:MM:SSZ` — sorts correctly as a string. */
+export type Timestamp = string;
+export type Permission = 'read' | 'triage' | 'write' | 'maintain' | 'admin';
+export type ReactionContent = '+1' | '-1' | 'laugh' | 'hooray' | 'confused' | 'heart' | 'rocket' | 'eyes';
+export type ReactionCounts = Partial<Record<ReactionContent, number>>;
+
+export interface User {
+  id: ID;
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  type: 'User' | 'Bot';
+}
+
+export interface Org {
+  id: ID;
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  description: string | null;
+}
+
+export interface Membership {
+  id: ID;
+  orgId: ID;
+  userId: ID;
+  role: 'admin' | 'member';
+}
+
+export interface Team {
+  id: ID;
+  orgId: ID;
+  slug: string;
+  name: string;
+  description: string | null;
+  privacy: 'closed' | 'secret';
+  parentId: ID | null;
+  memberIds: ID[];
+  repoIds: ID[];
+}
+
+export interface Repo {
+  id: ID;
+  ownerId: ID;
+  owner: string;
+  name: string;
+  description: string | null;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  defaultBranch: string;
+  language: string | null;
+  topics: string[];
+  stars: number;
+  forks: number;
+  watchers: number;
+  openIssues: number;
+  openPulls: number;
+  hasIssues: boolean;
+  hasProjects: boolean;
+  hasWiki: boolean;
+  pushedAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface ViewerRepo {
+  id: ID;
+  permission: Permission;
+  starred: boolean;
+  watching: 'subscribed' | 'ignored' | 'participating';
+}
+
+export interface Label {
+  id: ID;
+  repoId: ID;
+  name: string;
+  color: string;
+  description: string | null;
+}
+
+export interface Milestone {
+  id: ID;
+  repoId: ID;
+  number: number;
+  title: string;
+  description: string | null;
+  state: 'open' | 'closed';
+  dueOn: Timestamp | null;
+  openIssues: number;
+  closedIssues: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  closedAt: Timestamp | null;
+}
+
+export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null;
+export type ChecksState = 'success' | 'failure' | 'pending' | 'neutral' | null;
+
+export interface Issue {
+  id: ID;
+  repoId: ID;
+  number: number;
+  title: string;
+  /** Lazy: `undefined` = not loaded yet (load via partial sync). */
+  body?: string | null;
+  state: 'open' | 'closed';
+  stateReason: 'completed' | 'not_planned' | 'reopened' | null;
+  authorId: ID;
+  assigneeIds: ID[];
+  labelIds: ID[];
+  milestoneId: ID | null;
+  comments: number;
+  locked: boolean;
+  reactions?: ReactionCounts;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  closedAt: Timestamp | null;
+  isPr: boolean;
+  draft?: boolean;
+  merged?: boolean;
+  mergedAt?: Timestamp | null;
+  mergedById?: ID | null;
+  headRef?: string;
+  headRepoId?: ID | null;
+  headSha?: string;
+  baseRef?: string;
+  baseSha?: string;
+  mergeable?: boolean | null;
+  mergeableState?: 'clean' | 'dirty' | 'blocked' | 'behind' | 'unstable' | 'unknown';
+  reviewDecision?: ReviewDecision;
+  requestedReviewerIds?: ID[];
+  requestedTeamIds?: ID[];
+  checks?: ChecksState;
+  additions?: number;
+  deletions?: number;
+  changedFiles?: number;
+  commits?: number;
+}
+
+export interface Comment {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  authorId: ID;
+  body: string;
+  authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'NONE';
+  reactions?: ReactionCounts;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Review {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  authorId: ID;
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+  body: string;
+  commitId: string;
+  submittedAt: Timestamp | null;
+}
+
+export type IssueEventType =
+  | 'labeled'
+  | 'unlabeled'
+  | 'assigned'
+  | 'unassigned'
+  | 'milestoned'
+  | 'demilestoned'
+  | 'renamed'
+  | 'closed'
+  | 'reopened'
+  | 'merged'
+  | 'referenced'
+  | 'locked'
+  | 'unlocked'
+  | 'review_requested'
+  | 'review_request_removed'
+  | 'ready_for_review'
+  | 'convert_to_draft'
+  | 'head_ref_force_pushed';
+
+export interface IssueEvent {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  actorId: ID | null;
+  event: IssueEventType;
+  data: {
+    labelId?: ID;
+    labelName?: string;
+    labelColor?: string;
+    assigneeId?: ID;
+    reviewerId?: ID;
+    milestoneTitle?: string;
+    from?: string;
+    to?: string;
+    stateReason?: string;
+    commitId?: string;
+  };
+  createdAt: Timestamp;
+}
+
+export interface Notification {
+  id: ID;
+  repoId: ID;
+  subjectType: 'Issue' | 'PullRequest' | 'Commit' | 'Release' | 'Discussion' | 'CheckSuite';
+  subjectId: ID | null;
+  title: string;
+  reason:
+    | 'assign'
+    | 'author'
+    | 'comment'
+    | 'mention'
+    | 'review_requested'
+    | 'state_change'
+    | 'subscribed'
+    | 'team_mention'
+    | 'manual'
+    | 'ci_activity'
+    | 'security_alert';
+  unread: boolean;
+  updatedAt: Timestamp;
+  lastReadAt: Timestamp | null;
+}
+
+/** Model name → row type. Adding a synced model starts here (see docs/FRONTEND.md). */
+export interface ModelMap {
+  user: User;
+  org: Org;
+  membership: Membership;
+  team: Team;
+  repo: Repo;
+  viewerRepo: ViewerRepo;
+  label: Label;
+  milestone: Milestone;
+  issue: Issue;
+  comment: Comment;
+  review: Review;
+  issueEvent: IssueEvent;
+  notification: Notification;
+}
+
+export type ModelName = keyof ModelMap;
+export type AnyRow = ModelMap[ModelName];

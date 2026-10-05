@@ -94,12 +94,21 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 `BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
 `BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
-`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`.
+`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`, `BGH_SMTP_URL` (unset: mail is
+logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`, `BGH_RATE_LIMIT`
+(`5000`/h per user, `0` disables), `BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP),
+`BGH_TRUST_PROXY` (`false`; take client IPs from `X-Forwarded-For`), and
+`BGH_OIDC_*` for a single SSO provider (see `bgh_accounts::sso`; site
+setting `auth.oidc` overrides).
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
-`bgh admin create-org --login --admin <user> [--name]`.
+`bgh admin create-org --login --admin <user> [--name]`,
+`bgh admin create-token --user <login> [--scopes a,b] [--name]
+[--expires-in-days]` (prints a PAT), `bgh healthcheck` (probes `/healthz`
+on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
+reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
 ## HTTP surface
 
@@ -174,8 +183,12 @@ and octokit-style raw requests.
   The first user account becomes site admin.
 * Sessions: random cookie `bgh_session` (HttpOnly, SameSite=Lax, Secure on
   https), stored as SHA-256 in `sessions`, cached in Redis for 5 min.
-  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry.
-  Basic auth with a password is accepted for git transport only.
+  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry;
+  OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
+  Basic auth with a password is accepted for git transport only, and never
+  for accounts with two-factor authentication.
+* API rate limits: `bgh_core::ratelimit::middleware` on `/api/v3`
+  (Redis fixed windows, `X-RateLimit-*` headers).
 
 ### Migrations
 
@@ -296,7 +309,10 @@ optimistic-mutation reconciliation) is specified normatively in
 * Keyboard-first: command palette (⌘K), `g i`, `c`, `j/k` navigation etc.
 * Virtualized lists and diffs; skeleton-free instant navigation from local
   data; prefetch on hover.
-* Built assets embedded/served by `bgh-server` with brotli precompression.
+* Built assets served by `bgh-server` with brotli precompression, from
+  `BGH_WEB_DIR` by default or compiled into the binary with the cargo
+  feature `embed-web` (release/Docker builds; a `BGH_WEB_DIR` containing
+  an `index.html` still wins).
 
 ## Testing
 
@@ -311,5 +327,8 @@ optimistic-mutation reconciliation) is specified normatively in
   them); leftovers of dead processes are cleaned up on the next run.
 * Each domain crate has integration tests in `tests/` hitting the HTTP
   router with real requests and asserting GitHub-compatible JSON.
-* `scripts/gh-compat.sh` exercises the real `gh` CLI against a running
-  server.
+* `scripts/gh-compat.sh` exercises the real `gh` CLI (GHES mode, behind a
+  throwaway TLS proxy) against a fresh server or a running one and reports
+  PASS/FAIL/SKIP per command (`--json` for machine-readable results);
+  `scripts/api-smoke.sh` checks core REST shapes with curl + jq. Both start
+  `bgh` on a temporary database by default (`scripts/lib/test-server.sh`).
