@@ -51,8 +51,7 @@ const FULL_RECHECK: Duration = Duration::from_secs(300);
 pub const QUEUE: usize = 256;
 /// Page size when reading gaps from the database.
 const FILL_PAGE: i64 = 2000;
-/// Channel suffix for access-change notifications (`{prefix}sync:!access`).
-pub const ACCESS_CHANNEL: &str = "sync:!access";
+pub use bgh_core::sync::ACCESS_CHANNEL;
 
 /// What the hub sends a socket.
 #[derive(Debug, Clone)]
@@ -61,9 +60,14 @@ pub enum HubMsg {
     Items(Arc<Vec<Item>>),
     /// The viewer lost access to this scope.
     Revoke(String),
+    /// Close the socket (e.g. 4001 after sign-out).
+    Close { code: u16, reason: &'static str },
 }
 
-/// Payload of `{prefix}sync:!access`. All `None` = recheck everyone.
+/// Payload of `{prefix}sync:!access`. All ids `None` = recheck everyone.
+/// With `sign_out`, the sockets of `user_id` (only those authenticated by
+/// `session_id`, when given) are closed with 4001 instead
+/// (`bgh_core::sync::signal_signed_out`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccessChange {
@@ -73,6 +77,10 @@ pub struct AccessChange {
     pub org_id: Option<i64>,
     #[serde(default)]
     pub user_id: Option<i64>,
+    #[serde(default)]
+    pub session_id: Option<i64>,
+    #[serde(default)]
+    pub sign_out: bool,
 }
 
 /// Publish an access change to every process's hub.
@@ -286,6 +294,39 @@ impl Hub {
         }
     }
 
+    /// Unregister a socket and tell it to close.
+    fn close(&self, conn: u64, code: u16, reason: &'static str) {
+        let mut inner = self.lock();
+        let inner = &mut *inner;
+        if let Some(entry) = inner.conns.remove(&conn) {
+            for s in &entry.scopes {
+                unindex(&mut inner.by_scope, s, conn);
+            }
+            if entry.tx.try_send(HubMsg::Close { code, reason }).is_err() {
+                entry.overflow.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Close the sockets of a signed-out user (or of one of their sessions).
+    fn sign_out(&self, user_id: i64, session_id: Option<i64>) {
+        let ids: Vec<u64> = self
+            .lock()
+            .conns
+            .iter()
+            .filter(|(_, c)| {
+                c.auth.user.id == user_id
+                    && session_id.is_none_or(|sid| {
+                        c.auth.method == bgh_core::auth::AuthMethod::Session { session_id: sid }
+                    })
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in ids {
+            self.close(id, crate::ws::CLOSE_UNAUTHENTICATED, "signed out");
+        }
+    }
+
     /// Remove `scope` from a socket and tell it.
     fn revoke(&self, conn: u64, scope: &str) {
         let mut inner = self.lock();
@@ -414,17 +455,25 @@ impl Hub {
         }
         let mut db = self.state.db.acquire().await?;
         for (id, auth, scopes) in conns {
-            let active: Option<bool> =
-                sqlx::query_scalar("SELECT suspended_at IS NULL FROM users WHERE id = $1")
-                    .bind(auth.user.id)
-                    .fetch_optional(&mut *db)
-                    .await?;
-            let denied = if active == Some(true) {
-                scopes::check(&mut db, &auth, &scopes).await?.denied
-            } else {
-                scopes
+            // Deleted / suspended users and ended sessions are signed out.
+            let session = match auth.method {
+                bgh_core::auth::AuthMethod::Session { session_id } => Some(session_id),
+                _ => None,
             };
-            for scope in denied {
+            let signed_in: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND suspended_at IS NULL)
+                    AND ($2::bigint IS NULL OR EXISTS (
+                        SELECT 1 FROM sessions WHERE id = $2 AND user_id = $1 AND expires_at > now()))",
+            )
+            .bind(auth.user.id)
+            .bind(session)
+            .fetch_one(&mut *db)
+            .await?;
+            if !signed_in {
+                self.close(id, crate::ws::CLOSE_UNAUTHENTICATED, "signed out");
+                continue;
+            }
+            for scope in scopes::check(&mut db, &auth, &scopes).await?.denied {
                 self.revoke(id, &scope);
             }
         }
@@ -483,7 +532,15 @@ async fn run(weak: Weak<Hub>, state: AppState, mut stream: redis::aio::PubSubStr
                 let payload: String = msg.get_payload().unwrap_or_default();
                 if msg.get_channel_name() == access_channel {
                     let change: AccessChange = serde_json::from_str(&payload).unwrap_or_default();
-                    access.extend(targets_of(&change));
+                    match (change.sign_out, change.user_id) {
+                        (true, Some(user)) => {
+                            if let Some(hub) = weak.upgrade() {
+                                hub.sign_out(user, change.session_id);
+                            }
+                            continue;
+                        }
+                        _ => access.extend(targets_of(&change)),
+                    }
                 } else {
                     match serde_json::from_str::<SyncRecord>(&payload) {
                         Ok(rec) => {
@@ -554,8 +611,8 @@ mod tests {
         assert_eq!(
             targets_of(&AccessChange {
                 repo_id: Some(1),
-                org_id: None,
-                user_id: Some(2)
+                user_id: Some(2),
+                ..Default::default()
             }),
             vec![Target::Scope("repo:1".into()), Target::User(2)]
         );

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use bgh_core::prelude::*;
 use bgh_core::sync::SCHEMA_VERSION;
@@ -24,12 +24,15 @@ pub struct BootstrapQuery {
     pub scopes: Option<String>,
 }
 
-/// Open a consistent read-only snapshot (`REPEATABLE READ`).
+/// Open a consistent read-only snapshot (`REPEATABLE READ`, no JIT).
 async fn snapshot(state: &AppState) -> Result<Transaction<'static, Postgres>, sqlx::Error> {
     let mut tx = state.db.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
         .await?;
+    // Large scopes have high plan costs; LLVM JIT compilation of the wide
+    // JSON projections costs far more (~0.6 s) than it saves.
+    sqlx::query("SET LOCAL jit = off").execute(&mut *tx).await?;
     Ok(tx)
 }
 
@@ -44,9 +47,88 @@ fn json_response(body: String) -> Response {
     resp
 }
 
+/// Response encodings we produce ourselves for large sync documents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Encoding {
+    Br,
+    Gzip,
+}
+
+impl Encoding {
+    /// Pick from `Accept-Encoding` (brotli preferred; `q=0` excluded).
+    fn negotiate(headers: &HeaderMap) -> Option<Self> {
+        let accept = headers.get(header::ACCEPT_ENCODING)?.to_str().ok()?;
+        let accepted = |name: &str| {
+            accept.split(',').any(|part| {
+                let mut it = part.split(';');
+                let coding = it.next().unwrap_or("").trim();
+                let q_zero = it.any(|p| {
+                    p.trim()
+                        .strip_prefix("q=")
+                        .and_then(|q| q.trim().parse::<f32>().ok())
+                        == Some(0.0)
+                });
+                coding.eq_ignore_ascii_case(name) && !q_zero
+            })
+        };
+        if accepted("br") {
+            Some(Self::Br)
+        } else if accepted("gzip") {
+            Some(Self::Gzip)
+        } else {
+            None
+        }
+    }
+}
+
+/// Bodies smaller than this are left to the generic compression layer.
+const SELF_COMPRESS_MIN: usize = 64 * 1024;
+
+/// JSON response for a (possibly large) sync document. Large bodies are
+/// compressed here with fast settings (brotli q2 / gzip level 1) on the
+/// blocking pool: the generic compression layer's defaults cost ~50 ms on a
+/// 4 MB bootstrap; these cost a fraction for a similar ratio on this
+/// highly repetitive JSON.
+async fn sync_response(headers: &HeaderMap, body: String) -> ApiResult<Response> {
+    let encoding = Encoding::negotiate(headers).filter(|_| body.len() >= SELF_COMPRESS_MIN);
+    let Some(encoding) = encoding else {
+        return Ok(json_response(body));
+    };
+    let compressed = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+        use std::io::Write;
+        let out = Vec::with_capacity(body.len() / 8);
+        match encoding {
+            Encoding::Br => {
+                let mut w = brotli::CompressorWriter::new(out, 64 * 1024, 2, 22);
+                w.write_all(body.as_bytes())?;
+                Ok(w.into_inner())
+            }
+            Encoding::Gzip => {
+                let mut w = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
+                w.write_all(body.as_bytes())?;
+                w.finish()
+            }
+        }
+    })
+    .await??;
+    let mut resp = json_response(String::new());
+    *resp.body_mut() = Body::from(compressed);
+    let h = resp.headers_mut();
+    h.insert(
+        header::CONTENT_ENCODING,
+        HeaderValue::from_static(match encoding {
+            Encoding::Br => "br",
+            Encoding::Gzip => "gzip",
+        }),
+    );
+    h.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+    Ok(resp)
+}
+
 pub async fn bootstrap(
     State(state): State<AppState>,
     auth: RequireUser,
+    headers: HeaderMap,
     Query(q): Query<BootstrapQuery>,
 ) -> ApiResult<Response> {
     compact::ensure_scheduled(&state).await;
@@ -63,14 +145,15 @@ pub async fn bootstrap(
     };
     let access = scopes::check(&mut tx, &auth, &requested).await?;
     let last_sync_id = delta::head(&mut *tx).await?;
-    let body = build(&mut tx, viewer, &access, last_sync_id).await?;
+    let body = build(&state, &mut tx, viewer, &access, last_sync_id).await?;
     tx.commit().await?;
-    Ok(json_response(body))
+    sync_response(&headers, body).await
 }
 
 /// Assemble the bootstrap document. Model arrays are aggregated in Postgres
 /// and spliced in as text, so the server never materializes row values.
 async fn build(
+    state: &AppState,
     conn: &mut PgConnection,
     viewer: i64,
     access: &scopes::Access,
@@ -80,6 +163,36 @@ async fn build(
     let orgs = access.org_ids();
     let none = Opts::default();
     let mut parts: Vec<(&str, String)> = Vec::new();
+
+    // Issues dominate; large sets are split across helper connections that
+    // share this snapshot, and run while this connection does the rest.
+    let issue_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM issues WHERE repo_id = ANY($1) ORDER BY id")
+            .bind(&repos)
+            .fetch_all(&mut *conn)
+            .await?;
+    let mut local_chunks: Vec<&[i64]> = Vec::new();
+    let mut helpers = Vec::new();
+    if issue_ids.len() >= PARALLEL_MIN_ISSUES {
+        let snapshot: String = sqlx::query_scalar("SELECT pg_export_snapshot()")
+            .fetch_one(&mut *conn)
+            .await?;
+        let size = issue_ids.len().div_ceil(PARALLEL_CHUNKS);
+        for (n, chunk) in issue_ids.chunks(size).enumerate() {
+            // Only borrow idle connections, so concurrent bootstraps can't
+            // starve each other; otherwise this connection does the chunk.
+            match (n > 0).then(|| state.db.try_acquire()).flatten() {
+                Some(helper) => helpers.push(tokio::spawn(load_issue_chunk(
+                    helper,
+                    snapshot.clone(),
+                    chunk.to_vec(),
+                ))),
+                None => local_chunks.push(chunk),
+            }
+        }
+    } else {
+        local_chunks.push(&issue_ids);
+    }
 
     let users = referenced_users(conn, viewer, &repos, &orgs).await?;
     parts.push((
@@ -110,10 +223,23 @@ async fn build(
         .map(serde_json::to_string)
         .collect::<Result<_, _>>()?;
     parts.push(("viewerRepo", viewer_repos.join(",")));
-    for model in [Model::Label, Model::Milestone, Model::Issue] {
+    for model in [Model::Label, Model::Milestone] {
         let (rows, _) = shapes::load_joined(conn, model, Filter::Repos(&repos), none).await?;
         parts.push((model.name(), rows));
     }
+    let mut issues: Vec<String> = Vec::new();
+    for chunk in local_chunks {
+        issues.push(
+            shapes::load_joined(conn, Model::Issue, Filter::Ids(chunk), none)
+                .await?
+                .0,
+        );
+    }
+    for helper in helpers {
+        issues.push(helper.await??);
+    }
+    issues.retain(|s| !s.is_empty());
+    parts.push(("issue", issues.join(",")));
     if access.has_user_scope(viewer) {
         let (rows, _) =
             shapes::load_joined(conn, Model::Notification, Filter::Users(&[viewer]), none).await?;
@@ -145,6 +271,36 @@ async fn build(
     }
     out.push_str("}}");
     Ok(out)
+}
+
+/// Issue sets at least this large are loaded in parallel.
+const PARALLEL_MIN_ISSUES: usize = 2000;
+/// Number of parallel issue chunks (this connection + up to 3 helpers).
+const PARALLEL_CHUNKS: usize = 4;
+
+/// Load one issue chunk on a helper connection that imports the bootstrap
+/// snapshot (`SET TRANSACTION SNAPSHOT`), so it sees exactly the same data.
+async fn load_issue_chunk(
+    mut conn: sqlx::pool::PoolConnection<Postgres>,
+    snapshot: String,
+    ids: Vec<i64>,
+) -> Result<String, sqlx::Error> {
+    if !snapshot.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err(sqlx::Error::Protocol(format!("bad snapshot id {snapshot}")));
+    }
+    let mut tx = sqlx::Connection::begin(&mut *conn).await?;
+    // SET TRANSACTION SNAPSHOT takes no parameters (the id was validated).
+    for sql in [
+        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY".to_string(),
+        format!("SET TRANSACTION SNAPSHOT '{snapshot}'"),
+        "SET LOCAL jit = off".to_string(),
+    ] {
+        sqlx::query(&sql).execute(&mut *tx).await?;
+    }
+    let (rows, _) =
+        shapes::load_joined(&mut tx, Model::Issue, Filter::Ids(&ids), Opts::default()).await?;
+    tx.commit().await?;
+    Ok(rows)
 }
 
 /// Every user referenced by the rows of the bootstrap (plus the viewer).
@@ -267,4 +423,24 @@ pub async fn partial(
     tx.commit().await?;
     let body = serde_json::json!({ "lastSyncId": last_sync_id, "models": out });
     Ok(json_response(serde_json::to_string(&body)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn neg(v: &str) -> Option<Encoding> {
+        let mut h = HeaderMap::new();
+        h.insert(header::ACCEPT_ENCODING, v.parse().unwrap());
+        Encoding::negotiate(&h)
+    }
+
+    #[test]
+    fn negotiates_encoding() {
+        assert_eq!(neg("gzip, deflate, br, zstd"), Some(Encoding::Br));
+        assert_eq!(neg("gzip"), Some(Encoding::Gzip));
+        assert_eq!(neg("br;q=0, gzip;q=0.5"), Some(Encoding::Gzip));
+        assert_eq!(neg("identity"), None);
+        assert_eq!(Encoding::negotiate(&HeaderMap::new()), None);
+    }
 }

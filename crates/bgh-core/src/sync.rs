@@ -136,6 +136,31 @@ pub async fn record_with_tx(
     })
 }
 
+/// Channel suffix for access/sign-out notifications to the sync hubs
+/// (`{prefix}sync:!access`; `!` can't start a scope).
+pub const ACCESS_CHANNEL: &str = "sync:!access";
+
+/// Tell every process's sync hub that a session (or, with `session_id =
+/// None`, every session) of `user_id` ended: their WebSockets are closed
+/// with code 4001. Called by [`crate::auth::destroy_session`] and
+/// [`crate::auth::destroy_user_sessions`].
+pub async fn signal_signed_out(state: &AppState, user_id: i64, session_id: Option<i64>) {
+    let payload = serde_json::json!({
+        "userId": user_id,
+        "sessionId": session_id,
+        "signOut": true,
+    });
+    let mut conn = state.redis.clone();
+    let res: Result<(), _> = redis::cmd("PUBLISH")
+        .arg(state.redis_key(ACCESS_CHANNEL))
+        .arg(payload.to_string())
+        .query_async(&mut conn)
+        .await;
+    if let Err(err) = res {
+        tracing::warn!(?err, "publishing sync sign-out");
+    }
+}
+
 /// Redis channel for a scope.
 pub fn channel(state: &AppState, scope: &str) -> String {
     state.redis_key(&format!("sync:{scope}"))
