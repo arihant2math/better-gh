@@ -101,12 +101,24 @@ async fn create_get_shape_and_mergeability() {
     // Shared numbering with issues and the open issues counter.
     let repo = app.get("/api/v3/repos/alice/demo").send().await.json();
     assert_eq!(repo["open_issues_count"], 1);
-    let n: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM sync_actions WHERE model = 'pull_request'")
-            .fetch_one(&app.state.db)
+    // Sync rows follow docs/SYNC_PROTOCOL.md (`issue` model, camelCase).
+    let rows: Vec<(String, serde_json::Value)> =
+        sqlx::query_as("SELECT scope, data FROM sync_actions WHERE model = 'issue' ORDER BY id")
+            .fetch_all(&app.state.db)
             .await
             .unwrap();
-    assert!(n >= 2, "sync actions recorded");
+    assert!(rows.len() >= 2, "sync actions recorded");
+    let (scope, first) = &rows[0];
+    assert_eq!(scope, &format!("repo:{}", f.repo_id));
+    assert_eq!(first["isPr"], true);
+    assert_eq!(first["number"], 1);
+    assert_eq!(first["headRef"], "feature");
+    assert_eq!(first["body"], "Body");
+    assert_eq!(first["labelIds"], json!([]));
+    let last = &rows.last().unwrap().1;
+    assert_eq!(last["mergeableState"], "clean");
+    assert_eq!(last["mergeable"], true);
+    assert!(last.get("body").is_none(), "body is lazy");
 }
 
 #[tokio::test]

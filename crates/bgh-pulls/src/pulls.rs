@@ -265,10 +265,10 @@ pub async fn create(
     let pull = model::find_by_id(&mut *tx, issue_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let data = json::sync_json(&mut tx, &pull).await?;
+    let data = json::sync_json(&mut tx, &pull, true).await?;
     tx.sync(
         &access.scope(),
-        "pull_request",
+        "issue",
         issue_id,
         SyncAction::Insert,
         &data,
@@ -719,7 +719,11 @@ pub async fn update(
             changes: serde_json::Value::Object(changes),
         });
     }
-    let updated = json::sync_pull(&mut tx, &access.scope(), pull.id()).await?;
+    let updated = if body.body.is_some() {
+        json::sync_pull_with_body(&mut tx, &access.scope(), pull.id()).await?
+    } else {
+        json::sync_pull(&mut tx, &access.scope(), pull.id()).await?
+    };
     tx.commit().await?;
     Ok(axum::Json(
         json::render_full(&state, Some(&auth), &access, &updated).await?,

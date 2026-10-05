@@ -456,18 +456,19 @@ pub async fn render_suites(
 
 fn run_sync_json(r: &RunRow) -> Value {
     json!({
-        "id": r.id, "check_suite_id": r.check_suite_id, "head_sha": r.head_sha,
-        "name": r.name, "status": r.status, "conclusion": r.conclusion,
-        "details_url": r.details_url, "title": r.output.get("title"),
-        "started_at": ts(r.started_at), "completed_at": ts(r.completed_at),
+        "id": r.id, "repoId": r.repo_id, "checkSuiteId": r.check_suite_id,
+        "headSha": r.head_sha, "name": r.name, "status": r.status,
+        "conclusion": r.conclusion, "detailsUrl": r.details_url,
+        "title": r.output.get("title"), "startedAt": ts(r.started_at),
+        "completedAt": ts(r.completed_at),
     })
 }
 
 fn suite_sync_json(s: &SuiteRow) -> Value {
     json!({
-        "id": s.id, "head_sha": s.head_sha, "head_branch": s.head_branch,
-        "app_slug": s.app_slug, "status": s.status, "conclusion": s.conclusion,
-        "latest_check_runs_count": s.latest_check_runs_count,
+        "id": s.id, "repoId": s.repo_id, "headSha": s.head_sha,
+        "headBranch": s.head_branch, "appSlug": s.app_slug, "status": s.status,
+        "conclusion": s.conclusion, "latestCheckRunsCount": s.latest_check_runs_count,
     })
 }
 
@@ -551,7 +552,7 @@ pub async fn ensure_suite(
     .await?;
     tx.sync(
         &bgh_core::sync::repo_scope(repo_id),
-        "check_suite",
+        "checkSuite",
         s.id,
         SyncAction::Insert,
         &suite_sync_json(&s),
@@ -829,7 +830,7 @@ pub async fn create_run(
     let scope = access.scope();
     tx.sync(
         &scope,
-        "check_run",
+        "checkRun",
         run.id,
         SyncAction::Insert,
         &run_sync_json(&run),
@@ -837,7 +838,7 @@ pub async fn create_run(
     .await?;
     tx.sync(
         &scope,
-        "check_suite",
+        "checkSuite",
         suite_after.id,
         SyncAction::Update,
         &suite_sync_json(&suite_after),
@@ -979,7 +980,7 @@ pub async fn update_run(
     let scope = access.scope();
     tx.sync(
         &scope,
-        "check_run",
+        "checkRun",
         run.id,
         SyncAction::Update,
         &run_sync_json(&run),
@@ -987,7 +988,7 @@ pub async fn update_run(
     .await?;
     tx.sync(
         &scope,
-        "check_suite",
+        "checkSuite",
         suite.id,
         SyncAction::Update,
         &suite_sync_json(&suite),
@@ -1136,7 +1137,7 @@ pub async fn rerequest_run(
     let suite = recompute_suite(&mut tx, run.check_suite_id).await?;
     tx.sync(
         &access.scope(),
-        "check_run",
+        "checkRun",
         id,
         SyncAction::Update,
         &run_sync_json(&run),
@@ -1144,7 +1145,7 @@ pub async fn rerequest_run(
     .await?;
     tx.sync(
         &access.scope(),
-        "check_suite",
+        "checkSuite",
         suite.id,
         SyncAction::Update,
         &suite_sync_json(&suite),
@@ -1398,7 +1399,7 @@ pub async fn rerequest_suite(
     let suite = recompute_suite(&mut tx, id).await?;
     tx.sync(
         &access.scope(),
-        "check_suite",
+        "checkSuite",
         id,
         SyncAction::Update,
         &suite_sync_json(&suite),

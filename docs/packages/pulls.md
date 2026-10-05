@@ -106,10 +106,19 @@ Statuses / checks
 
 ## Sync & events
 
-Sync models (scope `repo:{id}`): `pull_request` (issue-level + PR fields,
-see `json::sync_json`), `review`, `review_comment`, `reaction`,
-`issue_event`, `commit_status`, `check_run`, `check_suite`. Pending reviews
-are not broadcast. Event variants added (additive, `events.rs`):
+Sync rows follow `docs/SYNC_PROTOCOL.md` (scope `repo:{id}`, camelCase):
+PRs are `issue` rows with `isPr: true` and every PR field of the v1
+interface (`reviewDecision` from the latest decisive reviews / pending
+requests, `checks` aggregated from statuses + check runs on the head;
+`body` only on create/body edits) plus extensions (`mergeCommitSha`,
+`rebaseable`, `maintainerCanModify`, `autoMerge`, `reviewComments`);
+`review` (normative shape), `issueEvent` (`data` mapped to camelCase:
+`reviewerId`, `teamId`, `from`/`to`, `before`/`after`, `reviewId`,
+`commitId`, ...). Extension models (ignored by today's client):
+`reviewComment`, `reaction`, `commitStatus`, `checkRun`, `checkSuite`.
+Pending reviews are not broadcast. The `repo` row's `openPulls` is not
+re-synced by this crate (repo rows belong to bgh-repos).
+Event variants added (additive, `events.rs`):
 `PullRequestEdited`, `PullRequestReadyForReview`,
 `PullRequestConvertedToDraft`, `PullRequestReviewRequested`,
 `PullRequestReviewRequestRemoved`, `PullRequestReviewEdited`,

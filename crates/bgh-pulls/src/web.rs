@@ -127,7 +127,7 @@ pub async fn set_resolved(
     .await?;
     tx.sync(
         &access.scope(),
-        "review_comment",
+        "reviewComment",
         row.id,
         SyncAction::Update,
         &comments::sync_json(&row),

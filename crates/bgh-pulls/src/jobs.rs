@@ -98,7 +98,15 @@ pub async fn on_event(state: AppState, event: std::sync::Arc<Event>) -> anyhow::
             .filter(|u| u.branch().is_some())
             .cloned()
             .collect();
-        if !updates.is_empty() {
+        // Only repositories involved in open pull requests need work.
+        let involved: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pull_requests p JOIN issues i ON i.id = p.issue_id
+                             WHERE (p.repo_id = $1 OR p.head_repo_id = $1) AND i.state = 'open')",
+        )
+        .bind(p.repo_id)
+        .fetch_one(&state.db)
+        .await?;
+        if involved && !updates.is_empty() {
             bgh_core::jobs::enqueue_job(
                 &state.db,
                 &PushSync {

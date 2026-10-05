@@ -161,31 +161,34 @@ pub async fn render(
 }
 
 /// Compact client shape (model `review_comment`).
+/// Compact client row (model `reviewComment`, an extension of the v1 sync
+/// protocol; camelCase like the normative models).
 pub fn sync_json(c: &ReviewComment) -> Value {
     json!({
         "id": c.id,
-        "pull_id": c.pull_id,
-        "review_id": c.review_id,
-        "in_reply_to_id": c.in_reply_to_id,
-        "user_id": c.user_id,
+        "repoId": c.repo_id,
+        "issueId": c.pull_id,
+        "reviewId": c.review_id,
+        "inReplyToId": c.in_reply_to_id,
+        "authorId": c.user_id,
         "body": c.body,
         "path": c.path,
-        "commit_id": c.commit_id,
-        "original_commit_id": c.original_commit_id,
-        "subject_type": c.subject_type,
+        "commitId": c.commit_id,
+        "originalCommitId": c.original_commit_id,
+        "subjectType": c.subject_type,
         "side": c.side,
-        "start_side": c.start_side,
+        "startSide": c.start_side,
         "line": c.line,
-        "original_line": c.original_line,
-        "start_line": c.start_line,
-        "original_start_line": c.original_start_line,
+        "originalLine": c.original_line,
+        "startLine": c.start_line,
+        "originalStartLine": c.original_start_line,
         "position": c.position,
-        "original_position": c.original_position,
+        "originalPosition": c.original_position,
         "outdated": c.is_outdated(),
-        "resolved_at": ts(c.resolved_at),
-        "resolved_by_id": c.resolved_by_id,
-        "created_at": Timestamp::from(c.created_at),
-        "updated_at": Timestamp::from(c.updated_at),
+        "resolvedAt": ts(c.resolved_at),
+        "resolvedById": c.resolved_by_id,
+        "createdAt": Timestamp::from(c.created_at),
+        "updatedAt": Timestamp::from(c.updated_at),
     })
 }
 
@@ -410,7 +413,7 @@ pub async fn insert(
         .await?;
         tx.sync(
             &bgh_core::sync::repo_scope(pull.pr.repo_id),
-            "review_comment",
+            "reviewComment",
             row.id,
             SyncAction::Insert,
             &sync_json(&row),
@@ -820,7 +823,7 @@ pub async fn edit(
     .await?;
     tx.sync(
         &access.scope(),
-        "review_comment",
+        "reviewComment",
         id,
         SyncAction::Update,
         &sync_json(&row),
@@ -902,7 +905,7 @@ pub async fn delete(
         .await?;
         tx.sync(
             &access.scope(),
-            "review_comment",
+            "reviewComment",
             id,
             SyncAction::Delete,
             &json!({"id": id}),
@@ -1044,8 +1047,8 @@ pub async fn create_reaction(
         "reaction",
         row.id,
         SyncAction::Insert,
-        &json!({"id": row.id, "subject_type": SUBJECT, "subject_id": id,
-                "user_id": auth.user.id, "content": content, "pull_id": c.pull_id}),
+        &json!({"id": row.id, "subjectType": SUBJECT, "subjectId": id,
+                "userId": auth.user.id, "content": content, "issueId": c.pull_id}),
     )
     .await?;
     tx.commit().await?;
