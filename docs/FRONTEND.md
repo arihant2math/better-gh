@@ -167,8 +167,10 @@ immediately), `Tooltip`, `Dialog` (native modal), `TabNav` (links) / `Tabs`
 (buttons), `Counter`, `Tag`, `LabelPill` (any GitHub color, both themes),
 `ColorDot`, `StateIcon` / `StateBadge` (issue/PR state), `Avatar` /
 `AvatarStack`, `Kbd`, `Spinner`, `Skeleton`, `EmptyState`, `Box`,
-`toast()`, `VirtualList`, `Markdown` (GFM, sanitized, `#123`/`@user`
-links; lazy chunk), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
+`toast()`, `VirtualList`, `Markdown` (GFM, sanitized, server-parity
+references/autolinks/emoji/alerts/footnotes, `onSourceChange` for editable
+task lists; lazy chunk, highlighting/math/Mermaid/camo applied by
+`ui/markdown/enhance.ts`), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
 names there).
 
 Search/filter inputs with GitHub qualifier autocomplete (`is:`, `label:`,
