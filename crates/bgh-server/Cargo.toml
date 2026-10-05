@@ -38,6 +38,7 @@ bgh-graphql.workspace = true
 bgh-actions.workspace = true
 bgh-projects.workspace = true
 bgh-wiki.workspace = true
+bgh-import.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

@@ -8,6 +8,7 @@
 pub mod assignees;
 pub mod comments;
 pub mod events;
+pub mod import;
 pub mod issues;
 pub mod json;
 pub mod labels;

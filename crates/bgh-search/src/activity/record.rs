@@ -83,6 +83,9 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
 /// Record activity for one domain event (no-op for events without a
 /// GitHub counterpart).
 pub async fn record(state: &AppState, event: &Event) -> anyhow::Result<()> {
+    if event.is_quiet() {
+        return Ok(());
+    }
     match event {
         Event::Push(p) => push(state, p).await,
         Event::RepositoryCreated { repo_id, actor_id } => {

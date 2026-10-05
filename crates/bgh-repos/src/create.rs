@@ -132,7 +132,7 @@ async fn create(
 
 /// Create a repository (row, storage, defaults). `import` additionally
 /// records an import (and pull mirror) in the same transaction.
-pub(crate) async fn create_with(
+pub async fn create_with(
     state: &AppState,
     auth: &AuthContext,
     owner: db::User,
