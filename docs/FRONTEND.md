@@ -169,6 +169,13 @@ immediately), `Tooltip`, `Dialog` (native modal), `TabNav` (links) / `Tabs`
 links; lazy chunk), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
 names there).
 
+Search/filter inputs with GitHub qualifier autocomplete (`is:`, `label:`,
+`author:@me`, `repo:`…): `search/QueryInput` with a qualifier set from
+`search/qualifiers.ts` (`issues`, `code`, …, or `issue-list` / `pull-list`
+for the local filter language) and `storeValueSource(repo?)` for values.
+Server search: `search/api.ts` (`paletteSearch`, `search`, `searchCount`);
+latency samples: `recordPerf` / `window.__bghPerf.stats()`.
+
 Styling: CSS Modules per component/page + the tokens in `ui/tokens.css`
 (`var(--fg-muted)`, `var(--border)`, `var(--radius)`, `var(--sp-3)`…). Never
 hard-code colors; both themes must work (check with the theme toggle). Keep

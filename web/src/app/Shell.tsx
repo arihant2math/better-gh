@@ -4,6 +4,7 @@ import { navigate, useScrollContainer } from '../router';
 import { useShortcuts } from '../shortcuts/useShortcuts';
 import { Spinner } from '../ui/Spinner';
 import {
+  BellIcon,
   GearIcon,
   GitPullRequestIcon,
   HomeIcon,
@@ -14,6 +15,7 @@ import {
   PlusIcon,
   ServerIcon,
   SidebarCollapseIcon,
+  SearchIcon,
   SignOutIcon,
   CodeIcon,
 } from '../ui/icons';
@@ -28,6 +30,7 @@ import { Sidebar } from './Sidebar';
 import { theme } from './theme';
 import { TopBar } from './TopBar';
 import { currentRepo, ui } from './uiState';
+import { startUnreadIndicators } from './unread';
 
 function repoPath(suffix: string, fallback: string): string {
   const r = currentRepo();
@@ -94,6 +97,18 @@ function GlobalShortcuts() {
             else navigate('/issues');
           },
         },
+        {
+          id: 'repo.watch',
+          title: 'Watch settings for this repository…',
+          group: 'Repository',
+          icon: BellIcon,
+          keywords: 'notifications subscribe unwatch ignore',
+          run: () => {
+            const r = currentRepo();
+            if (r) ui.openWatch(r.id);
+          },
+        },
+        { id: 'search.page', title: 'Open search', group: 'Navigation', icon: SearchIcon, keywords: 'find code issues', run: () => navigate('/search') },
         { id: 'ui.theme', title: 'Toggle dark mode', group: 'Preferences', icon: MoonIcon, keywords: 'theme light dark', run: () => theme.toggle() },
         { id: 'ui.sidebar', title: 'Toggle sidebar', group: 'Preferences', icon: SidebarCollapseIcon, shortcut: 'mod+\\', run: () => ui.toggleSidebar() },
         { id: 'ui.help', title: 'Show keyboard shortcuts', group: 'Help', shortcut: '?', run: () => ui.setHelp(true) },
@@ -136,6 +151,7 @@ const AdminCommands = observer(function AdminCommands() {
   }, [admin]);
   return null;
 });
+const WatchDialog = lazy(() => import('../pages/notifications/WatchDialog'));
 
 export const Shell = observer(function Shell({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<HTMLElement | null>(null);
@@ -144,6 +160,7 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
     site.start();
     return () => site.stop();
   }, []);
+  useEffect(() => startUnreadIndicators(), []);
   return (
     <div className={styles.shell} data-sidebar={ui.sidebarCollapsed ? 'collapsed' : 'open'}>
       <a href="#content" className={styles.skip}>
@@ -173,6 +190,11 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
       <CommandPalette />
       <ShortcutHelp />
       <NewIssueDialog />
+      {ui.watchRepoId != null && (
+        <Suspense fallback={null}>
+          <WatchDialog repoId={ui.watchRepoId} onClose={() => ui.closeWatch()} />
+        </Suspense>
+      )}
     </div>
   );
 });

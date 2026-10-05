@@ -1,16 +1,54 @@
 .page {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 40px;
-  max-width: 1160px;
+  height: 100%;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 32px 64px;
 }
 
 @media (max-width: 960px) {
   .page {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .sideCol {
+    display: none;
+  }
+}
+
+.mainCol {
+  min-height: 0;
+  padding: 0 32px;
+}
+
+.feedHeader {
+  padding-top: 28px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.switcher:hover {
+  border-color: var(--border-strong);
 }
 
 .greeting {
@@ -123,7 +161,9 @@
 }
 
 .sideCol {
-  padding-top: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 34px 24px 32px 8px;
 }
 
 .inboxCard {
@@ -188,4 +228,241 @@
 
 .star {
   color: #e3b341 !important;
+}
+
+/* ---------------------------------------------------------------- your work */
+
+.work {
+  margin-bottom: 28px;
+}
+
+.workTabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.workTab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.workTab[aria-selected='true'] {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.workCount {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.workTab[aria-selected='true'] .workCount {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.viewAll {
+  display: block;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+/* ---------------------------------------------------------------- feed */
+
+.feedTitle {
+  margin-bottom: 4px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.day {
+  padding: 16px 0 6px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.feedItem {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.feedAvatar {
+  position: relative;
+  flex: none;
+  height: 28px;
+}
+
+.feedIcon {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--bg-app);
+  border-radius: 50%;
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+}
+
+.feedIcon[data-tone='open'] {
+  color: var(--open);
+}
+
+.feedIcon[data-tone='closed'],
+.feedIcon[data-tone='merged'] {
+  color: var(--merged);
+}
+
+.feedIcon[data-tone='star'] {
+  color: #e3b341;
+}
+
+.feedBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.feedLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+
+.feedActor,
+.feedRepo {
+  color: var(--fg);
+  font-weight: var(--fw-semibold);
+}
+
+.feedTime {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.branch {
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.commits {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-md);
+}
+
+.commits li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sha {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.commitMsg {
+  color: var(--fg-muted);
+}
+
+.subject {
+  margin-top: 4px;
+}
+
+.subjectLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg);
+}
+
+.subjectTitle {
+  overflow: hidden;
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subjectNumber {
+  color: var(--fg-subtle);
+}
+
+.commentSnippet {
+  display: -webkit-box;
+  margin: 2px 0 0 20px;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.moreLine {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.feedEnd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0 48px;
+  color: var(--fg-subtle);
+}
+
+.feedSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 0;
+}
+
+.feedSkeletonRow {
+  display: flex;
+  gap: 12px;
 }

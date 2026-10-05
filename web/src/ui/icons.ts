@@ -14,6 +14,7 @@ export {
   ArrowSwitchIcon,
   ArrowUpIcon,
   BellIcon,
+  BellSlashIcon,
   BlockedIcon,
   BoldIcon,
   BookIcon,

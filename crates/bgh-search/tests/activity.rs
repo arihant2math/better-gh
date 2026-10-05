@@ -493,6 +493,35 @@ async fn private_events_received_events_orgs_networks_and_feed() {
         .collect();
     assert!(ids.iter().all(|id| *id < next));
     assert!(all >= 4, "{all}");
+
+    // `org=` scopes the feed to repositories owned by that account,
+    // keeping cursor pagination.
+    let f = get_json(&app, "/_bgh/feed?limit=1&org=ACME", Some(&alice)).await;
+    assert_eq!(f["events"].as_array().unwrap().len(), 1, "{}", j(&f));
+    assert_eq!(f["events"][0]["repo"]["name"], "acme/internal-tool");
+    let next = f["next_before"].as_i64().unwrap();
+    let f2 = get_json(
+        &app,
+        &format!("/_bgh/feed?limit=1&org=acme&before={next}"),
+        Some(&alice),
+    )
+    .await;
+    assert_eq!(f2["events"][0]["repo"]["name"], "acme/tool", "{}", j(&f2));
+    assert_eq!(f2["events"].as_array().unwrap().len(), 1);
+    assert!(f2["next_before"].is_null(), "{}", j(&f2));
+    let f = get_json(&app, "/_bgh/feed?org=alice", Some(&alice)).await;
+    assert!(
+        f["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["repo"]["name"].as_str().unwrap().starts_with("alice/")),
+        "{}",
+        j(&f)
+    );
+    assert!(!f["events"].as_array().unwrap().is_empty());
+    let f = get_json(&app, "/_bgh/feed?org=nobody", Some(&alice)).await;
+    assert_eq!(f["events"], json!([]));
     app.get("/_bgh/feed").send().await.assert_status(401);
     let _ = (org_repo, org_secret);
 }

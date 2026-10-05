@@ -156,6 +156,10 @@ pub fn web_router() -> Router<AppState> {
             get(settings::unsubscribe_page).post(settings::unsubscribe),
         )
         .route(
+            "/_bgh/repos/{owner}/{repo}/subscription",
+            get(subs::get_watch_settings).put(subs::put_watch_settings),
+        )
+        .route(
             "/_bgh/repos/{owner}/{repo}/issues/{number}/subscription",
             get(subs::get_issue_subscription)
                 .put(subs::set_issue_subscription)

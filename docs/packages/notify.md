@@ -58,6 +58,13 @@ Web client (`/_bgh`):
   GET is a confirmation page, POST (RFC 8058 one-click) applies.
 * `GET/PUT/DELETE /_bgh/repos/{o}/{r}/issues/{number}/subscription` —
   subscribe button (reason `manual`).
+* `GET/PUT /_bgh/repos/{o}/{r}/subscription` — watch menu:
+  `{"state": "participating"|"all"|"ignore"|"custom", "events": [...]}`
+  (`events` only for `custom`: non-empty subset of `issues`, `pulls`,
+  `releases`, `discussions`, `security_alerts`, else 422). Stored as
+  `watches.events` (NULL = all activity); custom = `subscribed`, so it
+  counts in `watchers_count` and syncs `viewerRepo.watching: subscribed`.
+  The REST `PUT/DELETE /repos/{o}/{r}/subscription` reset `events` to NULL.
 
 ## Notification fan-out (`fanout.rs`)
 
@@ -80,6 +87,11 @@ each recorded as a `notification` sync action (I/U, D when done); then one
 | PullRequestReviewRequested | reviewer / team members `review_requested` |
 | IssueEdited / PullRequestEdited | title propagated to threads; newly @mentioned users (`changes.body.from`) |
 | ReleasePublished | watchers (subject `Release`) |
+
+Custom watchers (`watches.events` set) receive watcher notifications only
+for their categories: subject `Issue` → `issues`, `PullRequest` → `pulls`,
+`Release` → `releases`; `CheckSuite`/`Commit` never. Direct reasons and
+thread subscriptions are unaffected.
 | CheckSuiteUpdated `completed` with failure-like conclusion | actor `ci_activity` (subject `CheckSuite`) |
 
 **Emit exactly one of `PullRequestMerged` (merges) or `PullRequestClosed`
@@ -194,3 +206,4 @@ Jobs `notify.email`, `notify.deliver_webhook`; listeners
   `subject_key`, `last_actor_id`) + indexes, `notification_settings`,
   webhook `creator_id`, delivery columns (`url`, `payload_raw`,
   `content_type`, `attempts`, `error`, `throttled_at`).
+* `0510_watch_events.sql`: `watches.events TEXT[]` (custom watching).

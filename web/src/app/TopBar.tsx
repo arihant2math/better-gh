@@ -45,6 +45,7 @@ const Crumbs = observer(function Crumbs() {
     parts.push({ to: `/${p.org}`, label: p.org });
     parts.push({ to: `/organizations/${encodeURIComponent(p.org)}/settings/profile`, label: 'Settings' });
   }
+  else if (top === 'search') parts.push({ to: pathname + window.location.search, label: 'Search' });
   else if (top === 'issues' && !p.owner) parts.push({ to: '/issues', label: 'My issues' });
   else if (top === 'pulls' && !p.owner) parts.push({ to: '/pulls', label: 'Reviews' });
   else if (p.owner) {

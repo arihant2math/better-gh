@@ -15,6 +15,7 @@ import { PASS_STATUS } from './pass';
 import { Rng, fakeSha, iso } from './rng';
 import { installExtraMocks } from './extra';
 import { installCodeRoutes } from './code';
+import { installInboxSearchRoutes } from './inboxSearch';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
@@ -1107,6 +1108,7 @@ export class MockServer implements Transport {
     // ---------------- projects + wiki (private endpoints)
     installProjectRoutes(R, this);
     installWikiRoutes(R, this);
+    installInboxSearchRoutes(R, this);
     registerPullRoutes(this.pullHost(R));
   }
 

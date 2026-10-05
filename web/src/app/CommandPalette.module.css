@@ -134,3 +134,36 @@
   align-items: center;
   gap: 4px;
 }
+
+.scope {
+  flex: none;
+  max-width: 40%;
+  height: 22px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scope[data-scope='org'],
+.scope[data-scope='repo'] {
+  border-color: transparent;
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.item[data-remote] {
+  animation: streamIn var(--dur) var(--ease);
+}
+
+@keyframes streamIn {
+  from {
+    opacity: 0;
+  }
+}

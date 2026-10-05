@@ -338,6 +338,8 @@ pub struct FeedParams {
     /// Return events with ids lower than this (cursor from `next_before`).
     pub before: Option<i64>,
     pub limit: Option<i64>,
+    /// Only events of repositories owned by this account (org or user login).
+    pub org: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -347,7 +349,7 @@ pub struct Feed {
     pub next_before: Option<i64>,
 }
 
-/// `GET /_bgh/feed?before=&limit=`: the signed-in user's dashboard: events
+/// `GET /_bgh/feed?before=&limit=&org=`: the signed-in user's dashboard: events
 /// they received plus their own, cursor-paginated (no 300-event cap).
 pub async fn feed(
     State(state): State<AppState>,
@@ -364,6 +366,11 @@ pub async fn feed(
             .i64(auth.user.id);
     });
     c.push(readable(&set, "r"));
+    if let Some(org) = params.org.as_deref().filter(|o| !o.is_empty()) {
+        c.with(|s| {
+            s.raw("lower(o.login) = ").text(org.to_lowercase());
+        });
+    }
     if let Some(before) = params.before {
         c.with(|s| {
             s.raw("e.id < ").i64(before);
