@@ -233,10 +233,11 @@ async fn declining_and_cancelling_leave_attribution_alone() {
             .json(&json!({"login": "mona"}));
         async move { req.send().await }
     };
-    // Site admins may reclaim any mannequin.
+    // Site admins may reclaim any mannequin; the reclaim belongs to the
+    // organization whose import created it (so it stays listed there).
     let res = invite().await;
     res.assert_status(201);
-    assert_eq!(res.json()["organization"], Value::Null);
+    assert_eq!(res.json()["organization"]["login"], "acme");
     let rid = res.json()["id"].as_i64().unwrap();
     let res = app
         .post(&format!("/_bgh/user/mannequin-reclaims/{rid}/decline"))
@@ -258,6 +259,7 @@ async fn declining_and_cancelling_leave_attribution_alone() {
         .send()
         .await
         .assert_status(422);
+    // Declined and withdrawn invitations moved nothing.
     assert_eq!(
         count(
             app,
@@ -266,4 +268,20 @@ async fn declining_and_cancelling_leave_attribution_alone() {
         .await,
         1
     );
+    // A site admin's accepted reclaim keeps the mannequin in the org list.
+    let res = invite().await;
+    res.assert_status(201);
+    let rid = res.json()["id"].as_i64().unwrap();
+    app.post(&format!("/_bgh/user/mannequin-reclaims/{rid}/accept"))
+        .auth(&u.mona)
+        .send()
+        .await
+        .assert_status(200);
+    let listed = app
+        .get("/_bgh/orgs/acme/mannequins")
+        .auth(&u.owner)
+        .send()
+        .await
+        .json();
+    assert_eq!(listed[0]["reclaimed_by"]["login"], "mona", "{listed:#}");
 }

@@ -9,6 +9,7 @@ import {
   BlockedIcon,
   CodeIcon,
   DeviceDesktopIcon,
+  DownloadIcon,
   GearIcon,
   KeyAsteriskIcon,
   KeyIcon,
@@ -47,6 +48,7 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
       { id: 'keys', label: 'SSH and GPG keys', icon: KeyIcon },
       { id: 'blocked', label: 'Blocked users', icon: BlockedIcon },
       { id: 'organizations', label: 'Organizations', icon: OrganizationIcon },
+      { id: 'reclaims', label: 'Imported contributions', icon: DownloadIcon },
     ],
   },
   {

@@ -60,8 +60,9 @@ crates/
                            deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
-  bgh-import/              metadata importer (GitHub/GHES issues, labels,
-                           milestones, releases, users/mannequins)
+  bgh-import/              metadata importer (GitHub/GHES/GitLab issues, pull
+                           requests, reviews, labels, milestones, releases,
+                           wiki, repo config, users/mannequins + reclaim)
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -141,7 +142,8 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-org --login --admin <user> [--name]`,
 `bgh admin create-token --user <login> [--scopes a,b] [--name]
 [--expires-in-days]` (prints a PAT), `bgh import github --repo O/R --owner
-<login> [--api-url] [--user-map FILE] …` / `bgh import resume --id N`
+<login> [--api-url] [--user-map FILE] …` / `bgh import gitlab --repo
+GROUP/PROJECT --owner <login> …` / `bgh import resume --id N`
 (metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
 the log), `bgh healthcheck` (probes `/healthz`
 on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
@@ -520,14 +522,21 @@ Site-level account changes also emit `UserAccountChanged` /
   `metadata-import`, which webhooks, notifications, activity and
   commit-keyword closing skip), settings, labels, milestones and issues
   with **original numbers**, comments, reactions, key events, releases with
-  assets and optionally teams. Writes go through internal insert APIs
-  (`bgh_issues::import`, `bgh_releases::import`) that keep source authors
+  assets and optionally teams; P51 adds pull requests with their numbers,
+  state, merge data and `refs/pull/{n}/head` (fetched, by SHA when the
+  branch is gone), reviews, review comments, the wiki, webhooks (imported
+  disabled), branch protection, rulesets, and GitLab (REST v4) as a source.
+  Writes go through internal insert APIs (`bgh_issues::import`,
+  `bgh_pulls::import`, `bgh_releases::import`) that keep source authors
   and timestamps and emit no domain events (sync actions only). Each object
   commits with its `import_mappings` row (resumable, idempotent); source
   users map by verified email, then a login map, else to a non-login
-  **mannequin** (`users.mannequin`). The source client is SSRF-pinned, uses
-  conditional requests and backs off on rate limits. Details:
-  `docs/packages/p18-metadata-import.md`.
+  **mannequin** (`users.mannequin`); an org owner or site admin invites the
+  real person to reclaim one, and on acceptance every `users` foreign key
+  (found in the catalog) moves to them (`mannequin_reclaims`). The source
+  client is SSRF-pinned, uses conditional requests and backs off on rate
+  limits. Details: `docs/packages/p18-metadata-import.md`,
+  `docs/packages/p51-metadata-import-2.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.

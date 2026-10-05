@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiUrlFor, parseUserMap, sourceRepoFrom } from './metadataImports';
+import { apiUrlFor, gitlabApiUrlFor, gitlabPathFrom, parseUserMap, sourceRepoFrom } from './metadataImports';
 
 describe('metadata import helpers', () => {
   it('parses login maps', () => {
@@ -19,5 +19,14 @@ describe('metadata import helpers', () => {
   it('extracts owner/name', () => {
     expect(sourceRepoFrom('https://github.com/octo-org/hello-world.git')).toBe('octo-org/hello-world');
     expect(sourceRepoFrom(' octo-org/hello-world ')).toBe('octo-org/hello-world');
+  });
+
+  it('derives GitLab API URLs and project paths', () => {
+    expect(gitlabApiUrlFor('')).toBe('https://gitlab.com/api/v4');
+    expect(gitlabApiUrlFor('gitlab.example/')).toBe('https://gitlab.example/api/v4');
+    expect(gitlabApiUrlFor('https://gitlab.example/api/v4')).toBe('https://gitlab.example/api/v4');
+    expect(gitlabPathFrom('https://gitlab.com/group/sub/proj.git')).toBe('group/sub/proj');
+    expect(gitlabPathFrom('https://gitlab.com/group/proj/-/merge_requests/3')).toBe('group/proj');
+    expect(gitlabPathFrom('group/proj')).toBe('group/proj');
   });
 });

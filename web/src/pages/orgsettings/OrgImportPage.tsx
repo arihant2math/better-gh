@@ -1,14 +1,15 @@
 import { refresh, useResource } from '../../api/cache';
 import { listOrgImports } from '../../api/metadataImports';
 import { ErrorState, PageHeader, Panel } from '../../components/admin/kit';
-import { navigate, useParams } from '../../router';
+import { Link, navigate, useParams } from '../../router';
 import { Skeleton } from '../../ui/EmptyState';
 import { ImportForm } from '../imports/ImportForm';
 import { ImportList } from '../imports/ImportList';
+import s from '../imports/imports.module.css';
 import { OwnerRequired, useOrgAccess } from './common';
 import { orgSettingsPath } from './OrgSettingsLayout';
 
-/** `/organizations/:org/settings/import`: import GitHub repositories into the organization. */
+/** `/organizations/:org/settings/import`: import GitHub / GitLab repositories into the organization. */
 export default function OrgImportPage() {
   const { org = '' } = useParams<{ org: string }>();
   const access = useOrgAccess(org);
@@ -19,8 +20,13 @@ export default function OrgImportPage() {
   return (
     <>
       <PageHeader
-        title="Import from GitHub"
-        description="Bring a repository from GitHub.com or GitHub Enterprise Server into this organization with its issues, labels, milestones, releases and teams. Unmatched users become mannequins."
+        title="Import a repository"
+        description="Bring a repository from GitHub.com, GitHub Enterprise Server or GitLab into this organization with its issues, pull requests and reviews, labels, milestones, releases, wiki and teams. Unmatched users become mannequins you can reclaim."
+        actions={
+          <Link to={orgSettingsPath(org, 'mannequins')} className={s.headerLink}>
+            Mannequins
+          </Link>
+        }
       />
       <Panel title="New import">
         <ImportForm owner={org} onCreated={(imp) => navigate(`${orgSettingsPath(org, 'import')}/${imp.id}`)} />

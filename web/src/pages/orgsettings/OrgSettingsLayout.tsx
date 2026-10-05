@@ -17,6 +17,7 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'hooks', label: 'Webhooks', icon: WebhookIcon, keys: 'g w', group: 'Code, planning, and automation' },
   { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },
   { id: 'import', label: 'Import', icon: DownloadIcon, keys: 'g p' },
+  { id: 'mannequins', label: 'Mannequins', icon: PersonIcon, keys: 'g n' },
   { id: 'installations', label: 'GitHub Apps', icon: AppsIcon, keys: 'g i', group: 'Third-party Access' },
   { id: 'apps', label: 'Developer settings', icon: CodeIcon, keys: 'g d' },
 ];

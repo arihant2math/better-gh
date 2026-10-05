@@ -66,32 +66,36 @@ async fn mannequin_orgs(db: impl sqlx::PgExecutor<'_>, mannequin: i64) -> ApiRes
     Ok(sqlx::query_scalar(
         "SELECT i.owner_id FROM import_mappings m JOIN imports i ON i.id = m.import_id
           WHERE m.source_type = 'user' AND m.local_id = $1
+           AND EXISTS (SELECT 1 FROM users o WHERE o.id = i.owner_id AND o.type = 'Organization')
          UNION
-         SELECT org_id FROM mannequin_reclaims WHERE mannequin_id = $1 AND org_id IS NOT NULL",
+         SELECT org_id FROM mannequin_reclaims WHERE mannequin_id = $1 AND org_id IS NOT NULL
+         ORDER BY 1",
     )
     .bind(mannequin)
     .fetch_all(db)
     .await?)
 }
 
-/// May `user` reclaim `mannequin`? Returns the organization acting (None
-/// for site administrators).
+/// May `user` reclaim `mannequin`? Returns the organization the reclaim
+/// belongs to: one the user owns, else (site administrators) the first
+/// organization whose import created it, else none.
 async fn may_reclaim(
     state: &AppState,
     user: &db::User,
     mannequin: i64,
 ) -> ApiResult<Option<Option<i64>>> {
-    if user.site_admin {
-        return Ok(Some(None));
-    }
-    for org in mannequin_orgs(&state.db, mannequin).await? {
-        if bgh_core::perms::org_role(&state.db, org, user.id)
+    let orgs = mannequin_orgs(&state.db, mannequin).await?;
+    for org in &orgs {
+        if bgh_core::perms::org_role(&state.db, *org, user.id)
             .await?
             .as_deref()
             == Some("admin")
         {
-            return Ok(Some(Some(org)));
+            return Ok(Some(Some(*org)));
         }
+    }
+    if user.site_admin {
+        return Ok(Some(orgs.first().copied()));
     }
     Ok(None)
 }

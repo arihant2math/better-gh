@@ -5,13 +5,13 @@ import { ErrorState, PageHeader, Panel } from '../../components/admin/kit';
 import { navigate } from '../../router';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { DownloadIcon, PlusIcon, SyncIcon } from '../../ui/icons';
+import { DownloadIcon, PersonIcon, PlusIcon, SyncIcon } from '../../ui/icons';
 import { ImportForm } from '../imports/ImportForm';
 import { ImportList } from '../imports/ImportList';
 
 const KEY = 'admin:metadata-imports';
 
-/** `/site-admin/imports`: GitHub / GHES metadata imports into any owner. */
+/** `/site-admin/imports`: GitHub / GHES / GitLab metadata imports into any owner. */
 export default function ImportsPage() {
   const [creating, setCreating] = useState(false);
   const list = useResource(KEY, listAdminImports);
@@ -20,9 +20,12 @@ export default function ImportsPage() {
     <>
       <PageHeader
         title="Repository imports"
-        description="Import repositories from GitHub.com or GitHub Enterprise Server with their issues, labels, milestones, releases and users."
+        description="Import repositories from GitHub.com, GitHub Enterprise Server or GitLab with their issues, pull requests, reviews, labels, milestones, releases, wikis and users."
         actions={
           <>
+            <Button size="sm" leadingIcon={PersonIcon} onClick={() => navigate('/site-admin/mannequins')}>
+              Mannequins
+            </Button>
             <Button size="sm" leadingIcon={SyncIcon} onClick={reload}>
               Refresh
             </Button>
