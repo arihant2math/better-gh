@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { Comment, Issue, ReactionContent } from '../../sync/models';
 import { toggleReaction } from '../../sync/mutations';
 import { viewerReactions } from '../../sync/viewerReactions';
@@ -42,27 +42,49 @@ export const ReactionPicker = observer(function ReactionPicker({ target, disable
         <SmileyIcon size={16} />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref} placement="top-start" className={styles.picker} role="menu" aria-label="Reactions">
-        {REACTIONS.map((r) => (
-          <button
-            key={r.content}
-            type="button"
-            role="menuitemcheckbox"
-            aria-checked={mine.includes(r.content)}
-            aria-label={r.label}
-            title={r.label}
-            className={cx(styles.pick, mine.includes(r.content) && styles.pickOn)}
-            onClick={() => {
-              toggleReaction(target, r.content);
-              setOpen(false);
-            }}
-          >
-            {r.emoji}
-          </button>
-        ))}
+        <PickerGrid
+          mine={mine}
+          onPick={(c) => {
+            toggleReaction(target, c);
+            setOpen(false);
+          }}
+        />
       </Popover>
     </>
   );
 });
+
+/** The 8 emoji; focuses the first on open, ←/→ move, Enter/Space toggle. */
+function PickerGrid({ mine, onPick }: { mine: readonly ReactionContent[]; onPick: (c: ReactionContent) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => ref.current?.querySelector<HTMLElement>('button')?.focus(), []);
+  const onKey = (e: KeyboardEvent) => {
+    const buttons = [...(ref.current?.querySelectorAll<HTMLElement>('button') ?? [])];
+    const i = buttons.indexOf(document.activeElement as HTMLElement);
+    const d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    buttons[(i + d + buttons.length) % buttons.length]?.focus();
+  };
+  return (
+    <div ref={ref} className={styles.grid} onKeyDown={onKey}>
+      {REACTIONS.map((r) => (
+        <button
+          key={r.content}
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={mine.includes(r.content)}
+          aria-label={r.label}
+          title={r.label}
+          className={cx(styles.pick, mine.includes(r.content) && styles.pickOn)}
+          onClick={() => onPick(r.content)}
+        >
+          {r.emoji}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** Reaction pills with counts; the viewer's own are highlighted and toggle on click. */
 export const ReactionBar = observer(function ReactionBar({ target, disabled }: { target: Target; disabled?: boolean }) {

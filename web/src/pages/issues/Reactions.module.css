@@ -30,9 +30,12 @@
 }
 
 .picker {
+  padding: 4px;
+}
+
+.grid {
   display: flex;
   gap: 2px;
-  padding: 4px;
 }
 
 .pick {

@@ -42,6 +42,7 @@ import {
   SkipIcon,
   TagIcon,
   TrashIcon,
+  TriangleDownIcon,
   UnlockIcon,
   XCircleFillIcon,
   type Icon,
@@ -146,7 +147,7 @@ export const Timeline = observer(function Timeline({
         anchorId="issue-body"
         authorId={issue.authorId}
         createdAt={issue.createdAt}
-        association="OWNER"
+        association="NONE"
         body={issue.body}
         repo={repoFullName}
         repoId={issue.repoId}
@@ -262,7 +263,8 @@ const CommentCard = observer(function CommentCard({
             {edited && ' · edited'}
           </span>
           <span className={styles.spacer} />
-          {association !== 'NONE' && <span className={styles.assoc}>{association === 'OWNER' && isAuthor ? 'Author' : association.toLowerCase()}</span>}
+          {isAuthor && <span className={styles.assoc}>Author</span>}
+          {association !== 'NONE' && <span className={styles.assoc}>{association.toLowerCase().replace(/_/g, ' ')}</span>}
           <IconButton ref={menuRef} icon={KebabHorizontalIcon} label="Comment actions" size="sm" onClick={() => setMenuOpen((o) => !o)} disabled={pending} />
           <Menu
             open={menuOpen}
@@ -696,7 +698,7 @@ const CloseButton = observer(function CloseButton({ issue, body, onDone }: { iss
       <Button leadingIcon={IssueClosedIcon} onClick={() => close('completed')}>
         {body.trim() ? 'Close with comment' : 'Close issue'}
       </Button>
-      <IconButton ref={ref} icon={KebabHorizontalIcon} variant="secondary" label="Close with reason" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
+      <IconButton ref={ref} icon={TriangleDownIcon} variant="secondary" label="Close with reason" aria-expanded={open} onClick={() => setOpen((o) => !o)} />
       <Menu
         open={open}
         onClose={() => setOpen(false)}

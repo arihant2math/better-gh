@@ -21,6 +21,9 @@ import { toast } from '../../../ui/Toast';
 import { dropdownOptions, fieldKey, formToMarkdown, initialValues, missingRequired, type FormValues } from './issueForm';
 import styles from './NewIssue.module.css';
 
+/** Templates are addressed by basename in URLs (`?template=bug_report.yml`), like GitHub. */
+const templateId = (t: IssueTemplate) => t.filename.split('/').pop() ?? t.filename;
+
 /** `/:owner/:repo/issues/new/choose` (chooser) and `/:owner/:repo/issues/new[?template=…]` (form). */
 export default observer(function NewIssuePage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
@@ -71,7 +74,7 @@ function Chooser({ repo, data, loading, failed }: { repo: Repo; data: IssueTempl
               </div>
             ))
           : templates.map((t) => (
-              <Link key={t.filename} to={`${base}?template=${encodeURIComponent(t.filename)}`} className={styles.choice} role="listitem">
+              <Link key={t.filename} to={`${base}?template=${encodeURIComponent(templateId(t))}`} className={styles.choice} role="listitem">
                 <span className={styles.choiceIcon}>{t.type === 'form' ? <IssueOpenedIcon size={16} /> : <FileIcon size={16} />}</span>
                 <span className={styles.choiceText}>
                   <strong>{t.name}</strong>
@@ -121,7 +124,7 @@ function Chooser({ repo, data, loading, failed }: { repo: Repo; data: IssueTempl
 const NewIssueForm = observer(function NewIssueForm({ repo, templates, loading }: { repo: Repo; templates: IssueTemplate[]; loading: boolean }) {
   const q = useQuery();
   const templateName = q.get('template');
-  const template = templateName ? templates.find((t) => t.filename === templateName) : undefined;
+  const template = templateName ? templates.find((t) => templateId(t) === templateName || t.filename === templateName) : undefined;
   if (templateName && loading) {
     return (
       <div className={styles.page}>

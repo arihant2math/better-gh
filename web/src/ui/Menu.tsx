@@ -225,6 +225,9 @@ function SelectPanelBody({
   const canCreate = !!onCreate && q !== '' && !items.some((i) => i.text.toLowerCase() === q.toLowerCase());
   const { active, setActive, onKeyDown } = useActiveIndex(filtered.length + (canCreate ? 1 : 0), query);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Not `autoFocus`: that runs before the popover is shown (top layer), when focus can't land.
+  useEffect(() => inputRef.current?.focus(), []);
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [active]);
@@ -244,7 +247,7 @@ function SelectPanelBody({
       <div className={styles.panelTitle}>{title}</div>
       <div className={styles.panelFilter}>
         <Input
-          autoFocus
+          ref={inputRef}
           size="sm"
           value={query}
           placeholder={placeholder}

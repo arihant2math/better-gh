@@ -87,6 +87,7 @@ export {
   TagIcon,
   TasklistIcon,
   TrashIcon,
+  TriangleDownIcon,
   UnlockIcon,
   XCircleFillIcon,
   XIcon,
