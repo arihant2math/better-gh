@@ -27,6 +27,7 @@ pub mod scoped;
 pub mod server;
 pub mod services;
 pub mod trigger;
+pub mod ui;
 pub mod web;
 pub mod workflow;
 
@@ -278,7 +279,7 @@ pub fn router() -> Router<AppState> {
 
 /// Non-API routes (`/_bgh/actions/...`).
 pub fn web_router() -> Router<AppState> {
-    web::routes()
+    web::routes().merge(ui::routes())
 }
 
 /// Background jobs, event listeners and services.
