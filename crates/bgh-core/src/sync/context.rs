@@ -12,8 +12,8 @@
 //! `client_tx()` is `None` and nothing is noted.
 
 use std::future::Future;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use uuid::Uuid;
 
@@ -31,6 +31,9 @@ tokio::task_local! {
 pub struct RequestSync {
     client_tx: Option<Uuid>,
     max_sync_id: AtomicI64,
+    /// Set when the caller is an Actions job token: the user who triggered
+    /// the workflow run (recorded in audit entries).
+    actions_actor: OnceLock<i64>,
 }
 
 impl RequestSync {
@@ -38,6 +41,7 @@ impl RequestSync {
         Arc::new(Self {
             client_tx,
             max_sync_id: AtomicI64::new(0),
+            actions_actor: OnceLock::new(),
         })
     }
 
@@ -64,6 +68,20 @@ pub fn client_tx() -> Option<Uuid> {
 /// Record that sync action `id` was committed by the current request.
 pub fn note_committed(id: i64) {
     let _ = REQUEST.try_with(|r| r.max_sync_id.fetch_max(id, Ordering::SeqCst));
+}
+
+/// Note that the current request is made by an Actions job token whose run
+/// was triggered by `user_id` (set by the auth layer).
+pub fn note_actions_actor(user_id: i64) {
+    let _ = REQUEST.try_with(|r| r.actions_actor.set(user_id));
+}
+
+/// The triggering actor noted by [`note_actions_actor`], if any.
+pub fn actions_actor() -> Option<i64> {
+    REQUEST
+        .try_with(|r| r.actions_actor.get().copied())
+        .ok()
+        .flatten()
 }
 
 /// Parse an `X-Client-Tx` header value (a UUID).

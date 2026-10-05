@@ -155,6 +155,9 @@ pub async fn authenticate(
     {
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
+    if let Some(actor) = ctx.as_ref().and_then(crate::perms::job_token_actor) {
+        crate::sync::context::note_actions_actor(actor);
+    }
     Ok(ctx)
 }
 

@@ -326,8 +326,10 @@ pub struct ActionsConfig {
     pub enabled: bool,
     /// `BGH_ACTIONS_BUILTIN_RUNNER` (default true). Run jobs in-process.
     pub builtin_runner: bool,
-    /// `BGH_ACTIONS_EXECUTOR`: `auto` (default: docker when usable, else
-    /// shell), `docker` or `shell` (runs steps directly on the host).
+    /// `BGH_ACTIONS_EXECUTOR`: `auto` (default: docker when usable; the
+    /// built-in runner takes no jobs otherwise), `docker` or `shell` (runs
+    /// steps directly on the server host: trusted single-tenant installs
+    /// only).
     pub executor: String,
     /// `BGH_ACTIONS_DEFAULT_IMAGE` (default `catthehacker/ubuntu:act-latest`):
     /// image for jobs without `container:` under the docker executor.
@@ -336,7 +338,8 @@ pub struct ActionsConfig {
     pub max_jobs: usize,
     /// `BGH_ACTIONS_RUNNER_LABELS` (comma separated): labels of the built-in runner.
     pub runner_labels: Vec<String>,
-    /// `BGH_ACTIONS_WORK_DIR` (default `{data_dir}/actions/work`).
+    /// `BGH_ACTIONS_WORK_DIR` (default `{tmp}/bgh-actions-work`; never
+    /// inside `data_dir`).
     pub work_dir: Option<PathBuf>,
     /// `BGH_ACTIONS_SECRET_KEY`: base64 of 32 bytes encrypting secrets at
     /// rest. When unset, a key is generated in `{data_dir}/actions/server.key`.

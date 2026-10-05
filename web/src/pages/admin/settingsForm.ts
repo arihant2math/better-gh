@@ -20,6 +20,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'auth_providers', title: 'Authentication', anchor: 'authentication' },
   { key: 'smtp', title: 'Email (SMTP)', anchor: 'smtp' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
+  { key: 'actions', title: 'Actions', anchor: 'actions' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -102,6 +103,7 @@ export interface SettingsForm {
   };
   maintenance: { enabled: boolean; message: string; scheduled: string };
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
+  actions: SiteSettings['actions'];
 }
 
 /** An optional megabyte limit: on/off plus the typed value. */
@@ -232,6 +234,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       warn_object: limitForm(s.git.warn_object_size_mb, 50),
       max_push: limitForm(s.git.max_push_size_mb, 2048),
     },
+    actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
   };
 }
 
@@ -438,6 +441,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           warn_object_size_mb: limitValue(f.git.warn_object),
           max_push_size_mb: limitValue(f.git.max_push),
         };
+        break;
+      case 'actions':
+        out.actions = { ...f.actions };
         break;
     }
   }

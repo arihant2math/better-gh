@@ -9,7 +9,7 @@
 //!
 //! Storage: one `site_settings` row per section (`signup`, `repositories`,
 //! `organizations`, `announcement`, `rate_limits`, `auth_providers`, `smtp`,
-//! `maintenance`, `git`), each a JSON object. Missing rows or fields take the
+//! `maintenance`, `git`, `actions`), each a JSON object. Missing rows or fields take the
 //! defaults below, so new fields never need a migration.
 //!
 //! Also here: the maintenance-mode middleware (503 for everyone but site
@@ -376,6 +376,28 @@ pub struct MaintenanceSettings {
     pub scheduled_at: Option<DateTime<Utc>>,
 }
 
+/// GitHub Actions defaults (GHES enterprise policies; repo and org
+/// overrides come later).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActionsSettings {
+    /// Default `GITHUB_TOKEN` permissions for workflows without
+    /// `permissions:`: `read` (contents and packages read, GitHub's
+    /// restricted default) or `write` (read/write to every category).
+    pub default_workflow_permissions: String,
+    /// Whether `GITHUB_TOKEN` may approve pull request reviews.
+    pub can_approve_pull_request_reviews: bool,
+}
+
+impl Default for ActionsSettings {
+    fn default() -> Self {
+        Self {
+            default_workflow_permissions: "read".into(),
+            can_approve_pull_request_reviews: false,
+        }
+    }
+}
+
 /// Scheduled, fork-network-aware git maintenance (`repos.maintenance`
 /// service) and archive-cache housekeeping.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -433,6 +455,7 @@ pub struct SiteSettings {
     pub maintenance: MaintenanceSettings,
     pub git_maintenance: GitMaintenanceSettings,
     pub git: GitSettings,
+    pub actions: ActionsSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -447,6 +470,7 @@ pub const SECTIONS: &[&str] = &[
     "maintenance",
     "git_maintenance",
     "git",
+    "actions",
 ];
 
 impl SiteSettings {
@@ -527,6 +551,15 @@ impl SiteSettings {
             "maintenance" => self.maintenance = serde_json::from_value(section)?,
             "git_maintenance" => self.git_maintenance = serde_json::from_value(section)?,
             "git" => self.git = serde_json::from_value(section)?,
+            "actions" => {
+                let a: ActionsSettings = serde_json::from_value(section)?;
+                if !matches!(a.default_workflow_permissions.as_str(), "read" | "write") {
+                    return Err(serde::de::Error::custom(
+                        "default_workflow_permissions must be read or write",
+                    ));
+                }
+                self.actions = a;
+            }
             _ => {}
         }
         Ok(())

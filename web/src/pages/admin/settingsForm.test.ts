@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SiteSettings } from './api';
-import { toForm, toPatch, validate } from './settingsForm';
+import { dirtySections, toForm, toPatch, validate } from './settingsForm';
 
 const settings: SiteSettings = {
   signup: { policy: 'open', allowed_email_domains: [] },
@@ -56,6 +56,7 @@ const settings: SiteSettings = {
     archive_cache_max_age_days: 7,
     archive_cache_max_size_mb: 2048,
   },
+  actions: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
 };
 
 describe('git settings form', () => {
@@ -101,5 +102,21 @@ describe('authentication settings form', () => {
     f.auth_providers.ldap.user_filter = 'objectClass=person';
     expect(validate(f)['auth_providers.ldap.host']).toMatch(/without a scheme/);
     expect(validate(f)['auth_providers.ldap.user_filter']).toMatch(/parentheses/);
+  });
+});
+
+describe('actions settings section', () => {
+  it('round-trips the default workflow permissions', () => {
+    const saved = toForm(settings);
+    const draft = { ...saved, actions: { ...saved.actions, default_workflow_permissions: 'write' as const } };
+    expect(dirtySections(draft, saved)).toEqual(['actions']);
+    expect(toPatch(draft, ['actions'])).toEqual({
+      actions: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
+    });
+  });
+
+  it('defaults to read when the server has no actions section', () => {
+    const { actions: _a, ...older } = settings;
+    expect(toForm(older as SiteSettings).actions.default_workflow_permissions).toBe('read');
   });
 });
