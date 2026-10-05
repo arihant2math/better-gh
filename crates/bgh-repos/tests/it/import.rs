@@ -372,6 +372,7 @@ async fn mirror_syncs_and_is_read_only() {
         "{refs:?}"
     );
     assert_eq!(refs, ls_remote(&app, &alice, "alice", "src").await);
+    app.settle_events().await;
     let mut saw_push = false;
     while let Ok(e) = events.try_recv() {
         if let bgh_core::events::Event::Push(p) = &*e {
