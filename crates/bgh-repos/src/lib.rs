@@ -113,4 +113,5 @@ pub fn register(reg: &mut Registry) {
     reg.job(maintenance::pack_refs);
     reg.on_event("repos.pack_refs", maintenance::on_event);
     reg.service("ssh", ssh::service);
+    reg.service("repos.config_upgrade", maintenance::config_upgrade_service);
 }

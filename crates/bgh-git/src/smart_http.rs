@@ -120,20 +120,9 @@ pub async fn info_refs(
     if let Some(p) = &proto {
         envs.push(("GIT_PROTOCOL", p));
     }
-    let dir_s = dir.to_string_lossy().to_string();
-    let out = cmd::run(
-        &store.git_bin,
-        None,
-        &[
-            service.command(),
-            "--stateless-rpc",
-            "--advertise-refs",
-            &dir_s,
-        ],
-        &envs,
-        None,
-    )
-    .await?;
+    let args = advertise_args(service, &dir);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = cmd::run(&store.git_bin, None, &args, &envs, None).await?;
     let v2 =
         service == Service::UploadPack && proto.as_deref().is_some_and(|p| p.contains("version=2"));
     let mut body = BytesMut::with_capacity(out.len() + 64);
@@ -340,27 +329,124 @@ pub struct PushPolicy {
     /// (`.github/workflows/**`): the rejection message, with
     /// [`WORKFLOW_PATH_PLACEHOLDER`] standing for the offending path.
     pub workflow_denied: Option<String>,
+    /// Site-wide limits (size, quota, fsck) applied to every push.
+    pub limits: PushLimits,
+}
+
+/// Limits of [`PushPolicy`] that don't depend on the ref (site settings
+/// `git.*` and storage quotas, filled in by the caller).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PushLimits {
+    /// `receive.fsckObjects` override (`None`: the repository config, on).
+    pub fsck: Option<bool>,
+    /// Blobs larger than this (bytes) reject the push with GH001.
+    pub max_blob_bytes: Option<u64>,
+    /// Blobs larger than this (bytes) print a warning.
+    pub warn_blob_bytes: Option<u64>,
+    /// `receive.maxInputSize` (bytes of the incoming pack).
+    pub max_input_bytes: Option<u64>,
+    /// Remaining storage quota (KB); the quarantined objects must fit.
+    pub quota_remaining_kb: Option<i64>,
+    /// Message printed when the quota check fails.
+    pub quota_message: Option<String>,
 }
 
 /// Placeholder for the file path in [`PushPolicy::workflow_denied`].
 pub const WORKFLOW_PATH_PLACEHOLDER: &str = "@PATH@";
 
 impl PushPolicy {
+    /// Whether the policy needs no `pre-receive` hook.
     pub fn is_empty(&self) -> bool {
         self.no_force_push.is_empty()
             && self.linear_history.is_empty()
             && self.workflow_denied.is_none()
+            && self.limits.max_blob_bytes.is_none()
+            && self.limits.warn_blob_bytes.is_none()
+            && self.limits.quota_remaining_kb.is_none()
+    }
+
+    /// The same policy with `limits`.
+    pub fn with_limits(mut self, limits: PushLimits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
-/// The `pre-receive` hook enforcing [`PushPolicy`] (refs are passed in
-/// `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`, space separated; the workflow-file
-/// rejection message in `BGH_WORKFLOW_DENIED`).
+/// `-c` overrides every `git receive-pack` runs with, whatever the
+/// repository's config says (defense in depth for repositories whose
+/// config predates [`crate::storage::CONFIG_VERSION`]).
+fn receive_overrides(c: &mut tokio::process::Command) {
+    for prefix in crate::storage::HIDDEN_REF_PREFIXES {
+        c.arg("-c").arg(format!("receive.hideRefs={prefix}"));
+    }
+}
+
+/// `-c` arguments of [`receive_overrides`] for [`cmd::run`].
+fn receive_override_args() -> Vec<String> {
+    crate::storage::HIDDEN_REF_PREFIXES
+        .iter()
+        .flat_map(|p| ["-c".to_string(), format!("receive.hideRefs={p}")])
+        .collect()
+}
+
+/// Message of the hidden-ref rejection (git's own wording).
+pub const HIDDEN_REF_REASON: &str = "deny updating a hidden ref";
+
+/// The `pre-receive` hook enforcing [`PushPolicy`]. Inputs (environment):
+///
+/// * `BGH_QUOTA_KB` / `BGH_QUOTA_MESSAGE`: the quarantined objects must
+///   fit in the remaining storage quota.
+/// * `BGH_MAX_BLOB` / `BGH_WARN_BLOB`: blob size limits in bytes over the
+///   newly pushed objects (`rev-list --objects` + `cat-file
+///   --batch-check`), with GitHub's GH001 wording.
+/// * `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`: space separated refs.
+/// * `BGH_WORKFLOW_DENIED`: rejection message (with
+///   [`WORKFLOW_PATH_PLACEHOLDER`]) when the pusher may not change
+///   `.github/workflows/**`.
 pub const PRE_RECEIVE_HOOK: &str = r#"#!/bin/sh
-# Installed by Better GitHub: branch protection checks needing the pushed objects.
+# Installed by Better GitHub: push checks needing the pushed objects.
 z=0000000000000000000000000000000000000000
 status=0
+input=$(cat)
+news=""
 while read old new ref; do
+  [ -z "$ref" ] || [ "$new" = "$z" ] || news="$news $new"
+done <<EOF
+$input
+EOF
+if [ -n "$BGH_QUOTA_KB" ] && [ -n "$GIT_QUARANTINE_PATH" ] && [ -d "$GIT_QUARANTINE_PATH" ]; then
+  used=$(du -sk "$GIT_QUARANTINE_PATH" | cut -f1)
+  if [ "${used:-0}" -gt "$BGH_QUOTA_KB" ]; then
+    echo "error: $BGH_QUOTA_MESSAGE" >&2
+    exit 1
+  fi
+fi
+if [ -n "$BGH_MAX_BLOB$BGH_WARN_BLOB" ] && [ -n "$news" ]; then
+  report=$(git rev-list --objects $news --not --all |
+    git cat-file --batch-check='%(objecttype) %(objectsize) %(rest)' |
+    awk -v max="$BGH_MAX_BLOB" -v warn="$BGH_WARN_BLOB" '
+      $1 != "blob" { next }
+      {
+        path = $0; sub(/^[^ ]+ [^ ]+ ?/, "", path)
+        if (max != "" && $2 + 0 > max + 0) {
+          printf "error: File %s is %.2f MB; this exceeds the file size limit of %.2f MB\n", path, $2 / 1048576, max / 1048576
+          big = 1
+        } else if (warn != "" && $2 + 0 > warn + 0) {
+          printf "warning: File %s is %.2f MB; this is larger than the recommended maximum file size of %.2f MB\n", path, $2 / 1048576, warn / 1048576
+          large = 1
+        }
+      }
+      END {
+        lfs = "GH001: Large files detected. You may want to try Git Large File Storage - https://git-lfs.github.com."
+        if (big) { print "error: " lfs; exit 1 }
+        if (large) print "warning: " lfs
+      }')
+  rc=$?
+  [ -n "$report" ] && echo "$report" >&2
+  [ $rc -eq 0 ] || exit 1
+fi
+while read old new ref; do
+  [ -z "$ref" ] && continue
   [ "$new" = "$z" ] && continue
   case " $BGH_NO_FF_REFS " in
     *" $ref "*)
@@ -394,7 +480,9 @@ while read old new ref; do
         status=1
       fi;;
   esac
-done
+done <<EOF
+$input
+EOF
 exit $status
 "#;
 
@@ -550,8 +638,17 @@ where
     };
 
     let mut c = cmd::git(&store.git_bin, None);
+    receive_overrides(&mut c);
+    let limits = &policy.limits;
+    if let Some(fsck) = limits.fsck {
+        c.arg("-c").arg(format!("receive.fsckObjects={fsck}"));
+    }
+    if let Some(max) = limits.max_input_bytes {
+        c.arg("-c").arg(format!("receive.maxInputSize={max}"));
+    }
     if !policy.is_empty() {
         let hooks = ensure_hooks(store).await?;
+        let opt = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
         c.arg("-c")
             .arg(format!("core.hooksPath={}", hooks.display()))
             .env("BGH_NO_FF_REFS", policy.no_force_push.join(" "))
@@ -559,6 +656,22 @@ where
             .env(
                 "BGH_WORKFLOW_DENIED",
                 policy.workflow_denied.as_deref().unwrap_or_default(),
+            )
+            .env("BGH_MAX_BLOB", opt(limits.max_blob_bytes))
+            .env("BGH_WARN_BLOB", opt(limits.warn_blob_bytes))
+            .env(
+                "BGH_QUOTA_KB",
+                limits
+                    .quota_remaining_kb
+                    .map(|n| n.max(0).to_string())
+                    .unwrap_or_default(),
+            )
+            .env(
+                "BGH_QUOTA_MESSAGE",
+                limits
+                    .quota_message
+                    .as_deref()
+                    .unwrap_or("This push would exceed the storage quota."),
             );
     }
     c.arg("receive-pack")
@@ -648,20 +761,25 @@ pub async fn advertise_refs(
     if let Some(p) = protocol {
         envs.push(("GIT_PROTOCOL", p));
     }
-    let dir_s = dir.to_string_lossy().to_string();
-    cmd::run(
-        &store.git_bin,
-        None,
-        &[
-            service.command(),
-            "--stateless-rpc",
-            "--advertise-refs",
-            &dir_s,
-        ],
-        &envs,
-        None,
-    )
-    .await
+    let args = advertise_args(service, &dir);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    cmd::run(&store.git_bin, None, &args, &envs, None).await
+}
+
+/// `git [-c ...] <service> --stateless-rpc --advertise-refs <dir>`
+/// (receive-pack hides the server-only refs, see [`receive_overrides`]).
+fn advertise_args(service: Service, dir: &std::path::Path) -> Vec<String> {
+    let mut args = match service {
+        Service::ReceivePack => receive_override_args(),
+        Service::UploadPack => Vec::new(),
+    };
+    args.extend([
+        service.command().to_string(),
+        "--stateless-rpc".into(),
+        "--advertise-refs".into(),
+        dir.to_string_lossy().into_owned(),
+    ]);
+    args
 }
 
 /// Validate a `GIT_PROTOCOL` value received from a client (SSH env request).

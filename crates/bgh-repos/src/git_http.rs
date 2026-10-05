@@ -16,7 +16,7 @@ use bgh_core::auth::{self, AuthOptions};
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
 use bgh_core::token_permissions::{Access, Category, TokenPermissions};
-use bgh_git::smart_http::{self, PushPolicy, Service};
+use bgh_git::smart_http::{self, PushLimits, PushPolicy, Service};
 use serde::Deserialize;
 
 use crate::jobs::PostReceive;
@@ -96,6 +96,46 @@ async fn git_access(
     Ok((access, auth))
 }
 
+/// Site-wide push limits for `repo` (settings `git.*` and the storage
+/// quota), enforced by the pre-receive hook over HTTP and SSH alike.
+/// Callers first refuse repositories already over quota with
+/// `settings::check_push_quota`.
+pub(crate) async fn push_limits(state: &AppState, repo: &db::Repository) -> ApiResult<PushLimits> {
+    let s = bgh_core::settings::load(state).await?;
+    let mb = |v: Option<i64>| v.filter(|n| *n > 0).map(|n| n as u64 * 1024 * 1024);
+    let quota = bgh_core::settings::quota_headroom(state, repo).await?;
+    Ok(PushLimits {
+        fsck: Some(s.git.fsck_on_push),
+        max_blob_bytes: mb(s.git.max_object_size_mb),
+        warn_blob_bytes: mb(s.git.warn_object_size_mb),
+        max_input_bytes: mb(s.git.max_push_size_mb),
+        quota_message: quota.as_ref().map(|q| {
+            let what = if q.per_repo {
+                "the repository over its size limit"
+            } else {
+                "the repository owner over its storage quota"
+            };
+            format!("This push would put {what} ({} MB).", q.limit_kb / 1024)
+        }),
+        quota_remaining_kb: quota.map(|q| q.remaining_kb),
+    })
+}
+
+/// Refuse a push that only touches server-only refs (`refs/pull/*`,
+/// `refs/bgh/*`) before git sees the pack. Mixed pushes (`git push
+/// --mirror` of a GitHub clone) reach git, whose `receive.hideRefs`
+/// rejects just those refs with the same message.
+pub(crate) fn deny_hidden_refs(updates: &[bgh_git::RefUpdate]) -> Result<(), String> {
+    if !updates.is_empty()
+        && updates
+            .iter()
+            .all(|u| bgh_git::storage::is_hidden_ref(&u.refname))
+    {
+        return Err(smart_http::HIDDEN_REF_REASON.to_string());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct InfoRefsQuery {
     pub service: Option<String>,
@@ -154,7 +194,9 @@ pub async fn receive_pack(
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;
     let pusher = auth.ok_or_else(|| challenge("Authentication required."))?;
+    // Already over quota: 403 before reading the pack.
     bgh_core::settings::check_push_quota(&state, &access.repo).await?;
+    let limits = push_limits(&state, &access.repo).await?;
     let rules = RepoRules::load(&state.db, &access.repo).await?;
     let actor = if rules.is_empty() {
         None
@@ -171,6 +213,7 @@ pub async fn receive_pack(
         |updates| {
             let (state, rules) = (&state, &rules);
             async move {
+                deny_hidden_refs(&updates)?;
                 let mut policy = match &actor {
                     None => PushPolicy::default(),
                     Some(actor) => {
@@ -178,7 +221,7 @@ pub async fn receive_pack(
                     }
                 };
                 policy.workflow_denied = workflow_denied;
-                Ok(policy)
+                Ok(policy.with_limits(limits))
             }
         },
     )

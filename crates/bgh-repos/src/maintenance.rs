@@ -90,3 +90,26 @@ pub async fn pack_refs(state: AppState, job: PackRefs) -> anyhow::Result<()> {
     bgh_git::maintenance::pack_refs(&store, job.repo_id).await?;
     Ok(())
 }
+
+/// Bring every repository's git config (main and wiki repositories) up to
+/// `bgh_git::storage::CONFIG_VERSION` (hidden refs, receive-side fsck,
+/// ...). Idempotent and cheap for repositories already current (one small
+/// file read each); returns `(rewritten, failed)`.
+pub async fn upgrade_repo_configs(state: &AppState) -> anyhow::Result<(usize, usize)> {
+    let store = crate::store(state);
+    Ok(tokio::task::spawn_blocking(move || store.upgrade_all_configs()).await?)
+}
+
+/// Service: run [`upgrade_repo_configs`] once at startup. Several
+/// processes may run it concurrently; each file is replaced atomically and
+/// the rewrite is idempotent, so no lock is needed.
+pub async fn config_upgrade_service(
+    state: AppState,
+    _shutdown: tokio_util::sync::CancellationToken,
+) -> anyhow::Result<()> {
+    let (rewritten, failed) = upgrade_repo_configs(&state).await?;
+    if rewritten > 0 || failed > 0 {
+        tracing::info!(rewritten, failed, "upgraded repository git configs");
+    }
+    Ok(())
+}
