@@ -1,6 +1,7 @@
 # P17 — GitHub Apps, part 1: registration, JWT, installations, installation tokens — status
 
-**In progress.** Branch `bgh/p17-github-apps`. Migration
+**Done.** Branch `bgh/p17-github-apps`, self-integrated into
+`claude/sleepy-cray-9jj0t3`. Migration
 `2900_github_apps.sql` (range 2900–2999).
 
 ## What exists
