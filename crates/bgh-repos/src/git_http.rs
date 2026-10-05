@@ -80,9 +80,9 @@ async fn git_access(
     Ok((access, auth))
 }
 
-/// git shows `text/plain` error bodies to the user (`remote: …`) but not
-/// JSON ones, so refusals (archived, mirror, importing, permission) are
-/// sent as plain text.
+/// git shows the `text/plain` error body of a failed ref advertisement to
+/// the user (`remote: …`) but not JSON ones, so `info/refs` refusals
+/// (archived, mirror, importing, permission) are sent as plain text.
 fn git_response(result: ApiResult<Response>) -> Response {
     match result {
         Ok(r) => r,
@@ -198,15 +198,6 @@ pub async fn upload_pack(
 pub async fn receive_pack(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
-    req: Request,
-) -> Response {
-    git_response(receive_pack_inner(state, owner, repo, req).await)
-}
-
-async fn receive_pack_inner(
-    state: AppState,
-    owner: String,
-    repo: String,
     req: Request,
 ) -> ApiResult<Response> {
     if bgh_wiki::git::wiki_repo_name(&repo).is_some() {

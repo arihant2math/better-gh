@@ -66,7 +66,7 @@ REST `mirror_url` is set on every repository shape; GraphQL
 * **Read-only mirrors**: `RepoAccess::require_not_mirror()` (403 "This
   repository is a mirror and is read-only") on git push over HTTP and SSH,
   the refs/git-data/contents/branches (rename, merge, merge-upstream) APIs,
-  LFS uploads and PR merges. Git-transport 403s are now sent as
+  LFS uploads and PR merges. `info/refs` 403s are now sent as
   `text/plain` so git prints the reason (`remote: …`).
 * **Credentials**: sealed with `bgh_core::secretbox` (XChaCha20-Poly1305,
   the Actions server key: `BGH_ACTIONS_SECRET_KEY` or
