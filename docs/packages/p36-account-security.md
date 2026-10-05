@@ -86,8 +86,10 @@ plaintext rows are encrypted by the `accounts.security` service at start-up
 * `api/webauthn.ts`: base64url + option/credential JSON conversion (no
   dependency), ceremonies, endpoints. `api/client.ts`: a sudo 401 calls the
   installed handler (`setSudoHandler`) and retries once.
-* `app/SudoHost.tsx` + lazy `SudoDialog.tsx` ("Confirm access": password,
-  authentication code, or security key / passkey).
+* Lazy `app/sudoPrompt.tsx` + `SudoDialog.tsx` ("Confirm access":
+  password, authentication code, or security key / passkey), installed by
+  `App` as the client's sudo handler. Initial JS grows by 0.4 KB gzip (the
+  retry hook and the 2FA-setup redirect); everything else is lazy.
 * Settings → Password and authentication: Passkeys and Security keys
   sections (add / rename / delete), site-requirement banner; the app keeps
   users with `twoFactorSetupRequired` on `/settings/security`.
@@ -127,6 +129,13 @@ an index for expiring PATs.
 * `session.rs`: `pending_login` / `PendingLogin::{count_attempt, complete}`
   split out of `verify_pending_two_factor` (same behaviour); `boot.rs`:
   `signed_in` is public, `BootUser.two_factor_setup_required`.
+
+## Gate
+
+Merged `origin/claude/sleepy-cray-9jj0t3` once; `cargo fmt --check`,
+`cargo clippy --workspace --all-targets -D warnings`, `cargo test
+--workspace` (all green), web typecheck / lint / test (427) / build
+(144.3 KB gzip initial) green; `scripts/passkey-smoke.mjs` green.
 
 ## Tests
 
