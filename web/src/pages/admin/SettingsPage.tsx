@@ -23,6 +23,7 @@ import {
   type SettingsForm,
 } from './settingsForm';
 import {
+  ActionsSection,
   AnnouncementSection,
   AuthSection,
   GitSection,
@@ -209,6 +210,8 @@ export default function SettingsPage() {
         return <RetentionSection value={draft.retention} onChange={update('retention')} errors={errors} />;
       case 'maintenance':
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
+      case 'actions':
+        return <ActionsSection value={draft.actions} onChange={update('actions')} errors={errors} />;
     }
   };
 

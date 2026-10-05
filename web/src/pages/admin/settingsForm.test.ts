@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SiteSettings } from './api';
-import { toForm, toPatch, validate } from './settingsForm';
+import { dirtySections, toForm, toPatch, validate } from './settingsForm';
 
 const settings: SiteSettings = {
   signup: { policy: 'open', allowed_email_domains: [] },
@@ -31,6 +31,7 @@ const settings: SiteSettings = {
     archive_cache_max_size_mb: 2048,
   },
   retention: { enabled: true, notifications_days: 150, webhook_payload_days: 30, webhook_delivery_days: 90, activity_days: 0 },
+  actions: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
 };
 
 describe('git settings form', () => {
@@ -71,5 +72,21 @@ describe('retention settings form', () => {
     expect(validate(f)['retention.webhook_payload_days']).toMatch(/outlive/);
     f.retention.notifications_days = { on: true, mb: '0' };
     expect(validate(f)['retention.notifications_days']).toMatch(/between 1 and 36500/);
+  });
+});
+
+describe('actions settings section', () => {
+  it('round-trips the default workflow permissions', () => {
+    const saved = toForm(settings);
+    const draft = { ...saved, actions: { ...saved.actions, default_workflow_permissions: 'write' as const } };
+    expect(dirtySections(draft, saved)).toEqual(['actions']);
+    expect(toPatch(draft, ['actions'])).toEqual({
+      actions: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
+    });
+  });
+
+  it('defaults to read when the server has no actions section', () => {
+    const { actions: _a, ...older } = settings;
+    expect(toForm(older as SiteSettings).actions.default_workflow_permissions).toBe('read');
   });
 });

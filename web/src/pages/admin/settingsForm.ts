@@ -21,6 +21,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'smtp', title: 'Email (SMTP)', anchor: 'smtp' },
   { key: 'retention', title: 'Data retention', anchor: 'retention' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
+  { key: 'actions', title: 'Actions', anchor: 'actions' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -71,6 +72,7 @@ export interface SettingsForm {
   maintenance: { enabled: boolean; message: string; scheduled: string };
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
   retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
+  actions: SiteSettings['actions'];
 }
 
 /** Retention windows (days); off = keep forever (0 in the API). */
@@ -131,6 +133,7 @@ export function emptyOidc(): OidcForm {
 }
 
 export function toForm(s: SiteSettings): SettingsForm {
+  const retention = s.retention ?? { enabled: true, ...RETENTION_DEFAULTS };
   return {
     signup: { policy: s.signup.policy, domains: [...s.signup.allowed_email_domains] },
     repositories: {
@@ -174,12 +177,13 @@ export function toForm(s: SiteSettings): SettingsForm {
       max_push: limitForm(s.git.max_push_size_mb, 2048),
     },
     retention: {
-      enabled: s.retention.enabled,
-      ...(Object.fromEntries(RETENTION_WINDOWS.map((k) => [k, limitForm(s.retention[k] > 0 ? s.retention[k] : null, RETENTION_DEFAULTS[k])])) as Record<
+      enabled: retention.enabled,
+      ...(Object.fromEntries(RETENTION_WINDOWS.map((k) => [k, limitForm(retention[k] > 0 ? retention[k] : null, RETENTION_DEFAULTS[k])])) as Record<
         RetentionWindow,
         Limit
       >),
     },
+    actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
   };
 }
 
@@ -355,6 +359,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           enabled: f.retention.enabled,
           ...(Object.fromEntries(RETENTION_WINDOWS.map((k) => [k, limitValue(f.retention[k]) ?? 0])) as Record<RetentionWindow, number>),
         };
+        break;
+      case 'actions':
+        out.actions = { ...f.actions };
         break;
     }
   }

@@ -75,6 +75,8 @@ jobs:
         run: |
           printf '\033[32m✔ formatting\033[0m \033[1;33mok\033[0m\n'
           echo "::notice title=Lint::All files formatted"
+      - name: Environment
+        run: env | sort
   build:
     needs: lint
     runs-on: ubuntu-latest
@@ -152,6 +154,19 @@ for _ in $(seq 1 180); do
   sleep 1
 done
 [[ $st == completed ]] || { tail -n 40 "$WORK/server.log" >&2; ts_die "push run did not complete (status: $st)"; }
+
+# Steps must not see the server's environment (P8 runner isolation).
+lint_job="$(api "$API_BASE/api/v3/repos/$TS_LOGIN/$REPO/actions/runs" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["workflow_runs"][0]["id"])')"
+lint_job="$(api "$API_BASE/api/v3/repos/$TS_LOGIN/$REPO/actions/runs/$lint_job/jobs" |
+  python3 -c 'import json,sys; print(next(j["id"] for j in json.load(sys.stdin)["jobs"] if j["name"] == "lint"))')"
+lint_log="$(ts_curl -fL -H "authorization: token $TS_TOKEN" "$API_BASE/api/v3/repos/$TS_LOGIN/$REPO/actions/jobs/$lint_job/logs")" ||
+  ts_die "fetching the lint job log failed"
+grep -q 'GITHUB_REPOSITORY=' <<<"$lint_log" || ts_die "the env step printed nothing"
+if grep -E 'DATABASE_URL|REDIS_URL|BGH_|SMTP' <<<"$lint_log" >&2; then
+  ts_die "server environment leaked into a workflow step"
+fi
+ts_log "step environment is isolated"
 
 mkdir -p "$SHOTS"
 PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/opt/pw-browsers}" \

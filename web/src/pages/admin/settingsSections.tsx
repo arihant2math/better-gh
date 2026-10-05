@@ -673,3 +673,32 @@ export function MaintenanceSection({ value, onChange, errors, onEnable }: Props<
     </div>
   );
 }
+
+export function ActionsSection({ value, onChange }: Props<'actions'>) {
+  return (
+    <div className={s.sectionBody}>
+      <RadioCards
+        name="actions-default-permissions"
+        label="Default GITHUB_TOKEN permissions"
+        value={value.default_workflow_permissions}
+        onChange={(default_workflow_permissions) => onChange({ default_workflow_permissions })}
+        options={[
+          {
+            value: 'read',
+            label: 'Read repository contents and packages',
+            description: 'Workflows without a permissions: key can only read. Recommended.',
+          },
+          {
+            value: 'write',
+            label: 'Read and write',
+            description: 'Workflows without a permissions: key get write access to every category.',
+          },
+        ]}
+      />
+      <p className={styles.subtle} style={{ margin: 0 }}>
+        Workflows can always narrow or widen this with <code>permissions:</code>. Tokens of pull requests from forks are always read-only, and no token can change
+        workflow files.
+      </p>
+    </div>
+  );
+}
