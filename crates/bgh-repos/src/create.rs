@@ -8,7 +8,7 @@ use bgh_core::models::api::Repository;
 use bgh_core::perms::{self, RepoAccess};
 use bgh_core::prelude::*;
 use bgh_core::sync;
-use bgh_git::write::{self, CommitRequest, FileChange, Identity};
+use bgh_git::write::{self, CommitRequest, FileChange};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -107,26 +107,6 @@ fn wants_private(body: &CreateRepoBody) -> bool {
         Some(v) => v != "public",
         None => body.private.unwrap_or(false),
     }
-}
-
-async fn noreply_identity(state: &AppState, user: &db::User) -> ApiResult<Identity> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM user_emails WHERE user_id = $1 AND is_primary")
-            .bind(user.id)
-            .fetch_optional(&state.db)
-            .await?;
-    let email = email.unwrap_or_else(|| {
-        format!(
-            "{}+{}@users.noreply.{}",
-            user.id,
-            user.login,
-            state.config.hostname()
-        )
-    });
-    Ok(Identity::new(
-        user.name.clone().unwrap_or_else(|| user.login.clone()),
-        email,
-    ))
 }
 
 async fn create(
@@ -273,7 +253,7 @@ async fn finish_create(
     auto_init: bool,
 ) -> ApiResult<db::Repository> {
     if auto_init {
-        let author = noreply_identity(state, &auth.user).await?;
+        let author = crate::identity::default_identity(state, &auth.user).await?;
         let mut readme = format!("# {}\n", repo.name);
         if let Some(d) = &repo.description {
             readme.push_str(&format!("\n{d}\n"));

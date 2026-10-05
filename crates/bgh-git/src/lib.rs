@@ -12,7 +12,9 @@
 //! the HTTP routes and performs authorization.
 
 mod cmd;
+pub mod languages;
 pub mod objects;
+pub mod ops;
 pub mod pktline;
 pub mod read;
 pub mod smart_http;
@@ -21,6 +23,7 @@ pub mod write;
 
 pub use bgh_core::events::{RefUpdate, ZERO_SHA};
 pub use objects::{Commit, Signature, Tag, TreeEntry, TreeEntryKind};
+pub use ops::{DiffFile, GitCli, LogFilter, LsTreeEntry, MergeOutcome, TreeEdit};
 pub use read::{Blob, GitRepo, PathLookup, RefInfo};
 pub use storage::RepoStore;
 

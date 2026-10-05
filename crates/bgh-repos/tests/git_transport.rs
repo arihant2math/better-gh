@@ -405,5 +405,9 @@ async fn branch_protection_rejects_direct_pushes() {
     )
     .await;
     assert!(!out.ok);
-    assert!(out.stderr.contains("cannot delete"), "{}", out.stderr);
+    assert!(
+        out.stderr.to_lowercase().contains("cannot delete"),
+        "{}",
+        out.stderr
+    );
 }

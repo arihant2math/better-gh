@@ -12,11 +12,11 @@ use axum::response::{IntoResponse, Response};
 use bgh_core::auth::{self, AuthOptions};
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
-use bgh_git::smart_http::{self, Service};
+use bgh_git::smart_http::{self, PushPolicy, Service};
 use serde::Deserialize;
 
 use crate::jobs::PostReceive;
-use crate::protection;
+use crate::protection::{self, Actor, RepoRules};
 
 const REALM: &str = "Basic realm=\"Better GitHub\"";
 
@@ -123,16 +123,26 @@ pub async fn receive_pack(
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;
     let pusher = auth.ok_or_else(|| challenge("Authentication required."))?;
-    let rules = protection::load_rules(&state, access.repo.id).await?;
+    let rules = RepoRules::load(&state.db, &access.repo).await?;
+    let actor = if rules.is_empty() {
+        None
+    } else {
+        Some(Actor::load(&state, &access, &pusher.user).await?)
+    };
 
-    let outcome = smart_http::receive_pack(
+    let outcome = smart_http::receive_pack_with_policy(
         &crate::store(&state),
         access.repo.id,
         &parts.headers,
         body,
         |updates| {
-            let result = protection::check_push(&rules, &access, &pusher, &updates);
-            async move { result }
+            let (state, rules) = (&state, &rules);
+            async move {
+                match &actor {
+                    None => Ok(PushPolicy::default()),
+                    Some(actor) => protection::authorize_push(state, rules, actor, &updates).await,
+                }
+            }
         },
     )
     .await?;

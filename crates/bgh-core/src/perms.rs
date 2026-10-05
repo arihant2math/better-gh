@@ -224,13 +224,42 @@ impl RepoAccess {
         name: &str,
     ) -> ApiResult<Self> {
         let name = name.strip_suffix(".git").unwrap_or(name);
-        let owner = db::User::find_by_login(&state.db, owner)
-            .await?
-            .ok_or(ApiError::NotFound)?;
-        let repo = db::Repository::find_by_name(&state.db, owner.id, name)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+        let found = match db::User::find_by_login(&state.db, owner).await? {
+            Some(owner) => db::Repository::find_by_name(&state.db, owner.id, name)
+                .await?
+                .map(|repo| (repo, owner)),
+            None => None,
+        };
+        let (repo, owner) = match found {
+            Some(found) => found,
+            // Renamed / transferred repositories keep answering on their old
+            // name (`repo_redirects`, maintained by bgh-repos).
+            None => Self::follow_redirect(state, owner, name)
+                .await?
+                .ok_or(ApiError::NotFound)?,
+        };
         Self::for_repo(state, auth, repo, owner).await
+    }
+
+    async fn follow_redirect(
+        state: &AppState,
+        owner: &str,
+        name: &str,
+    ) -> ApiResult<Option<(db::Repository, db::User)>> {
+        let repo: Option<db::Repository> = sqlx::query_as(&format!(
+            "SELECT {} FROM repositories WHERE id = (
+                SELECT repo_id FROM repo_redirects
+                 WHERE lower(owner_login) = lower($1) AND lower(name) = lower($2))",
+            db::prefixed("repositories", db::Repository::COLUMNS)
+        ))
+        .bind(owner)
+        .bind(name)
+        .fetch_optional(&state.db)
+        .await?;
+        let Some(repo) = repo else { return Ok(None) };
+        Ok(db::User::find(&state.db, repo.owner_id)
+            .await?
+            .map(|owner| (repo, owner)))
     }
 
     /// Like [`Self::load`] when the rows are already loaded.
