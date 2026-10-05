@@ -1,0 +1,209 @@
+.muted {
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.warn {
+  color: var(--warning);
+  vertical-align: text-bottom;
+}
+
+/* ------------------------------------------------------------ fork dialog */
+
+.forkDialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.forkForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.forkForm p {
+  margin: 0;
+}
+
+.ownerName {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ownerCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nameCol {
+  flex: 1;
+  min-width: 180px;
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.slash {
+  padding-bottom: 6px;
+  font-size: var(--fs-lg);
+  color: var(--fg-faint);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+
+.check input {
+  margin-top: 3px;
+}
+
+/* ------------------------------------------------------------- sync fork */
+
+.syncPanel {
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.syncPanel p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.syncTitle {
+  font-weight: var(--fw-semibold);
+}
+
+.syncActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h-sm);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  background: var(--bg-subtle);
+}
+
+.linkButton:hover {
+  background: var(--bg-muted);
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------- list pages */
+
+.page {
+  max-width: 1012px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.pageTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.forkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.forkRow:last-child {
+  border-bottom: 0;
+}
+
+.forkMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forkName {
+  font-weight: var(--fw-semibold);
+}
+
+.forkMeta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.forkMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+/* ------------------------------------------------------- check run page */
+
+.runCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.runCard h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+
+.ok {
+  color: var(--success);
+}
+
+.fail {
+  color: var(--danger);
+}

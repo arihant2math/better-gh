@@ -13,6 +13,8 @@ import type {
   HighlightedBlob,
   History,
   IssueLinks,
+  MergeUpstreamResult,
+  RestCheckRun,
   LastCommits,
   PullRequirements,
   RestBranch,
@@ -118,6 +120,27 @@ export function compareDiff(owner: string, repo: string, base: string, head: str
 export function listForks(owner: string, repo: string): Promise<RestFork[]> {
   return api.get<RestFork[]>(`${v3('repos', owner, repo, 'forks')}?per_page=100`);
 }
+
+/** Fork a repository (202 with the new fork, or the caller's existing fork in the network). */
+export function createFork(owner: string, repo: string, body: { organization?: string; name?: string; description?: string; default_branch_only?: boolean }): Promise<RestRepository> {
+  return api.post<RestRepository>(v3('repos', owner, repo, 'forks'), body);
+}
+
+/** Sync a fork branch with the same-named upstream branch (409 on conflicts). */
+export function mergeUpstream(owner: string, repo: string, branch: string): Promise<MergeUpstreamResult> {
+  return api.post<MergeUpstreamResult>(v3('repos', owner, repo, 'merge-upstream'), { branch });
+}
+
+export function getCheckRun(owner: string, repo: string, id: number): Promise<RestCheckRun> {
+  return api.get<RestCheckRun>(v3('repos', owner, repo, 'check-runs', id));
+}
+
+/** Paginated people / fork lists behind the header counters (use with `usePagedList`). */
+export const repoListPaths = {
+  stargazers: (owner: string, repo: string) => `${v3('repos', owner, repo, 'stargazers')}?per_page=50`,
+  watchers: (owner: string, repo: string) => `${v3('repos', owner, repo, 'subscribers')}?per_page=50`,
+  forks: (owner: string, repo: string, sort: string) => `${v3('repos', owner, repo, 'forks')}?per_page=30&sort=${encodeURIComponent(sort)}`,
+};
 
 /** The repo's PR template (`.github/pull_request_template.md` and the usual fallbacks), or `null`. */
 export async function getPullTemplate(owner: string, repo: string, ref?: string): Promise<string | null> {
