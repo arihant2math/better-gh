@@ -934,6 +934,8 @@ fn event_object(
                 d.get("state_reason").cloned().unwrap_or(Value::Null),
             );
         }
+        // GitHub's REST shape has no extra fields (the source is web/GraphQL only).
+        "connected" | "disconnected" => {}
         "review_requested" | "review_request_removed" => {
             m.insert(
                 "requested_reviewer".into(),

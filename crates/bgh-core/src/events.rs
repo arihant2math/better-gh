@@ -54,6 +54,22 @@ pub struct PushEvent {
     pub repo_id: i64,
     pub pusher_id: Option<i64>,
     pub updates: Vec<RefUpdate>,
+    /// Where the refs came from when not a client push:
+    /// [`PushEvent::ORIGIN_MIRROR`] or [`PushEvent::ORIGIN_IMPORT`]. Search
+    /// indexing, activity and webhooks treat these like pushes; Actions
+    /// doesn't start workflows for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+}
+
+impl PushEvent {
+    pub const ORIGIN_MIRROR: &'static str = "mirror";
+    pub const ORIGIN_IMPORT: &'static str = "import";
+
+    /// Refs fetched from a remote (mirror sync or import), not pushed.
+    pub fn is_fetched(&self) -> bool {
+        self.origin.is_some()
+    }
 }
 
 /// Domain events. Serialized as `{"type": "issue_opened", ...}`.
@@ -377,6 +393,22 @@ pub enum Event {
         repo_id: i64,
         parent_id: i64,
         sub_issue_id: i64,
+        actor_id: i64,
+    },
+    /// An issue was linked to a pull request that closes it (closing
+    /// keyword in the PR body or a manual link). `repo_id` / `issue_id`
+    /// are the issue's; `pull_id` is the issue id of the pull request.
+    IssueConnected {
+        repo_id: i64,
+        issue_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    /// The link of [`Event::IssueConnected`] was removed.
+    IssueDisconnected {
+        repo_id: i64,
+        issue_id: i64,
+        pull_id: i64,
         actor_id: i64,
     },
     LabelCreated {
@@ -765,6 +797,8 @@ impl Event {
             Self::IssueReferenced { .. } => "issue_referenced",
             Self::SubIssueAdded { .. } => "sub_issue_added",
             Self::SubIssueRemoved { .. } => "sub_issue_removed",
+            Self::IssueConnected { .. } => "issue_connected",
+            Self::IssueDisconnected { .. } => "issue_disconnected",
             Self::LabelCreated { .. } => "label_created",
             Self::LabelEdited { .. } => "label_edited",
             Self::LabelDeleted { .. } => "label_deleted",
@@ -854,6 +888,8 @@ impl Event {
             | Self::IssueReferenced { repo_id, .. }
             | Self::SubIssueAdded { repo_id, .. }
             | Self::SubIssueRemoved { repo_id, .. }
+            | Self::IssueConnected { repo_id, .. }
+            | Self::IssueDisconnected { repo_id, .. }
             | Self::LabelCreated { repo_id, .. }
             | Self::LabelEdited { repo_id, .. }
             | Self::LabelDeleted { repo_id, .. }
@@ -992,6 +1028,8 @@ impl Event {
             | Self::IssueCrossReferenced { actor_id, .. }
             | Self::SubIssueAdded { actor_id, .. }
             | Self::SubIssueRemoved { actor_id, .. }
+            | Self::IssueConnected { actor_id, .. }
+            | Self::IssueDisconnected { actor_id, .. }
             | Self::LabelCreated { actor_id, .. }
             | Self::LabelEdited { actor_id, .. }
             | Self::LabelDeleted { actor_id, .. }
@@ -1319,6 +1357,7 @@ mod tests {
             repo_id: 1,
             pusher_id: None,
             updates: vec![],
+            origin: None,
         });
         assert_eq!(serde_json::to_value(&p).unwrap()["type"], p.name());
     }

@@ -10,6 +10,7 @@ import { assignableUsers, canPush, canWrite, commentsForIssue, labelByName, labe
 import { Avatar, ColorDot, LabelPill } from '../../ui/Badge';
 import { GearIcon, MilestoneIcon } from '../../ui/icons';
 import { SelectPanel } from '../../ui/Menu';
+import { DevelopmentSection } from './DevelopmentSection';
 import styles from './IssueView.module.css';
 
 function Section({
@@ -179,6 +180,8 @@ export const IssueSidebar = observer(function IssueSidebar({ issue, repo, extra 
         onToggle={(id) => setMilestone(issue, id === 'clear' || issue.milestoneId === Number(id) ? null : Number(id))}
         footer={<Link to={`/${repo.owner}/${repo.name}/milestones`}>Manage milestones</Link>}
       />
+
+      <DevelopmentSection issue={issue} repo={repo} />
 
       {extra}
 
