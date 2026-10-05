@@ -234,6 +234,7 @@ pub async fn create(
         refs::process(&mut tx, &state, &info, &issue, None, None, b, &auth.user).await?;
     }
     let issue = service::touch_and_sync(&mut tx, issue.id, SyncAction::Insert).await?;
+    service::sync_repo_open_issues(&mut tx, issue.repo_id).await?;
     tx.emit(Event::IssueOpened {
         repo_id: issue.repo_id,
         issue_id: issue.id,
@@ -483,7 +484,13 @@ pub async fn update(
         }
         None => {}
     }
-    let issue = service::touch_and_sync(&mut tx, issue.id, SyncAction::Update).await?;
+    let issue = service::touch_and_sync_with(
+        &mut tx,
+        issue.id,
+        SyncAction::Update,
+        changes.contains_key("body"),
+    )
+    .await?;
     if !changes.is_empty() {
         tx.emit(Event::IssueEdited {
             repo_id: issue.repo_id,

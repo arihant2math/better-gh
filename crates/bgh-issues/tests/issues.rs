@@ -113,7 +113,43 @@ async fn create_issue_shape() {
     assert_eq!(r.json()["open_issues_count"], 1);
     let repo_id = repo["id"].as_i64().unwrap();
     assert_eq!(sync_count(&app, repo_id, "issue").await, 1);
-    assert!(sync_count(&app, repo_id, "issue_event").await >= 4);
+    assert!(sync_count(&app, repo_id, "issueEvent").await >= 4);
+    // Compact client shape (docs/SYNC_PROTOCOL.md).
+    let d: serde_json::Value = sqlx::query_scalar(
+        "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'issue' ORDER BY id DESC LIMIT 1",
+    )
+    .bind(format!("repo:{repo_id}"))
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(d["repoId"], repo_id);
+    assert_eq!(d["number"], 1);
+    assert_eq!(d["body"], "I'm having a problem with this.");
+    assert_eq!(d["authorId"], alice.id);
+    assert_eq!(d["assigneeIds"], json!([alice.id]));
+    assert_eq!(d["labelIds"].as_array().unwrap().len(), 2);
+    assert_eq!(d["isPr"], false);
+    assert_eq!(d["comments"], 0);
+    assert!(d["milestoneId"].is_i64());
+    let repo_delta: serde_json::Value = sqlx::query_scalar(
+        "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'repo' ORDER BY id DESC LIMIT 1",
+    )
+    .bind(format!("repo:{repo_id}"))
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(repo_delta, json!({"id": repo_id, "openIssues": 1}));
+    let ev: serde_json::Value = sqlx::query_scalar(
+        "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'issueEvent'
+            AND data->>'event' = 'labeled' ORDER BY id LIMIT 1",
+    )
+    .bind(format!("repo:{repo_id}"))
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert!(ev["data"]["labelId"].is_i64());
+    assert!(ev["data"]["labelName"].is_string());
+    assert!(ev["data"]["labelColor"].is_string());
     // The auto-created label was synced.
     assert!(sync_count(&app, repo_id, "label").await >= 10);
 }

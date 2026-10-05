@@ -199,14 +199,7 @@ pub async fn create(
         .bind(issue.id)
         .execute(&mut *tx)
         .await?;
-    tx.sync(
-        &access.scope(),
-        "comment",
-        c.id,
-        SyncAction::Insert,
-        &json::comment_sync_json(&c),
-    )
-    .await?;
+    service::sync_comment(&mut tx, &state, &info, &c, SyncAction::Insert).await?;
     service::subscribe(&mut tx, &issue, auth.user.id, "comment").await?;
     refs::process(
         &mut tx,
@@ -273,14 +266,7 @@ pub async fn update(
     .bind(text)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &access.scope(),
-        "comment",
-        c.id,
-        SyncAction::Update,
-        &json::comment_sync_json(&c),
-    )
-    .await?;
+    service::sync_comment(&mut tx, &state, &info, &c, SyncAction::Update).await?;
     refs::process(
         &mut tx,
         &state,

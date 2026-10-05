@@ -111,14 +111,20 @@ export interface Issue {
   /** Lazy: `undefined` = not loaded yet (load via partial sync). */
   body?: string | null;
   state: 'open' | 'closed';
-  stateReason: 'completed' | 'not_planned' | 'reopened' | null;
+  stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
   assigneeIds: ID[];
   labelIds: ID[];
   milestoneId: ID | null;
   comments: number;
   locked: boolean;
+  /** Present on rows written by bgh-issues. */
+  activeLockReason?: 'off-topic' | 'too heated' | 'resolved' | 'spam' | null;
   reactions?: ReactionCounts;
+  /** Parent issue id (sub-issues). */
+  parentId?: ID | null;
+  /** Pinned to the repository's issue list. */
+  pinned?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
@@ -185,7 +191,17 @@ export type IssueEventType =
   | 'review_request_removed'
   | 'ready_for_review'
   | 'convert_to_draft'
-  | 'head_ref_force_pushed';
+  | 'head_ref_force_pushed'
+  | 'mentioned'
+  | 'subscribed'
+  | 'cross-referenced'
+  | 'pinned'
+  | 'unpinned'
+  | 'transferred'
+  | 'sub_issue_added'
+  | 'sub_issue_removed'
+  | 'parent_issue_added'
+  | 'parent_issue_removed';
 
 export interface IssueEvent {
   id: ID;
@@ -204,6 +220,12 @@ export interface IssueEvent {
     to?: string;
     stateReason?: string;
     commitId?: string;
+    lockReason?: string;
+    sourceIssueId?: ID;
+    sourceCommentId?: ID;
+    subIssueId?: ID;
+    parentIssueId?: ID;
+    fromRepository?: string;
   };
   createdAt: Timestamp;
 }

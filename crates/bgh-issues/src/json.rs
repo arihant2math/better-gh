@@ -390,17 +390,6 @@ pub async fn reactions(state: &AppState, rows: Vec<ReactionRow>) -> ApiResult<Ve
         .collect())
 }
 
-pub fn reaction_sync_json(r: &ReactionRow) -> Value {
-    json!({
-        "id": r.id,
-        "subject_type": r.subject_type,
-        "subject_id": r.subject_id,
-        "user_id": r.user_id,
-        "content": r.content,
-        "created_at": Timestamp::from(r.created_at),
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Issues
 // ---------------------------------------------------------------------------
@@ -857,18 +846,6 @@ impl EventRow {
         "id, issue_id, repo_id, actor_id, event, commit_id, data, created_at";
 }
 
-pub fn event_sync_json(e: &EventRow) -> Value {
-    json!({
-        "id": e.id,
-        "issue_id": e.issue_id,
-        "actor_id": e.actor_id,
-        "event": e.event,
-        "commit_id": e.commit_id,
-        "data": e.data,
-        "created_at": Timestamp::from(e.created_at),
-    })
-}
-
 fn data_user_ids(e: &EventRow) -> impl Iterator<Item = Option<i64>> + '_ {
     [
         "assignee_id",
@@ -1054,48 +1031,127 @@ pub fn event_user_ids(rows: &[EventRow]) -> Vec<Option<i64>> {
 }
 
 // ---------------------------------------------------------------------------
-// Sync shapes
+// Sync shapes (docs/SYNC_PROTOCOL.md section 3; camelCase compact rows)
 // ---------------------------------------------------------------------------
 
 pub fn label_sync_json(l: &db::Label) -> Value {
     json!({
         "id": l.id,
-        "repo_id": l.repo_id,
+        "repoId": l.repo_id,
         "name": l.name,
         "color": l.color,
         "description": l.description,
-        "default": l.is_default,
-        "updated_at": Timestamp::from(l.updated_at),
     })
 }
 
 pub fn milestone_sync_json(m: &db::Milestone) -> Value {
     json!({
         "id": m.id,
-        "repo_id": m.repo_id,
+        "repoId": m.repo_id,
         "number": m.number,
         "title": m.title,
         "description": m.description,
         "state": m.state,
-        "creator_id": m.creator_id,
-        "open_issues": m.open_issues,
-        "closed_issues": m.closed_issues,
-        "due_on": ts(m.due_on),
-        "closed_at": ts(m.closed_at),
-        "created_at": Timestamp::from(m.created_at),
-        "updated_at": Timestamp::from(m.updated_at),
+        "dueOn": ts(m.due_on),
+        "openIssues": m.open_issues,
+        "closedIssues": m.closed_issues,
+        "createdAt": Timestamp::from(m.created_at),
+        "updatedAt": Timestamp::from(m.updated_at),
+        "closedAt": ts(m.closed_at),
     })
 }
 
-pub fn comment_sync_json(c: &db::Comment) -> Value {
+/// `ReactionCounts`: only non-zero contents.
+pub fn reaction_counts_json(counts: &[(String, i64)]) -> Value {
+    let mut m = Map::new();
+    for (content, n) in counts {
+        if *n > 0 {
+            m.insert(content.clone(), json!(n));
+        }
+    }
+    Value::Object(m)
+}
+
+pub fn author_association_str(a: AuthorAssociation) -> &'static str {
+    match a {
+        AuthorAssociation::Owner => "OWNER",
+        AuthorAssociation::Member => "MEMBER",
+        AuthorAssociation::Collaborator => "COLLABORATOR",
+        AuthorAssociation::Contributor => "CONTRIBUTOR",
+        AuthorAssociation::FirstTimeContributor => "FIRST_TIME_CONTRIBUTOR",
+        AuthorAssociation::FirstTimer => "FIRST_TIMER",
+        AuthorAssociation::Mannequin => "MANNEQUIN",
+        AuthorAssociation::None => "NONE",
+    }
+}
+
+pub fn comment_sync_json(
+    c: &db::Comment,
+    association: AuthorAssociation,
+    reactions: &[(String, i64)],
+) -> Value {
     json!({
         "id": c.id,
-        "issue_id": c.issue_id,
-        "repo_id": c.repo_id,
-        "author_id": c.author_id,
+        "repoId": c.repo_id,
+        "issueId": c.issue_id,
+        "authorId": c.author_id,
         "body": c.body,
-        "created_at": Timestamp::from(c.created_at),
-        "updated_at": Timestamp::from(c.updated_at),
+        "authorAssociation": author_association_str(association),
+        "reactions": reaction_counts_json(reactions),
+        "createdAt": Timestamp::from(c.created_at),
+        "updatedAt": Timestamp::from(c.updated_at),
+    })
+}
+
+/// `IssueEvent` row: event-specific data mapped to the protocol's
+/// camelCase keys.
+pub fn event_sync_json(e: &EventRow) -> Value {
+    let d = &e.data;
+    let mut m = Map::new();
+    let mut copy = |to: &str, v: Option<&Value>| {
+        if let Some(v) = v.filter(|v| !v.is_null()) {
+            m.insert(to.to_string(), v.clone());
+        }
+    };
+    match e.event.as_str() {
+        "labeled" | "unlabeled" => {
+            copy("labelId", d.get("label_id"));
+            copy("labelName", d.pointer("/label/name"));
+            copy("labelColor", d.pointer("/label/color"));
+        }
+        "assigned" | "unassigned" => copy("assigneeId", d.get("assignee_id")),
+        "milestoned" | "demilestoned" => copy("milestoneTitle", d.pointer("/milestone/title")),
+        "renamed" => {
+            copy("from", d.pointer("/rename/from"));
+            copy("to", d.pointer("/rename/to"));
+        }
+        "closed" | "reopened" => copy("stateReason", d.get("state_reason")),
+        "locked" => copy("lockReason", d.get("lock_reason")),
+        "review_requested" | "review_request_removed" => {
+            copy("reviewerId", d.get("requested_reviewer_id"))
+        }
+        "cross-referenced" => {
+            copy("sourceIssueId", d.get("source_issue_id"));
+            copy("sourceCommentId", d.get("source_comment_id"));
+        }
+        "sub_issue_added" | "sub_issue_removed" => copy("subIssueId", d.pointer("/sub_issue/id")),
+        "parent_issue_added" | "parent_issue_removed" => {
+            copy("parentIssueId", d.pointer("/parent_issue/id"))
+        }
+        "transferred" => copy("fromRepository", d.get("from_repository")),
+        _ => {}
+    }
+    if let Some(c) = &e.commit_id {
+        m.insert("commitId".into(), json!(c));
+    }
+    json!({
+        "id": e.id,
+        "repoId": e.repo_id,
+        "issueId": e.issue_id,
+        "actorId": e.actor_id,
+        "event": e.event,
+        "data": m,
+        "createdAt": Timestamp::from(e.created_at),
     })
 }
 

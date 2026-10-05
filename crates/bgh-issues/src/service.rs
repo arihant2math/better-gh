@@ -9,7 +9,9 @@ use bgh_core::prelude::*;
 use bgh_core::sync;
 use serde_json::{Value, json};
 
-use crate::json::{self, EventRow};
+use bgh_core::models::api::AuthorAssociation;
+
+use crate::json::{self, EventRow, RepoInfo};
 
 /// Maximum assignees per issue (GitHub's limit).
 pub const MAX_ASSIGNEES: usize = 10;
@@ -80,7 +82,7 @@ pub async fn add_event(
     .await?;
     tx.sync(
         &sync::repo_scope(issue.repo_id),
-        "issue_event",
+        "issueEvent",
         row.id,
         SyncAction::Insert,
         &json::event_sync_json(&row),
@@ -89,8 +91,10 @@ pub async fn add_event(
     Ok(row)
 }
 
-/// Compact client shape of an issue (`model: "issue"`), read inside `tx`.
-pub async fn issue_sync_json(tx: &mut Tx, issue: &db::Issue) -> ApiResult<Value> {
+/// Compact client shape of an issue (`model: "issue"`, see
+/// docs/SYNC_PROTOCOL.md), read inside `tx`. `body` is lazy: included only
+/// when `with_body` (inserts and body edits).
+pub async fn issue_sync_json(tx: &mut Tx, issue: &db::Issue, with_body: bool) -> ApiResult<Value> {
     let label_ids: Vec<i64> = sqlx::query_scalar(
         "SELECT label_id FROM issue_labels WHERE issue_id = $1 ORDER BY label_id",
     )
@@ -108,42 +112,100 @@ pub async fn issue_sync_json(tx: &mut Tx, issue: &db::Issue) -> ApiResult<Value>
             .bind(issue.id)
             .fetch_optional(&mut **tx)
             .await?;
-    let pinned: Option<i32> =
-        sqlx::query_scalar("SELECT position FROM pinned_issues WHERE issue_id = $1")
+    let pinned: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pinned_issues WHERE issue_id = $1)")
             .bind(issue.id)
-            .fetch_optional(&mut **tx)
+            .fetch_one(&mut **tx)
             .await?;
-    Ok(json!({
+    let reactions = reactions_in_tx(tx, "issue", issue.id).await?;
+    let mut v = json!({
         "id": issue.id,
-        "repo_id": issue.repo_id,
+        "repoId": issue.repo_id,
         "number": issue.number,
         "title": issue.title,
-        "body": issue.body,
         "state": issue.state,
-        "state_reason": issue.state_reason,
-        "author_id": issue.author_id,
-        "is_pull_request": issue.is_pull_request,
-        "milestone_id": issue.milestone_id,
+        "stateReason": issue.state_reason,
+        "authorId": issue.author_id,
+        "assigneeIds": assignee_ids,
+        "labelIds": label_ids,
+        "milestoneId": issue.milestone_id,
+        "comments": issue.comments_count,
         "locked": issue.locked,
-        "active_lock_reason": issue.active_lock_reason,
-        "comments_count": issue.comments_count,
-        "label_ids": label_ids,
-        "assignee_ids": assignee_ids,
-        "parent_id": parent_id,
-        "pinned_position": pinned,
-        "closed_at": issue.closed_at.map(Timestamp::from),
-        "closed_by_id": issue.closed_by_id,
-        "created_at": Timestamp::from(issue.created_at),
-        "updated_at": Timestamp::from(issue.updated_at),
-    }))
+        "activeLockReason": issue.active_lock_reason,
+        "reactions": json::reaction_counts_json(&reactions),
+        "parentId": parent_id,
+        "pinned": pinned,
+        "createdAt": Timestamp::from(issue.created_at),
+        "updatedAt": Timestamp::from(issue.updated_at),
+        "closedAt": issue.closed_at.map(Timestamp::from),
+        "isPr": issue.is_pull_request,
+    });
+    if with_body {
+        v["body"] = json!(issue.body);
+    }
+    Ok(v)
+}
+
+/// Reaction counts of one subject, read inside `tx`.
+pub async fn reactions_in_tx(
+    tx: &mut Tx,
+    subject_type: &str,
+    subject_id: i64,
+) -> ApiResult<Vec<(String, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT content, count(*) FROM reactions WHERE subject_type = $1 AND subject_id = $2
+          GROUP BY content ORDER BY content",
+    )
+    .bind(subject_type)
+    .bind(subject_id)
+    .fetch_all(&mut **tx)
+    .await?)
+}
+
+/// Record a comment (`model: "comment"`) as a sync action.
+pub async fn sync_comment(
+    tx: &mut Tx,
+    state: &AppState,
+    info: &RepoInfo,
+    c: &db::Comment,
+    action: SyncAction,
+) -> ApiResult<()> {
+    let repos = std::collections::HashMap::from([(info.repo.id, info.clone())]);
+    let assoc = match c.author_id {
+        Some(a) => json::associations(state, &repos, [(c.repo_id, a)])
+            .await?
+            .get(&(c.repo_id, a))
+            .copied()
+            .unwrap_or(AuthorAssociation::None),
+        None => AuthorAssociation::None,
+    };
+    let reactions = reactions_in_tx(tx, "issue_comment", c.id).await?;
+    tx.sync(
+        &sync::repo_scope(c.repo_id),
+        "comment",
+        c.id,
+        action,
+        &json::comment_sync_json(c, assoc, &reactions),
+    )
+    .await
 }
 
 /// Bump `updated_at`, then record the issue's current state as a sync
-/// action. Returns the fresh row.
+/// action (with `body` for inserts). Returns the fresh row.
 pub async fn touch_and_sync(
     tx: &mut Tx,
     issue_id: i64,
     action: SyncAction,
+) -> ApiResult<db::Issue> {
+    touch_and_sync_with(tx, issue_id, action, action == SyncAction::Insert).await
+}
+
+/// [`touch_and_sync`] choosing whether to include the lazy `body`.
+pub async fn touch_and_sync_with(
+    tx: &mut Tx,
+    issue_id: i64,
+    action: SyncAction,
+    with_body: bool,
 ) -> ApiResult<db::Issue> {
     let issue: db::Issue = sqlx::query_as(&format!(
         "UPDATE issues SET updated_at = now() WHERE id = $1 RETURNING {}",
@@ -152,19 +214,47 @@ pub async fn touch_and_sync(
     .bind(issue_id)
     .fetch_one(&mut **tx)
     .await?;
-    sync_issue_row(tx, &issue, action).await?;
-    Ok(issue)
-}
-
-/// Record `issue` (as already loaded in `tx`) as a sync action.
-pub async fn sync_issue_row(tx: &mut Tx, issue: &db::Issue, action: SyncAction) -> ApiResult<()> {
-    let data = issue_sync_json(tx, issue).await?;
+    let data = issue_sync_json(tx, &issue, with_body).await?;
     tx.sync(
         &sync::repo_scope(issue.repo_id),
         "issue",
         issue.id,
         action,
         &data,
+    )
+    .await?;
+    Ok(issue)
+}
+
+/// Record `issue` (as already loaded in `tx`) as a sync action, without
+/// touching `updated_at`.
+pub async fn sync_issue_row(tx: &mut Tx, issue: &db::Issue, action: SyncAction) -> ApiResult<()> {
+    let data = issue_sync_json(tx, issue, false).await?;
+    tx.sync(
+        &sync::repo_scope(issue.repo_id),
+        "issue",
+        issue.id,
+        action,
+        &data,
+    )
+    .await
+}
+
+/// Record the repository's `openIssues` (issues only, not PRs) as a partial
+/// `repo` update.
+pub async fn sync_repo_open_issues(tx: &mut Tx, repo_id: i64) -> ApiResult<()> {
+    let open: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM issues WHERE repo_id = $1 AND NOT is_pull_request AND state = 'open'",
+    )
+    .bind(repo_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    tx.sync(
+        &sync::repo_scope(repo_id),
+        "repo",
+        repo_id,
+        SyncAction::Update,
+        &json!({ "id": repo_id, "openIssues": open }),
     )
     .await
 }
@@ -347,6 +437,9 @@ pub async fn set_state(
     if let Some(m) = issue.milestone_id {
         refresh_milestones(tx, &[m]).await?;
     }
+    if !issue.is_pull_request {
+        sync_repo_open_issues(tx, repo_id).await?;
+    }
     Ok(true)
 }
 
@@ -428,7 +521,7 @@ pub async fn resolve_labels(
 }
 
 fn label_data(l: &db::Label) -> Value {
-    json!({ "label": { "name": l.name, "color": l.color } })
+    json!({ "label": { "name": l.name, "color": l.color }, "label_id": l.id })
 }
 
 /// Apply labels to an issue; returns the labels newly added.

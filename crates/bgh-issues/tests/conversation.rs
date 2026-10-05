@@ -313,6 +313,16 @@ async fn reactions() {
         .send()
         .await
         .json();
+    let d: serde_json::Value = sqlx::query_scalar(
+        "SELECT data FROM sync_actions WHERE model = 'issue' AND model_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(i["id"].as_i64().unwrap())
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(d["reactions"]["heart"], 1);
+    assert_eq!(d["reactions"]["+1"], 1);
+    assert!(d.get("body").is_none());
     assert_eq!(i["reactions"]["total_count"], 8);
     assert_eq!(i["reactions"]["heart"], 1);
     assert_eq!(i["reactions"]["+1"], 1);
