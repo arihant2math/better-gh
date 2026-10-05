@@ -153,6 +153,26 @@
   color: var(--fg-muted);
 }
 
+.ruleset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.ruleset:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
 .updated {
   display: flex;
   align-items: center;
