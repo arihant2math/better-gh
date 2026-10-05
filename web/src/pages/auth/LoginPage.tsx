@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth';
 import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
+import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
 import { getBoot, isMockMode } from '../../boot';
@@ -67,6 +68,7 @@ function Login({ search }: { search: string }) {
   // Captured at render: once the session flips, App itself redirects and the
   // URL loses its `return_to`.
   const target = returnTo(search);
+  const invite = invitationTarget(target);
   const done = () => navigate(target, { replace: true });
 
   const submit = async () => {
@@ -170,7 +172,15 @@ function Login({ search }: { search: string }) {
   return (
     <AuthLayout
       title={`Sign in to ${config.siteName}`}
-      banner={notice && <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Flash>}
+      banner={
+        notice ? (
+          <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>
+            {notice.text}
+          </Flash>
+        ) : (
+          invite && <Flash>Sign in{config.signupEnabled ? ' or create an account' : ''} to accept your invitation to {invitationTargetLabel(invite)}.</Flash>
+        )
+      }
       below={
         config.signupEnabled ? (
           <>
