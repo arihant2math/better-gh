@@ -23,6 +23,7 @@ import {
   type SettingsForm,
 } from './settingsForm';
 import {
+  ActionsSection,
   AnnouncementSection,
   AuthSection,
   MaintenanceSection,
@@ -203,6 +204,8 @@ export default function SettingsPage() {
         return <SmtpSection value={draft.smtp} onChange={update('smtp')} errors={errors} />;
       case 'maintenance':
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
+      case 'actions':
+        return <ActionsSection value={draft.actions} onChange={update('actions')} errors={errors} />;
     }
   };
 

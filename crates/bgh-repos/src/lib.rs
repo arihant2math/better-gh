@@ -39,6 +39,7 @@ pub mod ssh;
 pub mod stars;
 pub mod stats;
 pub mod watching;
+pub mod workflow_scope;
 
 use axum::Router;
 use axum::routing::{get, post};

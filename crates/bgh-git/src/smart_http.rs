@@ -336,16 +336,26 @@ pub struct PushPolicy {
     pub no_force_push: Vec<String>,
     /// Refs whose newly pushed commits must not include merge commits.
     pub linear_history: Vec<String>,
+    /// Set when the pusher may not create or update workflow files
+    /// (`.github/workflows/**`): the rejection message, with
+    /// [`WORKFLOW_PATH_PLACEHOLDER`] standing for the offending path.
+    pub workflow_denied: Option<String>,
 }
+
+/// Placeholder for the file path in [`PushPolicy::workflow_denied`].
+pub const WORKFLOW_PATH_PLACEHOLDER: &str = "@PATH@";
 
 impl PushPolicy {
     pub fn is_empty(&self) -> bool {
-        self.no_force_push.is_empty() && self.linear_history.is_empty()
+        self.no_force_push.is_empty()
+            && self.linear_history.is_empty()
+            && self.workflow_denied.is_none()
     }
 }
 
 /// The `pre-receive` hook enforcing [`PushPolicy`] (refs are passed in
-/// `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`, space separated).
+/// `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`, space separated; the workflow-file
+/// rejection message in `BGH_WORKFLOW_DENIED`).
 pub const PRE_RECEIVE_HOOK: &str = r#"#!/bin/sh
 # Installed by Better GitHub: branch protection checks needing the pushed objects.
 z=0000000000000000000000000000000000000000
@@ -360,6 +370,17 @@ while read old new ref; do
         status=1
       fi;;
   esac
+  if [ -n "$BGH_WORKFLOW_DENIED" ]; then
+    if [ "$old" = "$z" ]; then
+      f=$(git log --format= --name-only "$new" --not --all -- .github/workflows | sed -n '/./{p;q;}')
+    else
+      f=$(git log --format= --name-only "$old..$new" -- .github/workflows | sed -n '/./{p;q;}')
+    fi
+    if [ -n "$f" ]; then
+      echo "error: ${BGH_WORKFLOW_DENIED%%@PATH@*}$f${BGH_WORKFLOW_DENIED#*@PATH@}" >&2
+      status=1
+    fi
+  fi
   case " $BGH_LINEAR_REFS " in
     *" $ref "*)
       if [ "$old" = "$z" ]; then
@@ -534,7 +555,11 @@ where
         c.arg("-c")
             .arg(format!("core.hooksPath={}", hooks.display()))
             .env("BGH_NO_FF_REFS", policy.no_force_push.join(" "))
-            .env("BGH_LINEAR_REFS", policy.linear_history.join(" "));
+            .env("BGH_LINEAR_REFS", policy.linear_history.join(" "))
+            .env(
+                "BGH_WORKFLOW_DENIED",
+                policy.workflow_denied.as_deref().unwrap_or_default(),
+            );
     }
     c.arg("receive-pack")
         .arg("--stateless-rpc")

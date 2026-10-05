@@ -18,6 +18,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'auth_providers', title: 'Authentication', anchor: 'authentication' },
   { key: 'smtp', title: 'Email (SMTP)', anchor: 'smtp' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
+  { key: 'actions', title: 'Actions', anchor: 'actions' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -66,6 +67,7 @@ export interface SettingsForm {
     tls: SiteSettings['smtp']['tls'];
   };
   maintenance: { enabled: boolean; message: string; scheduled: string };
+  actions: SiteSettings['actions'];
 }
 
 const secretForm = (v: string | null): SecretForm => ({ stored: v != null && v !== '', value: '', clear: false });
@@ -142,6 +144,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       message: s.maintenance.message ?? '',
       scheduled: toLocalInput(s.maintenance.scheduled_at),
     },
+    actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
   };
 }
 
@@ -291,6 +294,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           message: orNull(f.maintenance.message),
           scheduled_at: fromLocalInput(f.maintenance.scheduled),
         };
+        break;
+      case 'actions':
+        out.actions = { ...f.actions };
         break;
     }
   }

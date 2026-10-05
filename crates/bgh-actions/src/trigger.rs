@@ -75,6 +75,14 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     if !state.config.actions.enabled {
         return Ok(());
     }
+    // Loop guard: events caused by a job token (pushes, comments, labels by
+    // github-actions[bot]) never start workflows, so a workflow that commits
+    // or comments can't re-trigger itself. Dispatches (`workflow_dispatch`,
+    // `repository_dispatch`) are API calls that create runs directly and
+    // stay allowed.
+    if event.via_actions_token() && !is_dispatch(&event) {
+        return Ok(());
+    }
     let (repo_id, kind) = match &*event {
         Event::Push(p) => (
             p.repo_id,
@@ -162,6 +170,11 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     }
     bgh_core::jobs::enqueue_job(&state.db, &Trigger { repo_id, kind }).await?;
     Ok(())
+}
+
+/// Dispatch events start workflows even when a job token sent them.
+fn is_dispatch(event: &Event) -> bool {
+    matches!(event.name(), "repository_dispatch" | "workflow_dispatch")
 }
 
 /// Cheap pre-check so repositories without workflows never get trigger

@@ -145,6 +145,9 @@ start-up with an error naming the variable.
 | `BGH_RATE_LIMIT` / `BGH_RATE_LIMIT_ANONYMOUS` | `5000` / `60` | REST (`core`) requests per hour per user / per client IP. `BGH_RATE_LIMIT=0` also turns enforcement off. |
 | `BGH_RATE_LIMIT_SEARCH` / `BGH_RATE_LIMIT_SEARCH_ANONYMOUS` | `30` / `10` | Search requests per minute per user / per client IP. |
 | `BGH_RATE_LIMIT_GRAPHQL` | `5000` | GraphQL requests per hour per user (anonymous: the `core` anonymous budget). |
+| `BGH_ACTIONS_EXECUTOR` | `auto` | Where the built-in Actions runner runs jobs: `docker` (per-job containers), `shell` (directly on the server host, **trusted single-tenant installs only**), or `auto` (docker when `docker info` works, otherwise the built-in runner takes no jobs). See [Actions](#actions-ci). |
+| `BGH_ACTIONS_BUILTIN_RUNNER` | `true` | Run Actions jobs inside the `bgh` process (with `BGH_ACTIONS_EXECUTOR`). Set `false` when only external runners should take jobs. |
+| `BGH_ACTIONS_WORK_DIR` | `{tmp}/bgh-actions-work` | Job directories of the built-in runner. Must not be inside `BGH_DATA_DIR` (such a value is ignored with an error). |
 | `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. |
 
 Site admins can change rate limits, SMTP and sign-in providers at runtime
@@ -247,6 +250,57 @@ through, in order of precedence:
 
 Failed deliveries are retried with backoff by the job queue (visible in
 the admin job inspector).
+
+## Actions (CI)
+
+GitHub Actions workflows (`.github/workflows/*.yml`) run on *runners*:
+the built-in runner inside the `bgh` process, or external `bgh-runner`
+processes on other machines (`bgh-runner register --url … --token
+<registration token>` with a token from the repository or organization
+runner settings, then `bgh-runner run`).
+
+**Workflow code is untrusted.** Anyone who can push a workflow file to any
+repository (with open sign-up: anyone) can run arbitrary commands on the
+runner. Plan for that:
+
+* **Never run jobs on the server host in a multi-user install.** The
+  built-in runner's `shell` executor runs steps as the `bgh` user on the
+  server: steps can read `BGH_DATA_DIR` (every repository, the SSH host
+  key, the Actions secret key file) and talk to Postgres and Redis. It must
+  be chosen explicitly (`BGH_ACTIONS_EXECUTOR=shell`) and logs a warning at
+  start-up; use it only when everyone who can push is trusted.
+* `BGH_ACTIONS_EXECUTOR=auto` (the default) uses docker when the daemon is
+  reachable and otherwise **takes no jobs** (it logs a loud warning; jobs
+  stay queued for external runners). It never falls back to `shell`. The
+  shipped Docker image has no docker CLI or socket, so out of the box the
+  built-in runner is idle: register external runners, or mount the docker
+  socket and set `BGH_ACTIONS_EXECUTOR=docker` — and note that access to
+  the docker socket is root-equivalent on that host, so prefer runners on
+  separate machines.
+* Steps never inherit the server's environment: they start from an empty
+  environment plus an allowlist (`PATH`, `HOME`, `LANG`/`LC_*`, `TMPDIR`,
+  `USER`, `TZ`, proxy and docker CLI variables) and the job's own `env`.
+  `DATABASE_URL`, `REDIS_URL`, `BGH_*` and SMTP settings are not visible.
+  Job directories live under `BGH_ACTIONS_WORK_DIR`, outside the data
+  directory.
+
+`GITHUB_TOKEN` behaves like GitHub's:
+
+* it belongs to `github-actions[bot]`: comments, labels and pushes made
+  with it are attributed to the bot, and events it causes never start
+  other workflow runs (except `workflow_dispatch` / `repository_dispatch`),
+  so workflows can't trigger themselves; audit entries record the user who
+  triggered the run (`triggering_actor`);
+* its access is the workflow's `permissions:` (workflow or job level:
+  `read-all`, `write-all`, `{}`, or per category such as `contents: write`,
+  `issues: write`). Without `permissions:` it gets the site default,
+  `actions.default_workflow_permissions` in the admin settings: `read`
+  (contents and packages read, GitHub's restricted default, the default
+  here) or `write`. Pull requests from forks always get a read-only token
+  and no secrets;
+* it can never create or update workflow files. Personal access tokens and
+  OAuth tokens need the `workflow` scope for that (git push over HTTP and
+  the contents API); SSH keys and browser sessions are full credentials.
 
 ## Backup and restore
 

@@ -90,18 +90,17 @@ impl Default for RunnerConfig {
 }
 
 impl RunnerConfig {
-    /// `auto` → docker if `docker info` succeeds, else shell.
-    pub async fn detect_executor(setting: &str, docker_bin: &str) -> ExecutorKind {
+    /// The executor for `setting`: `docker`, `shell` (explicit only), or
+    /// `auto` → docker if `docker info` succeeds, else `None`. `auto` never
+    /// falls back to the shell executor, which runs workflow code with the
+    /// runner's own privileges.
+    pub async fn detect_executor(setting: &str, docker_bin: &str) -> Option<ExecutorKind> {
         match setting.trim().to_ascii_lowercase().as_str() {
-            "docker" => ExecutorKind::Docker,
-            "shell" | "host" => ExecutorKind::Shell,
-            _ => {
-                if executor::docker_available(docker_bin).await {
-                    ExecutorKind::Docker
-                } else {
-                    ExecutorKind::Shell
-                }
-            }
+            "docker" => Some(ExecutorKind::Docker),
+            "shell" | "host" => Some(ExecutorKind::Shell),
+            _ => executor::docker_available(docker_bin)
+                .await
+                .then_some(ExecutorKind::Docker),
         }
     }
 }

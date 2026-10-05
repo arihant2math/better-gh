@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use bgh_core::auth::{self, AuthOptions};
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
+use bgh_core::token_permissions::{Access, Category, TokenPermissions};
 use bgh_git::smart_http::{self, PushPolicy, Service};
 use serde::Deserialize;
 
@@ -60,6 +61,23 @@ async fn git_access(
     };
     if access.repo.disabled {
         return Err(ApiError::forbidden("Repository access blocked."));
+    }
+    // Actions job tokens: git needs `contents` (write to push; read to fetch
+    // the token's private repository).
+    if let Some(perms) = auth.as_ref().and_then(TokenPermissions::of) {
+        let has = perms.get(Category::Contents);
+        let denied = if service.is_write() {
+            has < Access::Write
+        } else {
+            has < Access::Read && access.repo.is_private()
+        };
+        if denied {
+            return Err(ApiError::forbidden(format!(
+                "Permission to {} denied to {}.",
+                access.full_name(),
+                auth.as_ref().map(|a| a.login()).unwrap_or("anonymous")
+            )));
+        }
     }
     if service.is_write() {
         if auth.is_none() {
@@ -143,6 +161,7 @@ pub async fn receive_pack(
     } else {
         Some(Actor::load(&state, &access, &pusher.user).await?)
     };
+    let workflow_denied = crate::workflow_scope::denial(&state, &pusher).await?;
 
     let outcome = smart_http::receive_pack_with_policy(
         &crate::store(&state),
@@ -152,10 +171,14 @@ pub async fn receive_pack(
         |updates| {
             let (state, rules) = (&state, &rules);
             async move {
-                match &actor {
-                    None => Ok(PushPolicy::default()),
-                    Some(actor) => protection::authorize_push(state, rules, actor, &updates).await,
-                }
+                let mut policy = match &actor {
+                    None => PushPolicy::default(),
+                    Some(actor) => {
+                        protection::authorize_push(state, rules, actor, &updates).await?
+                    }
+                };
+                policy.workflow_denied = workflow_denied;
+                Ok(policy)
             }
         },
     )

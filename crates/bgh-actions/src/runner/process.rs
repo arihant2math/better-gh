@@ -32,9 +32,11 @@ pub enum KillMode {
 pub struct ProcessSpec {
     pub program: String,
     pub args: Vec<String>,
-    /// Added on top of the inherited environment.
+    /// Added on top of the allowlisted host environment ([`HOST_ENV`]).
     pub env: Vec<(String, String)>,
-    /// Start from an empty environment instead of inheriting.
+    /// Start from an empty environment instead of the allowlisted host
+    /// variables. The runner's own environment (database URLs, `BGH_*`
+    /// secrets, SMTP credentials, ...) is never inherited.
     pub env_clear: bool,
     pub cwd: Option<PathBuf>,
     pub kill: KillMode,
@@ -76,6 +78,47 @@ impl ProcessOutcome {
     pub fn success(&self) -> bool {
         *self == ProcessOutcome::Exited(0)
     }
+}
+
+/// Host environment variables a step (or docker CLI call) inherits from
+/// the runner process; everything else is cleared. The job's own
+/// environment is added on top.
+pub const HOST_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TZ",
+    "TERM",
+    "TMPDIR",
+    // docker CLI (docker executor, `docker://` steps, services)
+    "DOCKER_HOST",
+    "DOCKER_CONFIG",
+    "DOCKER_CONTEXT",
+    "DOCKER_CERT_PATH",
+    "DOCKER_TLS_VERIFY",
+    // outbound proxies and CA bundles
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
+
+/// The allowlisted part of this process's environment ([`HOST_ENV`]).
+pub fn host_env() -> Vec<(String, String)> {
+    HOST_ENV
+        .iter()
+        .filter_map(|k| Some((k.to_string(), std::env::var(k).ok()?)))
+        .collect()
 }
 
 /// Grace period between SIGTERM and SIGKILL.
@@ -166,8 +209,9 @@ pub async fn run_process(
         .stderr(Stdio::from(writer2))
         .process_group(0)
         .kill_on_drop(true);
-    if spec.env_clear {
-        cmd.env_clear();
+    cmd.env_clear();
+    if !spec.env_clear {
+        cmd.envs(host_env());
     }
     for (k, v) in &spec.env {
         cmd.env(k, v);
@@ -283,6 +327,34 @@ pub async fn capture(spec: &ProcessSpec, cancel: &CancellationToken) -> (Process
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn only_allowlisted_host_env_is_inherited() {
+        // `cargo test` sets CARGO_* in this process; steps must not see it.
+        assert!(std::env::var("CARGO_MANIFEST_DIR").is_ok());
+        let mut spec = ProcessSpec::new("sh", vec!["-c".into(), "env".into()]);
+        spec.env.push(("JOB_VAR".into(), "1".into()));
+        let (outcome, out) = capture(&spec, &CancellationToken::new()).await;
+        assert!(outcome.success());
+        let names: Vec<&str> = out
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, _)| k)
+            .collect();
+        assert!(names.contains(&"PATH"), "{out}");
+        assert!(names.contains(&"JOB_VAR"), "{out}");
+        assert!(!names.iter().any(|k| k.starts_with("CARGO")), "{out}");
+        for k in &names {
+            assert!(
+                HOST_ENV.contains(k)
+                    || *k == "JOB_VAR"
+                    || *k == "PWD"
+                    || *k == "SHLVL"
+                    || *k == "_",
+                "unexpected {k}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn merges_output_and_exit_code() {

@@ -55,6 +55,11 @@ services:
       BGH_SIGNUP_ENABLED: ${BGH_SIGNUP_ENABLED:-true}
       BGH_SITE_NAME: ${BGH_SITE_NAME:-Better GitHub}
       BGH_JOB_WORKERS: ${BGH_JOB_WORKERS:-4}
+      # Actions: `auto` runs jobs in docker when the daemon is reachable and
+      # otherwise leaves them to external runners; it never runs workflow
+      # code in this container. `shell` (steps on the server host) is for
+      # trusted single-tenant installs only. See docs/SELF_HOSTING.md.
+      BGH_ACTIONS_EXECUTOR: ${BGH_ACTIONS_EXECUTOR:-auto}
       RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
     ports:
       - "${BGH_HTTP_PUBLISH:-3000}:3000"

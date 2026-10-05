@@ -277,6 +277,7 @@ export interface SiteSettings {
   auth_providers: { password_login: boolean; oidc: OidcProvider[] };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
+  actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
 }
 
 /** Placeholder the server returns for stored secrets; sending it back keeps them. */

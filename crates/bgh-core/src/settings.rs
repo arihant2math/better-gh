@@ -9,7 +9,7 @@
 //!
 //! Storage: one `site_settings` row per section (`signup`, `repositories`,
 //! `organizations`, `announcement`, `rate_limits`, `auth_providers`, `smtp`,
-//! `maintenance`), each a JSON object. Missing rows or fields take the
+//! `maintenance`, `actions`), each a JSON object. Missing rows or fields take the
 //! defaults below, so new fields never need a migration.
 //!
 //! Also here: the maintenance-mode middleware (503 for everyone but site
@@ -269,6 +269,28 @@ pub struct MaintenanceSettings {
     pub scheduled_at: Option<DateTime<Utc>>,
 }
 
+/// GitHub Actions defaults (GHES enterprise policies; repo and org
+/// overrides come later).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActionsSettings {
+    /// Default `GITHUB_TOKEN` permissions for workflows without
+    /// `permissions:`: `read` (contents and packages read, GitHub's
+    /// restricted default) or `write` (read/write to every category).
+    pub default_workflow_permissions: String,
+    /// Whether `GITHUB_TOKEN` may approve pull request reviews.
+    pub can_approve_pull_request_reviews: bool,
+}
+
+impl Default for ActionsSettings {
+    fn default() -> Self {
+        Self {
+            default_workflow_permissions: "read".into(),
+            can_approve_pull_request_reviews: false,
+        }
+    }
+}
+
 /// All site settings, with defaults for anything not stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -281,6 +303,7 @@ pub struct SiteSettings {
     pub auth_providers: AuthProviderSettings,
     pub smtp: SmtpSettings,
     pub maintenance: MaintenanceSettings,
+    pub actions: ActionsSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -293,6 +316,7 @@ pub const SECTIONS: &[&str] = &[
     "auth_providers",
     "smtp",
     "maintenance",
+    "actions",
 ];
 
 impl SiteSettings {
@@ -371,6 +395,15 @@ impl SiteSettings {
             "auth_providers" => self.auth_providers = serde_json::from_value(section)?,
             "smtp" => self.smtp = serde_json::from_value(section)?,
             "maintenance" => self.maintenance = serde_json::from_value(section)?,
+            "actions" => {
+                let a: ActionsSettings = serde_json::from_value(section)?;
+                if !matches!(a.default_workflow_permissions.as_str(), "read" | "write") {
+                    return Err(serde::de::Error::custom(
+                        "default_workflow_permissions must be read or write",
+                    ));
+                }
+                self.actions = a;
+            }
             _ => {}
         }
         Ok(())
