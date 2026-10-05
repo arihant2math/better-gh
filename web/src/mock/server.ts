@@ -8,10 +8,12 @@ import type { BootData } from '../boot';
 import type { Comment, ID, Issue, IssueEvent, ModelMap, ModelName, Notification, Repo, User } from '../sync/models';
 import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '../sync/protocol';
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
-import { MODEL_NAMES, SCHEMA } from '../sync/schema';
+import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
 import { Rng, fakeSha, iso } from './rng';
+import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
+import { installWikiRoutes } from './wiki';
 
 export interface MockOptions {
   /** Simulated latency range in ms for HTTP. */
@@ -32,7 +34,7 @@ interface Route {
   handler: (ctx: Ctx) => Promise<Resp> | Resp;
 }
 
-interface Ctx {
+export interface Ctx {
   m: RegExpMatchArray;
   url: URL;
   body: Record<string, unknown>;
@@ -40,15 +42,18 @@ interface Ctx {
   accept: string;
 }
 
-interface Resp {
+export interface Resp {
   status: number;
   body?: unknown;
   text?: string;
   headers?: Record<string, string>;
 }
 
+/** Route registration helper handed to feature modules (mock/projects.ts, mock/wiki.ts). */
+export type RouteFn = (method: string, pattern: string, handler: (ctx: Ctx) => Promise<Resp> | Resp) => void;
+
 const STATE_DB = 'bgh-mock-server';
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
 const LOG_KEEP = 5000;
 
 export class MockServer implements Transport {
@@ -180,9 +185,10 @@ export class MockServer implements Transport {
 
   // ------------------------------------------------------------ sync log
 
-  private scopeOf(model: ModelName, row: Record<string, unknown>): string | null {
-    const fn = SCHEMA[model].scope as ((r: unknown, v: ID) => string) | null;
-    return fn ? fn(row, this.db.viewerId) : `user:${this.db.viewerId}`;
+  scopeOf(model: ModelName, row: Record<string, unknown>): string | null {
+    const fn = SCHEMA[model].scope as ((r: unknown, v: ID, l: ScopeLookup) => string) | null;
+    const lookup = ((m: ModelName, id: ID) => this.db.tables[m].get(id)) as ScopeLookup;
+    return fn ? fn(row, this.db.viewerId, lookup) : `user:${this.db.viewerId}`;
   }
 
   /** Write a row and append a sync action (`I`/`U`), like `bgh_core::sync::record`. */
@@ -256,22 +262,22 @@ export class MockServer implements Transport {
 
   // ------------------------------------------------------------ helpers
 
-  private now(): string {
+  now(): string {
     return iso(Date.now());
   }
 
-  private nextId(): ID {
+  nextId(): ID {
     return this.db.nextId++;
   }
 
-  private repo(owner: string, name: string): Repo | undefined {
+  repo(owner: string, name: string): Repo | undefined {
     const o = owner.toLowerCase();
     const n = name.toLowerCase();
     for (const r of this.db.tables.repo.values()) if (r.owner.toLowerCase() === o && r.name.toLowerCase() === n) return r;
     return undefined;
   }
 
-  private issue(repo: Repo, number: number): Issue | undefined {
+  issue(repo: Repo, number: number): Issue | undefined {
     for (const i of this.db.tables.issue.values()) if (i.repoId === repo.id && i.number === number) return i;
     return undefined;
   }
@@ -658,9 +664,13 @@ export class MockServer implements Transport {
     R('DELETE', '/api/v3/user/starred/:owner/:repo', (ctx) => star(ctx, false));
 
     R('GET', '/api/v3/user', () => ({ status: 200, body: { login: this.viewer.login, id: this.viewer.id, name: this.viewer.name, avatar_url: '' } }));
+
+    // ---------------- projects + wiki (private endpoints)
+    installProjectRoutes(R, this);
+    installWikiRoutes(R, this);
   }
 
-  private userByLogin(login: string): User | undefined {
+  userByLogin(login: string): User | undefined {
     const l = login.toLowerCase();
     for (const u of this.db.tables.user.values()) if (u.login.toLowerCase() === l) return u;
     return undefined;

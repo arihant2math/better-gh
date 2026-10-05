@@ -493,7 +493,8 @@ Content-Type: application/json
    top, so concurrent remote edits to *other* fields show up immediately and
    our pending edit stays visible. Array patches may be expressed as
    `{ "$add": [..], "$remove": [..] }` so concurrent label/assignee edits
-   compose.
+   compose; object patches as `{ "$merge": {key: value} }` (`null` removes
+   the key) so edits to different keys compose.
 3. Send requests FIFO, one at a time.
    * `2xx` without `X-Bgh-Sync-Id` → drop the overlay.
    * `2xx` with `X-Bgh-Sync-Id: N` → keep the overlay until a delta with
