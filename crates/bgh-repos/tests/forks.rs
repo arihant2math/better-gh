@@ -1,6 +1,7 @@
 //! Forks, template generation, merge-upstream and fork-safe deletion.
 
-mod common;
+mod gitwork;
+use gitwork as common;
 
 use serde_json::json;
 

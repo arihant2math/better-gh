@@ -233,78 +233,6 @@ async fn watching() {
     res.assert_status(200);
     assert_eq!(logins(&res.json()), vec!["alice"]);
 
-    // Not watching yet.
-    app.get("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .send()
-        .await
-        .assert_status(404);
-
-    let res = app
-        .put("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .json(&json!({"subscribed": true}))
-        .send()
-        .await;
-    res.assert_status(200);
-    let v = res.json();
-    assert_eq!(v["subscribed"], true);
-    assert_eq!(v["ignored"], false);
-    assert!(v["reason"].is_null());
-    assert!(v["created_at"].is_string());
-    assert_eq!(v["url"], app.url("/api/v3/repos/alice/hello/subscription"));
-    assert_eq!(v["repository_url"], app.url("/api/v3/repos/alice/hello"));
-    let v = app.get("/api/v3/repos/alice/hello").send().await.json();
-    assert_eq!(v["subscribers_count"], 2);
-
-    let res = app
-        .get("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .send()
-        .await;
-    res.assert_status(200);
-    assert_eq!(res.json()["subscribed"], true);
-
-    // Ignoring: no longer counted as a subscriber.
-    let res = app
-        .put("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .json(&json!({"ignored": true}))
-        .send()
-        .await;
-    res.assert_status(200);
-    assert_eq!(res.json()["subscribed"], false);
-    assert_eq!(res.json()["ignored"], true);
-    let v = app.get("/api/v3/repos/alice/hello").send().await.json();
-    assert_eq!(v["subscribers_count"], 1);
-    let res = app
-        .get("/api/v3/repos/alice/hello/subscribers")
-        .send()
-        .await;
-    assert_eq!(logins(&res.json()), vec!["alice"]);
-
-    // Re-subscribe, then delete.
-    app.put("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .json(&json!({"subscribed": true, "ignored": false}))
-        .send()
-        .await
-        .assert_status(200);
-    let v = app.get("/api/v3/repos/alice/hello").send().await.json();
-    assert_eq!(v["subscribers_count"], 2);
-    app.delete("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .send()
-        .await
-        .assert_status(204);
-    let v = app.get("/api/v3/repos/alice/hello").send().await.json();
-    assert_eq!(v["subscribers_count"], 1);
-    app.get("/api/v3/repos/alice/hello/subscription")
-        .auth(&bob)
-        .send()
-        .await
-        .assert_status(404);
-
     // Legacy endpoints.
     app.get("/api/v3/user/subscriptions/alice/hello")
         .auth(&bob)
@@ -360,9 +288,8 @@ async fn watching() {
     assert_eq!(v["subscribers_count"], 1);
 
     // Private repository without access.
-    app.put("/api/v3/repos/alice/secret/subscription")
+    app.put("/api/v3/user/subscriptions/alice/secret")
         .auth(&eve)
-        .json(&json!({"subscribed": true}))
         .send()
         .await
         .assert_status(404);
@@ -371,7 +298,7 @@ async fn watching() {
         .send()
         .await
         .assert_status(404);
-    app.get("/api/v3/repos/alice/hello/subscription")
+    app.get("/api/v3/user/subscriptions/alice/hello")
         .send()
         .await
         .assert_status(401);

@@ -1,7 +1,8 @@
 //! Branches (list/get/rename), merges, and derived stats (languages,
 //! contributors, tags, teams).
 
-mod common;
+mod gitwork;
+use gitwork as common;
 
 use serde_json::json;
 

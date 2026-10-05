@@ -1,6 +1,7 @@
 //! PATCH /repos, rename redirects, transfer, topics, repository lists.
 
-mod common;
+mod gitwork;
+use gitwork as common;
 
 use serde_json::json;
 

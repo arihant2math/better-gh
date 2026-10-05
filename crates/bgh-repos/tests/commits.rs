@@ -1,6 +1,7 @@
 //! Commits API (list filters, single commit, media types) and compare.
 
-mod common;
+mod gitwork;
+use gitwork as common;
 
 use serde_json::json;
 

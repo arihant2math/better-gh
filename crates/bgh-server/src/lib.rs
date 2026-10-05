@@ -206,10 +206,8 @@ async fn healthz(State(state): State<AppState>) -> Response {
 async fn api_headers(req: Request, next: Next) -> Response {
     let mut resp = next.run(req).await;
     let h = resp.headers_mut();
-    h.insert(
-        "x-github-media-type",
-        HeaderValue::from_static("github.v3; format=json"),
-    );
+    h.entry("x-github-media-type")
+        .or_insert(HeaderValue::from_static("github.v3; format=json"));
     h.entry("x-github-api-version-selected")
         .or_insert(HeaderValue::from_static("2022-11-28"));
     resp
