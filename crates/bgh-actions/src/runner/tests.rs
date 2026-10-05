@@ -838,7 +838,9 @@ async fn artifacts_roundtrip() {
 }
 
 #[tokio::test]
-async fn cache_is_a_noop() {
+/// Without a runtime token (no cache service) the cache steps warn and
+/// continue; the service path is covered by tests/it/cache.rs.
+async fn cache_without_runtime_token_continues() {
     let e = env();
     let mock = Arc::new(Mock::default());
     let mut c1 = uses("actions/cache@v4", &[("path", "x"), ("key", "k")]);
@@ -849,8 +851,9 @@ async fn cache_is_a_noop() {
     ]);
     let c = exec(&mock, &e.cfg, s).await;
     assert_eq!(c.conclusion, "success");
-    assert!(mock.log(2).contains("Caching is not supported"));
-    assert!(mock.log(3).contains("hit=false"));
+    assert!(mock.log(2).contains("Cache service is not available"));
+    assert!(mock.log(3).contains("hit="));
+    assert!(!mock.log(3).contains("hit=true"));
 }
 
 #[tokio::test]
