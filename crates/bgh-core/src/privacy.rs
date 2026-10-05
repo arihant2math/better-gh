@@ -53,7 +53,14 @@ const EXEMPT: &[&str] = &[
 
 /// Exempt path prefixes (each also matches without the trailing slash via
 /// [`EXEMPT`]).
-const EXEMPT_PREFIXES: &[&str] = &["/_bgh/password_reset/", "/_bgh/sso/", "/assets/"];
+const EXEMPT_PREFIXES: &[&str] = &[
+    "/_bgh/password_reset/",
+    "/_bgh/sso/",
+    "/assets/",
+    // SAML sign-in and SP endpoints (metadata, ACS, single logout).
+    "/_bgh/saml/login",
+    "/saml/",
+];
 
 /// Web client pages that render signed out (see `web/src/app/App.tsx`).
 const PUBLIC_PAGES: &[&str] = &[

@@ -16,6 +16,8 @@ mod lifecycle;
 mod oauth;
 mod orgs;
 mod root;
+mod saml;
+mod scim;
 mod security;
 mod signing_keys;
 mod sso_avatars_ratelimit;

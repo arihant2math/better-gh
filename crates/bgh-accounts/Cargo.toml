@@ -23,7 +23,7 @@ base64.workspace = true
 sha2.workspace = true
 hex.workspace = true
 hmac.workspace = true
-sha1.workspace = true
+sha1 = { workspace = true, features = ["oid"] }
 flate2.workspace = true
 crc32fast.workspace = true
 reqwest.workspace = true
@@ -37,6 +37,13 @@ rustls.workspace = true
 rustls-pki-types.workspace = true
 ldap3_proto = { workspace = true, optional = true }
 futures.workspace = true
+rsa.workspace = true
+rand_core06.workspace = true
+xmlparser.workspace = true
+x509-cert.workspace = true
+aes.workspace = true
+cbc.workspace = true
+aes-gcm.workspace = true
 
 [features]
 # In-process fake LDAP server (`ldap::fake`) for tests of dependent crates.

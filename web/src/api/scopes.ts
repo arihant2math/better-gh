@@ -143,6 +143,11 @@ export const SCOPES: ScopeInfo[] = [
     description: 'Site administration (this instance)',
     siteAdminOnly: true,
   },
+  {
+    id: 'scim:enterprise',
+    description: 'Provision users and groups with SCIM',
+    siteAdminOnly: true,
+  },
 ];
 
 /** github.com scopes this server doesn't issue (still described when seen). */

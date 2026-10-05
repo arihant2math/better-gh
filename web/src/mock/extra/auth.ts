@@ -13,6 +13,7 @@
  * - OAuth: any `client_id` except `unknown`.
  */
 import type { MockServer } from '../server';
+import { samlSiteInfo } from './saml';
 import { invalid, notFound, ok, param, simpleUser, state, type Ctx, type Resp } from './util';
 
 const TOTP = '123456';
@@ -118,6 +119,7 @@ export function installAuthMocks(server: MockServer): void {
       signup_policy: 'open',
       password_login: true,
       oidc_providers: [{ name: 'acme', display_name: 'Acme SSO' }],
+      saml: samlSiteInfo(server),
       private_mode: false,
       repository_visibilities: { allowed: ['public', 'internal', 'private'], default_user: 'public', default_org: 'public' },
     }),

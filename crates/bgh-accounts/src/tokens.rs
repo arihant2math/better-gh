@@ -51,6 +51,8 @@ pub const KNOWN_SCOPES: &[&str] = &[
     "read:ssh_signing_key",
     "workflow",
     "site_admin",
+    // SCIM provisioning (`crate::scim`, enterprise endpoints).
+    "scim:enterprise",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -120,11 +122,11 @@ pub async fn create_token(
                 format!("unknown scope {s:?}"),
             )));
         }
-        if s == "site_admin" && !auth.user.site_admin {
+        if matches!(s.as_str(), "site_admin" | "scim:enterprise") && !auth.user.site_admin {
             return Err(ApiError::invalid_field(FieldError::custom(
                 "AccessToken",
                 "scopes",
-                "site_admin scope requires a site administrator",
+                format!("{s} scope requires a site administrator"),
             )));
         }
         if !scopes.contains(&s) {

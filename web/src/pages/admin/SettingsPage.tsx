@@ -10,7 +10,7 @@ import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, DotFillIcon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
-import { getSettings, patchSettings, type SiteSettings } from './api';
+import { getSamlInfo, getSettings, patchSettings, SAML_INFO_KEY, type SiteSettings } from './api';
 import {
   SECTIONS,
   dirtySections,
@@ -155,6 +155,8 @@ export default function SettingsPage() {
       setSaved(f);
       setDraft(f);
       void site.refresh();
+      // The SAML service provider panel shows the saved configuration.
+      if (dirty.includes('auth_providers')) void refresh(SAML_INFO_KEY, getSamlInfo).catch(() => undefined);
       toast({ kind: 'success', title: 'Settings saved', description: dirty.map(sectionTitle).join(', ') });
     } catch (err) {
       const section = serverSection(err);

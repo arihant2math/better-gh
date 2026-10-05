@@ -195,6 +195,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/repos/deleted', layout: AdminLayout, load: () => import('../pages/admin/DeletedReposPage'), title: () => 'Deleted repositories · Site admin' },
     { path: '/site-admin/repos/:owner/:repo', layout: AdminLayout, load: () => import('../pages/admin/RepoDetailPage'), title: (p) => `${p.owner}/${p.repo} · Site admin` },
     { path: '/site-admin/settings', layout: AdminLayout, load: () => import('../pages/admin/SettingsPage'), title: () => 'Site settings · Site admin' },
+    { path: '/site-admin/scim', layout: AdminLayout, load: () => import('../pages/admin/ScimPage'), title: () => 'SCIM provisioning · Site admin' },
     { path: '/site-admin/audit-log', layout: AdminLayout, load: () => import('../pages/admin/AuditLogPage'), title: () => 'Audit log · Site admin' },
     { path: '/site-admin/jobs', layout: AdminLayout, load: () => import('../pages/admin/JobsPage'), title: () => 'Background jobs · Site admin' },
     { path: '/site-admin/mirrors', layout: AdminLayout, load: () => import('../pages/admin/MirrorsPage'), title: () => 'Mirrors · Site admin' },

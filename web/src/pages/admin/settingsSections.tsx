@@ -1,17 +1,48 @@
 /** Section editors of the site settings page (controlled by `SettingsPage`). */
 import { useState, type ReactNode } from 'react';
+import { useResource } from '../../api/cache';
 import { AnnouncementBanner, MaintenanceBanner } from '../../app/SiteBanners';
 import styles from '../../components/admin/admin.module.css';
-import { RadioCards, Switch } from '../../components/admin/kit';
+import { CopyButton, KeyValue, RadioCards, StatusPill, Switch, useConfirm } from '../../components/admin/kit';
+import { Link } from '../../router';
 import { Button, IconButton } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
-import { MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons';
+import { KeyIcon, MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons';
 import { Field, Input, Select, Textarea } from '../../ui/Input';
+import { toast } from '../../ui/Toast';
 import { Tooltip } from '../../ui/Tooltip';
-import { fromLocalInput } from '../../components/admin/format';
+import { formatDateTime, fromLocalInput } from '../../components/admin/format';
 import { attempt, errorMessage } from '../../components/admin/kit';
-import { syncLdap, testLdap, type LdapTestResult, type Visibility } from './api';
-import { domainError, emptyOidc, ldapValue, oidcErrors, VISIBILITIES, type Errors, type LdapForm, type Limit, type OidcForm, type RetentionWindow, type SecretForm, type SettingsForm } from './settingsForm';
+import {
+  generateSamlKeypair,
+  getSamlInfo,
+  parseIdpMetadata,
+  SAML_INFO_KEY,
+  SCIM_ENTERPRISE,
+  syncLdap,
+  testLdap,
+  type IdpMetadata,
+  type LdapTestResult,
+  type SamlCertInfo,
+  type Visibility,
+} from './api';
+import {
+  domainError,
+  emptyOidc,
+  isHttpUrl,
+  ldapValue,
+  oidcErrors,
+  samlKeySet,
+  VISIBILITIES,
+  type Errors,
+  type LdapForm,
+  type Limit,
+  type OidcForm,
+  type RetentionWindow,
+  type SamlForm,
+  type SecretForm,
+  type SettingsForm,
+} from './settingsForm';
 import s from './settings.module.css';
 
 interface Props<K extends keyof SettingsForm> {
@@ -531,7 +562,7 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         checked={value.password_login}
         onChange={(password_login) => onChange({ password_login })}
         label="Password sign-in"
-        description="Built-in username and password login, on the web and for Git over HTTPS. Turn off to require LDAP or single sign-on; personal access tokens keep working."
+        description="Built-in username and password login, on the web and for Git over HTTPS. Turn off to require LDAP or single sign-on (SAML, OIDC); personal access tokens keep working."
       />
       <Switch
         checked={value.require_2fa}
@@ -548,6 +579,7 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         />
       )}
       <LdapSection value={value.ldap} onChange={(patch) => onChange({ ldap: { ...value.ldap, ...patch } })} errors={errors} />
+      <SamlSection value={value.saml} onChange={(patch) => onChange({ saml: { ...value.saml, ...patch } })} errors={errors} />
       <div>
         <div className={styles.switchLabel} style={{ marginBottom: 6 }}>
           OpenID Connect providers
@@ -589,6 +621,7 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
           {methodsError}
         </div>
       )}
+      <ScimSettings enabled={value.scim} onChange={(scim) => onChange({ scim })} />
       <OidcDialog provider={editing} all={value.oidc} onClose={() => setEditing(null)} onSave={save} />
     </div>
   );
@@ -738,6 +771,343 @@ function LdapSection({ value, onChange, errors }: { value: LdapForm; onChange: (
               )}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const NAME_ID_FORMATS: { value: string; label: string }[] = [
+  { value: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent', label: 'Persistent' },
+  { value: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress', label: 'Email address' },
+  { value: 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified', label: 'Unspecified' },
+];
+
+/** Write-only PEM key (multi-line, so a textarea rather than a password input). */
+function SecretPem({ id, label, value, onChange, hint }: { id: string; label: string; value: SecretForm; onChange: (v: SecretForm) => void; hint?: ReactNode }) {
+  if (value.stored && value.clear)
+    return (
+      <Field label={label} htmlFor={id} hint="The stored key will be removed when you save.">
+        <div className={s.secretRow}>
+          <Input id={id} disabled value="" placeholder="Will be removed" />
+          <Button size="sm" onClick={() => onChange({ ...value, clear: false })}>
+            Undo
+          </Button>
+        </div>
+      </Field>
+    );
+  return (
+    <Field label={label} htmlFor={id} hint={value.stored && !value.value ? 'A key is stored. Paste a new one to replace it.' : hint}>
+      <div className={s.secretRow}>
+        <Textarea
+          id={id}
+          rows={3}
+          value={value.value}
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={value.stored ? 'Stored — leave unchanged' : '-----BEGIN PRIVATE KEY-----'}
+          onChange={(e) => onChange({ ...value, value: e.target.value })}
+        />
+        {value.stored && (
+          <Button size="sm" variant="ghost" onClick={() => onChange({ ...value, value: '', clear: true })}>
+            Remove
+          </Button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+/** Certificate subject, fingerprint and expiry from `GET /_bgh/admin/saml`. */
+function CertLine({ cert }: { cert: SamlCertInfo }) {
+  const soon = !cert.expired && Date.parse(cert.not_after) - Date.now() < 30 * 86_400_000;
+  return (
+    <span className={s.cert}>
+      <span>{cert.subject || 'No subject'}</span>
+      <span className={`${styles.mono} ${s.fingerprint}`} title="SHA-256 fingerprint">
+        {cert.fingerprint_sha256}
+      </span>
+      <span className={styles.subtle}>
+        {cert.expired ? <StatusPill status="error">Expired</StatusPill> : soon ? <StatusPill status="warning">Expires soon</StatusPill> : null} Valid until{' '}
+        {formatDateTime(cert.not_after)}
+      </span>
+    </span>
+  );
+}
+
+/** Service provider details as saved: what to give the identity provider. */
+function SamlSpInfo() {
+  const info = useResource(SAML_INFO_KEY, getSamlInfo);
+  const i = info.data;
+  if (!i) return info.error ? <div className={styles.formError}>Could not load the service provider details: {errorMessage(info.error)}</div> : null;
+  const url = (u: string, label: string) => (
+    <span className={s.copyValue}>
+      <span className={styles.mono}>{u}</span>
+      <CopyButton text={u} label={`Copy ${label}`} />
+    </span>
+  );
+  return (
+    <div className={s.samlInfo} aria-label="Service provider details">
+      <div className={s.samlInfoTitle}>
+        Service provider <span className={styles.subtle}>· configure these in your identity provider (as saved)</span>
+      </div>
+      <KeyValue
+        items={[
+          ['Entity ID (audience)', url(i.entity_id, 'entity ID')],
+          ['ACS URL', url(i.acs_url, 'ACS URL')],
+          ['Metadata URL', url(i.metadata_url, 'metadata URL')],
+          ['Single logout URL', url(i.sls_url, 'single logout URL')],
+          ['SP certificate', i.sp_certificate ? <CertLine cert={i.sp_certificate} /> : <span className={styles.subtle}>None (requests unsigned, assertions unencrypted)</span>],
+          [
+            'IdP certificates',
+            i.idp_certificates.length ? (
+              <span className={s.certs}>
+                {i.idp_certificates.map((c) => (
+                  <CertLine key={c.fingerprint_sha256} cert={c} />
+                ))}
+              </span>
+            ) : (
+              <span className={styles.subtle}>None</span>
+            ),
+          ],
+        ]}
+      />
+      {i.errors.map((err) => (
+        <div key={err} className={styles.formError} role="alert">
+          {err}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Paste IdP metadata XML or its URL; fills the IdP fields. */
+function IdpMetadataImport({ onImport }: { onImport: (m: IdpMetadata) => void }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const run = async () => {
+    const t = text.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      const m = await parseIdpMetadata(isHttpUrl(t) && !t.startsWith('<') ? { url: t } : { metadata: t });
+      onImport(m);
+      setText('');
+      setResult({ ok: true, message: `Imported ${m.idp_entity_id ?? 'the identity provider'}: SSO URL, certificate${m.idp_slo_url ? ' and logout URL' : ''} filled in. Save to apply.` });
+    } catch (err) {
+      setResult({ ok: false, message: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <details className={s.ldapMore}>
+      <summary>Import IdP metadata</summary>
+      <Field label="Metadata XML or URL" htmlFor="saml-metadata" hint="Fills the SSO URL, entity ID, logout URL and signing certificate. Nothing is saved until you save the settings.">
+        <Textarea
+          id="saml-metadata"
+          rows={3}
+          value={text}
+          spellCheck={false}
+          placeholder="https://idp.example.com/metadata or <EntityDescriptor …>"
+          onChange={(e) => setText(e.target.value)}
+        />
+      </Field>
+      <div className={s.ldapActions}>
+        <Button size="sm" loading={busy} disabled={!text.trim()} onClick={() => void run()}>
+          Import
+        </Button>
+      </div>
+      {result && (
+        <div className={result.ok ? s.ldapOk : styles.formError} role="status">
+          {result.message}
+        </div>
+      )}
+    </details>
+  );
+}
+
+function SamlSection({ value, onChange, errors }: { value: SamlForm; onChange: (patch: Partial<SamlForm>) => void; errors: Errors }) {
+  const e = (k: string) => errors[`auth_providers.saml.${k}`];
+  const [generating, setGenerating] = useState(false);
+  const confirm = useConfirm();
+  const text = (k: keyof SamlForm, label: string, hint?: ReactNode, placeholder?: string) => (
+    <Field label={label} htmlFor={`saml-${k}`} error={e(k)} hint={hint}>
+      <Input
+        id={`saml-${k}`}
+        value={value[k] as string}
+        invalid={!!e(k)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(ev) => onChange({ [k]: ev.target.value })}
+      />
+    </Field>
+  );
+  const generate = async () => {
+    setGenerating(true);
+    await attempt('Could not generate a key pair', async () => {
+      const k = await generateSamlKeypair();
+      onChange({ sp_certificate: k.certificate, sp_private_key: { ...value.sp_private_key, value: k.private_key, clear: false } });
+      toast({ kind: 'success', title: 'Key pair generated', description: 'Save the settings to use it, then give the identity provider the new metadata.' });
+    });
+    setGenerating(false);
+  };
+  const askGenerate = () => {
+    if (!value.sp_certificate.trim() && !samlKeySet(value)) return void generate();
+    confirm({
+      title: 'Replace the SP key pair?',
+      body: 'The identity provider must get the new certificate (or re-read the metadata) after you save, or encrypted and signed messages will fail.',
+      confirmLabel: 'Generate new key pair',
+      onConfirm: generate,
+    });
+  };
+  const formats = NAME_ID_FORMATS.some((f) => f.value === value.name_id_format) ? NAME_ID_FORMATS : [...NAME_ID_FORMATS, { value: value.name_id_format, label: value.name_id_format }];
+  return (
+    <div className={s.ldap}>
+      <Switch
+        checked={value.enabled}
+        onChange={(enabled) => onChange({ enabled })}
+        label="SAML"
+        description="Single sign-on through a SAML 2.0 identity provider (Okta, Entra ID, ADFS, Keycloak…); accounts, keys, site administrators and mapped teams follow its attributes."
+      />
+      {value.enabled && (
+        <div className={s.ldapFields}>
+          <div className={styles.formRow}>{text('display_name', 'Button label', 'Shown on the sign-in page as “Sign in with …”.', 'Okta')}</div>
+          <IdpMetadataImport
+            onImport={(m) =>
+              onChange({ idp_sso_url: m.idp_sso_url, idp_entity_id: m.idp_entity_id ?? '', idp_slo_url: m.idp_slo_url ?? '', idp_certificate: m.idp_certificate })
+            }
+          />
+          <div className={styles.formRow}>
+            {text('idp_sso_url', 'IdP single sign-on URL', 'HTTP-Redirect binding.', 'https://idp.example.com/sso/saml')}
+            {text('idp_entity_id', 'IdP entity ID (optional)', 'When set, responses must come from this issuer.', 'https://idp.example.com/metadata')}
+          </div>
+          <Field label="IdP signing certificate" htmlFor="saml-idp_certificate" error={e('idp_certificate')} hint="PEM. Paste several during a certificate rollover.">
+            <Textarea
+              id="saml-idp_certificate"
+              rows={4}
+              value={value.idp_certificate}
+              spellCheck={false}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              onChange={(ev) => onChange({ idp_certificate: ev.target.value })}
+            />
+          </Field>
+          <div className={styles.formRow}>{text('idp_slo_url', 'IdP single logout URL (optional)', 'Signing out here also signs out of the identity provider.')}</div>
+          <SamlSpInfo />
+          <div className={styles.formRow}>{text('sp_entity_id', 'SP entity ID (optional)', 'Default: this instance’s base URL.')}</div>
+          <div className={styles.formRow}>
+            <Field label="SP certificate (optional)" htmlFor="saml-sp_certificate" error={e('sp_certificate')} hint="PEM; published in the metadata for request signing and encryption.">
+              <Textarea
+                id="saml-sp_certificate"
+                rows={3}
+                value={value.sp_certificate}
+                spellCheck={false}
+                placeholder="-----BEGIN CERTIFICATE-----"
+                onChange={(ev) => onChange({ sp_certificate: ev.target.value })}
+              />
+            </Field>
+            <SecretPem id="saml-sp_private_key" label="SP private key" value={value.sp_private_key} onChange={(sp_private_key) => onChange({ sp_private_key })} hint="Write-only." />
+          </div>
+          <div className={s.ldapActions}>
+            <Button size="sm" leadingIcon={KeyIcon} loading={generating} onClick={askGenerate}>
+              Generate key pair
+            </Button>
+            <span className={styles.subtle}>RSA 2048, self-signed for 10 years; fills both fields.</span>
+          </div>
+          <Switch
+            checked={value.sign_requests}
+            onChange={(sign_requests) => onChange({ sign_requests })}
+            label="Sign authentication requests"
+            description="With the SP private key; some identity providers require it."
+          />
+          <div>
+            <Switch
+              checked={value.require_encrypted_assertions}
+              onChange={(require_encrypted_assertions) => onChange({ require_encrypted_assertions })}
+              label="Require encrypted assertions"
+              description="Refuse plaintext assertions. Needs the SP key pair."
+            />
+            {e('require_encrypted_assertions') && <div className={s.providerError}>{e('require_encrypted_assertions')}</div>}
+          </div>
+          <Switch
+            checked={value.allow_idp_initiated}
+            onChange={(allow_idp_initiated) => onChange({ allow_idp_initiated })}
+            label="Allow IdP-initiated sign-in"
+            description="Accept unsolicited responses, e.g. from the identity provider’s app dashboard."
+          />
+          <Switch
+            checked={value.jit_provisioning}
+            onChange={(jit_provisioning) => onChange({ jit_provisioning })}
+            label="Create accounts on first sign-in"
+            description="Otherwise only existing (or SCIM-provisioned) accounts may sign in."
+          />
+          <div className={styles.formRow}>
+            <Field label="NameID format" htmlFor="saml-name_id_format">
+              <Select id="saml-name_id_format" value={value.name_id_format} onChange={(ev) => onChange({ name_id_format: ev.target.value })}>
+                {formats.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {text('clock_skew_seconds', 'Allowed clock skew (seconds)')}
+          </div>
+          <details className={s.ldapMore}>
+            <summary>Attribute mapping</summary>
+            <div className={styles.formRow}>
+              {text('username_attribute', 'Username (optional)', 'Default: the NameID.')}
+              {text('full_name_attribute', 'Full name', undefined, 'full_name')}
+              {text('emails_attribute', 'Emails', undefined, 'emails')}
+            </div>
+            <div className={styles.formRow}>
+              {text('ssh_keys_attribute', 'SSH keys', 'Empty: not synced.', 'public_keys')}
+              {text('gpg_keys_attribute', 'GPG keys', 'Empty: not synced.', 'gpg_keys')}
+            </div>
+            <div className={styles.formRow}>
+              {text('admin_attribute', 'Site administrator (optional)', '“true” or “1” grants site admin, anything else revokes it.', 'administrator')}
+              {text('groups_attribute', 'Groups (optional)', 'Group names for team synchronization.', 'groups')}
+            </div>
+          </details>
+        </div>
+      )}
+      {confirm.dialog}
+    </div>
+  );
+}
+
+/** `auth_providers.scim.enabled` and the endpoint base URLs. */
+function ScimSettings({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
+  const base = `${location.origin}/api/v3/scim/v2`;
+  return (
+    <div className={s.ldap}>
+      <Switch
+        checked={enabled}
+        onChange={onChange}
+        label="SCIM provisioning"
+        description="Let the identity provider create, update and deprovision accounts and groups (SCIM 2.0). Deprovisioned users are suspended and their sessions, tokens and SSH keys revoked."
+      />
+      {enabled && (
+        <div className={s.ldapFields}>
+          <KeyValue
+            items={[
+              [
+                'Enterprise endpoint',
+                <span className={s.copyValue}>
+                  <span className={styles.mono}>{`${base}/enterprises/${SCIM_ENTERPRISE}/`}</span>
+                  <CopyButton text={`${base}/enterprises/${SCIM_ENTERPRISE}/`} label="Copy enterprise endpoint" />
+                </span>,
+              ],
+              ['Organization endpoint', <span className={styles.mono}>{`${base}/organizations/<org>/`}</span>],
+            ]}
+          />
+          <span className={styles.subtle}>
+            Enterprise: a site administrator’s token with the <span className={styles.mono}>scim:enterprise</span> scope. Organizations: an owner’s token with{' '}
+            <span className={styles.mono}>admin:org</span>. <Link to="/site-admin/scim">Create a token and review provisioned users</Link>
+          </span>
         </div>
       )}
     </div>

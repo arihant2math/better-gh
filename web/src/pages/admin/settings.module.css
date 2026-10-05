@@ -315,3 +315,48 @@
   color: var(--success);
   font-size: var(--fs-sm);
 }
+
+/* ------------------------------------------------------------------ SAML */
+.samlInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.samlInfoTitle {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.copyValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.copyValue > :first-child {
+  overflow-wrap: anywhere;
+}
+
+.certs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cert {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fingerprint {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}

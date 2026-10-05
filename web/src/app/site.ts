@@ -14,6 +14,8 @@ export interface PublicSiteInfo {
   /** LDAP sign-in (directory passwords) is enabled. */
   ldap?: boolean;
   oidc_providers: { name: string; display_name: string }[];
+  /** SAML single sign-on; `login_url` takes `?return_to=`. */
+  saml?: { display_name: string; login_url: string } | null;
   /** Sign-in required for everything (absent on older servers). */
   private_mode?: boolean;
   /** Site policy for repository visibility (absent on older servers). */

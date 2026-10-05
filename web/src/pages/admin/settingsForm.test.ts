@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SiteSettings } from './api';
-import { dirtySections, toForm, toPatch, validate } from './settingsForm';
+import { dirtySections, SAML_DEFAULTS, samlErrors, samlToForm, samlValue, toForm, toPatch, validate } from './settingsForm';
 
 const settings: SiteSettings = {
   signup: { policy: 'open', allowed_email_domains: [] },
@@ -41,6 +41,8 @@ const settings: SiteSettings = {
       sync_enabled: true,
       sync_interval_hours: 1,
     },
+    saml: SAML_DEFAULTS,
+    scim: { enabled: false },
   },
   smtp: { enabled: false, host: '', port: 587, username: null, password: null, from: '', tls: 'starttls' },
   maintenance: { enabled: false, message: null, scheduled_at: null },
@@ -105,6 +107,79 @@ describe('authentication settings form', () => {
     f.auth_providers.ldap.user_filter = 'objectClass=person';
     expect(validate(f)['auth_providers.ldap.host']).toMatch(/without a scheme/);
     expect(validate(f)['auth_providers.ldap.user_filter']).toMatch(/parentheses/);
+  });
+});
+
+describe('SAML settings form', () => {
+  const PEM = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+  const saml = {
+    ...SAML_DEFAULTS,
+    enabled: true,
+    display_name: 'Okta',
+    idp_sso_url: 'https://idp.example.com/sso',
+    idp_entity_id: 'https://idp.example.com',
+    idp_certificate: PEM.trim(),
+    sp_certificate: PEM.trim(),
+    sp_private_key: '********',
+    require_encrypted_assertions: true,
+    username_attribute: 'login',
+  };
+
+  it('round-trips the settings, keeps the stored SP key and SCIM switch', () => {
+    const f = toForm({ ...settings, auth_providers: { ...settings.auth_providers, saml, scim: { enabled: true } } });
+    expect(f.auth_providers.saml.sp_private_key).toEqual({ stored: true, value: '', clear: false });
+    expect(f.auth_providers.scim).toBe(true);
+    expect(validate(f)).toEqual({});
+    const patch = toPatch(f, ['auth_providers']).auth_providers;
+    expect(patch?.saml).toEqual(saml);
+    expect(patch?.scim).toEqual({ enabled: true });
+  });
+
+  it('maps empty optional fields to null and blank mappings to the defaults', () => {
+    const f = samlToForm(saml);
+    f.idp_entity_id = '  ';
+    f.username_attribute = '';
+    f.full_name_attribute = ' ';
+    f.ssh_keys_attribute = '';
+    f.sp_private_key = { stored: true, value: '', clear: true };
+    f.clock_skew_seconds = '60';
+    const v = samlValue(f);
+    expect(v.idp_entity_id).toBeNull();
+    expect(v.username_attribute).toBeNull();
+    expect(v.full_name_attribute).toBe('full_name');
+    expect(v.ssh_keys_attribute).toBe('');
+    expect(v.sp_private_key).toBeNull();
+    expect(v.clock_skew_seconds).toBe(60);
+  });
+
+  it('mirrors the server validation', () => {
+    const f = samlToForm({ ...SAML_DEFAULTS, display_name: '' });
+    // Disabled: only the label and the clock skew are checked.
+    f.clock_skew_seconds = '3601';
+    expect(Object.keys(samlErrors(f)).sort()).toEqual(['clock_skew_seconds', 'display_name']);
+    f.display_name = 'SSO';
+    f.clock_skew_seconds = '3600';
+    f.enabled = true;
+    f.idp_sso_url = 'idp.example.com/sso';
+    f.require_encrypted_assertions = true;
+    const e = samlErrors(f);
+    expect(e.idp_sso_url).toMatch(/http/);
+    expect(e.idp_certificate).toMatch(/Required/);
+    expect(e.require_encrypted_assertions).toMatch(/key pair/);
+    f.idp_sso_url = 'https://idp.example.com/sso';
+    f.idp_certificate = 'MIIB';
+    f.sp_private_key = { stored: false, value: '-----BEGIN PRIVATE KEY-----', clear: false };
+    expect(samlErrors(f)).toEqual({ idp_certificate: expect.stringMatching(/PEM/) });
+    f.idp_certificate = PEM;
+    expect(samlErrors(f)).toEqual({});
+  });
+
+  it('counts SAML as a sign-in method', () => {
+    const f = toForm(settings);
+    f.auth_providers.password_login = false;
+    expect(validate(f)['auth_providers.methods']).toMatch(/SAML/);
+    f.auth_providers.saml = samlToForm({ ...saml, require_encrypted_assertions: false });
+    expect(validate(f)).toEqual({});
   });
 });
 

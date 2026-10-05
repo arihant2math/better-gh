@@ -406,6 +406,8 @@ pub struct AuthProviderSettings {
     pub password_login_admin_exempt: bool,
     pub oidc: Vec<OidcProvider>,
     pub ldap: LdapSettings,
+    pub saml: SamlSettings,
+    pub scim: ScimSettings,
     /// Every user must enable two-factor authentication: signed-in browser
     /// sessions without it are sent to set it up (P36; tokens unaffected).
     pub require_2fa: bool,
@@ -418,9 +420,98 @@ impl Default for AuthProviderSettings {
             password_login_admin_exempt: false,
             oidc: Vec::new(),
             ldap: LdapSettings::default(),
+            saml: SamlSettings::default(),
+            scim: ScimSettings::default(),
             require_2fa: false,
         }
     }
+}
+
+/// SAML 2.0 single sign-on with one identity provider
+/// (`bgh_accounts::saml`, GHES-style attribute mapping).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SamlSettings {
+    pub enabled: bool,
+    /// Sign-in button label.
+    pub display_name: String,
+    /// IdP single sign-on URL (HTTP-Redirect binding).
+    pub idp_sso_url: String,
+    /// IdP entity ID; when set, the `Issuer` of responses must match.
+    pub idp_entity_id: Option<String>,
+    /// IdP signing certificate(s), PEM (several during key rollover).
+    pub idp_certificate: String,
+    /// IdP single logout URL (HTTP-Redirect binding); optional.
+    pub idp_slo_url: Option<String>,
+    /// SP entity ID (audience); default: the instance base URL.
+    pub sp_entity_id: Option<String>,
+    /// SP certificate (PEM), published in the metadata for encryption and
+    /// request signing.
+    pub sp_certificate: Option<String>,
+    /// Secret; never returned by the admin API (write-only).
+    pub sp_private_key: Option<String>,
+    /// Sign `AuthnRequest`s with the SP key.
+    pub sign_requests: bool,
+    /// Refuse plaintext assertions (needs the SP key pair).
+    pub require_encrypted_assertions: bool,
+    /// Requested `NameIDFormat`.
+    pub name_id_format: String,
+    /// Accept unsolicited (IdP-initiated) responses.
+    pub allow_idp_initiated: bool,
+    /// Create accounts on first sign-in.
+    pub jit_provisioning: bool,
+    /// Attribute mapping (attribute `Name` or `FriendlyName`). The login
+    /// comes from `username_attribute`, else the `NameID`.
+    pub username_attribute: Option<String>,
+    pub full_name_attribute: String,
+    pub emails_attribute: String,
+    pub ssh_keys_attribute: String,
+    pub gpg_keys_attribute: String,
+    /// When set and present, `true`/`1` grants site admin and anything
+    /// else revokes it.
+    pub admin_attribute: Option<String>,
+    /// Group names for team sync (`external_group_mappings`, provider
+    /// `saml`).
+    pub groups_attribute: Option<String>,
+    pub clock_skew_seconds: u32,
+}
+
+impl Default for SamlSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            display_name: "SAML".into(),
+            idp_sso_url: String::new(),
+            idp_entity_id: None,
+            idp_certificate: String::new(),
+            idp_slo_url: None,
+            sp_entity_id: None,
+            sp_certificate: None,
+            sp_private_key: None,
+            sign_requests: false,
+            require_encrypted_assertions: false,
+            name_id_format: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent".into(),
+            allow_idp_initiated: false,
+            jit_provisioning: true,
+            username_attribute: None,
+            full_name_attribute: "full_name".into(),
+            emails_attribute: "emails".into(),
+            ssh_keys_attribute: "public_keys".into(),
+            gpg_keys_attribute: "gpg_keys".into(),
+            admin_attribute: None,
+            groups_attribute: Some("groups".into()),
+            clock_skew_seconds: 180,
+        }
+    }
+}
+
+/// SCIM 2.0 provisioning (`bgh_accounts::scim`): `/scim/v2/enterprises/…`
+/// (site admin tokens with `scim:enterprise`) and
+/// `/scim/v2/organizations/{org}/…` (org owners, `admin:org`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ScimSettings {
+    pub enabled: bool,
 }
 
 /// Outgoing mail through an SMTP relay (`crate::mail`); when disabled,
@@ -1094,6 +1185,10 @@ pub fn public_info(state: &AppState, s: &SiteSettings) -> Value {
         "password_login": s.auth_providers.password_login,
         "password_login_admin_exempt": s.auth_providers.password_login_admin_exempt,
         "ldap": s.auth_providers.ldap.enabled,
+        "saml": s.auth_providers.saml.enabled.then(|| json!({
+            "display_name": s.auth_providers.saml.display_name,
+            "login_url": "/_bgh/saml/login",
+        })),
         "require_2fa": s.auth_providers.require_2fa,
         "private_mode": s.privacy.private_mode,
         "repository_visibilities": {

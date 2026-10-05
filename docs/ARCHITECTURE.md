@@ -129,7 +129,7 @@ email domains), default repository visibility, max repository size and
 per-owner `storage_quotas` (git + LFS storage; checked on push, in the
 pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
-auth providers (password login, OIDC, LDAP), SMTP, maintenance mode, and push
+auth providers (password login, OIDC, LDAP, SAML, SCIM), SMTP, maintenance mode, and push
 hardening (`git`: `fsck_on_push`, `max_object_size_mb` (GH001),
 `warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`), and
 the access policy (`privacy`: `private_mode`, `allow_anonymous_directory`,
@@ -288,7 +288,17 @@ and octokit-style raw requests.
   `password_login_admin_exempt`); failures are throttled per login and per
   IP (shared by web and git) and audited as `user.failed_login` with
   `transport`. Teams can be synced from external groups
-  (`external_group_mappings`: LDAP group DNs, the OIDC groups claim).
+  (`external_group_mappings`: LDAP group DNs, the OIDC groups claim,
+  the SAML groups attribute, SCIM groups). SAML 2.0 SSO
+  (`bgh_accounts::saml`, `auth_providers.saml`, one IdP) is a pure-Rust
+  SP (own XML parser, C14N, XML-DSig and XML-Enc; no libxmlsec): metadata
+  `/saml/metadata`, ACS `/saml/consume`, SLO `/saml/sls`; identities are
+  `user_identities` rows with provider `saml`. SCIM 2.0
+  (`bgh_accounts::scim`, `auth_providers.scim`) provisions accounts
+  (`/scim/v2/enterprises/{e}/Users|Groups`, site admins with the
+  `scim:enterprise` scope) and org memberships
+  (`/scim/v2/organizations/{org}/Users`); deprovisioning suspends the
+  account and revokes sessions, PATs, OAuth tokens and SSH keys.
 * GitHub Apps (`bgh_core::apps`, `bgh_accounts::apps`, P17): an app
   authenticates with an RS256 JWT (`Bearer`, `iss` = app id or client id,
   ≤ 10 min) signed by one of its registered keys (only public keys are
