@@ -149,6 +149,10 @@ pub fn app(state: AppState) -> Router {
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
+            bgh_core::privacy::private_mode_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
             bgh_core::settings::maintenance_middleware,
         ))
         .layer(middleware::from_fn(bgh_core::auth::csrf_middleware))

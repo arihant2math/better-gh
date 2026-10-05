@@ -161,7 +161,7 @@ pub async fn search(
         if all {
             qb.push("TRUE");
         } else {
-            qb.push("(r.visibility = 'public' OR r.id = ANY(")
+            qb.push(format!("({} OR r.id = ANY(", readable.visibility_sql("r")))
                 .push_bind(private_ids.clone())
                 .push("))");
         }
@@ -212,7 +212,8 @@ pub async fn search(
             "SELECT r.id, o.login || '/' || r.name AS full_name, r.description,
                     r.visibility <> 'public' AS private, r.stargazers_count
                FROM repositories r JOIN users o ON o.id = r.owner_id
-              WHERE ($1 OR r.visibility = 'public' OR r.id = ANY($2))
+              WHERE ($1 OR r.visibility = 'public' OR ($8 AND r.visibility = 'internal')
+                     OR r.id = ANY($2))
                 AND lower(r.name) LIKE $3
                 AND ($4::text IS NULL OR lower(o.login) = $4)
                 AND ($7::bigint IS NULL OR r.owner_id = $7)
@@ -226,6 +227,7 @@ pub async fn search(
         .bind(&name_part)
         .bind(limit)
         .bind(scope_owner)
+        .bind(readable.internal)
         .fetch_all(&state.db)
         .await
     };

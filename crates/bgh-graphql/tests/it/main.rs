@@ -4,6 +4,7 @@
 
 mod common;
 
+mod access_policy;
 mod mutations;
 mod queries;
 mod schema;

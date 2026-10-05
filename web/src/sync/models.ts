@@ -52,6 +52,8 @@ export interface Repo {
   name: string;
   description: string | null;
   private: boolean;
+  /** `private` is also true for internal repositories (absent on older servers). */
+  visibility?: 'public' | 'private' | 'internal';
   fork: boolean;
   archived: boolean;
   defaultBranch: string;

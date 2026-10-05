@@ -332,6 +332,8 @@ export interface SiteSettings {
   git_maintenance: GitMaintenanceSettings;
   /** Push hardening; `null` disables a limit. */
   git: { fsck_on_push: boolean; max_object_size_mb: number | null; warn_object_size_mb: number | null; max_push_size_mb: number | null };
+  /** Access policy: private mode, anonymous directory, allowed visibilities. */
+  privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
 }
 
 /** Placeholder the server returns for stored secrets; sending it back keeps them. */

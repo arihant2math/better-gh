@@ -91,4 +91,12 @@ describe('auth mocks', () => {
     expect(normalizeUserCode('abcd-1234')).toBe('ABCD-1234');
     expect(parseScopes('repo,gist+bogus repo')).toEqual(['repo', 'gist']);
   });
+
+  it('serves public site info', async () => {
+    const s = new MockServer(null, {});
+    s.signedIn = false;
+    const r = await call(s, 'GET', '/_bgh/site');
+    expect(r.status).toBe(200);
+    expect((r.body as unknown as { repository_visibilities: { allowed: string[] } }).repository_visibilities.allowed).toContain('internal');
+  });
 });

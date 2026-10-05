@@ -9,7 +9,8 @@ import { MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { Tooltip } from '../../ui/Tooltip';
 import { fromLocalInput } from '../../components/admin/format';
-import { domainError, emptyOidc, oidcErrors, type Errors, type Limit, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
+import type { Visibility } from './api';
+import { domainError, emptyOidc, oidcErrors, VISIBILITIES, type Errors, type Limit, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
 import s from './settings.module.css';
 
 interface Props<K extends keyof SettingsForm> {
@@ -245,6 +246,47 @@ export function GitSection({ value, onChange, errors }: Props<'git'>) {
         onChange={(max_push) => onChange({ max_push })}
         error={errors['git.max_push']}
       />
+    </div>
+  );
+}
+
+const VISIBILITY_INFO: Record<Visibility, { label: string; description: string }> = {
+  public: { label: 'Public repositories', description: 'Readable by anyone who can reach this instance (signed-in users only in private mode).' },
+  internal: { label: 'Internal repositories', description: 'Readable by every signed-in user; organizations only.' },
+  private: { label: 'Private repositories', description: 'Readable only by people given access.' },
+};
+
+export function PrivacySection({ value, onChange, errors }: Props<'privacy'>) {
+  const err = errors['privacy.allowed'];
+  const toggle = (v: Visibility, on: boolean) => onChange({ allowed: VISIBILITIES.filter((x) => (x === v ? on : value.allowed.includes(x))) });
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.private_mode}
+        onChange={(private_mode) => onChange({ private_mode })}
+        label="Private mode"
+        description="Require sign-in for every page, API call, git clone, raw file and avatar. Sign-in, sign-up and password reset stay reachable."
+      />
+      <Switch
+        checked={value.private_mode || value.anonymous_directory}
+        disabled={value.private_mode}
+        onChange={(anonymous_directory) => onChange({ anonymous_directory })}
+        label="Public user directory"
+        description="Let signed-out visitors list all users and organizations (GET /users, GET /organizations). Always off in private mode."
+      />
+      <div>
+        <div className={styles.switchLabel} style={{ marginBottom: 6 }}>
+          Allowed repository visibilities
+        </div>
+        {VISIBILITIES.map((v) => (
+          <Switch key={v} checked={value.allowed.includes(v)} onChange={(on) => toggle(v, on)} label={VISIBILITY_INFO[v].label} description={VISIBILITY_INFO[v].description} />
+        ))}
+        {err && (
+          <span className={s.providerError} role="alert">
+            {err}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

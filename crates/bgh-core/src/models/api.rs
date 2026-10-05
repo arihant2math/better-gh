@@ -302,6 +302,8 @@ pub struct OrganizationFull {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub members_can_create_private_repositories: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub members_can_create_internal_repositories: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub members_can_fork_private_repositories: Option<bool>,
     /// `all` | `private` | `none` (legacy summary of the three flags above).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,6 +357,9 @@ impl OrganizationFull {
             ),
             members_can_create_private_repositories: mv(
                 settings.members_can_create_private_repositories
+            ),
+            members_can_create_internal_repositories: mv(
+                settings.members_can_create_internal_repositories
             ),
             members_can_fork_private_repositories: mv(
                 settings.members_can_fork_private_repositories

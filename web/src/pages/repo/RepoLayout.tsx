@@ -17,6 +17,7 @@ import {
   GraphIcon,
   IssueOpenedIcon,
   LockIcon,
+  OrganizationIcon,
   PlayIcon,
   RepoForkedIcon,
   RepoIcon,
@@ -28,6 +29,12 @@ import {
 } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
 import styles from './RepoLayout.module.css';
+
+/** Header badge: "Public", "Internal" or "Private". */
+function visibilityLabel(repo: { private: boolean; visibility?: string }): string {
+  if (repo.visibility === 'internal') return 'Internal';
+  return repo.private ? 'Private' : 'Public';
+}
 
 function compact(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k` : String(n);
@@ -101,7 +108,13 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
     <div className={styles.layout}>
       <header className={styles.header}>
         <div className={styles.titleRow}>
-          {repo.private ? <LockIcon size={16} className={styles.repoIcon} /> : <RepoIcon size={16} className={styles.repoIcon} />}
+          {repo.visibility === 'internal' ? (
+            <OrganizationIcon size={16} className={styles.repoIcon} />
+          ) : repo.private ? (
+            <LockIcon size={16} className={styles.repoIcon} />
+          ) : (
+            <RepoIcon size={16} className={styles.repoIcon} />
+          )}
           <h1 className={styles.title}>
             <Link to={`/${repo.owner}`} className={styles.owner}>
               {repo.owner}
@@ -111,7 +124,7 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
               {repo.name}
             </Link>
           </h1>
-          <Tag>{repo.private ? 'Private' : 'Public'}</Tag>
+          <Tag>{visibilityLabel(repo)}</Tag>
           {repo.archived && <Tag>Archived</Tag>}
           <div className={styles.actions}>
             <Button size="sm" leadingIcon={EyeIcon}>

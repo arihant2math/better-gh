@@ -30,6 +30,7 @@ const settings: SiteSettings = {
     archive_cache_max_age_days: 7,
     archive_cache_max_size_mb: 2048,
   },
+  privacy: { private_mode: false, allow_anonymous_directory: true, allowed_visibilities: ['public', 'internal', 'private'] },
 };
 
 describe('git settings form', () => {
@@ -49,5 +50,23 @@ describe('git settings form', () => {
     expect(validate(f)['git.warn_object']).toMatch(/below the maximum/);
     f.git.max_object = { on: true, mb: '' };
     expect(validate(f)['git.max_object']).toMatch(/greater than 0/);
+  });
+});
+
+describe('privacy settings form', () => {
+  it('round-trips the policy', () => {
+    const f = toForm({ ...settings, privacy: { private_mode: true, allow_anonymous_directory: false, allowed_visibilities: ['private', 'public'] } });
+    expect(f.privacy).toEqual({ private_mode: true, anonymous_directory: false, allowed: ['public', 'private'] });
+    expect(toPatch(f, ['privacy']).privacy).toEqual({ private_mode: true, allow_anonymous_directory: false, allowed_visibilities: ['public', 'private'] });
+  });
+
+  it('requires an allowed default visibility', () => {
+    const f = toForm(settings);
+    f.privacy.allowed = [];
+    expect(validate(f)['privacy.allowed']).toMatch(/at least one/);
+    f.privacy.allowed = ['private'];
+    expect(validate(f)['privacy.allowed']).toMatch(/default visibility/);
+    f.repositories.default_visibility = 'private';
+    expect(validate(f)).toEqual({});
   });
 });
