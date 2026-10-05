@@ -86,7 +86,8 @@ async fn authorize(
             }
         }
     };
-    if authz.access.repo.disabled {
+    let site_admin = authz.user.as_ref().is_some_and(|u| u.user.site_admin);
+    if authz.access.repo.disabled && !site_admin {
         return Err("ERROR: Repository access blocked.\n".into());
     }
     if write && authz.access.repo.archived {

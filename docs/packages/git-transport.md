@@ -13,7 +13,7 @@ with the integration branch (`818812f`); `cargo fmt --check`, `cargo
 clippy --workspace --all-targets --locked -D warnings` and `cargo test
 --workspace --locked` pass.
 
-Tests (`crates/bgh-repos/tests/`): `browse.rs` (8), `download.rs` (4),
+Tests (`crates/bgh-repos/tests/`): `browse.rs` (8, incl. `/_bgh/render/blob`), `download.rs` (4),
 `lfs.rs` (5, incl. git-lfs push/clone/pull/lock), `ssh.rs` (5: clone/push
 v0+v2, permissions, deploy keys, branch protection, git-lfs over SSH, host
 key), `bench.rs` (ignored, env-driven); unit tests in `bgh-git`
@@ -95,7 +95,6 @@ SSH/git-lfs tests skip themselves when `ssh`/`git-lfs` are not installed.
 | `blame/{ref}/{path}` | JSON, or NDJSON stream (`Accept: application/x-ndjson`) as `git blame --incremental` progresses; cached by commit+path |
 | `history[/{ref}[/{path}]]` | `?page&per_page`, `has_more`; cached by commit+path+page |
 | `readme[/{ref}[/{dir}]]` | rendered README |
-| `/_bgh/highlight.css` | light theme + dark (`prefers-color-scheme` / `[data-theme=dark]`) |
 
 * `{ref}` may contain slashes (`GitRepo::split_ref_path`: full SHA,
   `HEAD`, shortest branch then tag prefix, `refs/...`, abbreviated SHA).
@@ -105,9 +104,16 @@ SSH/git-lfs tests skip themselves when `ssh`/`git-lfs` are not installed.
   skip all work. Ref URLs: `max-age=30` + content ETag. `Vary: Accept,
   Cookie, Authorization`.
 * Highlighting: syntect + two-face grammars (TS/TSX, TOML, Dockerfile, …),
-  Oniguruma regex engine (4.5× faster than fancy-regex here), per-line
-  self-contained spans (`hl-*` classes), plain fallback above 512 KiB /
+  Oniguruma regex engine (4.5× faster than fancy-regex here). Output uses
+  the web client's fixed class set (docs/SYNC_PROTOCOL.md §10: `hl-k`
+  keyword, `hl-s` string, `hl-c` comment, `hl-n` number/constant, `hl-t`
+  type, `hl-f` function/macro, `hl-a` attribute/tag): flat spans that never
+  cross a line, so multi-line comments/strings are split per line; styled
+  by `web/src/ui/tokens.css` in both themes. Plain fallback above 512 KiB /
   20k lines / 2 s. Cached in Redis by blob SHA + grammar (7 days).
+* `GET /_bgh/render/blob/{owner}/{repo}/{blob_sha}?path=` implements
+  SYNC_PROTOCOL §10 exactly (`{"language","lines"}`, immutable, 404 when no
+  highlighter applies: unknown language, binary, LFS pointer, > 512 KiB).
 * Markdown: core GFM renderer; relative links → `/{o}/{r}/blob/{ref}/…`,
   relative images → `/{o}/{r}/raw/{ref}/…` (new `markdown::rewrite_urls`).
 * Commit authors map to accounts by verified email (one batched query).
@@ -123,6 +129,96 @@ SSH/git-lfs tests skip themselves when `ssh`/`git-lfs` are not installed.
   built with `parallel`). Evicted on `RepoStore::delete`.
 * `repos.pack_refs` job (enqueued after a push when ≥ 64 loose refs):
   `git pack-refs --all --prune` so ref listings use packed, pre-peeled refs.
+
+### Browse API reference (request / response examples)
+
+Auth: session cookie or any API credential. `{ref}` may be a branch
+(slashes allowed), tag, or full/abbreviated SHA. Errors are GitHub JSON
+(`404 {"message":"Not Found"}`). `…` marks elided values.
+
+`GET /_bgh/repos/alice/demo/refs`
+```json
+{"default_branch":"main",
+ "branches":[{"name":"feature/x","sha":"9f1c…"},{"name":"main","sha":"22476f…"}],
+ "tags":[{"name":"v1.0","sha":"891635…"}]}
+```
+
+`GET /_bgh/repos/alice/demo/tree/main` (also `/tree`, `/tree/{ref}/{dir}`)
+```json
+{"ref":"main","commit":"22476f…","path":"","sha":"62d55c…",
+ "entries":[
+   {"name":"src","path":"src","type":"tree","mode":"040000","sha":"66e98c…","size":null},
+   {"name":"README.md","path":"README.md","type":"blob","mode":"100644","sha":"0fa199…","size":105}],
+ "last_commits":{"src":{"sha":"22476f…","summary":"…"},"README.md":{"sha":"891635…","summary":"…"}},
+ "readme":{"name":"README.md","path":"README.md","sha":"0fa199…",
+           "html":"<h1 id=\"user-content-demo\">Demo…</h1><p>See <a href=\"http://host/alice/demo/blob/main/docs/guide.md\">…"}}
+```
+`type` is `tree | blob | symlink | commit` (submodule), directories first;
+`last_commits` is `null` until computed (then fetch `tree-commits`).
+
+`GET /_bgh/repos/alice/demo/tree-commits/22476f…/src` (immutable for a SHA)
+```json
+{"commit":"22476f…","path":"src","entries":{"main.rs":{"sha":"…"},"lib.rs":{"sha":"…"}}}
+```
+Commit shape (in `tree`, `tree-commits` and `history`):
+```json
+{"sha":"22476f…","summary":"add lib and bye","message":"add lib and bye\n",
+ "author":{"name":"Bob","email":"bob@example.com","date":"2026-10-05T07:25:57Z","login":null,"avatar_url":null},
+ "committer":{"name":"Bob","email":"bob@example.com","date":"2026-10-05T07:25:57Z","login":null,"avatar_url":null},
+ "parents":["891635…"]}
+```
+
+`GET /_bgh/repos/alice/demo/blob/main/src/main.rs`
+```json
+{"ref":"main","commit":"22476f…","path":"src/main.rs","name":"main.rs","sha":"489cb6…",
+ "type":"file","mode":"100644","size":66,"binary":false,"image":false,"mime":"application/octet-stream",
+ "lfs":null,"too_large":false,"truncated":false,"language":"rust","highlighted":true,"line_count":4,
+ "lines":["<span class=\"hl-k\">fn</span> <span class=\"hl-f\">main</span>() {","…"],
+ "rendered":null,"symlink_target":null,
+ "raw_url":"http://host/alice/demo/raw/22476f…/src/main.rs"}
+```
+Images: `image: true`, `mime: "image/png"`, `lines: null` (show `raw_url`).
+LFS pointers: `lfs: {"oid","size","stored"}`, `lines: null`. Markdown files:
+`rendered` holds sanitized HTML (links resolved like READMEs).
+
+`GET /_bgh/repos/alice/demo/blame/main/src/main.rs`
+```json
+{"commit":"22476f…","path":"src/main.rs",
+ "ranges":[{"sha":"891635…","line":1,"count":2,"orig_line":1,"orig_path":"src/main.rs"},
+           {"sha":"22476f…","line":3,"count":1,"orig_line":3,"orig_path":"src/main.rs"}],
+ "commits":{"891635…":{"sha":"891635…","summary":"initial import","author":{"name":"Alice","login":"alice"},
+                       "committer":{"name":"Alice"},"previous":null,"boundary":true}}}
+```
+With `Accept: application/x-ndjson`: one line per range as git attributes
+it, `{"range":{…},"commit":{…}}` (commit metadata on first use only), then
+`{"done":true}`.
+
+`GET /_bgh/repos/alice/demo/history/main/src/main.rs?page=1&per_page=30`
+```json
+{"ref":"main","commit":"22476f…","path":"src/main.rs","page":1,"per_page":30,
+ "has_more":false,"commits":[{"sha":"22476f…"},{"sha":"891635…"}]}
+```
+
+`GET /_bgh/repos/alice/demo/readme/main/docs` → `{"name","path","sha","html"}` (404 if none).
+
+`GET /_bgh/render/blob/alice/demo/489cb6…?path=src/main.rs`
+```json
+{"language":"rust","lines":["<span class=\"hl-k\">fn</span> <span class=\"hl-f\">main</span>() {","…"]}
+```
+
+### Web client wiring
+`web/src/pages/code/CodePage.tsx` uses these endpoints
+(`web/src/api/endpoints.ts`: `getRefs`, `getTree`, `getTreeCommits`,
+`getBlob`, `getHistory`, `browseKeys`; types in `api/types.ts`):
+directory listing with per-entry last commit (inline when cached, else
+`tree-commits` by commit SHA, immutable), server-rendered README
+(same-origin links routed client-side), file view from `blob`
+(highlighted lines, Markdown, image, LFS/binary/too-large/truncated
+notices), header last commit from `history?per_page=1`, branch + tag
+picker from `refs`, hover prefetch for entries and the file tree; route
+prefetch warms `tree`/`blob`. SHA-ref responses are cached `immutable`
+client-side. The mock backend (`web/src/mock/server.ts`) serves the same
+endpoints, so `npm run dev:mock` keeps working.
 
 ## Benchmarks
 

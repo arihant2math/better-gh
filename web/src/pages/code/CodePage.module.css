@@ -255,3 +255,38 @@
 .code tr:hover .lineNo {
   color: var(--fg-muted);
 }
+
+.entryCommit {
+  flex: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.entryTime {
+  flex: none;
+  width: 110px;
+  text-align: right;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.notice {
+  padding: 24px 16px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.image {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-subtle);
+}
+
+.image img {
+  max-width: 100%;
+}

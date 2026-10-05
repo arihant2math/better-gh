@@ -386,7 +386,8 @@ Site-level account changes also emit `UserAccountChanged` /
   blobs via `git cat-file` and resolve LFS pointers.
 * Code browser endpoints (`/_bgh/repos/{o}/{r}/tree|tree-commits|blob|
   blame|history|readme|refs`): see `bgh_repos::browse`. Highlighting is
-  syntect (class-based `hl-*` spans, CSS at `/_bgh/highlight.css`), cached
+  syntect (flat `hl-k/s/c/n/t/f/a` spans styled by web tokens, also served
+  by `/_bgh/render/blob`), cached
   in Redis by blob SHA; last-commit maps, blame and history are cached by
   commit + path. Full-SHA URLs are immutable (`private` for private
   repositories).
