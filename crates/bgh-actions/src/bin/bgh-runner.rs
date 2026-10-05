@@ -4,6 +4,7 @@
 //! bgh-runner register --url https://bgh.example --token <registration token>
 //! bgh-runner run
 //! bgh-runner remove
+//! bgh-runner run --jitconfig <encoded_jit_config>   # one job, no registration
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -43,6 +44,15 @@ enum Command {
         /// Run a single job, then unregister.
         #[arg(long)]
         ephemeral: bool,
+        /// Runner group (organization and site runners; default group if unset).
+        #[arg(long)]
+        runner_group: Option<String>,
+        /// Reported OS (Linux, macOS, Windows; default: this host's).
+        #[arg(long)]
+        os: Option<String>,
+        /// Reported architecture (X64, X86, ARM64, ARM; default: this host's).
+        #[arg(long)]
+        arch: Option<String>,
         #[arg(long, default_value = ".bgh-runner.json", env = "BGH_RUNNER_CONFIG")]
         config: PathBuf,
     },
@@ -73,6 +83,10 @@ enum Command {
         git: String,
         #[arg(long, default_value = "https://github.com")]
         github_url: String,
+        /// `encoded_jit_config` from `generate-jitconfig`: run one job as
+        /// that ephemeral runner (no `register` / config file needed).
+        #[arg(long, env = "BGH_RUNNER_JITCONFIG")]
+        jitconfig: Option<String>,
     },
     /// Unregister and delete the configuration.
     Remove {
@@ -89,6 +103,11 @@ struct SavedConfig {
     token: String,
     #[serde(default)]
     ephemeral: bool,
+    /// Reported OS / architecture (`RUNNER_OS` / `RUNNER_ARCH`).
+    #[serde(default)]
+    os: Option<String>,
+    #[serde(default)]
+    arch: Option<String>,
 }
 
 fn hostname() -> String {
@@ -159,9 +178,14 @@ async fn main() -> anyhow::Result<()> {
             name,
             labels,
             ephemeral,
+            runner_group,
+            os,
+            arch,
             config,
         } => {
             let name = name.unwrap_or_else(hostname);
+            let os = os.unwrap_or_else(|| bgh_actions::runner::host_os().to_string());
+            let arch = arch.unwrap_or_else(|| bgh_actions::runner::host_arch().to_string());
             let labels = labels
                 .into_iter()
                 .map(|l| l.trim().to_string())
@@ -174,6 +198,9 @@ async fn main() -> anyhow::Result<()> {
                     name,
                     labels,
                     ephemeral,
+                    os: Some(os.clone()),
+                    arch: Some(arch.clone()),
+                    runner_group,
                 },
             )
             .await?;
@@ -185,6 +212,8 @@ async fn main() -> anyhow::Result<()> {
                     name: resp.name.clone(),
                     token: resp.token,
                     ephemeral,
+                    os: bgh_actions::runner::normalize_os(&os).map(String::from),
+                    arch: bgh_actions::runner::normalize_arch(&arch).map(String::from),
                 },
             )?;
             println!(
@@ -205,8 +234,25 @@ async fn main() -> anyhow::Result<()> {
             docker,
             git,
             github_url,
+            jitconfig,
         } => {
-            let saved = load(&config)?;
+            let jit = jitconfig.is_some();
+            let saved = match jitconfig {
+                Some(enc) => {
+                    let j = bgh_actions::protocol::JitConfig::decode(&enc)?;
+                    SavedConfig {
+                        url: j.server_url,
+                        id: j.runner_id,
+                        name: j.runner_name,
+                        token: j.token,
+                        ephemeral: true,
+                        os: None,
+                        arch: None,
+                    }
+                }
+                None => load(&config)?,
+            };
+            let max_jobs = if saved.ephemeral { 1 } else { max_jobs };
             // A dedicated runner host may run jobs on itself (like GitHub's
             // runner); the built-in runner never does that implicitly.
             let kind = match RunnerConfig::detect_executor(&executor, &docker).await {
@@ -228,8 +274,11 @@ async fn main() -> anyhow::Result<()> {
                 "listening for jobs on {}",
                 saved.url
             );
+            let defaults = RunnerConfig::default();
             let cfg = Arc::new(RunnerConfig {
                 name: saved.name.clone(),
+                os: saved.os.clone().unwrap_or(defaults.os),
+                arch: saved.arch.clone().unwrap_or(defaults.arch),
                 work_dir,
                 executor: kind,
                 docker_bin: docker,
@@ -245,7 +294,9 @@ async fn main() -> anyhow::Result<()> {
             worker_loop(backend, cfg, max_jobs, shutdown, once || saved.ephemeral).await;
             if saved.ephemeral {
                 unregister(&saved.url, &saved.token).await?;
-                let _ = std::fs::remove_file(&config);
+                if !jit {
+                    let _ = std::fs::remove_file(&config);
+                }
                 tracing::info!("ephemeral runner unregistered");
             }
         }

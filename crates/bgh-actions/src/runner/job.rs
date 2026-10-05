@@ -726,8 +726,8 @@ impl JobRunner {
     fn runner_context(&self) -> Value {
         json!({
             "name": self.cfg.name,
-            "os": "Linux",
-            "arch": "X64",
+            "os": self.cfg.os,
+            "arch": self.cfg.arch,
             "temp": self.paths.guest_temp(),
             "tool_cache": self.paths.guest("_tool"),
             "workspace": self.paths.guest_runner_workspace(),
@@ -803,8 +803,8 @@ impl JobRunner {
         e.insert("GITHUB_STEP_SUMMARY".into(), files.guest[F_SUMMARY].clone());
         e.insert("GITHUB_STATE".into(), files.guest[F_STATE].clone());
         e.insert("RUNNER_NAME".into(), self.cfg.name.clone());
-        e.insert("RUNNER_OS".into(), "Linux".into());
-        e.insert("RUNNER_ARCH".into(), "X64".into());
+        e.insert("RUNNER_OS".into(), self.cfg.os.clone());
+        e.insert("RUNNER_ARCH".into(), self.cfg.arch.clone());
         e.insert("RUNNER_TEMP".into(), self.paths.guest_temp());
         e.insert("RUNNER_TOOL_CACHE".into(), self.paths.guest("_tool"));
         e.insert(

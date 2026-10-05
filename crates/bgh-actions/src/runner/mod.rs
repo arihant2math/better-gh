@@ -70,6 +70,10 @@ pub struct RunnerConfig {
     pub job_timeout: Option<Duration>,
     /// Interval of the step-state heartbeat.
     pub heartbeat_interval: Duration,
+    /// `RUNNER_OS` / `runner.os`: `Linux`, `Windows` or `macOS`.
+    pub os: String,
+    /// `RUNNER_ARCH` / `runner.arch`: `X86`, `X64`, `ARM` or `ARM64`.
+    pub arch: String,
 }
 
 impl Default for RunnerConfig {
@@ -85,6 +89,8 @@ impl Default for RunnerConfig {
             github_url: "https://github.com".to_string(),
             job_timeout: None,
             heartbeat_interval: Duration::from_secs(3),
+            os: host_os().to_string(),
+            arch: host_arch().to_string(),
         }
     }
 }
@@ -102,6 +108,37 @@ impl RunnerConfig {
                 .await
                 .then_some(ExecutorKind::Docker),
         }
+    }
+}
+
+/// `RUNNER_OS` of this host.
+pub fn host_os() -> &'static str {
+    normalize_os(std::env::consts::OS).unwrap_or("Linux")
+}
+
+/// `RUNNER_ARCH` of this host.
+pub fn host_arch() -> &'static str {
+    normalize_arch(std::env::consts::ARCH).unwrap_or("X64")
+}
+
+/// GitHub's spelling of an OS name (`linux`, `darwin`, `win32`, ...).
+pub fn normalize_os(os: &str) -> Option<&'static str> {
+    match os.trim().to_ascii_lowercase().as_str() {
+        "linux" => Some("Linux"),
+        "macos" | "darwin" | "osx" | "mac" => Some("macOS"),
+        "windows" | "win32" | "win" => Some("Windows"),
+        _ => None,
+    }
+}
+
+/// GitHub's spelling of an architecture (`x86_64`, `aarch64`, ...).
+pub fn normalize_arch(arch: &str) -> Option<&'static str> {
+    match arch.trim().to_ascii_lowercase().as_str() {
+        "x64" | "x86_64" | "amd64" => Some("X64"),
+        "x86" | "i386" | "i686" | "ia32" => Some("X86"),
+        "arm64" | "aarch64" => Some("ARM64"),
+        "arm" | "armv7" | "armv7l" | "armhf" => Some("ARM"),
+        _ => None,
     }
 }
 

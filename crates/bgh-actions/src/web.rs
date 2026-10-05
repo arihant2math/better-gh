@@ -90,51 +90,25 @@ async fn register(
     .fetch_optional(&state.db)
     .await?;
     let (repo_id, org_id) = row.ok_or_else(ApiError::bad_credentials)?;
-    let name = req.name.trim();
-    if name.is_empty() || name.len() > 64 {
-        return Err(ApiError::invalid_field(FieldError::invalid(
-            "Runner", "name",
-        )));
-    }
-    let labels: Vec<String> = req
-        .labels
-        .iter()
-        .map(|l| l.trim().to_ascii_lowercase())
-        .filter(|l| !l.is_empty() && !["self-hosted", "linux", "x64"].contains(&l.as_str()))
-        .collect();
-    let token = core_crypto::random_token(48);
-    let mut tx = state.db.begin().await?;
-    // Re-registering a name replaces the old runner (like `--replace`).
-    sqlx::query(
-        "DELETE FROM actions_runners
-          WHERE name = $1 AND repo_id IS NOT DISTINCT FROM $2 AND org_id IS NOT DISTINCT FROM $3
-            AND NOT builtin",
+    let created = crate::api::runners::create_runner(
+        &state,
+        crate::api::runners::NewRunner {
+            repo_id,
+            org_id,
+            name: &req.name,
+            labels: &req.labels,
+            os: req.os.as_deref(),
+            arch: req.arch.as_deref(),
+            ephemeral: req.ephemeral,
+            group_id: None,
+            group_name: req.runner_group.as_deref(),
+        },
     )
-    .bind(name)
-    .bind(repo_id)
-    .bind(org_id)
-    .execute(&mut *tx)
     .await?;
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO actions_runners (repo_id, org_id, name, labels, token_hash, ephemeral, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id",
-    )
-    .bind(repo_id)
-    .bind(org_id)
-    .bind(name)
-    .bind(&labels)
-    .bind(core_crypto::sha256_hex(&token))
-    .bind(req.ephemeral)
-    .fetch_one(&mut *tx)
-    .await?;
-    tx.commit().await?;
+    let (id, name, token) = (created.runner.id, created.runner.name, created.token);
     Ok((
         StatusCode::CREATED,
-        Json(RegisterResponse {
-            id,
-            name: name.to_string(),
-            token,
-        }),
+        Json(RegisterResponse { id, name, token }),
     ))
 }
 
