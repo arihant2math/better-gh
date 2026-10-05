@@ -440,6 +440,9 @@ async fn private_events_received_events_orgs_networks_and_feed() {
 
     // Network events: the fork network of a repository.
     let fork = create_repo(&app, &bob, json!({"name": "public-fork"})).await;
+    // Record its CreateEvent before the row is turned into a fork below
+    // (listeners read the repository when they process the event).
+    app.settle_events().await;
     sqlx::query(
         "UPDATE repositories SET fork = true, parent_id = $2, source_id = $2 WHERE id = $1",
     )
