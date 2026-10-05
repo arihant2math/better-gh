@@ -153,7 +153,7 @@ pub async fn complete_run(
     .bind(output)
     .execute(&mut **tx)
     .await?;
-    insert_annotations(&mut **tx, id, annotations).await?;
+    insert_annotations(tx, id, annotations).await?;
     tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
         .await?;
     Ok(())

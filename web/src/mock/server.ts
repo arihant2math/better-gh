@@ -10,16 +10,11 @@ import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '.
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, repoFiles, type MockFile } from './content';
-import { branchNames, pullDiffText, registerPullRoutes, type PullHost } from './pulls';
+import { loadMockFeatures, mockFeatures } from './features';
 import { PASS_STATUS } from './pass';
+import type { PullHost } from './pulls';
 import { Rng, fakeSha, iso } from './rng';
-import { installExtraMocks } from './extra';
-import { installCodeRoutes } from './code';
-import { installInboxSearchRoutes } from './inboxSearch';
-import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
-import { installWikiRoutes } from './wiki';
-import { installActionsRoutes } from './actions';
 import { marked } from 'marked';
 
 /** Mock seed content is trusted; the real server sanitizes. */
@@ -94,11 +89,12 @@ export class MockServer implements Transport {
   ) {
     this.db = db ?? seed(opts.now);
     this.buildRoutes();
-    installExtraMocks(this);
+    mockFeatures().installExtraMocks(this);
     if (opts.live) this.scheduleLive();
   }
 
   static async create(opts: MockOptions = {}): Promise<MockServer> {
+    await loadMockFeatures();
     if (opts.persist && typeof indexedDB !== 'undefined') {
       const saved = await loadState();
       if (saved) {
@@ -402,7 +398,7 @@ export class MockServer implements Transport {
       this.routes.push({ method, re, handler });
     };
     // Code tab (mock/code.ts) first: it supersedes the simple browse routes below.
-    installCodeRoutes(R, this);
+    mockFeatures().installCodeRoutes(R, this);
     const repoOr404 = (ctx: Ctx): Repo | Resp => this.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!)) ?? { status: 404, body: { message: 'Not Found' } };
     const issueOr404 = (ctx: Ctx): [Repo, Issue] | Resp => {
       const repo = repoOr404(ctx);
@@ -543,7 +539,7 @@ export class MockServer implements Transport {
     R('GET', '/api/v3/repos/:owner/:repo/branches', (ctx) => {
       const repo = repoOr404(ctx);
       if (isResp(repo)) return repo;
-      const names = branchNames(this.pullHost(() => undefined), repo);
+      const names = mockFeatures().branchNames(this.pullHost(() => undefined), repo);
       return {
         status: 200,
         body: [{ name: repo.defaultBranch, commit: { sha: fakeSha(`${repo.id}:main`) }, protected: true }, ...names.map((n) => ({ name: n, commit: { sha: fakeSha(`${repo.id}:${n}`) }, protected: false }))],
@@ -564,7 +560,7 @@ export class MockServer implements Transport {
       if (ctx.accept.includes('diff')) {
         return {
           status: 200,
-          text: pullDiffText(this.pullHost(() => undefined), repo, pr),
+          text: mockFeatures().pullDiffText(this.pullHost(() => undefined), repo, pr),
           headers: { 'content-type': 'text/x-diff; charset=utf-8' },
         };
       }
@@ -1115,11 +1111,12 @@ export class MockServer implements Transport {
     // GET|PATCH /api/v3/user (private-user with profile fields) live in mock/extra/user.ts.
 
     // ---------------- projects + wiki (private endpoints)
-    installProjectRoutes(R, this);
-    installWikiRoutes(R, this);
-    installInboxSearchRoutes(R, this);
-    installActionsRoutes(R, this);
-    registerPullRoutes(this.pullHost(R));
+    const f = mockFeatures();
+    f.installProjectRoutes(R, this);
+    f.installWikiRoutes(R, this);
+    f.installInboxSearchRoutes(R, this);
+    f.installActionsRoutes(R, this);
+    f.registerPullRoutes(this.pullHost(R));
   }
 
   private pullHost(R: (method: string, pattern: string, handler: Route['handler']) => void): PullHost {
