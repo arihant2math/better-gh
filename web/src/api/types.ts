@@ -87,6 +87,50 @@ export interface RestRepository {
   owner: RestUser;
   description: string | null;
   default_branch: string;
+  fork?: boolean;
+  is_template?: boolean;
+  has_issues?: boolean;
+  has_projects?: boolean;
+  allow_forking?: boolean;
+  archived?: boolean;
+  permissions?: { admin: boolean; maintain?: boolean; push: boolean; triage?: boolean; pull: boolean };
+  /** Full repository only: the fork's direct parent / network root. */
+  parent?: RestRepoRef | null;
+  source?: RestRepoRef | null;
+  /** Repository generated from a template. */
+  template_repository?: RestRepoRef | null;
+}
+
+/** `minimal-repository` subset used for parent / source / template links. */
+export interface RestRepoRef {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: RestUser;
+  default_branch?: string;
+  private?: boolean;
+}
+
+/** `GET /repos/{o}/{r}/check-runs/{id}` (fields the run redirect page needs). */
+export interface RestCheckRun {
+  id: number;
+  name: string;
+  status: 'queued' | 'in_progress' | 'completed' | 'waiting' | 'requested' | 'pending';
+  conclusion: string | null;
+  head_sha: string;
+  details_url: string | null;
+  html_url: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  output?: { title: string | null; summary: string | null; text?: string | null };
+  app?: { name: string; slug?: string } | null;
+}
+
+/** `POST /repos/{o}/{r}/merge-upstream` */
+export interface MergeUpstreamResult {
+  message: string;
+  merge_type: 'none' | 'fast-forward' | 'merge';
+  base_branch: string;
 }
 
 /** `/_bgh/render/blob/{owner}/{repo}/{sha}` (docs/SYNC_PROTOCOL.md §10). */
@@ -151,6 +195,13 @@ export interface RestFork {
   full_name: string;
   owner: RestUser;
   default_branch: string;
+  description?: string | null;
+  private?: boolean;
+  stargazers_count?: number;
+  forks_count?: number;
+  open_issues_count?: number;
+  pushed_at?: string | null;
+  updated_at?: string | null;
 }
 
 // ---------------------------------------------------------------- code browser
