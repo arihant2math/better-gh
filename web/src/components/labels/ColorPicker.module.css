@@ -1,0 +1,67 @@
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.random {
+  color: var(--fg-on-accent);
+  border-color: transparent;
+}
+
+.random svg {
+  mix-blend-mode: difference;
+}
+
+.swatchButton {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.hex {
+  width: 96px;
+  font-family: var(--font-mono);
+}
+
+.presets {
+  padding: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  gap: 6px;
+}
+
+.preset {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.preset:hover,
+.preset:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.presetOn {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

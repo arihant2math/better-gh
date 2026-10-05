@@ -1133,10 +1133,22 @@ pub fn event_sync_json(e: &EventRow) -> Value {
         "cross-referenced" => {
             copy("sourceIssueId", d.get("source_issue_id"));
             copy("sourceCommentId", d.get("source_comment_id"));
+            copy("sourceNumber", d.get("source_number"));
+            copy("sourceRepository", d.get("source_repository"));
+            copy("sourceIsPr", d.get("source_is_pull_request"));
         }
-        "sub_issue_added" | "sub_issue_removed" => copy("subIssueId", d.pointer("/sub_issue/id")),
+        "sub_issue_added" | "sub_issue_removed" => {
+            copy("subIssueId", d.pointer("/sub_issue/id"));
+            copy("subIssueNumber", d.pointer("/sub_issue/number"));
+            copy("subIssueRepository", d.pointer("/sub_issue/repository"));
+        }
         "parent_issue_added" | "parent_issue_removed" => {
-            copy("parentIssueId", d.pointer("/parent_issue/id"))
+            copy("parentIssueId", d.pointer("/parent_issue/id"));
+            copy("parentIssueNumber", d.pointer("/parent_issue/number"));
+            copy(
+                "parentIssueRepository",
+                d.pointer("/parent_issue/repository"),
+            );
         }
         "transferred" => copy("fromRepository", d.get("from_repository")),
         _ => {}

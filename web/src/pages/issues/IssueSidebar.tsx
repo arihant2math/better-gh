@@ -4,8 +4,9 @@ import { Link } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Issue, Repo } from '../../sync/models';
-import { setMilestone, toggleAssignee, toggleLabel } from '../../sync/mutations';
-import { assignableUsers, canWrite, commentsForIssue, labelsForRepo, milestonesForRepo } from '../../sync/selectors';
+import { randomLabelColor } from '../../components/labels/colors';
+import { addAssignees, addLabels, createLabel, setMilestone, toggleAssignee, toggleLabel } from '../../sync/mutations';
+import { assignableUsers, canPush, canWrite, commentsForIssue, labelByName, labelsForRepo, milestonesForRepo } from '../../sync/selectors';
 import { Avatar, ColorDot, LabelPill } from '../../ui/Badge';
 import { GearIcon, MilestoneIcon } from '../../ui/icons';
 import { SelectPanel } from '../../ui/Menu';
@@ -63,7 +64,16 @@ export const IssueSidebar = observer(function IssueSidebar({ issue, repo, extra 
     <aside className={styles.sidebar} aria-label="Issue details">
       <Section title="Assignees" onEdit={writable ? () => setOpen('assignees') : undefined} anchor={aRef} shortcut="A">
         {assignees.length === 0 ? (
-          <span className={styles.subtle}>No one assigned</span>
+          <span className={styles.subtle}>
+            No one —{' '}
+            {writable && issue.id > 0 ? (
+              <button type="button" className={styles.linkButton} onClick={() => addAssignees(issue, [s.viewerId])}>
+                assign yourself
+              </button>
+            ) : (
+              'unassigned'
+            )}
+          </span>
         ) : (
           assignees.map((u) => (
             <Link key={u.id} to={`/${u.login}`} className={styles.person}>
@@ -116,13 +126,24 @@ export const IssueSidebar = observer(function IssueSidebar({ issue, repo, extra 
           selected: issue.labelIds.includes(l.id),
         }))}
         onToggle={(id) => toggleLabel(issue, Number(id))}
+        onCreate={
+          canPush(repo.id)
+            ? (name) => {
+                createLabel(repo, { name, color: randomLabelColor(), description: null });
+                const created = labelByName(repo.id, name);
+                if (created) addLabels(issue, [created.id]);
+              }
+            : undefined
+        }
+        createLabel={(q) => `Create new label “${q}”`}
+        footer={<Link to={`/${repo.owner}/${repo.name}/labels`}>Edit labels</Link>}
       />
 
       <Section title="Milestone" onEdit={writable ? () => setOpen('milestone') : undefined} anchor={mRef} shortcut="M">
         {milestone ? (
           <div className={styles.milestone}>
             <MilestoneIcon size={14} />
-            <span>{milestone.title}</span>
+            <Link to={`/${repo.owner}/${repo.name}/milestone/${milestone.number}`}>{milestone.title}</Link>
             <progress
               className={styles.progress}
               max={milestone.openIssues + milestone.closedIssues || 1}
@@ -143,13 +164,20 @@ export const IssueSidebar = observer(function IssueSidebar({ issue, repo, extra 
         placeholder="Filter milestones"
         multiple={false}
         emptyText="No milestones in this repository"
-        items={milestonesForRepo(repo.id).map((m) => ({
-          id: m.id,
-          text: m.title,
-          description: m.state === 'closed' ? 'Closed' : m.dueOn ? `Due ${new Date(m.dueOn).toLocaleDateString()}` : undefined,
-          selected: issue.milestoneId === m.id,
-        }))}
-        onToggle={(id) => setMilestone(issue, issue.milestoneId === Number(id) ? null : Number(id))}
+        items={[
+          ...(issue.milestoneId != null ? [{ id: 'clear', text: 'Clear milestone', selected: false }] : []),
+          ...milestonesForRepo(repo.id)
+            .filter((m) => m.state === 'open' || m.id === issue.milestoneId)
+            .map((m) => ({
+              id: m.id,
+              text: m.title,
+              leading: <MilestoneIcon size={14} />,
+              description: m.state === 'closed' ? 'Closed' : m.dueOn ? `Due ${new Date(m.dueOn).toLocaleDateString()}` : 'No due date',
+              selected: issue.milestoneId === m.id,
+            })),
+        ]}
+        onToggle={(id) => setMilestone(issue, id === 'clear' || issue.milestoneId === Number(id) ? null : Number(id))}
+        footer={<Link to={`/${repo.owner}/${repo.name}/milestones`}>Manage milestones</Link>}
       />
 
       {extra}

@@ -4,7 +4,7 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
-import { getContents, getPullDiff, listPullCommits } from '../api/endpoints';
+import { getContents, getIssueTemplates, getPullDiff, listPullCommits } from '../api/endpoints';
 import { defineRoutes, type Params } from '../router';
 import { hasSync, sync } from '../sync';
 import { issueByNumber, repoByName } from '../sync/selectors';
@@ -27,6 +27,10 @@ function prefetchPull(p: Params) {
   } else if (p.tab === 'commits') {
     prefetchResource(`commits:${p.owner}/${p.repo}#${p.number}`, () => listPullCommits(p.owner!, p.repo!, Number(p.number)));
   }
+}
+
+function prefetchTemplates(p: Params) {
+  prefetchResource(`issue-templates:${p.owner}/${p.repo}`.toLowerCase(), () => getIssueTemplates(p.owner!, p.repo!), { ttlMs: 60_000 });
 }
 
 function prefetchCode(p: Params) {
@@ -54,6 +58,30 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/tree/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchCode, title: (p) => `${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/blob/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchCode, title: (p) => `${p['*']} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/issues', layout: RepoLayout, load: () => import('../pages/issues/IssueListPage'), title: (p) => `Issues · ${p.owner}/${p.repo}` },
+    {
+      path: '/:owner/:repo/issues/new/choose',
+      layout: RepoLayout,
+      load: () => import('../pages/issues/new/NewIssuePage'),
+      prefetch: prefetchTemplates,
+      title: (p) => `New issue · ${p.owner}/${p.repo}`,
+    },
+    {
+      path: '/:owner/:repo/issues/new',
+      layout: RepoLayout,
+      load: () => import('../pages/issues/new/NewIssuePage'),
+      prefetch: prefetchTemplates,
+      title: (p) => `New issue · ${p.owner}/${p.repo}`,
+    },
+    { path: '/:owner/:repo/labels', layout: RepoLayout, load: () => import('../pages/labels/LabelsPage'), title: (p) => `Labels · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/milestones', layout: RepoLayout, load: () => import('../pages/milestones/MilestonesPage'), title: (p) => `Milestones · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/milestones/new', layout: RepoLayout, load: () => import('../pages/milestones/MilestoneFormPage'), title: (p) => `New milestone · ${p.owner}/${p.repo}` },
+    {
+      path: '/:owner/:repo/milestones/:number/edit',
+      layout: RepoLayout,
+      load: () => import('../pages/milestones/MilestoneFormPage'),
+      title: (p) => `Edit milestone · ${p.owner}/${p.repo}`,
+    },
+    { path: '/:owner/:repo/milestone/:number', layout: RepoLayout, load: () => import('../pages/milestones/MilestonePage'), title: (p) => `Milestone · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/issues/:number',
       layout: RepoLayout,

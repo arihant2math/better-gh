@@ -123,6 +123,8 @@ export interface Issue {
   reactions?: ReactionCounts;
   /** Parent issue id (sub-issues). */
   parentId?: ID | null;
+  /** Sub-issue ids in priority order (may include issues of other repos). */
+  subIssueIds?: ID[];
   /** Pinned to the repository's issue list. */
   pinned?: boolean;
   createdAt: Timestamp;
@@ -223,8 +225,16 @@ export interface IssueEvent {
     lockReason?: string;
     sourceIssueId?: ID;
     sourceCommentId?: ID;
+    /** cross-referenced: where the reference came from ("owner/repo", number). */
+    sourceNumber?: number;
+    sourceRepository?: string;
+    sourceIsPr?: boolean;
     subIssueId?: ID;
+    subIssueNumber?: number;
+    subIssueRepository?: string;
     parentIssueId?: ID;
+    parentIssueNumber?: number;
+    parentIssueRepository?: string;
     fromRepository?: string;
   };
   createdAt: Timestamp;

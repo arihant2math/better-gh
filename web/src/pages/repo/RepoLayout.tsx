@@ -80,7 +80,9 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
       ? 'code'
       : section === 'pull'
         ? 'pulls'
-        : section;
+        : section === 'labels' || section === 'milestones' || section === 'milestone'
+          ? 'issues'
+          : section;
   const canAdmin = viewer?.permission === 'admin';
 
   const tabs = [

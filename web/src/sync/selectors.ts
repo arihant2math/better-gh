@@ -101,3 +101,54 @@ export function notifications(): Notification[] {
 export function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
+
+/** Pinned issues of a repo (at most 3), oldest first. */
+export function pinnedIssues(repoId: ID): Issue[] {
+  return issuesForRepo(repoId)
+    .filter((i) => i.pinned && !i.isPr)
+    .sort((a, b) => cmp(a.createdAt, b.createdAt));
+}
+
+/** Sub-issues in priority order; ids not in the store (other repos) are skipped. */
+export function subIssuesOf(issue: Issue): Issue[] {
+  const s = store();
+  return (issue.subIssueIds ?? []).map((id) => s.get('issue', id)).filter((i): i is Issue => !!i);
+}
+
+export function milestoneByNumber(repoId: ID, number: number): Milestone | undefined {
+  return store()
+    .byIndex('milestone', 'repoId', repoId)
+    .find((m) => m.number === number);
+}
+
+export function labelByName(repoId: ID, name: string): Label | undefined {
+  const n = name.toLowerCase();
+  return store()
+    .byIndex('label', 'repoId', repoId)
+    .find((l) => l.name.toLowerCase() === n);
+}
+
+/** Issues (not PRs) in a milestone. */
+export function issuesInMilestone(m: Milestone): Issue[] {
+  return issuesForRepo(m.repoId).filter((i) => i.milestoneId === m.id);
+}
+
+/** Number of open issues + PRs using a label (labels page). */
+export function labelUsage(repoId: ID): Map<ID, number> {
+  const out = new Map<ID, number>();
+  for (const i of issuesForRepo(repoId)) {
+    if (i.state !== 'open') continue;
+    for (const l of i.labelIds) out.set(l, (out.get(l) ?? 0) + 1);
+  }
+  return out;
+}
+
+export function canTriage(repoId: ID): boolean {
+  return canWrite(repoId);
+}
+
+/** Write (not just triage): label/milestone CRUD, pins, transfer. */
+export function canPush(repoId: ID): boolean {
+  const p = viewerPermission(repoId);
+  return p === 'write' || p === 'maintain' || p === 'admin';
+}

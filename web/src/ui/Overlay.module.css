@@ -132,6 +132,20 @@
   padding-top: 4px;
 }
 
+.panelFooter {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+
+.panelFooter a {
+  color: var(--fg-muted);
+}
+
+.panelFooter a:hover {
+  color: var(--accent-fg);
+}
+
 .check {
   width: 16px;
   height: 16px;

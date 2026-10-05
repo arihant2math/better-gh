@@ -201,7 +201,13 @@ async fn cross_references(
             Some(actor.id),
             "cross-referenced",
             None,
-            json!({ "source_issue_id": issue.id, "source_comment_id": comment_id }),
+            json!({
+                "source_issue_id": issue.id,
+                "source_comment_id": comment_id,
+                "source_number": issue.number,
+                "source_repository": format!("{}/{}", info.owner.login, info.repo.name),
+                "source_is_pull_request": issue.is_pull_request,
+            }),
         )
         .await?;
         tx.emit(Event::IssueCrossReferenced {

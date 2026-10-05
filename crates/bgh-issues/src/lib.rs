@@ -138,6 +138,18 @@ pub fn web_router() -> Router<AppState> {
             "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/pin",
             put(pins::pin).delete(pins::unpin),
         )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/viewer-reactions",
+            get(reactions::viewer_reactions),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/reactions/{content}",
+            delete(reactions::delete_own_for_issue),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{content}",
+            delete(reactions::delete_own_for_comment),
+        )
 }
 
 /// Event listeners: default labels for new repositories, and commit

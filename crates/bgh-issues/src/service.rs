@@ -117,6 +117,12 @@ pub async fn issue_sync_json(tx: &mut Tx, issue: &db::Issue, with_body: bool) ->
             .bind(issue.id)
             .fetch_one(&mut **tx)
             .await?;
+    let sub_issue_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT child_id FROM sub_issues WHERE parent_id = $1 ORDER BY position, child_id",
+    )
+    .bind(issue.id)
+    .fetch_all(&mut **tx)
+    .await?;
     let reactions = reactions_in_tx(tx, "issue", issue.id).await?;
     let mut v = json!({
         "id": issue.id,
@@ -134,6 +140,7 @@ pub async fn issue_sync_json(tx: &mut Tx, issue: &db::Issue, with_body: bool) ->
         "activeLockReason": issue.active_lock_reason,
         "reactions": json::reaction_counts_json(&reactions),
         "parentId": parent_id,
+        "subIssueIds": sub_issue_ids,
         "pinned": pinned,
         "createdAt": Timestamp::from(issue.created_at),
         "updatedAt": Timestamp::from(issue.updated_at),

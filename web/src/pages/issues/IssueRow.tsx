@@ -5,7 +5,7 @@ import { store } from '../../sync';
 import type { Issue } from '../../sync/models';
 import { AvatarStack, LabelPill, StateIcon } from '../../ui/Badge';
 import { cx } from '../../ui/Button';
-import { CheckIcon, CommentIcon, DotFillIcon, MilestoneIcon, XIcon } from '../../ui/icons';
+import { CheckIcon, CommentIcon, DotFillIcon, IssueTracksIcon, LockIcon, MilestoneIcon, XIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tooltip } from '../../ui/Tooltip';
 import styles from './IssueList.module.css';
@@ -30,6 +30,18 @@ const ChecksIcon = observer(function ChecksIcon({ issue }: { issue: Issue }) {
         {c.icon}
       </span>
     </Tooltip>
+  );
+});
+
+/** "2 / 5" closed sub-issues (children of other repos count when loaded). */
+const SubIssueProgress = observer(function SubIssueProgress({ issue }: { issue: Issue }) {
+  const ids = issue.subIssueIds ?? [];
+  const done = ids.filter((id) => store().get('issue', id)?.state === 'closed').length;
+  return (
+    <span className={styles.milestone} title={`${done} of ${ids.length} sub-issues closed`}>
+      <IssueTracksIcon size={12} />
+      {done} / {ids.length}
+    </span>
   );
 });
 
@@ -118,6 +130,12 @@ export const IssueRow = observer(function IssueRow({
               </span>
               {issue.isPr && issue.state === 'open' && issue.reviewDecision && (
                 <span className={cx(styles.review, styles[issue.reviewDecision])}>{REVIEW_TEXT[issue.reviewDecision]}</span>
+              )}
+              {issue.subIssueIds && issue.subIssueIds.length > 0 && <SubIssueProgress issue={issue} />}
+              {issue.locked && (
+                <span className={styles.milestone} title="Locked">
+                  <LockIcon size={12} />
+                </span>
               )}
               {milestone && (
                 <span className={styles.milestone}>

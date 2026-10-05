@@ -163,7 +163,12 @@ const ISSUE_COLS: &str = r#"
     i.author_id AS "authorId", coalesce(aa.ids, '{}') AS "assigneeIds",
     coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
     i.comments_count AS "comments", i.locked AS "locked",
+    i.active_lock_reason AS "activeLockReason",
     coalesce(ra.r, '{}') AS "reactions",
+    (SELECT s.parent_id FROM sub_issues s WHERE s.child_id = i.id) AS "parentId",
+    coalesce((SELECT array_agg(s.child_id ORDER BY s.position, s.child_id)
+                FROM sub_issues s WHERE s.parent_id = i.id), '{}') AS "subIssueIds",
+    EXISTS (SELECT 1 FROM pinned_issues pi WHERE pi.issue_id = i.id) AS "pinned",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
     bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
 
@@ -399,6 +404,19 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                      'from', coalesce(e.data->'rename'->'from', e.data->'from'),
                      'to', coalesce(e.data->'rename'->'to', e.data->'to'),
                      'stateReason', e.data->'state_reason',
+                     'lockReason', e.data->'lock_reason',
+                     'sourceIssueId', e.data->'source_issue_id',
+                     'sourceCommentId', e.data->'source_comment_id',
+                     'sourceNumber', e.data->'source_number',
+                     'sourceRepository', e.data->'source_repository',
+                     'sourceIsPr', e.data->'source_is_pull_request',
+                     'subIssueId', e.data->'sub_issue'->'id',
+                     'subIssueNumber', e.data->'sub_issue'->'number',
+                     'subIssueRepository', e.data->'sub_issue'->'repository',
+                     'parentIssueId', e.data->'parent_issue'->'id',
+                     'parentIssueNumber', e.data->'parent_issue'->'number',
+                     'parentIssueRepository', e.data->'parent_issue'->'repository',
+                     'fromRepository', e.data->'from_repository',
                      'commitId', e.commit_id)),
                  'createdAt', bgh_ts(e.created_at))::text AS j
                FROM issue_events e WHERE {}",

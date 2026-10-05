@@ -53,3 +53,63 @@ export function decodeContent(b64: string): string {
   const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
   return new TextDecoder().decode(bytes);
 }
+
+// ------------------------------------------------------------------ issue templates
+
+/** One element of an issue form's `body` (GitHub issue forms syntax). */
+export interface IssueFormElement {
+  type: 'markdown' | 'textarea' | 'input' | 'dropdown' | 'checkboxes';
+  id?: string;
+  attributes?: {
+    label?: string;
+    description?: string;
+    placeholder?: string;
+    value?: string;
+    render?: string;
+    multiple?: boolean;
+    default?: number;
+    options?: (string | { label: string; required?: boolean })[];
+  };
+  validations?: { required?: boolean };
+}
+
+export interface IssueTemplate {
+  filename: string;
+  type: 'markdown' | 'form';
+  name: string;
+  about: string;
+  title: string | null;
+  labels: string[];
+  assignees: string[];
+  projects?: string[];
+  issue_type?: string | null;
+  body: string | null;
+  form: IssueFormElement[] | null;
+}
+
+export interface IssueTemplates {
+  commit_sha: string | null;
+  templates: IssueTemplate[];
+  config: { blank_issues_enabled: boolean; contact_links: { name: string; url: string; about: string }[] };
+  errors: { filename: string; message: string }[];
+}
+
+/** Templates + forms parsed from `.github/ISSUE_TEMPLATE` (cached server-side by commit). */
+export function getIssueTemplates(owner: string, repo: string): Promise<IssueTemplates> {
+  return api.get<IssueTemplates>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issue-templates`);
+}
+
+/** Minimal GitHub issue shape used for sub-issues outside the local store. */
+export interface RestIssueRef {
+  id: number;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  state_reason: string | null;
+  html_url: string;
+  repository_url?: string;
+}
+
+export function listSubIssues(owner: string, repo: string, number: number): Promise<RestIssueRef[]> {
+  return api.get<RestIssueRef[]>(`${v3('repos', owner, repo, 'issues', number, 'sub_issues')}?per_page=100`);
+}

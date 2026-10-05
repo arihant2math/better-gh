@@ -147,6 +147,9 @@ export function SelectPanel({
   placeholder = 'Filter',
   placement = 'bottom-start',
   emptyText = 'No matches',
+  onCreate,
+  createLabel = (q) => `Create “${q}”`,
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
@@ -158,10 +161,26 @@ export function SelectPanel({
   placeholder?: string;
   placement?: Placement;
   emptyText?: string;
+  /** Offer a "Create …" row when the query matches no item exactly. */
+  onCreate?: (query: string) => void;
+  createLabel?: (query: string) => string;
+  /** Rendered below the list (e.g. an "Edit labels" link). */
+  footer?: ReactNode;
 }) {
   return (
     <Popover open={open} onClose={onClose} anchor={anchor} placement={placement} className={styles.panel} role="dialog" aria-label={title}>
-      <SelectPanelBody title={title} items={items} onToggle={onToggle} multiple={multiple} placeholder={placeholder} onClose={onClose} emptyText={emptyText} />
+      <SelectPanelBody
+        title={title}
+        items={items}
+        onToggle={onToggle}
+        multiple={multiple}
+        placeholder={placeholder}
+        onClose={onClose}
+        emptyText={emptyText}
+        onCreate={onCreate}
+        createLabel={createLabel}
+      />
+      {footer && <div className={styles.panelFooter}>{footer}</div>}
     </Popover>
   );
 }
@@ -174,6 +193,8 @@ function SelectPanelBody({
   placeholder,
   onClose,
   emptyText,
+  onCreate,
+  createLabel,
 }: {
   title: string;
   items: SelectItem[];
@@ -182,6 +203,8 @@ function SelectPanelBody({
   placeholder: string;
   onClose: () => void;
   emptyText: string;
+  onCreate?: (query: string) => void;
+  createLabel: (query: string) => string;
 }) {
   const [query, setQuery] = useState('');
   // Keep the initial order stable while the panel is open (selected first), so
@@ -198,12 +221,19 @@ function SelectPanelBody({
       .sort((a, b) => b.s - a.s)
       .map((x) => x.i);
   }, [items, order, query]);
-  const { active, setActive, onKeyDown } = useActiveIndex(filtered.length, query);
+  const q = query.trim();
+  const canCreate = !!onCreate && q !== '' && !items.some((i) => i.text.toLowerCase() === q.toLowerCase());
+  const { active, setActive, onKeyDown } = useActiveIndex(filtered.length + (canCreate ? 1 : 0), query);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [active]);
   const choose = (i: number) => {
+    if (canCreate && i === filtered.length) {
+      onCreate?.(q);
+      setQuery('');
+      return;
+    }
     const item = filtered[i];
     if (!item) return;
     onToggle(item.id);
@@ -224,7 +254,7 @@ function SelectPanelBody({
         />
       </div>
       <div ref={listRef} className={styles.panelList} role="listbox" aria-multiselectable={multiple}>
-        {filtered.length === 0 && <div className={styles.empty}>{emptyText}</div>}
+        {filtered.length === 0 && !canCreate && <div className={styles.empty}>{emptyText}</div>}
         {filtered.map((item, i) => (
           <button
             key={item.id}
@@ -251,6 +281,21 @@ function SelectPanelBody({
             </span>
           </button>
         ))}
+        {canCreate && (
+          <button
+            type="button"
+            role="option"
+            aria-selected={false}
+            data-index={filtered.length}
+            data-active={active === filtered.length}
+            className={styles.menuItem}
+            onPointerMove={() => setActive(filtered.length)}
+            onClick={() => choose(filtered.length)}
+          >
+            <span style={{ width: 16, display: 'inline-flex' }} />
+            <span className={styles.menuItemLabel}>{createLabel(q)}</span>
+          </button>
+        )}
       </div>
     </>
   );
