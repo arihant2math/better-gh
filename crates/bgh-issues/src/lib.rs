@@ -7,6 +7,7 @@
 
 pub mod assignees;
 pub mod comments;
+pub mod deployed;
 pub mod events;
 pub mod import;
 pub mod issues;
@@ -169,4 +170,5 @@ pub fn web_router() -> Router<AppState> {
 pub fn register(reg: &mut Registry) {
     reg.on_event("issues.commit_references", refs::on_event);
     reg.on_event("issues.pr_links", links::on_event);
+    reg.on_event("issues.deployed", deployed::on_event);
 }

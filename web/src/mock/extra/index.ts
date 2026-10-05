@@ -4,6 +4,7 @@
  * non-synced state lives in a per-server object (`state(server)`), synced
  * models go through `server.put` / `server.remove` like the real backend.
  */
+import { installDeploymentMocks } from '../deployments';
 import type { MockServer } from '../server';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
@@ -26,5 +27,6 @@ export function installExtraMocks(server: MockServer): void {
   installUploadMocks(server);
   installImportMocks(server);
   installMetadataImportMocks(server);
+  installDeploymentMocks(server);
   installPackageMocks(server);
 }
