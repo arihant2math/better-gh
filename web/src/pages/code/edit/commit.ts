@@ -78,7 +78,7 @@ export function classifyError(e: unknown): CommitError {
     if (e.status === 409 && /does not match/i.test(e.message)) return new CommitError(msg, 'conflict');
     if (e.status === 422 && /"sha" wasn't supplied/i.test(e.message)) return new CommitError('A file with this name already exists.', 'exists');
     if (e.status === 403 || e.status === 404) {
-      return new CommitError(e.status === 404 ? 'You don’t have permission to push to this repository.' : msg, 'forbidden');
+      return new CommitError(e.status === 404 && /^not found$/i.test(msg) ? 'You don’t have permission to push to this repository.' : msg, 'forbidden');
     }
     if (e.status === 409) return new CommitError(msg, 'protected');
     if (e.status === 422) return new CommitError(msg, 'invalid');
