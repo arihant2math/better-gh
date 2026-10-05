@@ -3,6 +3,7 @@
 //! See `docs/packages/accounts.md` for the endpoint inventory. Migrations:
 //! 0100-0199.
 
+pub mod apps;
 pub mod avatars;
 pub mod boot;
 pub mod emails;
@@ -95,6 +96,56 @@ pub fn router() -> Router<AppState> {
         .route(
             "/applications/{client_id}/grant",
             delete(oauth::delete_app_grant),
+        )
+        // GitHub Apps
+        .route("/app", get(apps::rest::get_app))
+        .route("/apps/{app_slug}", get(apps::rest::get_app_by_slug))
+        .route("/app/installations", get(apps::rest::list_installations))
+        .route(
+            "/app/installations/{installation_id}",
+            get(apps::rest::get_installation).delete(apps::rest::delete_installation),
+        )
+        .route(
+            "/app/installations/{installation_id}/suspended",
+            put(apps::rest::suspend).delete(apps::rest::unsuspend),
+        )
+        .route(
+            "/app/installations/{installation_id}/access_tokens",
+            post(apps::rest::create_access_token),
+        )
+        .route(
+            "/orgs/{org}/installation",
+            get(apps::rest::org_installation),
+        )
+        .route(
+            "/users/{username}/installation",
+            get(apps::rest::user_installation),
+        )
+        .route(
+            "/repos/{owner}/{repo}/installation",
+            get(apps::rest::repo_installation),
+        )
+        .route(
+            "/installation/repositories",
+            get(apps::rest::installation_repositories),
+        )
+        .route("/installation/token", delete(apps::rest::revoke_token))
+        .route(
+            "/user/installations",
+            get(apps::install::user_installations),
+        )
+        .route(
+            "/user/installations/{installation_id}/repositories",
+            get(apps::install::user_installation_repos),
+        )
+        .route(
+            "/user/installations/{installation_id}/repositories/{repository_id}",
+            put(apps::install::add_user_installation_repo)
+                .delete(apps::install::remove_user_installation_repo),
+        )
+        .route(
+            "/orgs/{org}/installations",
+            get(apps::install::org_installations),
         )
         // organizations
         .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
@@ -302,6 +353,45 @@ pub fn web_router() -> Router<AppState> {
         .route(
             "/_bgh/applications/{id}/client_secret",
             post(oauth::regenerate_secret),
+        )
+        // GitHub Apps
+        .route(
+            "/_bgh/apps",
+            get(apps::manage::list).post(apps::manage::create),
+        )
+        .route(
+            "/_bgh/apps/{slug}",
+            get(apps::manage::get)
+                .patch(apps::manage::update)
+                .delete(apps::manage::delete),
+        )
+        .route("/_bgh/apps/{slug}/keys", post(apps::manage::create_key))
+        .route(
+            "/_bgh/apps/{slug}/keys/{id}",
+            delete(apps::manage::delete_key),
+        )
+        .route(
+            "/_bgh/apps/{slug}/install",
+            get(apps::install::install_info),
+        )
+        .route(
+            "/_bgh/apps/{slug}/installations",
+            post(apps::install::install),
+        )
+        .route("/_bgh/installations", get(apps::install::list_for_account))
+        .route(
+            "/_bgh/installations/{id}",
+            get(apps::install::get_installation)
+                .patch(apps::install::update_installation)
+                .delete(apps::install::delete_installation),
+        )
+        .route(
+            "/_bgh/installations/{id}/suspended",
+            put(apps::install::suspend).delete(apps::install::unsuspend),
+        )
+        .route(
+            "/_bgh/installations/{id}/accept_permissions",
+            post(apps::install::accept_permissions),
         )
         .route("/_bgh/authorizations", get(oauth::list_grants))
         .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
