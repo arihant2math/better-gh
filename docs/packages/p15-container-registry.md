@@ -1,6 +1,7 @@
 # P15 — Container registry (OCI) and Packages REST and UI
 
-Status: **in progress** (branch `bgh/p15-container-registry`).
+Status: **done**, self-integrated into `claude/sleepy-cray-9jj0t3` (branch
+`bgh/p15-container-registry`).
 
 ## What exists
 
@@ -116,10 +117,29 @@ sidebar "Packages" section. Mock backend in `web/src/mock/extra/packages.ts`.
 
 ## Verification
 
-* `cargo test -p bgh-packages` (tests/it: conformance categories, tokens
-  and access, REST shapes, webhooks and GC).
-* `scripts/registry-conformance.sh`: official OCI conformance suite +
-  real docker client.
+* `cargo test -p bgh-packages`: 13 integration tests (tests/it:
+  `conformance` = push / pull / content discovery / content management,
+  `tokens` = token endpoint, credentials, private/public pulls, job token
+  push + linking, source-label linking, quota; `rest` = REST and web
+  shapes, pagination, delete/restore, last-version 400; `webhooks_gc`) + unit
+  tests (digests, names, ranges).
+* `scripts/registry-conformance.sh` (real clients, recorded 2026-10-05):
+  * the **official OCI distribution-spec conformance suite**
+    (opencontainers/distribution-spec `conformance`, built with
+    `go test -c`, `OCI_VERSION=1.1`): **848 pass, 0 fail, 4 skipped**
+    (blob upload cancel and other optional checks disabled by default);
+  * **docker CLI 29.6** against the local daemon: password login refused,
+    PAT login, build, push, rmi, pull, anonymous pull of a private image
+    refused, and a push with an Actions `GITHUB_TOKEN`-shaped job token
+    (`actions:repo:<id>`) that links the package to its repository.
+    (`scripts/actions-e2e.sh` was not used: the job-token path is the same
+    code, exercised directly.)
+* Full gate on the merged branch: fmt, clippy, `cargo test --workspace`,
+  web typecheck/lint/test/build (initial JS 140.9 KB gzip),
+  `api-smoke.sh` 45/45, `gh-compat.sh` 41/41.
+* Note: with a Docker daemon running, the pre-existing
+  `bgh-actions runner::tests::docker_executor_cancellation` (skipped without
+  docker) failed here on its 40 s bound; unrelated to this package.
 
 ## Known gaps
 

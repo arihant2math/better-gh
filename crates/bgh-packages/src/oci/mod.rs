@@ -43,8 +43,7 @@ pub struct OciError {
     pub status: StatusCode,
     pub code: &'static str,
     pub message: String,
-    pub detail: Option<serde_json::Value>,
-    pub challenge: Option<String>,
+    pub detail: Option<Box<serde_json::Value>>,
     pub extra_headers: Vec<(&'static str, String)>,
 }
 
@@ -55,12 +54,11 @@ impl OciError {
             code,
             message: message.into(),
             detail: None,
-            challenge: None,
             extra_headers: Vec::new(),
         }
     }
     pub fn with_detail(mut self, detail: serde_json::Value) -> Self {
-        self.detail = Some(detail);
+        self.detail = Some(Box::new(detail));
         self
     }
     pub fn header(mut self, name: &'static str, value: impl Into<String>) -> Self {
@@ -151,7 +149,7 @@ impl IntoResponse for OciError {
     fn into_response(self) -> Response {
         let mut err = json!({ "code": self.code, "message": self.message });
         if let Some(d) = self.detail {
-            err["detail"] = d;
+            err["detail"] = *d;
         }
         let mut resp = (
             self.status,
@@ -161,11 +159,6 @@ impl IntoResponse for OciError {
             .into_response();
         let h = resp.headers_mut();
         h.insert(API_VERSION_HEADER, HeaderValue::from_static("registry/2.0"));
-        if let Some(c) = self.challenge
-            && let Ok(v) = HeaderValue::from_str(&c)
-        {
-            h.insert(header::WWW_AUTHENTICATE, v);
-        }
         for (k, v) in self.extra_headers {
             if let Ok(v) = HeaderValue::from_str(&v) {
                 h.insert(k, v);
@@ -200,13 +193,12 @@ fn challenge(state: &AppState, scope: Option<&str>, insufficient: bool) -> Strin
 }
 
 fn unauthorized(state: &AppState, scope: Option<&str>, insufficient: bool) -> OciError {
-    let mut e = OciError::new(
+    OciError::new(
         StatusCode::UNAUTHORIZED,
         "UNAUTHORIZED",
         "authentication required",
-    );
-    e.challenge = Some(challenge(state, scope, insufficient));
-    e
+    )
+    .header("www-authenticate", challenge(state, scope, insufficient))
 }
 
 /// The authenticated caller of a registry request.
@@ -541,13 +533,13 @@ async fn token_post(State(state): State<AppState>, headers: HeaderMap, body: Str
 }
 
 fn bad_credentials(state: &AppState) -> Response {
-    let mut e = OciError::new(
+    OciError::new(
         StatusCode::UNAUTHORIZED,
         "UNAUTHORIZED",
         "authentication required: use a personal access token or GITHUB_TOKEN as the password",
-    );
-    e.challenge = Some(challenge(state, None, false));
-    e.into_response()
+    )
+    .header("www-authenticate", challenge(state, None, false))
+    .into_response()
 }
 
 /// Mint a JWT granting the subset of `scopes` the caller is allowed.
@@ -572,13 +564,9 @@ async fn issue(state: &AppState, auth: Option<AuthContext>, scopes: Vec<String>)
             });
             continue;
         };
-        let caps =
-            match access::package_caps(state, auth.as_ref(), &repo.owner, repo.package.as_ref())
-                .await
-            {
-                Ok(c) => c,
-                Err(_) => Caps::default(),
-            };
+        let caps = access::package_caps(state, auth.as_ref(), &repo.owner, repo.package.as_ref())
+            .await
+            .unwrap_or_default();
         let mut granted: Vec<String> = Vec::new();
         for a in wanted {
             if a == "*" {

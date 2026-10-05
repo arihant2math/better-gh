@@ -17,7 +17,7 @@ use crate::digest::Digest;
 use crate::storage;
 
 /// Leader lock key ("pkggc").
-const LEADER_KEY: i64 = 0x706b_6767_63;
+const LEADER_KEY: i64 = 0x0070_6b67_6763;
 
 pub async fn service(state: AppState, shutdown: CancellationToken) -> anyhow::Result<()> {
     let mut tick = tokio::time::interval(Duration::from_secs(3600));

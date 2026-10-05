@@ -14,7 +14,7 @@ use crate::digest::{Algorithm, Digest};
 
 /// Pg advisory lock key serializing blob file creation against the GC's
 /// deletion of unreferenced blobs ("pkgblob" as ASCII).
-pub const BLOB_LOCK_KEY: i64 = 0x706b_6762_6c6f_62;
+pub const BLOB_LOCK_KEY: i64 = 0x0070_6b67_626c_6f62;
 
 pub fn root(state: &AppState) -> PathBuf {
     state.config.data_dir.join("packages")
