@@ -2,7 +2,7 @@
 
 Branch `bgh/releases-search`. Crates `bgh-releases`, `bgh-search`.
 Migrations `0600_releases.sql`, `0700_search.sql`, `0701_code_index.sql`,
-`0710_activity.sql`.
+`0702_code_index_gc.sql`, `0710_activity.sql`.
 
 ## Status: complete
 
@@ -89,14 +89,17 @@ transactional with no extra on-disk state to back up or rebuild.
 `code_files` rows).
 
 Indexing: listener `search.code_index` enqueues `search.index_repo
-{repo_id}` (deduplicated while pending) on pushes to the default branch,
-`RepositoryCreated/Updated/Forked`; the job walks the tree, diffs
+{repo_id}` on pushes to the default branch and `RepositoryCreated/Updated/
+Forked` (when the default branch exists), debounced by 2 s and deduplicated
+while pending (bursts of pushes coalesce; other crates' `drain_jobs` counts
+are unaffected); the job walks the tree, diffs
 `(path, blob_sha)` against `code_files`, reads only blobs not already
 stored (≤ 384 KB, non-binary; larger/binary files are indexed by path
 only), upserts files, deletes removed paths, GCs orphaned blobs, then
 indexes commits `rev-list head ^previous_head` (≤ 10k per run; authors
-matched by verified email). `RepositoryDeleted` enqueues
-`search.gc_code_blobs`. Skips `node_modules/`; ≤ 100k files per repo.
+matched by verified email). `RepositoryDeleted` sets the
+`code_index_gc.pending` marker; the next index run deletes orphaned blobs
+(`search.gc_code_blobs` forces a collection). Skips `node_modules/`; ≤ 100k files per repo.
 
 ### Palette benchmark (100k issues)
 

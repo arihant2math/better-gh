@@ -263,24 +263,37 @@ async fn code_search_and_incremental_index() {
         .unwrap()
     })
     .await;
-    app.drain_jobs().await;
+    // Indexing is debounced; nothing is ready yet.
+    assert_eq!(app.drain_jobs().await, 0);
+    sqlx::query("UPDATE jobs SET run_at = now() WHERE kind = 'search.index_repo'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(app.drain_jobs().await, 1);
     assert_eq!(search("freshly", None).await, vec!["alice/demo:new.txt"]);
 
-    // Deleting the repository drops its files; GC removes orphaned blobs.
+    // Deleting the repository drops its files; the next indexing run
+    // collects the orphaned blobs.
     app.delete("/api/v3/repos/alice/secret")
         .auth(&alice)
         .send()
         .await
         .assert_status(204);
     eventually(|| async {
-        sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = 'search.gc_code_blobs')",
-        )
-        .fetch_one(&app.state.db)
-        .await
-        .unwrap()
+        sqlx::query_scalar::<_, bool>("SELECT pending FROM code_index_gc")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap()
     })
     .await;
+    app.drain_jobs().await;
+    commit(&app, demo, &[("later.txt", "after delete")], "later").await;
+    bgh_core::jobs::enqueue_job(
+        &app.state.db,
+        &bgh_search::code::index::IndexRepo { repo_id: demo },
+    )
+    .await
+    .unwrap();
     app.drain_jobs().await;
     let orphans: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM code_blobs b WHERE NOT EXISTS (SELECT 1 FROM code_files f WHERE f.blob_sha = b.sha)",

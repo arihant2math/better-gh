@@ -35,7 +35,7 @@ impl JobPayload for IndexRepo {
     const MAX_ATTEMPTS: i32 = 5;
 }
 
-/// Remove blobs no indexed file references anymore.
+/// Remove blobs no indexed file references anymore (admin/maintenance).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GcCodeBlobs {}
 
@@ -44,8 +44,17 @@ impl JobPayload for GcCodeBlobs {
     const MAX_ATTEMPTS: i32 = 3;
 }
 
-/// Enqueue `job` unless an identical one is already waiting.
-pub async fn enqueue_once<J: JobPayload>(state: &AppState, job: &J) -> anyhow::Result<()> {
+/// Delay before indexing after a change: bursts of pushes coalesce into
+/// one run (the pending job is reused).
+pub const INDEX_DELAY: chrono::Duration = chrono::Duration::seconds(2);
+
+/// Enqueue `job` to run after `delay` unless an identical one is already
+/// waiting.
+pub async fn enqueue_once<J: JobPayload>(
+    state: &AppState,
+    job: &J,
+    delay: chrono::Duration,
+) -> anyhow::Result<()> {
     let payload = serde_json::to_value(job)?;
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = $1 AND payload = $2
@@ -56,7 +65,14 @@ pub async fn enqueue_once<J: JobPayload>(state: &AppState, job: &J) -> anyhow::R
     .fetch_one(&state.db)
     .await?;
     if !pending {
-        jobs::enqueue_job(&state.db, job).await?;
+        jobs::enqueue_at(
+            &state.db,
+            J::KIND,
+            &payload,
+            Utc::now() + delay,
+            J::MAX_ATTEMPTS,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -78,34 +94,75 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
                 .iter()
                 .any(|u| u.branch() == Some(default.as_str()))
             {
-                enqueue_once(&state, &IndexRepo { repo_id: p.repo_id }).await?;
+                enqueue_once(&state, &IndexRepo { repo_id: p.repo_id }, INDEX_DELAY).await?;
             }
         }
         Event::RepositoryCreated { repo_id, .. } | Event::RepositoryUpdated { repo_id, .. } => {
-            enqueue_once(&state, &IndexRepo { repo_id: *repo_id }).await?;
+            if has_default_branch(&state, *repo_id).await? {
+                enqueue_once(&state, &IndexRepo { repo_id: *repo_id }, INDEX_DELAY).await?;
+            }
         }
         Event::RepositoryForked { fork_id, .. } => {
-            enqueue_once(&state, &IndexRepo { repo_id: *fork_id }).await?;
+            if has_default_branch(&state, *fork_id).await? {
+                enqueue_once(&state, &IndexRepo { repo_id: *fork_id }, INDEX_DELAY).await?;
+            }
         }
         Event::RepositoryDeleted { .. } => {
-            enqueue_once(&state, &GcCodeBlobs {}).await?;
+            // Files cascade away with the repository; their blobs are
+            // collected by the next indexing run (see `collect_orphans`).
+            sqlx::query("UPDATE code_index_gc SET pending = true")
+                .execute(&state.db)
+                .await?;
         }
         _ => {}
     }
     Ok(())
 }
 
+/// Whether the repository's default branch exists (nothing to index otherwise).
+async fn has_default_branch(state: &AppState, repo_id: i64) -> anyhow::Result<bool> {
+    let Some(repo) = db::Repository::find(&state.db, repo_id).await? else {
+        return Ok(false);
+    };
+    let store = RepoStore::from_config(&state.config);
+    if !store.exists(repo_id) {
+        return Ok(false);
+    }
+    let refname = format!("refs/heads/{}", repo.default_branch);
+    Ok(store
+        .read(repo_id, move |r| r.find_ref(&refname))
+        .await?
+        .is_some())
+}
+
 pub async fn index_repo_job(state: AppState, job: IndexRepo) -> anyhow::Result<()> {
-    index_repo(&state, job.repo_id).await.map(|_| ())
+    index_repo(&state, job.repo_id).await?;
+    collect_orphans(&state, false).await
+}
+
+/// Delete blobs no indexed file references, when repositories were deleted
+/// since the last collection (or always with `force`).
+pub async fn collect_orphans(state: &AppState, force: bool) -> anyhow::Result<()> {
+    let pending: bool = sqlx::query_scalar(
+        "UPDATE code_index_gc SET pending = false WHERE pending OR $1 RETURNING true",
+    )
+    .bind(force)
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false);
+    if pending {
+        sqlx::query(
+            "DELETE FROM code_blobs b
+              WHERE NOT EXISTS (SELECT 1 FROM code_files f WHERE f.blob_sha = b.sha)",
+        )
+        .execute(&state.db)
+        .await?;
+    }
+    Ok(())
 }
 
 pub async fn gc_job(state: AppState, _job: GcCodeBlobs) -> anyhow::Result<()> {
-    sqlx::query(
-        "DELETE FROM code_blobs b WHERE NOT EXISTS (SELECT 1 FROM code_files f WHERE f.blob_sha = b.sha)",
-    )
-    .execute(&state.db)
-    .await?;
-    Ok(())
+    collect_orphans(&state, true).await
 }
 
 /// What an indexing run did.
