@@ -1,5 +1,5 @@
-Integration: in progress
-Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges.
+Integration: ready
+Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (8448855).
 
 # P25 — Commit and tag signature verification, SSH signing keys, required_signatures, web-flow signing
 
@@ -165,6 +165,22 @@ live from the owner's verified e-mails.
 * `bgh-accounts` `tests/it/signing_keys.rs`: CRUD, shape, validation,
   scopes, pagination, public list.
 * `bgh-graphql` `tests/it/signatures.rs`: `Commit.signature`.
+
+## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at 8448855)
+
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
+warnings`, `cargo test --workspace` (1067 passed, 13 ignored), web
+`typecheck && lint && test (438) && build` (budget OK), `api-smoke.sh`
+(45/45), `gh-compat.sh` (63/63), Playwright `web/scripts/signatures-smoke.mjs`
+(mock, light + dark).
+
+Behaviour changes other tests saw: server-made commits (auto_init,
+contents API, merges, `commit_changes` fixtures, templates) now verify as
+`valid`; a non-parseable signature is `malformed_signature` (was
+`unknown_key`). `refs/pull/N/merge` test merges stay unsigned (they must be
+reproducible: bgh-pulls and Actions compute the same SHA). Updated
+assertions: `bgh-pulls` `pulls::files_and_commits`, `bgh-repos`
+`gitdb::commits`.
 
 ## Known gaps
 
