@@ -249,6 +249,49 @@ pub async fn prune_cache(cache_dir: &Path, max_age: std::time::Duration) -> io::
     .map_err(io::Error::other)?
 }
 
+/// Trim the archive cache to at most `max_bytes`, removing the least
+/// recently written files first. Returns the number of files removed.
+pub async fn prune_cache_to_size(cache_dir: &Path, max_bytes: u64) -> io::Result<usize> {
+    let dir = cache_dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut files = Vec::new();
+        let Ok(repos) = std::fs::read_dir(&dir) else {
+            return Ok(0);
+        };
+        for repo in repos.flatten() {
+            let Ok(entries) = std::fs::read_dir(repo.path()) else {
+                continue;
+            };
+            for f in entries.flatten() {
+                if let Ok(m) = f.metadata()
+                    && m.is_file()
+                {
+                    let mtime = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    files.push((mtime, m.len(), f.path()));
+                }
+            }
+        }
+        let mut total: u64 = files.iter().map(|f| f.1).sum();
+        files.sort_by_key(|f| f.0);
+        let mut removed = 0;
+        for (_, len, path) in files {
+            if total <= max_bytes {
+                break;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                total = total.saturating_sub(len);
+                removed += 1;
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::remove_dir(parent); // only when empty
+                }
+            }
+        }
+        Ok(removed)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
 /// Remove every cached archive of a repository.
 pub async fn purge_repo(cache_dir: &Path, repo_id: i64) -> io::Result<()> {
     match tokio::fs::remove_dir_all(cache_dir.join(repo_id.to_string())).await {

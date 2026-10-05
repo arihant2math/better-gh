@@ -295,6 +295,49 @@ pub struct MaintenanceSettings {
     pub scheduled_at: Option<DateTime<Utc>>,
 }
 
+/// Scheduled, fork-network-aware git maintenance (`repos.maintenance`
+/// service) and archive-cache housekeeping.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GitMaintenanceSettings {
+    /// Run the scheduled maintenance service.
+    pub enabled: bool,
+    /// Unreachable objects younger than this are never pruned (git's gc
+    /// grace period; protects in-flight pushes). At least 1.
+    pub prune_grace_days: u32,
+    /// Minimum hours between incremental runs (commit-graph + geometric
+    /// repack) of one repository.
+    pub interval_hours: u32,
+    /// Days between full repacks of one repository.
+    pub full_interval_days: u32,
+    /// Repack early once this many loose objects pile up.
+    pub loose_objects_threshold: i64,
+    /// Repack early once this many packs pile up.
+    pub pack_count_threshold: i64,
+    /// Upper bound of repositories handled per pass (one pass per minute).
+    pub max_repos_per_pass: i64,
+    /// Cached source archives unused for this many days are removed.
+    pub archive_cache_max_age_days: u32,
+    /// The archive cache is trimmed (oldest first) to this size.
+    pub archive_cache_max_size_mb: u64,
+}
+
+impl Default for GitMaintenanceSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            prune_grace_days: 14,
+            interval_hours: 24,
+            full_interval_days: 7,
+            loose_objects_threshold: 1000,
+            pack_count_threshold: 16,
+            max_repos_per_pass: 20,
+            archive_cache_max_age_days: 7,
+            archive_cache_max_size_mb: 2048,
+        }
+    }
+}
+
 /// All site settings, with defaults for anything not stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -307,6 +350,7 @@ pub struct SiteSettings {
     pub auth_providers: AuthProviderSettings,
     pub smtp: SmtpSettings,
     pub maintenance: MaintenanceSettings,
+    pub git_maintenance: GitMaintenanceSettings,
     pub git: GitSettings,
 }
 
@@ -320,6 +364,7 @@ pub const SECTIONS: &[&str] = &[
     "auth_providers",
     "smtp",
     "maintenance",
+    "git_maintenance",
     "git",
 ];
 
@@ -399,6 +444,7 @@ impl SiteSettings {
             "auth_providers" => self.auth_providers = serde_json::from_value(section)?,
             "smtp" => self.smtp = serde_json::from_value(section)?,
             "maintenance" => self.maintenance = serde_json::from_value(section)?,
+            "git_maintenance" => self.git_maintenance = serde_json::from_value(section)?,
             "git" => self.git = serde_json::from_value(section)?,
             _ => {}
         }

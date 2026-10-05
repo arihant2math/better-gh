@@ -157,7 +157,20 @@ pub fn web_router() -> Router<AppState> {
             "/_bgh/admin/repos/{owner}/{repo}/maintenance",
             get(maintenance::list_runs).post(maintenance::schedule),
         )
+        .route(
+            "/_bgh/admin/repos/{owner}/{repo}/detach",
+            post(maintenance::detach),
+        )
         .route("/_bgh/admin/maintenance", post(maintenance::schedule_all))
+        .route("/_bgh/admin/git-maintenance", get(maintenance::overview))
+        .route(
+            "/_bgh/admin/git-maintenance/repos",
+            get(maintenance::list_status),
+        )
+        .route(
+            "/_bgh/admin/git-maintenance/run",
+            post(maintenance::run_now),
+        )
 }
 
 /// Jobs (repository maintenance) and listeners (push counter).

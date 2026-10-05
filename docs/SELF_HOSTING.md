@@ -261,11 +261,33 @@ What to back up:
 
 Redis holds only caches and pub/sub and needs no backup.
 
-Take the database dump **first**, then copy the data directory: git objects
-are only ever added (automatic gc is off), so every commit the database
-refers to still exists in a slightly newer copy of the repositories, while
+Take the database dump **first**, then copy the data directory. Git
+maintenance (the scheduled `repos.maintenance` service and the admin gc)
+removes unreachable objects only once they are older than the prune grace
+period (`git_maintenance.prune_grace_days`, default 14 days; the forced
+"Prune now" admin action is the one exception), so every commit a fresh
+database dump refers to still exists in a copy of the repositories taken
+right after it. Keep the gap between the two well under the grace period;
 the opposite order can leave the database pointing at objects that were
-never copied.
+never copied. Repositories that forks borrow objects from are never
+pruned.
+
+`cache/archives/` holds regenerable source-archive downloads and can be
+excluded from backups (it is pruned on the same schedule, see
+`git_maintenance.archive_cache_*`).
+
+### Git maintenance
+
+Site admin → **Git maintenance** (`/site-admin/maintenance`) shows the
+per-repository state and the schedule: once a minute the elected server
+(pg advisory lock) writes commit-graphs for pushed repositories, repacks
+geometrically (with multi-pack index and bitmaps for repositories without
+alternates) when loose objects or packs pile up, does a full fork-safe
+repack every `full_interval_days`, and prunes the archive cache. Forks
+borrow their parent's objects through `objects/info/alternates`, so
+parents are repacked with `--keep-unreachable` and never pruned; deleting
+a parent (or "Leave fork network") first makes its forks self-contained
+and checks them with `git fsck --connectivity-only`.
 
 ```sh
 # binary install
