@@ -5,7 +5,7 @@
  * per-section PATCH bodies.
  */
 import { fromLocalInput, toLocalInput } from '../../components/admin/format';
-import { REDACTED, type LdapSettings, type OidcProvider, type SiteSettings, type Visibility, type patchSettings } from './api';
+import { REDACTED, type LdapSettings, type OidcProvider, type SamlSettings, type SiteSettings, type Visibility, type patchSettings } from './api';
 
 /** Sections of the settings page (`git_maintenance` has its own page). */
 export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
@@ -81,11 +81,41 @@ export interface LdapForm {
   sync_interval_hours: string;
 }
 
+/** `auth_providers.saml` as form values (optional fields: empty = unset). */
+export interface SamlForm {
+  enabled: boolean;
+  display_name: string;
+  idp_sso_url: string;
+  idp_entity_id: string;
+  /** PEM, one or more certificates. */
+  idp_certificate: string;
+  idp_slo_url: string;
+  sp_entity_id: string;
+  sp_certificate: string;
+  sp_private_key: SecretForm;
+  sign_requests: boolean;
+  require_encrypted_assertions: boolean;
+  name_id_format: string;
+  allow_idp_initiated: boolean;
+  jit_provisioning: boolean;
+  username_attribute: string;
+  full_name_attribute: string;
+  emails_attribute: string;
+  ssh_keys_attribute: string;
+  gpg_keys_attribute: string;
+  admin_attribute: string;
+  groups_attribute: string;
+  clock_skew_seconds: string;
+}
+
 export interface AuthForm {
   password_login: boolean;
   password_login_admin_exempt: boolean;
   oidc: OidcForm[];
   ldap: LdapForm;
+  saml: SamlForm;
+  /** `auth_providers.scim.enabled`. */
+  scim: boolean;
 }
 
 export interface SettingsForm {
@@ -182,6 +212,59 @@ export function ldapToForm(l: LdapSettings): LdapForm {
   };
 }
 
+/** Server defaults of `auth_providers.saml` (older servers omit the section). */
+export const SAML_DEFAULTS: SamlSettings = {
+  enabled: false,
+  display_name: 'SAML',
+  idp_sso_url: '',
+  idp_entity_id: null,
+  idp_certificate: '',
+  idp_slo_url: null,
+  sp_entity_id: null,
+  sp_certificate: null,
+  sp_private_key: null,
+  sign_requests: false,
+  require_encrypted_assertions: false,
+  name_id_format: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+  allow_idp_initiated: false,
+  jit_provisioning: true,
+  username_attribute: null,
+  full_name_attribute: 'full_name',
+  emails_attribute: 'emails',
+  ssh_keys_attribute: 'public_keys',
+  gpg_keys_attribute: 'gpg_keys',
+  admin_attribute: null,
+  groups_attribute: 'groups',
+  clock_skew_seconds: 180,
+};
+
+export function samlToForm(l: SamlSettings): SamlForm {
+  return {
+    enabled: l.enabled,
+    display_name: l.display_name,
+    idp_sso_url: l.idp_sso_url,
+    idp_entity_id: l.idp_entity_id ?? '',
+    idp_certificate: l.idp_certificate,
+    idp_slo_url: l.idp_slo_url ?? '',
+    sp_entity_id: l.sp_entity_id ?? '',
+    sp_certificate: l.sp_certificate ?? '',
+    sp_private_key: secretForm(l.sp_private_key),
+    sign_requests: l.sign_requests,
+    require_encrypted_assertions: l.require_encrypted_assertions,
+    name_id_format: l.name_id_format,
+    allow_idp_initiated: l.allow_idp_initiated,
+    jit_provisioning: l.jit_provisioning,
+    username_attribute: l.username_attribute ?? '',
+    full_name_attribute: l.full_name_attribute,
+    emails_attribute: l.emails_attribute,
+    ssh_keys_attribute: l.ssh_keys_attribute,
+    gpg_keys_attribute: l.gpg_keys_attribute,
+    admin_attribute: l.admin_attribute ?? '',
+    groups_attribute: l.groups_attribute ?? '',
+    clock_skew_seconds: String(l.clock_skew_seconds),
+  };
+}
+
 /** Non-empty trimmed lines. */
 export const lines = (s: string) =>
   s
@@ -234,6 +317,8 @@ export function toForm(s: SiteSettings): SettingsForm {
       password_login_admin_exempt: s.auth_providers.password_login_admin_exempt,
       oidc: s.auth_providers.oidc.map(oidcToForm),
       ldap: ldapToForm(s.auth_providers.ldap),
+      saml: samlToForm(s.auth_providers.saml ?? SAML_DEFAULTS),
+      scim: s.auth_providers.scim?.enabled ?? false,
     },
     smtp: {
       enabled: s.smtp.enabled,
@@ -328,6 +413,27 @@ export function ldapErrors(l: LdapForm): Errors {
   return e;
 }
 
+const PEM_CERT = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
+
+/** Whether the SP private key will be set after saving. */
+export const samlKeySet = (l: SamlForm) => !!l.sp_private_key.value.trim() || (l.sp_private_key.stored && !l.sp_private_key.clear);
+
+/** Mirrors the server's checks (bgh-admin `validate`), plus PEM and URL shapes. */
+export function samlErrors(l: SamlForm): Errors {
+  const e: Errors = {};
+  if (!l.display_name.trim()) e.display_name = 'Required.';
+  const skew = l.clock_skew_seconds.trim();
+  if (!/^\d+$/.test(skew) || Number(skew) > 3600) e.clock_skew_seconds = 'Enter a whole number of seconds between 0 and 3600.';
+  if (l.sp_certificate.trim() && !PEM_CERT.test(l.sp_certificate)) e.sp_certificate = 'Paste a PEM certificate (-----BEGIN CERTIFICATE-----).';
+  if (!l.enabled) return e;
+  if (!isHttpUrl(l.idp_sso_url)) e.idp_sso_url = 'Enter an http(s) URL.';
+  if (l.idp_slo_url.trim() && !isHttpUrl(l.idp_slo_url)) e.idp_slo_url = 'Enter an http(s) URL or leave empty.';
+  if (!l.idp_certificate.trim()) e.idp_certificate = 'Required: the certificate the identity provider signs responses with.';
+  else if (!PEM_CERT.test(l.idp_certificate)) e.idp_certificate = 'Paste a PEM certificate (-----BEGIN CERTIFICATE-----).';
+  if (l.require_encrypted_assertions && !samlKeySet(l)) e.require_encrypted_assertions = 'Encrypted assertions need an SP key pair: generate or paste one below.';
+  return e;
+}
+
 export function validate(f: SettingsForm): Errors {
   const e: Errors = {};
   const bad = f.signup.domains.map(domainError).find(Boolean);
@@ -336,9 +442,10 @@ export function validate(f: SettingsForm): Errors {
   if (f.announcement.expires && !fromLocalInput(f.announcement.expires)) e['announcement.expires'] = 'Enter a valid date and time.';
   for (const k of ['authenticated', 'unauthenticated', 'search_authenticated', 'search_unauthenticated', 'graphql'] as const)
     if (!POSITIVE_INT.test(f.rate_limits[k].trim())) e[`rate_limits.${k}`] = 'Enter a whole number greater than 0.';
-  if (!f.auth_providers.password_login && f.auth_providers.oidc.length === 0 && !f.auth_providers.ldap.enabled)
-    e['auth_providers.methods'] = 'At least one sign-in method must stay enabled: keep password sign-in, enable LDAP or add an OIDC provider.';
+  if (!f.auth_providers.password_login && f.auth_providers.oidc.length === 0 && !f.auth_providers.ldap.enabled && !f.auth_providers.saml.enabled)
+    e['auth_providers.methods'] = 'At least one sign-in method must stay enabled: keep password sign-in, enable LDAP or SAML, or add an OIDC provider.';
   for (const [k, v] of Object.entries(ldapErrors(f.auth_providers.ldap))) e[`auth_providers.ldap.${k}`] = v;
+  for (const [k, v] of Object.entries(samlErrors(f.auth_providers.saml))) e[`auth_providers.saml.${k}`] = v;
   for (const p of f.auth_providers.oidc) {
     const pe = oidcErrors(p, f.auth_providers.oidc);
     const first = Object.entries(pe)[0];
@@ -407,6 +514,34 @@ export function ldapValue(l: LdapForm): LdapSettings {
   };
 }
 
+/** API value of the SAML form. */
+export function samlValue(l: SamlForm): SamlSettings {
+  return {
+    enabled: l.enabled,
+    display_name: l.display_name.trim(),
+    idp_sso_url: l.idp_sso_url.trim(),
+    idp_entity_id: orNull(l.idp_entity_id),
+    idp_certificate: l.idp_certificate.trim(),
+    idp_slo_url: orNull(l.idp_slo_url),
+    sp_entity_id: orNull(l.sp_entity_id),
+    sp_certificate: orNull(l.sp_certificate),
+    sp_private_key: secretValue(l.sp_private_key),
+    sign_requests: l.sign_requests,
+    require_encrypted_assertions: l.require_encrypted_assertions,
+    name_id_format: l.name_id_format.trim() || SAML_DEFAULTS.name_id_format,
+    allow_idp_initiated: l.allow_idp_initiated,
+    jit_provisioning: l.jit_provisioning,
+    username_attribute: orNull(l.username_attribute),
+    full_name_attribute: l.full_name_attribute.trim() || SAML_DEFAULTS.full_name_attribute,
+    emails_attribute: l.emails_attribute.trim() || SAML_DEFAULTS.emails_attribute,
+    ssh_keys_attribute: l.ssh_keys_attribute.trim(),
+    gpg_keys_attribute: l.gpg_keys_attribute.trim(),
+    admin_attribute: orNull(l.admin_attribute),
+    groups_attribute: orNull(l.groups_attribute),
+    clock_skew_seconds: Number(l.clock_skew_seconds),
+  };
+}
+
 /** PATCH body with only the given sections (each sent whole). */
 export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
   const out: Patch = {};
@@ -446,6 +581,8 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           password_login: f.auth_providers.password_login,
           password_login_admin_exempt: f.auth_providers.password_login_admin_exempt,
           ldap: ldapValue(f.auth_providers.ldap),
+          saml: samlValue(f.auth_providers.saml),
+          scim: { enabled: f.auth_providers.scim },
           oidc: f.auth_providers.oidc.map((p) => ({
             name: p.name,
             display_name: orNull(p.display_name),

@@ -240,7 +240,7 @@ async fn admin(config: Config, command: AdminCommand) -> anyhow::Result<()> {
                     "unknown scope {s:?}"
                 );
                 anyhow::ensure!(
-                    s != "site_admin" || owner.site_admin,
+                    !matches!(s.as_str(), "site_admin" | "scim:enterprise") || owner.site_admin,
                     "site_admin scope requires a site administrator"
                 );
             }

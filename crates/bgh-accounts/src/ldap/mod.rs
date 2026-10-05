@@ -44,8 +44,7 @@ use serde_json::json;
 pub use client::{DirUser, Directory, LdapError, normalize_dn};
 
 use crate::group_sync;
-use crate::keys::parse_ssh_key;
-use crate::{gpg, users};
+use crate::users;
 
 /// `user_identities.provider` and `external_group_mappings.provider` of LDAP.
 pub const PROVIDER: &str = "ldap";
@@ -441,97 +440,12 @@ pub async fn apply_profile(
 
 /// Replace the directory SSH keys of `user` with `keys`.
 async fn sync_ssh_keys(tx: &mut Tx, user: &db::User, keys: &[String]) -> ApiResult<()> {
-    let parsed: Vec<_> = keys.iter().filter_map(|k| parse_ssh_key(k)).collect();
-    let fingerprints: Vec<String> = parsed.iter().map(|k| k.fingerprint.clone()).collect();
-    sqlx::query(
-        "DELETE FROM ssh_keys WHERE user_id = $1 AND ldap_synced AND NOT (fingerprint = ANY($2))",
-    )
-    .bind(user.id)
-    .bind(&fingerprints)
-    .execute(&mut **tx)
-    .await?;
-    for key in parsed {
-        sqlx::query(
-            "INSERT INTO ssh_keys (user_id, title, key, fingerprint, ldap_synced)
-             SELECT $1, $2, $3, $4, true
-              WHERE NOT EXISTS (SELECT 1 FROM deploy_keys WHERE fingerprint = $4)
-             ON CONFLICT (fingerprint) DO NOTHING",
-        )
-        .bind(user.id)
-        .bind(key.comment.as_deref().unwrap_or("LDAP"))
-        .bind(&key.normalized)
-        .bind(&key.fingerprint)
-        .execute(&mut **tx)
-        .await?;
-    }
-    Ok(())
+    crate::directory_keys::sync_ssh_keys(tx, user, keys, crate::directory_keys::Source::Ldap).await
 }
 
 /// Replace the directory GPG keys of `user` with `keys` (armored).
 async fn sync_gpg_keys(tx: &mut Tx, user: &db::User, keys: &[String]) -> ApiResult<()> {
-    let parsed: Vec<_> = keys
-        .iter()
-        .filter_map(|k| gpg::parse_armored(k).ok().map(|p| (k, p)))
-        .collect();
-    let ids: Vec<String> = parsed.iter().map(|(_, p)| p.key_id.clone()).collect();
-    sqlx::query(
-        "DELETE FROM gpg_keys WHERE user_id = $1 AND ldap_synced AND primary_key_id IS NULL
-           AND NOT (key_id = ANY($2))",
-    )
-    .bind(user.id)
-    .bind(&ids)
-    .execute(&mut **tx)
-    .await?;
-    for (armored, key) in parsed {
-        let primary_id: Option<i64> = sqlx::query_scalar(
-            "INSERT INTO gpg_keys (user_id, name, key_id, public_key, raw_key, emails, can_sign,
-                                   can_encrypt_comms, can_encrypt_storage, can_certify,
-                                   expires_at, ldap_synced)
-             SELECT $1, 'LDAP', $2, $3, $4, $5, $6, $7, $8, $9, $10, true
-              WHERE NOT EXISTS (SELECT 1 FROM gpg_keys WHERE user_id = $1 AND key_id = $2)
-             RETURNING id",
-        )
-        .bind(user.id)
-        .bind(&key.key_id)
-        .bind(&key.public_key)
-        .bind(armored.trim())
-        .bind(json!(
-            key.emails
-                .iter()
-                .map(|e| json!({ "email": e, "verified": true }))
-                .collect::<Vec<_>>()
-        ))
-        .bind(key.can_sign)
-        .bind(key.can_encrypt_comms)
-        .bind(key.can_encrypt_storage)
-        .bind(key.can_certify)
-        .bind(key.expires_at)
-        .fetch_optional(&mut **tx)
-        .await?;
-        let Some(primary_id) = primary_id else {
-            continue;
-        };
-        for sub in &key.subkeys {
-            sqlx::query(
-                "INSERT INTO gpg_keys (user_id, key_id, primary_key_id, public_key, can_sign,
-                                       can_encrypt_comms, can_encrypt_storage, can_certify,
-                                       expires_at, ldap_synced)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)",
-            )
-            .bind(user.id)
-            .bind(&sub.key_id)
-            .bind(primary_id)
-            .bind(&sub.public_key)
-            .bind(sub.can_sign)
-            .bind(sub.can_encrypt_comms)
-            .bind(sub.can_encrypt_storage)
-            .bind(sub.can_certify)
-            .bind(sub.expires_at)
-            .execute(&mut **tx)
-            .await?;
-        }
-    }
-    Ok(())
+    crate::directory_keys::sync_gpg_keys(tx, user, keys, crate::directory_keys::Source::Ldap).await
 }
 
 /// Apply the LDAP team mappings to one user (sign-in / user sync).

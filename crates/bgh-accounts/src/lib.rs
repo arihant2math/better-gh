@@ -6,6 +6,7 @@
 pub mod apps;
 pub mod avatars;
 pub mod boot;
+pub mod directory_keys;
 pub mod emails;
 pub mod gpg;
 pub mod group_sync;
@@ -16,6 +17,8 @@ pub mod meta;
 pub mod oauth;
 pub mod orgs;
 pub mod root;
+pub mod saml;
+pub mod scim;
 pub mod session;
 pub mod social;
 pub mod sso;
@@ -226,6 +229,48 @@ pub fn router() -> Router<AppState> {
         .merge(team_routes("/orgs/{org}/teams/{team_slug}"))
         .merge(team_routes("/organizations/{org_id}/team/{team_id}"))
         .merge(team_routes("/teams/{team_id}"))
+        .merge(scim_routes())
+}
+
+/// SCIM 2.0 provisioning ([`scim`]).
+fn scim_routes() -> Router<AppState> {
+    use scim::{groups, users};
+    let e = "/scim/v2/enterprises/{enterprise}";
+    let o = "/scim/v2/organizations/{org}";
+    Router::new()
+        .route(
+            &format!("{e}/Users"),
+            get(users::enterprise_list).post(users::enterprise_create),
+        )
+        .route(
+            &format!("{e}/Users/{{scim_user_id}}"),
+            get(users::enterprise_get)
+                .put(users::enterprise_put)
+                .patch(users::enterprise_patch)
+                .delete(users::enterprise_delete),
+        )
+        .route(
+            &format!("{e}/Groups"),
+            get(groups::list).post(groups::create),
+        )
+        .route(
+            &format!("{e}/Groups/{{scim_group_id}}"),
+            get(groups::get)
+                .put(groups::put)
+                .patch(groups::patch)
+                .delete(groups::delete),
+        )
+        .route(
+            &format!("{o}/Users"),
+            get(users::org_list).post(users::org_create),
+        )
+        .route(
+            &format!("{o}/Users/{{scim_user_id}}"),
+            get(users::org_get)
+                .put(users::org_put)
+                .patch(users::org_patch)
+                .delete(users::org_delete),
+        )
 }
 
 /// Team sub-resources, mounted under each team path form (see
@@ -335,6 +380,18 @@ pub fn web_router() -> Router<AppState> {
         .route("/_bgh/sso", get(sso::list))
         .route("/_bgh/sso/{id}/login", get(sso::login))
         .route("/_bgh/sso/{id}/callback", get(sso::callback))
+        // SAML
+        .route("/saml/metadata", get(saml::metadata))
+        .route("/saml/consume", post(saml::consume))
+        .route("/saml/sls", get(saml::sls))
+        .route("/_bgh/saml/login", get(saml::login))
+        .route("/_bgh/saml/logout", post(saml::logout))
+        .route("/_bgh/admin/saml", get(saml::admin_info))
+        .route("/_bgh/admin/saml/keypair", post(saml::admin_keypair))
+        .route(
+            "/_bgh/admin/saml/idp_metadata",
+            post(saml::admin_idp_metadata),
+        )
         .route("/_bgh/user/identities", get(sso::my_identities))
         .route("/_bgh/user/identities/{id}", delete(sso::unlink_identity))
         // OAuth

@@ -205,7 +205,7 @@ fn callback_url(state: &AppState, provider: &str) -> String {
 }
 
 /// Only same-site relative paths are allowed as `return_to`.
-fn safe_return_to(r: Option<&str>) -> String {
+pub(crate) fn safe_return_to(r: Option<&str>) -> String {
     match r {
         Some(p) if p.starts_with('/') && !p.starts_with("//") && !p.contains('\\') => p.to_string(),
         _ => "/".to_string(),
@@ -277,7 +277,7 @@ fn jwt_claims(jwt: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn sso_error(msg: &str) -> Response {
+pub(crate) fn sso_error(msg: &str) -> Response {
     let to = format!(
         "/login?error={}",
         url::form_urlencoded::byte_serialize(msg.as_bytes()).collect::<String>()
@@ -353,7 +353,7 @@ fn claims_identity(
 }
 
 /// Make a valid, unused login from a claim / email local part.
-async fn available_login(state: &AppState, wanted: &str) -> ApiResult<String> {
+pub(crate) async fn available_login(state: &AppState, wanted: &str) -> ApiResult<String> {
     let mut base: String = wanted
         .split('@')
         .next()

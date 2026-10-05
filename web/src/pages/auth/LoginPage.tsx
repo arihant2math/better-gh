@@ -120,13 +120,13 @@ function Login({ search }: { search: string }) {
     }
   };
 
-  const startSso = (p: SsoProvider) => (e: MouseEvent<HTMLAnchorElement>) => {
-    setSsoBusy(p.id);
+  const startSso = (id: string, href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+    setSsoBusy(id);
     if (!isMockMode()) return; // full page navigation to the provider
     // The mock backend lives in this page, so emulate the redirect round trip.
     e.preventDefault();
     void api
-      .get(ssoLoginHref(p.id, target))
+      .get(href)
       .then(() => session.refreshBoot())
       .then(done, (err: unknown) => {
         setSsoBusy(null);
@@ -138,6 +138,8 @@ function Login({ search }: { search: string }) {
   const ldap = !!site?.ldap;
   const showForm = !site || site.password_login || ldap || adminForm;
   const usernameLabel = ldap && !site?.password_login ? 'LDAP username' : 'Username or email address';
+  const saml = site?.saml;
+  const samlHref = saml && `${saml.login_url}?return_to=${encodeURIComponent(target)}`;
 
   if (twoFactorToken) {
     return (
@@ -280,12 +282,18 @@ function Login({ search }: { search: string }) {
         </Button>
         </form>
       )}
-      {providers.length > 0 && (
+      {(providers.length > 0 || samlHref) && (
         <>
           {showForm && <Divider />}
           <div className={styles.sso}>
+            {samlHref && (
+              <a href={samlHref} className={styles.ssoButton} aria-busy={ssoBusy === 'saml'} onClick={startSso('saml', samlHref)}>
+                <ShieldLockIcon size={16} />
+                Sign in with {saml!.display_name}
+              </a>
+            )}
             {providers.map((p) => (
-              <a key={p.id} href={ssoLoginHref(p.id, target)} className={styles.ssoButton} aria-busy={ssoBusy === p.id} onClick={startSso(p)}>
+              <a key={p.id} href={ssoLoginHref(p.id, target)} className={styles.ssoButton} aria-busy={ssoBusy === p.id} onClick={startSso(p.id, ssoLoginHref(p.id, target))}>
                 <ShieldLockIcon size={16} />
                 Sign in with {p.name}
               </a>

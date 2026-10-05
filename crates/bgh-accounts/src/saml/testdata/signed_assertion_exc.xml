@@ -1,0 +1,34 @@
+<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_r1" Version="2.0" IssueInstant="2024-01-01T00:00:00Z" Destination="https://sp.example.com/saml/consume"><saml:Issuer>https://idp.example.com</saml:Issuer><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ID="_a1" Version="2.0" IssueInstant="2024-01-01T00:00:00Z">
+  <saml:Issuer>https://idp.example.com</saml:Issuer>
+  <saml:Subject>
+    <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">mona</saml:NameID>
+    <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+      <saml:SubjectConfirmationData NotOnOrAfter="2099-01-01T00:00:00Z" Recipient="https://sp.example.com/saml/consume"/>
+    </saml:SubjectConfirmation>
+  </saml:Subject>
+  <saml:Conditions NotBefore="2024-01-01T00:00:00Z" NotOnOrAfter="2099-01-01T00:00:00Z">
+    <saml:AudienceRestriction><saml:Audience>https://sp.example.com</saml:Audience></saml:AudienceRestriction>
+  </saml:Conditions>
+  <saml:AuthnStatement AuthnInstant="2024-01-01T00:00:00Z" SessionIndex="s1"><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:Password</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement>
+  <saml:AttributeStatement>
+    <saml:Attribute Name="full_name"><saml:AttributeValue xsi:type="xs:string">Mona &amp; Lisa</saml:AttributeValue></saml:Attribute>
+    <saml:Attribute Name="emails"><saml:AttributeValue xsi:type="xs:string">mona@example.com</saml:AttributeValue></saml:Attribute>
+  </saml:AttributeStatement>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#_a1"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>L0Yh3hFhXLbxL8f8ga7zculNp7Og+9BF9Txa5oSS9sU=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>3Q7lTzwEPNuOdRvoLhmfQbA3CiYGd0Eud6o60vgD5lMvEfd/pvX1iKkwyGodNXL/hIzHIMDTnNE+c77AQEHEh3HaGV0ADCpX6gfl4UfOotT66w6dD7+KZ3C0P7a4BPUNwEpcr2WERAoaAkdKungH0RRnoeEkrCUTKjEXzzk6awl6UNYdPdY6XvMWXZdGWu5RhdnNOFOxPL5gBYIX8RbzbQkNmvrHFaC4FcoB3L0kh9jAbmypa7AHxhfrDGBrdWalKXEVDPeGvGiv84YQ6RiANEziw2b9H++yllb+mxSVxKLcseqgg9oKCsUHksgikwBJ4oEb5FbEFDCAUzRuZ3sLIQ==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDCTCCAfGgAwIBAgIUcKroNaktD09eQB5B+JRhlH8wKLEwDQYJKoZIhvcNAQEL
+BQAwEzERMA8GA1UEAwwIdGVzdC1pZHAwIBcNMjYxMDA1MTcyMjQxWhgPMjEyNjA5
+MTExNzIyNDFaMBMxETAPBgNVBAMMCHRlc3QtaWRwMIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA4BBLVTlvhZV2nDePSGUp2459gI715z5e71qcgIhhnmmI
+y+2MroCmXeg3QjyOUIzYyxG698UbKAPfxRfU0Cuf23O1TZpbLYLHs3eljj0b+6cb
+BLhZteQQfrfl9BsoLLZAVhgoElBzBIA4GuffrdilpaYwqMMZSrTm5LAqlUp3+zrX
+XppCZnBMhU+C1+zmm0DoHTIMcMemc5oIzMgSgrz18Tfq41RBY/YhltVbhB2mG+QB
+fGrHekGQt9zvuuYvhuiFhYPKgw3AVqcG+T1ELQbrMA6Ta04t6nLPv2f2eQjUz4Nn
+bFRLcsXdMjZY6GrZYJsOyfvdUGebEv5yjlu07vrVhQIDAQABo1MwUTAdBgNVHQ4E
+FgQU5JWBJbcY+QM+0kdDtditzt5j/iIwHwYDVR0jBBgwFoAU5JWBJbcY+QM+0kdD
+tditzt5j/iIwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAZTar
+6sGSmB76p0WqzqoZVy+CA+HIwl0Wux/aGOxWJ/SvOzEvAOWDE3Bc6NzZodcq5JWy
+AzMUpf8fqmRWk63GLF+vau2jNA+hFpBfVZ8Hx9lM/WSL/wVkjnwTRtm7seIBh9AD
+1YgLxfeSrJtgMZCwIRKciCVYU8IFzJjy4CMJTp9bV3z1opFHFoT9Sgh+6gl8JWji
+3UHn7uj8hDTi1/l951STkpeyNTxy4bqr9N/FhuA+diXXKzW1DBgx3btBYV3Dxmln
+kVOHyv0ZEPy6w3L9NLPf8xrxRcFabHE8WQs4yTUKrWAF/YDuutGrz9xRsiuq6Mmq
+T1LvKb5+jmFKkcoLDQ==
+</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></saml:Assertion></samlp:Response>

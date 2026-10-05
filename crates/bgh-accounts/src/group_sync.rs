@@ -19,6 +19,10 @@ use crate::{orgs, teams};
 /// Provider name of OIDC group mappings (all OIDC providers share it).
 pub const OIDC: &str = "oidc";
 
+/// Providers whose groups GitHub's team-sync REST maps (IdP group names:
+/// the OIDC groups claim, the SAML groups attribute, SCIM groups).
+pub const IDP_PROVIDERS: &[&str] = &[OIDC, crate::saml::PROVIDER, crate::scim::PROVIDER];
+
 /// `(team_id, external_group_id)` mappings of `provider`.
 pub async fn mappings(state: &AppState, provider: &str) -> ApiResult<Vec<(i64, String)>> {
     Ok(sqlx::query_as(
@@ -345,7 +349,9 @@ pub async fn set_mappings(
     }
     let team = &tp.ctx.team;
     let mut tx = Tx::begin(&state).await?;
-    set_team_groups(&mut tx, OIDC, team.id, &ids).await?;
+    for provider in IDP_PROVIDERS {
+        set_team_groups(&mut tx, provider, team.id, &ids).await?;
+    }
     audit::log(
         &mut *tx,
         Some(&auth.user),
@@ -358,5 +364,7 @@ pub async fn set_mappings(
     )
     .await?;
     tx.commit().await?;
+    // SCIM groups are known now: apply them right away.
+    crate::scim::groups::sync_team(&state, team.id).await?;
     Ok(Json(mappings_json(ids)))
 }

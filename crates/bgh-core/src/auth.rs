@@ -167,6 +167,7 @@ const KNOWN_SCOPES: &[&str] = &[
     "repo:invite",
     "repo:status",
     "repo_deployment",
+    "scim:enterprise",
     "security_events",
     "site_admin",
     "user",
@@ -968,6 +969,9 @@ const CSRF_EXEMPT: &[&str] = &[
     "/_bgh/emails/verify",
     "/login/oauth/",
     "/login/device",
+    // SAML assertion consumer: the IdP's form post (the signed assertion
+    // is the proof; there is no session yet).
+    "/saml/consume",
 ];
 
 fn csrf_exempt(path: &str, method: &axum::http::Method) -> bool {

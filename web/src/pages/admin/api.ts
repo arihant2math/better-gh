@@ -357,6 +357,79 @@ export interface LdapSyncReport {
 export const testLdap = (settings: LdapSettings, login?: string) => api.post<LdapTestResult>('/_bgh/admin/ldap/test', { settings, login: login || null });
 export const syncLdap = () => api.post<LdapSyncReport>('/_bgh/admin/ldap/sync', {});
 
+/** `auth_providers.saml` (bgh_core::settings::SamlSettings). */
+export interface SamlSettings {
+  enabled: boolean;
+  /** Sign-in button label. */
+  display_name: string;
+  idp_sso_url: string;
+  /** When set, the `Issuer` of responses must match. */
+  idp_entity_id: string | null;
+  /** PEM; several during key rollover. */
+  idp_certificate: string;
+  idp_slo_url: string | null;
+  /** Default: the instance base URL. */
+  sp_entity_id: string | null;
+  sp_certificate: string | null;
+  /** Write-only (`REDACTED` when stored). */
+  sp_private_key: string | null;
+  sign_requests: boolean;
+  require_encrypted_assertions: boolean;
+  name_id_format: string;
+  allow_idp_initiated: boolean;
+  jit_provisioning: boolean;
+  /** Attribute mapping (`Name` or `FriendlyName`); the login falls back to the NameID. */
+  username_attribute: string | null;
+  full_name_attribute: string;
+  emails_attribute: string;
+  ssh_keys_attribute: string;
+  gpg_keys_attribute: string;
+  admin_attribute: string | null;
+  groups_attribute: string | null;
+  clock_skew_seconds: number;
+}
+
+export interface SamlCertInfo {
+  subject: string;
+  fingerprint_sha256: string;
+  not_after: string;
+  expired: boolean;
+}
+
+/** `GET /_bgh/admin/saml`: the service provider as saved. */
+export interface SamlInfo {
+  enabled: boolean;
+  entity_id: string;
+  acs_url: string;
+  sls_url: string;
+  metadata_url: string;
+  login_url: string;
+  sp_certificate: SamlCertInfo | null;
+  sp_private_key_set: boolean;
+  idp_certificates: SamlCertInfo[];
+  /** Configuration problems (unparsable certificates, mismatched key pair). */
+  errors: string[];
+}
+
+export interface SamlKeypair {
+  certificate: string;
+  private_key: string;
+  fingerprint_sha256: string | null;
+}
+
+export interface IdpMetadata {
+  idp_entity_id: string | null;
+  idp_sso_url: string;
+  idp_slo_url: string | null;
+  idp_certificate: string;
+}
+
+export const SAML_INFO_KEY = 'admin:saml';
+export const getSamlInfo = () => api.get<SamlInfo>('/_bgh/admin/saml');
+/** A new SP key pair; nothing is stored until the settings are saved. */
+export const generateSamlKeypair = () => api.post<SamlKeypair>('/_bgh/admin/saml/keypair', {});
+export const parseIdpMetadata = (body: { metadata: string } | { url: string }) => api.post<IdpMetadata>('/_bgh/admin/saml/idp_metadata', body);
+
 export interface SiteSettings {
   signup: { policy: 'open' | 'invite' | 'closed'; allowed_email_domains: string[] };
   repositories: { default_visibility: Visibility; max_repo_size_mb: number | null };
@@ -370,7 +443,15 @@ export interface SiteSettings {
     search_unauthenticated_per_minute: number;
     graphql_per_hour: number;
   };
-  auth_providers: { password_login: boolean; password_login_admin_exempt: boolean; oidc: OidcProvider[]; ldap: LdapSettings };
+  auth_providers: {
+    password_login: boolean;
+    password_login_admin_exempt: boolean;
+    oidc: OidcProvider[];
+    ldap: LdapSettings;
+    saml: SamlSettings;
+    /** SCIM provisioning endpoints (`/api/v3/scim/v2/…`). */
+    scim: { enabled: boolean };
+  };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   git_maintenance: GitMaintenanceSettings;
@@ -398,6 +479,53 @@ export const REDACTED = '********';
 
 export const getSettings = () => api.get<SiteSettings>('/_bgh/admin/settings');
 export const patchSettings = (patch: Partial<{ [K in keyof SiteSettings]: Partial<SiteSettings[K]> }>) => api.patch<SiteSettings>('/_bgh/admin/settings', patch);
+
+// ------------------------------------------------------------------ SCIM
+
+/** One enterprise per instance: the slug in SCIM URLs is not checked. */
+export const SCIM_ENTERPRISE = 'enterprise';
+
+export interface ScimMeta {
+  resourceType?: string;
+  created: string;
+  lastModified: string;
+  location: string;
+}
+
+export interface ScimUser {
+  id: string;
+  externalId: string | null;
+  userName: string;
+  displayName: string | null;
+  name?: { givenName?: string | null; familyName?: string | null; formatted?: string | null };
+  emails?: { value: string; type?: string | null; primary?: boolean }[];
+  roles?: { value: string; primary?: boolean }[];
+  active: boolean;
+  meta: ScimMeta;
+}
+
+export interface ScimGroup {
+  id: string;
+  externalId: string | null;
+  displayName: string;
+  members?: { value: string; display?: string | null }[];
+  meta: ScimMeta;
+}
+
+export interface ScimList<T> {
+  schemas: string[];
+  totalResults: number;
+  itemsPerPage: number;
+  startIndex: number;
+  Resources: T[];
+}
+
+/** Base URL of the enterprise SCIM API (relative to the origin). */
+export const scimBase = () => `${v3('scim', 'v2', 'enterprises', SCIM_ENTERPRISE)}/`;
+export const scimPath = (resource: 'Users' | 'Groups', p: { startIndex: number; count: number; filter?: string }) => `${scimBase()}${resource}${qs(p)}`;
+export const listScim = <T>(path: string) => api.get<ScimList<T>>(path);
+/** SCIM filter for an exact `userName` (quotes and backslashes escaped). */
+export const scimUserNameFilter = (text: string) => `userName eq "${text.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
 
 // ------------------------------------------------------------------ audit log
 

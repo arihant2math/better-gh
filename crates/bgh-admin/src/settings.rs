@@ -28,6 +28,11 @@ fn redact(mut v: Value) -> Value {
     {
         *p = json!(REDACTED);
     }
+    if let Some(p) = v.pointer_mut("/auth_providers/saml/sp_private_key")
+        && !p.is_null()
+    {
+        *p = json!(REDACTED);
+    }
     if let Some(list) = v
         .pointer_mut("/auth_providers/oidc")
         .and_then(Value::as_array_mut)
@@ -58,6 +63,16 @@ fn keep_secrets(section: &str, new: &mut Value, old: &Value) {
                 ldap.insert(
                     "bind_password".into(),
                     old.pointer("/ldap/bind_password")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+            }
+            if let Some(saml) = new.get_mut("saml").and_then(Value::as_object_mut)
+                && saml.get("sp_private_key").and_then(Value::as_str) == Some(REDACTED)
+            {
+                saml.insert(
+                    "sp_private_key".into(),
+                    old.pointer("/saml/sp_private_key")
                         .cloned()
                         .unwrap_or(Value::Null),
                 );
@@ -176,7 +191,38 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     if l.sync_interval_hours == 0 {
         return Err(bad("auth_providers.ldap.sync_interval_hours"));
     }
-    if !s.auth_providers.password_login && s.auth_providers.oidc.is_empty() && !l.enabled {
+    let saml = &s.auth_providers.saml;
+    if saml.enabled {
+        if !saml.idp_sso_url.starts_with("https://") && !saml.idp_sso_url.starts_with("http://") {
+            return Err(bad("auth_providers.saml.idp_sso_url"));
+        }
+        if saml.idp_certificate.trim().is_empty() {
+            return Err(bad("auth_providers.saml.idp_certificate"));
+        }
+        if saml.require_encrypted_assertions
+            && saml
+                .sp_private_key
+                .as_deref()
+                .is_none_or(|k| k.trim().is_empty())
+        {
+            return Err(ApiError::invalid_field(FieldError::custom(
+                "SiteSettings",
+                "auth_providers.saml.require_encrypted_assertions",
+                "encrypted assertions need an SP key pair",
+            )));
+        }
+    }
+    if saml.display_name.trim().is_empty() {
+        return Err(bad("auth_providers.saml.display_name"));
+    }
+    if saml.clock_skew_seconds > 3600 {
+        return Err(bad("auth_providers.saml.clock_skew_seconds"));
+    }
+    if !s.auth_providers.password_login
+        && s.auth_providers.oidc.is_empty()
+        && !l.enabled
+        && !saml.enabled
+    {
         return Err(ApiError::invalid_field(FieldError::custom(
             "SiteSettings",
             "auth_providers",
