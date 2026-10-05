@@ -15,7 +15,9 @@ import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { splitMessage } from './group';
+import { CommitCommentThread, useCommitCommentAnnotations } from './CommitComments';
 import { CiIcon, Person, copyText } from './parts';
+import commentStyles from './CommitComments.module.css';
 import styles from './Commits.module.css';
 
 /** Single commit: message, people, parents, CI, stats and the diff. */
@@ -69,7 +71,7 @@ function CommitView({ repo, refName }: { repo: Repo; refName: string }) {
     <div className={styles.commitPage}>
       {commit.data ? <CommitHeader repo={repo} c={commit.data} /> : <HeaderSkeleton />}
       {commit.data && <Stats c={commit.data} />}
-      <Diff repo={repo} refName={refName} />
+      <Diff repo={repo} refName={refName} sha={sha} />
     </div>
   );
 }
@@ -160,13 +162,21 @@ function Stats({ c }: { c: RestCommitDetail }) {
   );
 }
 
-function Diff({ repo, refName }: { repo: Repo; refName: string }) {
+/** The diff with inline commit comments; the general comment thread follows the last file. */
+function Diff({ repo, refName, sha }: { repo: Repo; refName: string; sha: string | undefined }) {
+  const annotations = useCommitCommentAnnotations(repo, sha);
+  const thread = <CommitCommentThread repo={repo} sha={sha} />;
   const { data, error } = useResource<string>(codeKeys.commitDiff(repo.owner, repo.name, refName), () => getCommitDiff(repo.owner, repo.name, refName), {
     immutable: isSha(refName),
   });
   if (error && data === undefined) {
     const tooLarge = error instanceof ApiError && error.status === 406;
-    return <EmptyState icon={AlertIcon} title={tooLarge ? 'This diff is too large to display' : 'Couldn’t load the diff'} />;
+    return (
+      <div className={commentStyles.standalone}>
+        <EmptyState icon={AlertIcon} title={tooLarge ? 'This diff is too large to display' : 'Couldn’t load the diff'} />
+        {thread}
+      </div>
+    );
   }
   if (data === undefined) {
     return (
@@ -175,10 +185,17 @@ function Diff({ repo, refName }: { repo: Repo; refName: string }) {
       </div>
     );
   }
-  if (!data.trim()) return <EmptyState icon={GitCommitIcon} title="No changes in this commit" />;
+  if (!data.trim()) {
+    return (
+      <div className={commentStyles.standalone}>
+        <EmptyState icon={GitCommitIcon} title="No changes in this commit" />
+        {thread}
+      </div>
+    );
+  }
   return (
     <div className={styles.diff}>
-      <DiffViewer diff={data} />
+      <DiffViewer diff={data} annotations={annotations} footer={thread} />
     </div>
   );
 }

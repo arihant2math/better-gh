@@ -15,7 +15,6 @@ use serde_json::json;
 const NOT_PRODUCIBLE_YET: &[&str] = &[
     "branch_protection_configuration",
     "code_scanning_alert",
-    "commit_comment",
     "custom_property",
     "custom_property_values",
     "dependabot_alert",
@@ -357,6 +356,12 @@ fn samples() -> Vec<Event> {
             status_id: 1,
             state: "success".into(),
             actor_id: Some(1),
+        },
+        Event::CommitCommentCreated {
+            repo_id: 1,
+            comment_id: 1,
+            actor_id: 1,
+            commit_author_id: Some(1),
         },
         Event::DeployKeyCreated {
             repo_id: 1,

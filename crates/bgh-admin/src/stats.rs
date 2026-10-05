@@ -186,7 +186,7 @@ fn gists() -> GistStats {
 
 async fn comments(state: &AppState) -> ApiResult<CommentStats> {
     Ok(sqlx::query_as(
-        "SELECT 0::bigint AS total_commit_comments,
+        "SELECT (SELECT count(*) FROM commit_comments) AS total_commit_comments,
                 0::bigint AS total_gist_comments,
                 (SELECT count(*) FROM comments c JOIN issues i ON i.id = c.issue_id
                   WHERE NOT i.is_pull_request) AS total_issue_comments,
