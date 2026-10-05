@@ -484,6 +484,21 @@ pub fn classify(method: &Method, path: &str) -> Need {
     }
 }
 
+/// Account routes a user-to-server token may call regardless of its
+/// permission map (GitHub: no permission needed).
+fn user_to_server_route(method: &Method, path: &str) -> bool {
+    let path = path.strip_prefix("/api/v3").unwrap_or(path);
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let get = matches!(*method, Method::GET | Method::HEAD);
+    match segs.as_slice() {
+        ["user"] | ["user", "installations"] | ["user", "installations", _, "repositories"] => get,
+        ["user", "installations", _, "repositories", _] => {
+            matches!(*method, Method::PUT | Method::DELETE)
+        }
+        _ => false,
+    }
+}
+
 /// What a GraphQL mutation (root field name) needs.
 pub fn graphql_mutation_need(field: &str) -> Need {
     let any = |c: &[Category]| Need::Any(c.to_vec(), Access::Write);
@@ -556,6 +571,14 @@ pub async fn middleware(State(state): State<AppState>, mut req: Request, next: N
     // existed; note the triggering actor for audit entries now.
     if let Some(actor) = crate::perms::job_token_actor(&auth) {
         crate::sync::context::note_actions_actor(actor);
+    }
+    // GitHub App user-to-server tokens may read their user and manage the
+    // app's installations (`/user`, `/user/installations…`).
+    if rest_api
+        && crate::apps::user_to_server_app_id(&auth).is_some()
+        && user_to_server_route(req.method(), &path)
+    {
+        return next.run(req).await;
     }
     let need = if rest_api {
         classify(req.method(), &path)

@@ -6,6 +6,7 @@ mod common;
 
 mod accounts;
 mod apps;
+mod apps_p46;
 mod auth;
 mod boot;
 mod oauth;

@@ -164,7 +164,8 @@ async fn check_runs_and_suites() {
         run["url"],
         app.url(&format!("/api/v3/repos/alice/demo/check-runs/{run_id}"))
     );
-    assert_eq!(run["app"]["slug"], "api");
+    // Created by a user (not a GitHub App): no app.
+    assert_eq!(run["app"], serde_json::Value::Null);
     assert_eq!(run["pull_requests"][0]["number"], 1);
     assert_eq!(run["pull_requests"][0]["head"]["ref"], "feature");
     assert_eq!(run["pull_requests"][0]["base"]["repo"]["name"], "demo");
