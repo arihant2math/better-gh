@@ -269,6 +269,10 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
     let Some(auth) = auth else {
         return raw;
     };
+    // GitHub App installation tokens: their repositories and permissions.
+    if let Some(cap) = crate::apps::effective_cap(auth, repo) {
+        return cap;
+    }
     if let Some(job_repo) = job_token_repo(auth) {
         let cap = if auth
             .scopes

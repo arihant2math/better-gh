@@ -45,6 +45,8 @@ pub enum NodeType {
     WorkflowRun,
     Artifact,
     Environment,
+    /// GitHub App (`Integration`).
+    Integration,
 }
 
 impl NodeType {
@@ -83,6 +85,7 @@ impl NodeType {
         Self::WorkflowRun,
         Self::Artifact,
         Self::Environment,
+        Self::Integration,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -121,6 +124,7 @@ impl NodeType {
             Self::WorkflowRun => "WorkflowRun",
             Self::Artifact => "Artifact",
             Self::Environment => "Environment",
+            Self::Integration => "Integration",
         }
     }
 
