@@ -133,12 +133,19 @@ pub enum Event {
         issue_id: i64,
         comment_id: i64,
         actor_id: i64,
+        /// GitHub-style `changes` (`{"body": {"from": old}}`).
+        #[serde(default)]
+        changes: serde_json::Value,
     },
     IssueCommentDeleted {
         repo_id: i64,
         issue_id: i64,
         comment_id: i64,
         actor_id: i64,
+        /// Webhook JSON of the comment taken before the delete (`null`
+        /// from older producers).
+        #[serde(default)]
+        comment: serde_json::Value,
     },
     /// `pull_id` is the issue id of the pull request.
     PullRequestOpened {
@@ -212,6 +219,9 @@ pub enum Event {
         pull_id: i64,
         review_id: i64,
         actor_id: i64,
+        /// GitHub-style `changes` (`{"body": {"from": old}}`).
+        #[serde(default)]
+        changes: serde_json::Value,
     },
     PullRequestReviewDismissed {
         repo_id: i64,
@@ -230,12 +240,19 @@ pub enum Event {
         pull_id: i64,
         comment_id: i64,
         actor_id: i64,
+        /// GitHub-style `changes` (`{"body": {"from": old}}`).
+        #[serde(default)]
+        changes: serde_json::Value,
     },
     PullRequestReviewCommentDeleted {
         repo_id: i64,
         pull_id: i64,
         comment_id: i64,
         actor_id: i64,
+        /// Webhook JSON of the comment taken before the delete (`null`
+        /// from older producers).
+        #[serde(default)]
+        comment: serde_json::Value,
     },
     /// `comment_id` is the thread's root review comment.
     PullRequestReviewThreadResolved {
@@ -523,6 +540,10 @@ pub enum Event {
         team_id: i64,
         slug: String,
         actor_id: i64,
+        /// Webhook `team` JSON taken before the delete (`null` from older
+        /// producers).
+        #[serde(default)]
+        team: serde_json::Value,
     },
     TeamMemberAdded {
         org_id: i64,
@@ -677,6 +698,27 @@ pub enum Event {
         release_id: i64,
         actor_id: i64,
     },
+    /// A new container package version was pushed to a package linked to
+    /// `repo_id` (webhook `package` / `published`).
+    PackagePublished {
+        repo_id: i64,
+        package_id: i64,
+        version_id: i64,
+        actor_id: i64,
+        /// Tag the version was pushed with, if any.
+        #[serde(default)]
+        tag: Option<String>,
+    },
+    /// An existing package version was re-tagged (webhook `package` /
+    /// `updated`).
+    PackageUpdated {
+        repo_id: i64,
+        package_id: i64,
+        version_id: i64,
+        actor_id: i64,
+        #[serde(default)]
+        tag: Option<String>,
+    },
     /// Site-level user account change (GHES global webhook `user` event).
     /// `action`: `created` | `deleted` | `renamed` | `suspended` |
     /// `unsuspended` | `promoted` | `demoted`. `login` is the current login
@@ -720,6 +762,75 @@ pub enum Event {
     SessionEnded {
         user_id: i64,
         session_id: Option<i64>,
+    },
+    /// Repository settings changed (`PATCH /repos/..`, topics): GitHub's
+    /// `repository` `edited` with a `changes` object
+    /// (`{"description": {"from": ..}}`). Renames, visibility and archive
+    /// changes have their own variants.
+    RepositoryEdited {
+        repo_id: i64,
+        actor_id: i64,
+        changes: serde_json::Value,
+    },
+    /// A release changed state on edit: `action` is `released` (became a
+    /// full release), `prereleased` (became a pre-release) or `unpublished`
+    /// (published release turned back into a draft).
+    ReleaseStateChanged {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+        action: String,
+    },
+    /// `key` is the deploy key's REST JSON (rendered by bgh-repos).
+    DeployKeyCreated {
+        repo_id: i64,
+        key_id: i64,
+        actor_id: i64,
+        key: serde_json::Value,
+    },
+    /// The key row is gone; `key` is its REST JSON at deletion.
+    DeployKeyDeleted {
+        repo_id: i64,
+        key_id: i64,
+        actor_id: i64,
+        key: serde_json::Value,
+    },
+    /// Classic branch protection changed. `action`: `created` | `edited` |
+    /// `deleted`; `rule` is GitHub's `branch_protection_rule` webhook
+    /// object, `changes` the edited fields (`{"<field>": {"from": ..}}`).
+    BranchProtectionRuleChanged {
+        repo_id: i64,
+        actor_id: i64,
+        action: String,
+        rule: serde_json::Value,
+        #[serde(default)]
+        changes: serde_json::Value,
+    },
+    /// Repository ruleset changed. `action`: `created` | `edited` |
+    /// `deleted`; `ruleset` is the REST ruleset JSON.
+    RepositoryRulesetChanged {
+        repo_id: i64,
+        actor_id: i64,
+        action: String,
+        ruleset: serde_json::Value,
+        #[serde(default)]
+        changes: serde_json::Value,
+    },
+    /// A user clicked one of a check run's `actions` buttons (GitHub's
+    /// `check_run` `requested_action`); `identifier` is the action's id.
+    CheckRunActionRequested {
+        repo_id: i64,
+        check_run_id: i64,
+        actor_id: i64,
+        identifier: String,
+    },
+    /// Wiki pages written (GitHub `gollum`). `pages` is the webhook
+    /// `pages` array: `[{"page_name", "title", "summary", "action":
+    /// "created"|"edited"|"deleted", "sha", "html_url"}]`.
+    WikiPagesUpdated {
+        repo_id: i64,
+        actor_id: i64,
+        pages: serde_json::Value,
     },
 }
 
@@ -836,11 +947,21 @@ impl Event {
             Self::CheckSuiteUpdated { .. } => "check_suite_updated",
             Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
             Self::ReleaseUpdated { .. } => "release_updated",
+            Self::PackagePublished { .. } => "package_published",
+            Self::PackageUpdated { .. } => "package_updated",
             Self::UserAccountChanged { .. } => "user_account_changed",
             Self::OrganizationChanged { .. } => "organization_changed",
             Self::GlobalHookPing { .. } => "global_hook_ping",
             Self::WorkflowJobUpdated { .. } => "workflow_job_updated",
             Self::SessionEnded { .. } => "session_ended",
+            Self::RepositoryEdited { .. } => "repository_edited",
+            Self::ReleaseStateChanged { .. } => "release_state_changed",
+            Self::DeployKeyCreated { .. } => "deploy_key_created",
+            Self::DeployKeyDeleted { .. } => "deploy_key_deleted",
+            Self::BranchProtectionRuleChanged { .. } => "branch_protection_rule_changed",
+            Self::RepositoryRulesetChanged { .. } => "repository_ruleset_changed",
+            Self::WikiPagesUpdated { .. } => "wiki_pages_updated",
+            Self::CheckRunActionRequested { .. } => "check_run_action_requested",
         }
     }
 
@@ -937,7 +1058,17 @@ impl Event {
             | Self::CheckSuiteUpdated { repo_id, .. }
             | Self::WorkflowRunUpdated { repo_id, .. }
             | Self::ReleaseUpdated { repo_id, .. }
-            | Self::WorkflowJobUpdated { repo_id, .. } => Some(*repo_id),
+            | Self::PackagePublished { repo_id, .. }
+            | Self::PackageUpdated { repo_id, .. }
+            | Self::WorkflowJobUpdated { repo_id, .. }
+            | Self::RepositoryEdited { repo_id, .. }
+            | Self::ReleaseStateChanged { repo_id, .. }
+            | Self::DeployKeyCreated { repo_id, .. }
+            | Self::DeployKeyDeleted { repo_id, .. }
+            | Self::BranchProtectionRuleChanged { repo_id, .. }
+            | Self::RepositoryRulesetChanged { repo_id, .. }
+            | Self::WikiPagesUpdated { repo_id, .. }
+            | Self::CheckRunActionRequested { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -1059,9 +1190,19 @@ impl Event {
             | Self::ReleaseEdited { actor_id, .. }
             | Self::ReleaseDeleted { actor_id, .. }
             | Self::ReleaseUpdated { actor_id, .. }
+            | Self::PackagePublished { actor_id, .. }
+            | Self::PackageUpdated { actor_id, .. }
             | Self::UserAccountChanged { actor_id, .. }
             | Self::OrganizationChanged { actor_id, .. }
-            | Self::GlobalHookPing { actor_id, .. } => Some(*actor_id),
+            | Self::GlobalHookPing { actor_id, .. }
+            | Self::RepositoryEdited { actor_id, .. }
+            | Self::ReleaseStateChanged { actor_id, .. }
+            | Self::DeployKeyCreated { actor_id, .. }
+            | Self::DeployKeyDeleted { actor_id, .. }
+            | Self::BranchProtectionRuleChanged { actor_id, .. }
+            | Self::RepositoryRulesetChanged { actor_id, .. }
+            | Self::WikiPagesUpdated { actor_id, .. }
+            | Self::CheckRunActionRequested { actor_id, .. } => Some(*actor_id),
             Self::SessionEnded { user_id, .. } => Some(*user_id),
         }
     }

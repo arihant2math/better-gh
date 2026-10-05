@@ -376,6 +376,7 @@ dependencies = [
  "matchit",
  "memchr",
  "mime",
+ "multer",
  "percent-encoding",
  "pin-project-lite",
  "serde_core",
@@ -624,6 +625,7 @@ dependencies = [
  "bgh-core",
  "bgh-git",
  "bgh-issues",
+ "bgh-projects",
  "bgh-pulls",
  "bgh-repos",
  "bgh-server",
@@ -709,12 +711,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "bgh-packages"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "bgh-core",
+ "bgh-server",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "bgh-projects"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "bgh-core",
+ "bgh-issues",
  "bgh-server",
  "chrono",
  "futures",
@@ -843,12 +873,14 @@ dependencies = [
  "bgh-import",
  "bgh-issues",
  "bgh-notify",
+ "bgh-packages",
  "bgh-projects",
  "bgh-pulls",
  "bgh-releases",
  "bgh-repos",
  "bgh-search",
  "bgh-sync",
+ "bgh-uploads",
  "bgh-wiki",
  "bytes",
  "chrono",
@@ -893,6 +925,29 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-tungstenite",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "bgh-uploads"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bgh-core",
+ "bgh-server",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
  "tracing",
  "uuid",
 ]

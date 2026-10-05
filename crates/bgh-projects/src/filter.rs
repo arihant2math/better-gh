@@ -10,7 +10,7 @@ pub struct Candidate<'a> {
 }
 
 /// Split on whitespace, keeping `"quoted strings"` (also after `key:`) together.
-fn tokens(s: &str) -> Vec<String> {
+pub(crate) fn tokens(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;

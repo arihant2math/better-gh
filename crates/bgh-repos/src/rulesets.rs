@@ -89,6 +89,15 @@ fn full(state: &AppState, access: &RepoAccess, r: &RulesetRow, can_bypass: &str)
     v
 }
 
+/// `repository_ruleset` webhook object: the full ruleset as an admin sees it.
+fn webhook_json(state: &AppState, access: &RepoAccess, r: &RulesetRow) -> Value {
+    let mut v = summary(state, access, r);
+    v["bypass_actors"] = r.bypass_actors.clone();
+    v["conditions"] = r.conditions.clone();
+    v["rules"] = r.rules.clone();
+    v
+}
+
 /// `"always"`, `"pull_requests_only"` or `"never"` for `actor` (mirrors
 /// the bypass evaluation of the rules engine).
 fn bypass_mode(r: &RulesetRow, actor: Option<&Actor>) -> &'static str {
@@ -557,6 +566,13 @@ async fn create(
         repo_id: access.repo.id,
         actor_id: user.id,
     });
+    tx.emit(Event::RepositoryRulesetChanged {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+        action: "created".into(),
+        ruleset: webhook_json(&state, &access, &row),
+        changes: Value::Null,
+    });
     tx.commit().await?;
 
     let actor = load_actor(&state, auth.as_ref(), &access).await?;
@@ -617,6 +633,29 @@ async fn update(
         repo_id: access.repo.id,
         actor_id: user.id,
     });
+    let mut changes = Map::new();
+    if existing.name != row.name {
+        changes.insert("name".into(), json!({ "from": existing.name }));
+    }
+    if existing.enforcement != row.enforcement {
+        changes.insert(
+            "enforcement".into(),
+            json!({ "from": existing.enforcement }),
+        );
+    }
+    if existing.conditions != row.conditions {
+        changes.insert("conditions".into(), json!({ "from": existing.conditions }));
+    }
+    if existing.rules != row.rules {
+        changes.insert("rules".into(), json!({ "from": existing.rules }));
+    }
+    tx.emit(Event::RepositoryRulesetChanged {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+        action: "edited".into(),
+        ruleset: webhook_json(&state, &access, &row),
+        changes: Value::Object(changes),
+    });
     tx.commit().await?;
 
     let actor = load_actor(&state, auth.as_ref(), &access).await?;
@@ -640,14 +679,16 @@ async fn destroy(
     let user = user_of(&auth)?;
 
     let mut tx = Tx::begin(&state).await?;
-    let name: String = sqlx::query_scalar(
-        "DELETE FROM repo_rulesets WHERE id = $1 AND repo_id = $2 RETURNING name",
-    )
+    let row: RulesetRow = sqlx::query_as(&format!(
+        "DELETE FROM repo_rulesets WHERE id = $1 AND repo_id = $2 RETURNING {}",
+        RulesetRow::COLUMNS
+    ))
     .bind(id)
     .bind(access.repo.id)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    let name = row.name.clone();
     tx.sync(
         &access.scope(),
         "ruleset",
@@ -667,6 +708,13 @@ async fn destroy(
     tx.emit(Event::RepositoryUpdated {
         repo_id: access.repo.id,
         actor_id: user.id,
+    });
+    tx.emit(Event::RepositoryRulesetChanged {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+        action: "deleted".into(),
+        ruleset: webhook_json(&state, &access, &row),
+        changes: Value::Null,
     });
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
