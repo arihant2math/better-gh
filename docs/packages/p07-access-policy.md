@@ -95,7 +95,8 @@
 
 ### Web
 
-* Repo header badge/icon: "Internal" (organization icon) vs "Private"/"Public".
+* Repo header badge/icon: "Internal" (organization icon) vs "Private"/"Public";
+  sidebar, dashboard and the repository Access settings use the same icon/text.
 * `/new`: visibility options filtered by the site policy, default
   preselected from `/_bgh/site`, internal described with GHES semantics,
   `members_can_create_internal_repositories` respected.
@@ -143,6 +144,22 @@
 * `bgh-core` unit test of the private-mode path classification.
 * Web: `settingsForm.test.ts` (privacy round trip and validation),
   `site.test.ts` (`visibilityPolicy`), mock `/_bgh/site`.
+
+## Verification
+
+* Playwright against a real server (`bgh serve` + built web client): an
+  outsider sees `acme/inner` with the "Internal" badge; `/new` for an org
+  lists Public/Internal/Private and only Internal/Private after the policy
+  drops public (Private preselected); the admin Privacy section renders
+  and flags a disallowed default inline; in private mode an anonymous
+  visit to `/acme/inner` is a 302 to `/login?return_to=%2Facme%2Finner`,
+  the sign-in page shows the private-mode note, and signing in returns to
+  the repository.
+* `scripts/gh-compat.sh --url … --token …` against a server in private
+  mode: 39/40, identical to the same run with private mode off (the one
+  failure, `gh pr checkout`, is specific to `--url` mode's remote setup
+  and fails the same way without private mode). The default
+  `scripts/gh-compat.sh` run is 40/40 and `scripts/api-smoke.sh` 45/45.
 
 ## Known gaps / notes
 
