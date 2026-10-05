@@ -231,6 +231,134 @@ export interface Notification {
   lastReadAt: Timestamp | null;
 }
 
+// ------------------------------------------------------------------ projects (scope org:{ownerId} | user:{ownerId})
+
+export interface Project {
+  id: ID;
+  ownerId: ID;
+  number: number;
+  title: string;
+  shortDescription: string | null;
+  readme: string | null;
+  public: boolean;
+  closed: boolean;
+  closedAt: Timestamp | null;
+  creatorId: ID | null;
+  linkedRepoIds: ID[];
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type ProjectFieldType =
+  | 'title'
+  | 'assignees'
+  | 'status'
+  | 'labels'
+  | 'repository'
+  | 'milestone'
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'single_select'
+  | 'iteration';
+
+/** GitHub Projects option colors. */
+export type ProjectOptionColor = 'GRAY' | 'BLUE' | 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'PINK' | 'PURPLE';
+
+export interface ProjectFieldOption {
+  /** Server-generated 8-hex id (temporary client ids are replaced by the echoed delta). */
+  id: string;
+  name: string;
+  color: ProjectOptionColor | string;
+  description: string;
+}
+
+export interface ProjectIteration {
+  id: string;
+  title: string;
+  /** `YYYY-MM-DD` */
+  startDate: string;
+  /** days */
+  duration: number;
+}
+
+export interface ProjectIterationConfig {
+  startDate: string;
+  duration: number;
+  iterations: ProjectIteration[];
+}
+
+export interface ProjectField {
+  id: ID;
+  projectId: ID;
+  name: string;
+  dataType: ProjectFieldType;
+  position: number;
+  options: ProjectFieldOption[] | null;
+  iterations: ProjectIterationConfig | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type ProjectLayout = 'table' | 'board' | 'roadmap';
+
+export interface ProjectView {
+  id: ID;
+  projectId: ID;
+  number: number;
+  name: string;
+  layout: ProjectLayout;
+  position: number;
+  filter: string;
+  groupByFieldId: ID | null;
+  /** Board column field (single select / status / iteration). */
+  columnFieldId: ID | null;
+  sortBy: { fieldId: ID; direction: 'asc' | 'desc' }[];
+  /** Ordered = column order. */
+  visibleFieldIds: ID[];
+  /** Board option ids hidden as columns. */
+  hiddenColumnIds: string[];
+  /** Roadmap date/iteration field. */
+  dateFieldId: ID | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** text → string, number → number, date → "YYYY-MM-DD", single_select/status → option id, iteration → iteration id. */
+export type ProjectValue = string | number;
+
+export interface ProjectItem {
+  id: ID;
+  projectId: ID;
+  contentType: 'Issue' | 'PullRequest' | 'DraftIssue';
+  issueId: ID | null;
+  /** Draft only. */
+  title: string | null;
+  /** Draft only; may be absent (not loaded). */
+  body?: string | null;
+  /** Draft only. */
+  assigneeIds: ID[];
+  archived: boolean;
+  /** Fractional key (base-62, see sync/fractional.ts). */
+  position: string;
+  viewPositions: Record<string, string>;
+  values: Record<string, ProjectValue>;
+  creatorId: ID | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type ProjectWorkflowKind = 'item_added' | 'item_reopened' | 'item_closed' | 'pr_merged' | 'auto_add' | 'auto_archive';
+
+export interface ProjectWorkflow {
+  id: ID;
+  projectId: ID;
+  kind: ProjectWorkflowKind;
+  enabled: boolean;
+  config: { statusOptionId?: string; repoIds?: ID[]; filter?: string };
+  updatedAt: Timestamp;
+}
+
 /** Model name → row type. Adding a synced model starts here (see docs/FRONTEND.md). */
 export interface ModelMap {
   user: User;
@@ -246,6 +374,11 @@ export interface ModelMap {
   review: Review;
   issueEvent: IssueEvent;
   notification: Notification;
+  project: Project;
+  projectField: ProjectField;
+  projectView: ProjectView;
+  projectItem: ProjectItem;
+  projectWorkflow: ProjectWorkflow;
 }
 
 export type ModelName = keyof ModelMap;

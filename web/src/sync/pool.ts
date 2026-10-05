@@ -2,7 +2,7 @@ import { createAtom, observable, runInAction, type IAtom } from 'mobx';
 import type { ID, ModelMap, ModelName } from './models';
 import { applyOps, type OverlayOp } from './overlay';
 import type { Delta, ModelRows } from './protocol';
-import { MODEL_NAMES, SCHEMA } from './schema';
+import { MODEL_NAMES, SCHEMA, type ScopeLookup } from './schema';
 
 type Row = Record<string, unknown> & { id: ID };
 type Ro<T> = Readonly<T>;
@@ -150,13 +150,31 @@ export class ObjectPool {
   /** Drop every row belonging to `scope` (revoke). */
   removeScope(scope: string): void {
     runInAction(() => {
+      // Collect first: scopes may be derived from other rows (project children → project → org).
+      const doomed: [ModelName, ID][] = [];
+      const lookup = this.lookupBase;
       for (const model of MODEL_NAMES) {
-        const scopeFn = SCHEMA[model].scope as ((r: Row, v: ID) => string) | null;
+        const scopeFn = SCHEMA[model].scope as ((r: Row, v: ID, l: typeof lookup) => string) | null;
         if (!scopeFn) continue;
-        for (const row of [...this.base.get(model)!.values()]) {
-          if (scopeFn(row, this.viewerId) === scope) this.deleteBase(model, row.id);
+        for (const row of this.base.get(model)!.values()) {
+          if (scopeFn(row, this.viewerId, lookup) === scope) doomed.push([model, row.id]);
         }
       }
+      for (const [model, id] of doomed) this.deleteBase(model, id);
+    });
+  }
+
+  /** Base-row lookup for scope functions. */
+  readonly lookupBase = (<M extends ModelName>(model: M, id: ID) => this.base.get(model)!.get(id) as ModelMap[M] | undefined) as ScopeLookup;
+
+  /**
+   * Remove confirmed rows that are not covered by a synced scope (e.g. rows
+   * merged from a project snapshot that disappeared server-side).
+   */
+  removeRows(model: ModelName, ids: readonly ID[]): void {
+    if (!ids.length) return;
+    runInAction(() => {
+      for (const id of ids) this.deleteBase(model, id);
     });
   }
 

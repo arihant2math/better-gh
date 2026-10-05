@@ -3,7 +3,23 @@
 Branch `bgh/projects-wiki`. Crates `bgh-projects` (migrations 1100-1199) and
 `bgh-wiki` (1200-1299), both mounted in bgh-server.
 
-Status: **in progress**.
+Status: **complete** (backend, tests, web UI). See "Known gaps" for what's left.
+
+Tests: `cargo test -p bgh-projects` (5 unit + 10 integration), `cargo test -p bgh-wiki`
+(unit + pages + git transport); web: `npm run typecheck/lint/test/build` (bundle budget OK).
+
+### Web UI (web/)
+
+* Routes: `/orgs|users/:owner/projects` (list + new), `/orgs|users/:owner/projects/:number[/views/:view]`
+  (view tabs; table with inline editing, grouping, sorting, column config, add-item row;
+  board with drag-and-drop between/within columns; roadmap; item panel; field, workflow
+  and project settings), `/:owner/:repo/projects` (linked projects), `/:owner/:repo/wiki[/:slug[/edit|/history]]`,
+  `/:owner/:repo/wiki/new`. Profile page has a Projects tab.
+* Sync: five models in `sync/models.ts`/`schema.ts` (`CLIENT_SCHEMA_VERSION` 2), child scopes
+  derived from the project row, `$merge` object patches in overlays, `sync/fractional.ts`,
+  selectors/mutations in `sync/projects.ts` (lazy). Projects outside synced scopes are merged
+  in memory from the snapshot endpoint.
+* Mock backend: `mock/projects.ts`, `mock/wiki.ts`.
 
 ## Projects (bgh-projects)
 
@@ -212,8 +228,18 @@ Details:
   `bgh_wiki::git` (a repository literally named `x.wiki` is therefore not reachable
   over git HTTP — GitHub reserves the suffix too).
 
+## Integration notes for bgh-sync (B8)
+
+`bgh-sync`'s bootstrap must call `bgh_core::sync::load_provided(conn, scope, Some(viewer))`
+for every `org:`/`user:` scope it snapshots (inside its REPEATABLE READ tx), append the
+returned models and include `user_ids` in the referenced users. Not wired yet because the
+bootstrap lives on `bgh/sync`, unmerged at the time of writing.
+
 ## Known gaps / TODO
 
 * Project collaborators / per-project roles beyond owner membership.
 * Converting a draft into an issue (needs the issues create service from B3).
-* GitHub REST/GraphQL Projects v2 API.
+* GitHub REST/GraphQL Projects v2 API (classic REST projects were sunset by GitHub; skipped).
+* Items removed by DB cascade when an issue/repo is deleted are not recorded as sync deletes;
+  the client cascades `issue` deletes to `projectItem`.
+* Mock backend applies only the `item_added` workflow.
