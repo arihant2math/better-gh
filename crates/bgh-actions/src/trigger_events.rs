@@ -867,22 +867,33 @@ pub async fn apply_hints(
         }
     }
     if let Some(id) = hint_id(extra, "review_id") {
-        let r: Option<(
-            i64,
-            Option<i64>,
-            String,
-            String,
-            Option<String>,
-            Option<chrono::DateTime<chrono::Utc>>,
-            i64,
-        )> = sqlx::query_as(
+        #[derive(sqlx::FromRow)]
+        struct Review {
+            id: i64,
+            user_id: Option<i64>,
+            body: String,
+            state: String,
+            commit_id: Option<String>,
+            submitted_at: Option<chrono::DateTime<chrono::Utc>>,
+            number: i64,
+        }
+        let r: Option<Review> = sqlx::query_as(
             "SELECT r.id, r.user_id, r.body, r.state, r.commit_id, r.submitted_at, i.number
                    FROM pr_reviews r JOIN issues i ON i.id = r.pull_id WHERE r.id = $1",
         )
         .bind(id)
         .fetch_optional(&state.db)
         .await?;
-        if let Some((id, user_id, body, st, commit_id, submitted_at, number)) = r {
+        if let Some(Review {
+            id,
+            user_id,
+            body,
+            state: st,
+            commit_id,
+            submitted_at,
+            number,
+        }) = r
+        {
             let u = user(state, user_id).await?;
             payload["review"] = json!({
                 "id": id,
@@ -896,18 +907,20 @@ pub async fn apply_hints(
         }
     }
     if let Some(id) = hint_id(extra, "review_comment_id") {
-        let c: Option<(
-            i64,
-            Option<i64>,
-            Option<i64>,
-            String,
-            String,
-            String,
-            Option<i32>,
-            i64,
-            chrono::DateTime<chrono::Utc>,
-            chrono::DateTime<chrono::Utc>,
-        )> = sqlx::query_as(
+        #[derive(sqlx::FromRow)]
+        struct ReviewComment {
+            id: i64,
+            review_id: Option<i64>,
+            user_id: Option<i64>,
+            body: String,
+            path: String,
+            commit_id: String,
+            line: Option<i32>,
+            number: i64,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+        let c: Option<ReviewComment> = sqlx::query_as(
             "SELECT c.id, c.review_id, c.user_id, c.body, c.path, c.commit_id, c.line, i.number,
                         c.created_at, c.updated_at
                    FROM pr_review_comments c JOIN issues i ON i.id = c.pull_id WHERE c.id = $1",
@@ -916,7 +929,7 @@ pub async fn apply_hints(
         .fetch_optional(&state.db)
         .await?;
         payload["comment"] = match c {
-            Some((
+            Some(ReviewComment {
                 id,
                 review_id,
                 user_id,
@@ -925,9 +938,9 @@ pub async fn apply_hints(
                 commit_id,
                 line,
                 number,
-                created,
-                updated,
-            )) => {
+                created_at: created,
+                updated_at: updated,
+            }) => {
                 let u = user(state, user_id).await?;
                 json!({
                     "id": id,
@@ -1087,24 +1100,31 @@ async fn check_run_json(
 
 /// Check suite JSON for `check_suite` payloads; `None` for Actions' suites.
 async fn check_suite_json(state: &AppState, id: i64) -> anyhow::Result<Option<Value>> {
-    let s: Option<(i64, String, Option<String>, String, Option<String>, String)> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Suite {
+        id: i64,
+        head_sha: String,
+        head_branch: Option<String>,
+        status: String,
+        conclusion: Option<String>,
+        app_slug: String,
+    }
+    let s: Option<Suite> = sqlx::query_as(
         "SELECT id, head_sha, head_branch, status, conclusion, app_slug FROM check_suites WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)
     .await?;
-    Ok(s.filter(|s| s.5 != "actions").map(
-        |(id, head_sha, head_branch, status, conclusion, app_slug)| {
-            json!({
-                "id": id,
-                "head_sha": head_sha,
-                "head_branch": head_branch,
-                "status": status,
-                "conclusion": conclusion,
-                "app": {"slug": app_slug},
-            })
-        },
-    ))
+    Ok(s.filter(|s| s.app_slug != "actions").map(|s| {
+        json!({
+            "id": s.id,
+            "head_sha": s.head_sha,
+            "head_branch": s.head_branch,
+            "status": s.status,
+            "conclusion": s.conclusion,
+            "app": {"slug": s.app_slug},
+        })
+    }))
 }
 
 /// How many `workflow_run` levels led to `run` (1 = not triggered by
