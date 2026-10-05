@@ -65,6 +65,12 @@ function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags'
   return (p: Params) => void import('../pages/code/prefetch').then((m) => m.prefetchCodeRoute(kind, p)).catch(() => undefined);
 }
 
+const DeploymentsPage = () => import('../pages/deployments/DeploymentsPage');
+
+function prefetchDeployments(p: Params) {
+  void import('../api/deployments').then((m) => prefetchResource(m.deploymentKeys.summary(p.owner!, p.repo!), () => m.getDeploymentsSummary(p.owner!, p.repo!), { ttlMs: 15_000 }));
+}
+
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
@@ -211,6 +217,8 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/branches', layout: RepoLayout, load: BranchesPage, prefetch: codePrefetch('branches'), title: (p) => `Branches · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/branches/:view', layout: RepoLayout, load: BranchesPage, prefetch: codePrefetch('branches'), title: (p) => `Branches · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/tags', layout: RepoLayout, load: () => import('../pages/branches/TagsPage'), prefetch: codePrefetch('tags'), title: (p) => `Tags · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/deployments', layout: RepoLayout, load: DeploymentsPage, prefetch: prefetchDeployments, title: (p) => `Deployments · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/deployments/activity_log', layout: RepoLayout, load: DeploymentsPage, prefetch: prefetchDeployments, title: (p) => `Deployments · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/releases', layout: RepoLayout, load: () => import('../pages/releases/ReleasesPage'), prefetch: codePrefetch('releases'), title: (p) => `Releases · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/releases/new', layout: RepoLayout, load: ReleaseEditPage, title: (p) => `New release · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/releases/edit/:tag', layout: RepoLayout, load: ReleaseEditPage, prefetch: codePrefetch('release'), title: (p) => `Edit ${p.tag} · ${p.owner}/${p.repo}` },

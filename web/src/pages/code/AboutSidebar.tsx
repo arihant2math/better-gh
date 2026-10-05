@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useResource } from '../../api/cache';
 import { codeKeys, getLanguages, getLatestRelease, listContributors, type RestContributor, type RestRelease } from '../../api/code';
+import { DeploymentsSidebar } from '../deployments/DeploymentsSidebar';
 import { Link } from '../../router';
 import type { Repo } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
@@ -84,6 +85,8 @@ export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Rep
           </p>
         )}
       </section>
+
+      <DeploymentsSidebar owner={owner} repo={name} sectionClass={styles.aboutSection} titleClass={styles.aboutTitle} />
 
       {contributors.data && contributors.data.length > 0 && (
         <section className={styles.aboutSection}>
