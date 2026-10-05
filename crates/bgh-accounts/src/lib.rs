@@ -1,19 +1,29 @@
-//! bgh-accounts: users, sessions, personal access tokens, organizations.
+//! bgh-accounts: users, authentication, credentials, organizations, teams.
 //!
-//! Implemented: sign-up / login / logout (`/_bgh/...`), PAT management
-//! (`/_bgh/tokens`), `GET /user`, `GET /users/{username}`,
-//! `GET /orgs/{org}`, `POST /admin/organizations`.
-//! Planned here: emails, SSH/GPG keys, follows, org membership & teams
-//! APIs, 2FA, OAuth apps. Migrations: 0100-0199.
+//! See `docs/packages/accounts.md` for the endpoint inventory. Migrations:
+//! 0100-0199.
 
+pub mod avatars;
+pub mod emails;
+pub mod gpg;
+pub mod json;
+pub mod keys;
+pub mod meta;
+pub mod oauth;
 pub mod orgs;
 pub mod session;
+pub mod social;
+pub mod sso;
+pub mod teams;
 pub mod tokens;
+pub mod totp;
+pub mod twofa;
 pub mod users;
+pub mod util;
 pub mod validate;
 
 use axum::Router;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post, put};
 use bgh_core::{AppState, Registry};
 
 pub use orgs::create_org;
@@ -22,26 +32,271 @@ pub use users::{NewAccount, create_user};
 /// REST routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/user", get(users::get_authenticated_user))
+        .route("/", get(meta::root))
+        .route("/rate_limit", get(meta::rate_limit))
+        // users
+        .route(
+            "/user",
+            get(users::get_authenticated_user).patch(users::update_authenticated_user),
+        )
+        .route("/user/{account_id}", get(users::get_user_by_id))
+        .route("/users", get(users::list_users))
         .route("/users/{username}", get(users::get_user))
-        .route("/orgs/{org}", get(orgs::get_org))
+        // emails
+        .route(
+            "/user/emails",
+            get(emails::list).post(emails::add).delete(emails::remove),
+        )
+        .route("/user/public_emails", get(emails::list_public))
+        .route("/user/email/visibility", patch(emails::set_visibility))
+        // followers
+        .route("/user/followers", get(social::my_followers))
+        .route("/user/following", get(social::my_following))
+        .route(
+            "/user/following/{username}",
+            get(social::check_my_following)
+                .put(social::follow)
+                .delete(social::unfollow),
+        )
+        .route("/users/{username}/followers", get(social::followers))
+        .route("/users/{username}/following", get(social::following))
+        .route(
+            "/users/{username}/following/{target_user}",
+            get(social::check_following),
+        )
+        // blocks
+        .route("/user/blocks", get(social::my_blocks))
+        .route(
+            "/user/blocks/{username}",
+            get(social::check_my_block)
+                .put(social::block_user)
+                .delete(social::unblock_user),
+        )
+        // keys
+        .route("/user/keys", get(keys::list_ssh).post(keys::create_ssh))
+        .route(
+            "/user/keys/{key_id}",
+            get(keys::get_ssh).delete(keys::delete_ssh),
+        )
+        .route("/users/{username}/keys", get(keys::list_user_ssh))
+        .route("/user/gpg_keys", get(keys::list_gpg).post(keys::create_gpg))
+        .route(
+            "/user/gpg_keys/{gpg_key_id}",
+            get(keys::get_gpg).delete(keys::delete_gpg),
+        )
+        .route("/users/{username}/gpg_keys", get(keys::list_user_gpg))
+        // OAuth app token API
+        .route(
+            "/applications/{client_id}/token",
+            post(oauth::check_app_token)
+                .patch(oauth::reset_app_token)
+                .delete(oauth::delete_app_token),
+        )
+        .route(
+            "/applications/{client_id}/grant",
+            delete(oauth::delete_app_grant),
+        )
+        // organizations
+        .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
+        .route("/organizations", get(orgs::list_all))
+        .route("/user/orgs", get(orgs::my_orgs))
+        .route("/users/{username}/orgs", get(orgs::user_orgs))
         .route("/admin/organizations", post(orgs::admin_create_org))
+        .route("/orgs/{org}/members", get(orgs::list_members))
+        .route(
+            "/orgs/{org}/members/{username}",
+            get(orgs::check_member).delete(orgs::delete_member),
+        )
+        .route("/orgs/{org}/public_members", get(orgs::list_public_members))
+        .route(
+            "/orgs/{org}/public_members/{username}",
+            get(orgs::check_public_member)
+                .put(orgs::publicize)
+                .delete(orgs::conceal),
+        )
+        .route(
+            "/orgs/{org}/memberships/{username}",
+            get(orgs::get_membership)
+                .put(orgs::set_membership)
+                .delete(orgs::delete_membership),
+        )
+        .route("/user/memberships/orgs", get(orgs::my_memberships))
+        .route(
+            "/user/memberships/orgs/{org}",
+            get(orgs::my_membership).patch(orgs::accept_membership),
+        )
+        .route(
+            "/orgs/{org}/invitations",
+            get(orgs::list_invitations).post(orgs::invite),
+        )
+        .route(
+            "/orgs/{org}/invitations/{invitation_id}",
+            delete(orgs::cancel_invitation),
+        )
+        .route(
+            "/orgs/{org}/invitations/{invitation_id}/teams",
+            get(orgs::invitation_teams),
+        )
+        .route(
+            "/organizations/{org_id}/invitations/{invitation_id}/teams",
+            get(orgs::invitation_teams_by_id),
+        )
+        .route(
+            "/orgs/{org}/failed_invitations",
+            get(orgs::list_failed_invitations),
+        )
+        .route(
+            "/orgs/{org}/outside_collaborators",
+            get(orgs::list_outside_collaborators),
+        )
+        .route(
+            "/orgs/{org}/outside_collaborators/{username}",
+            put(orgs::convert_to_outside_collaborator).delete(orgs::remove_outside_collaborator),
+        )
+        .route("/orgs/{org}/blocks", get(orgs::list_blocks))
+        .route(
+            "/orgs/{org}/blocks/{username}",
+            get(orgs::check_block)
+                .put(orgs::block_user)
+                .delete(orgs::unblock_user),
+        )
+        // teams
+        .route("/orgs/{org}/teams", get(teams::list).post(teams::create))
+        .route("/user/teams", get(teams::my_teams))
+        .merge(team_routes("/orgs/{org}/teams/{team_slug}"))
+        .merge(team_routes("/organizations/{org_id}/team/{team_id}"))
+        .merge(team_routes("/teams/{team_id}"))
+}
+
+/// Team sub-resources, mounted under each team path form (see
+/// [`teams::TeamPath`]).
+fn team_routes(base: &str) -> Router<AppState> {
+    Router::new()
+        .route(
+            base,
+            get(teams::get).patch(teams::update).delete(teams::delete),
+        )
+        .route(&format!("{base}/teams"), get(teams::children))
+        .route(&format!("{base}/members"), get(teams::members))
+        .route(
+            &format!("{base}/memberships/{{username}}"),
+            get(teams::get_membership)
+                .put(teams::set_membership)
+                .delete(teams::delete_membership),
+        )
+        .route(&format!("{base}/invitations"), get(teams::invitations))
+        .route(&format!("{base}/repos"), get(teams::repos))
+        .route(
+            &format!("{base}/repos/{{owner}}/{{repo}}"),
+            get(teams::check_repo)
+                .put(teams::add_repo)
+                .delete(teams::remove_repo),
+        )
 }
 
 /// Web-client routes (absolute paths).
 pub fn web_router() -> Router<AppState> {
     Router::new()
+        // `GET /api/v3/` (trailing slash, as requested by `gh`); the nested
+        // API router only matches `/api/v3`.
+        .route("/api/v3/", get(meta::root))
         .route("/_bgh/signup", post(session::signup))
         .route(
             "/_bgh/session",
             post(session::login).delete(session::logout),
+        )
+        .route("/_bgh/session/two_factor", post(session::two_factor))
+        .route(
+            "/_bgh/sessions",
+            get(session::list_sessions).delete(session::revoke_other_sessions),
+        )
+        .route("/_bgh/sessions/{id}", delete(session::revoke_session))
+        .route("/_bgh/user/password", put(session::change_password))
+        .route("/_bgh/password_reset", post(session::request_reset))
+        .route(
+            "/_bgh/password_reset/{token}",
+            get(session::check_reset).post(session::reset_password),
+        )
+        .route(
+            "/_bgh/user/two_factor",
+            get(twofa::status).delete(twofa::disable),
+        )
+        .route("/_bgh/user/two_factor/totp", post(twofa::start_totp))
+        .route(
+            "/_bgh/user/two_factor/totp/enable",
+            post(twofa::enable_totp),
+        )
+        .route(
+            "/_bgh/user/two_factor/recovery_codes",
+            post(twofa::regenerate),
+        )
+        .route("/_bgh/emails/verify", post(emails::verify))
+        .route(
+            "/_bgh/user/emails/{email}/verification",
+            post(emails::resend_verification),
+        )
+        .route(
+            "/_bgh/user/emails/{email}/primary",
+            put(emails::set_primary),
         )
         .route(
             "/_bgh/tokens",
             post(tokens::create_token).get(tokens::list_tokens),
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
+        .route("/_bgh/orgs", post(orgs::web_create_org))
+        // avatars
+        .route("/avatars/u/{id}", get(avatars::serve))
+        .route(
+            "/_bgh/user/avatar",
+            put(avatars::upload_mine).delete(avatars::delete_mine),
+        )
+        .route(
+            "/_bgh/orgs/{org}/avatar",
+            put(avatars::upload_org).delete(avatars::delete_org),
+        )
+        // SSO
+        .route("/_bgh/sso", get(sso::list))
+        .route("/_bgh/sso/{id}/login", get(sso::login))
+        .route("/_bgh/sso/{id}/callback", get(sso::callback))
+        .route("/_bgh/user/identities", get(sso::my_identities))
+        .route("/_bgh/user/identities/{id}", delete(sso::unlink_identity))
+        // OAuth
+        .route(
+            "/login/oauth/authorize",
+            get(oauth::authorize_page).post(oauth::authorize_submit),
+        )
+        .route("/login/oauth/access_token", post(oauth::access_token))
+        .route("/login/device/code", post(oauth::device_code))
+        .route(
+            "/login/device",
+            get(oauth::device_page).post(oauth::device_submit),
+        )
+        .route(
+            "/_bgh/oauth/authorize",
+            get(oauth::authorize_info).post(oauth::authorize_json),
+        )
+        .route("/_bgh/device", post(oauth::device_decide))
+        .route("/_bgh/device/{user_code}", get(oauth::device_info))
+        .route(
+            "/_bgh/applications",
+            get(oauth::list_apps).post(oauth::create_app),
+        )
+        .route(
+            "/_bgh/applications/{id}",
+            get(oauth::get_app)
+                .patch(oauth::update_app)
+                .delete(oauth::delete_app),
+        )
+        .route(
+            "/_bgh/applications/{id}/client_secret",
+            post(oauth::regenerate_secret),
+        )
+        .route("/_bgh/authorizations", get(oauth::list_grants))
+        .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
 }
 
-/// Background jobs and event listeners (none yet).
-pub fn register(_reg: &mut Registry) {}
+/// Background jobs and event listeners.
+pub fn register(reg: &mut Registry) {
+    reg.job(util::send_mail_job);
+}

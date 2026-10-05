@@ -91,6 +91,10 @@ fn web_routes() -> Router<AppState> {
 pub fn app(state: AppState) -> Router {
     let api = api_routes()
         .fallback(api_not_found)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::ratelimit::middleware,
+        ))
         .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn(etag))
         .layer(

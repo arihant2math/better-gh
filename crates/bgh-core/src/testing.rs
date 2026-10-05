@@ -288,6 +288,9 @@ impl TestApp {
         config.job_workers = 0;
         config.signup_enabled = true;
         config.db_max_connections = 5;
+        // In-process requests have no client IP, so every anonymous request
+        // of a test shares one bucket; keep it well above GitHub's 60/h.
+        config.rate_limit_anonymous = 5000;
         tweak(&mut config);
 
         let pool = PgPoolOptions::new()

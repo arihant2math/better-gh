@@ -14,7 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 use axum::extract::{FromRequestParts, OptionalFromRequestParts, Request};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{Extensions, HeaderMap, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use base64::Engine;
@@ -213,7 +213,7 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     let (login, secret) = decoded
         .split_once(':')
         .ok_or_else(ApiError::bad_credentials)?;
-    if secret.starts_with(crypto::PAT_PREFIX) {
+    if secret.starts_with(crypto::PAT_PREFIX) || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX) {
         // Like GitHub, the username is ignored for token auth.
         return token_auth(state, secret).await;
     }
@@ -223,6 +223,16 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     let user = verify_login(state, login, secret)
         .await?
         .ok_or_else(ApiError::bad_credentials)?;
+    // Accounts with two-factor authentication must use a token.
+    let two_factor: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM user_two_factor WHERE user_id = $1 AND enabled_at IS NOT NULL)",
+    )
+    .bind(user.id)
+    .fetch_one(&state.db)
+    .await?;
+    if two_factor {
+        return Err(ApiError::bad_credentials());
+    }
     Ok(AuthContext {
         user,
         method: AuthMethod::Password,
@@ -434,16 +444,58 @@ struct Resolved(Option<AuthContext>);
 #[derive(Clone, Default)]
 pub struct AuthSlot(Arc<OnceLock<AuthContext>>);
 
-async fn resolve(parts: &mut Parts, state: &AppState) -> ApiResult<Option<AuthContext>> {
-    if let Some(Resolved(ctx)) = parts.extensions.get::<Resolved>() {
+async fn resolve_cached(
+    state: &AppState,
+    headers: &HeaderMap,
+    extensions: &mut Extensions,
+) -> ApiResult<Option<AuthContext>> {
+    if let Some(Resolved(ctx)) = extensions.get::<Resolved>() {
         return Ok(ctx.clone());
     }
-    let ctx = authenticate(state, &parts.headers, AuthOptions::default()).await?;
-    if let (Some(ctx), Some(slot)) = (&ctx, parts.extensions.get::<AuthSlot>()) {
+    let ctx = authenticate(state, headers, AuthOptions::default()).await?;
+    if let (Some(ctx), Some(slot)) = (&ctx, extensions.get::<AuthSlot>()) {
         let _ = slot.0.set(ctx.clone());
     }
-    parts.extensions.insert(Resolved(ctx.clone()));
+    extensions.insert(Resolved(ctx.clone()));
     Ok(ctx)
+}
+
+async fn resolve(parts: &mut Parts, state: &AppState) -> ApiResult<Option<AuthContext>> {
+    resolve_cached(state, &parts.headers, &mut parts.extensions).await
+}
+
+/// Resolve (and cache for the extractors) the caller of `req`, for
+/// middleware that needs the user before the handler runs.
+pub async fn resolve_request(
+    state: &AppState,
+    req: &mut Request,
+) -> ApiResult<Option<AuthContext>> {
+    let (mut parts, body) = std::mem::take(req).into_parts();
+    let ctx = resolve_cached(state, &parts.headers, &mut parts.extensions).await;
+    *req = Request::from_parts(parts, body);
+    ctx
+}
+
+/// Client IP of a request: `X-Forwarded-For` / `X-Real-IP` when
+/// `BGH_TRUST_PROXY` is set, else the TCP peer address (when the server was
+/// started with connect info), else `"unknown"`.
+pub fn client_ip(config: &Config, headers: &HeaderMap, extensions: &Extensions) -> String {
+    if config.trust_proxy {
+        let forwarded = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split(',').next())
+            .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        if let Some(ip) = forwarded {
+            return ip.to_string();
+        }
+    }
+    extensions
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Optional authentication: `MaybeUser(None)` for anonymous callers.

@@ -329,6 +329,62 @@ pub enum Event {
         org_id: Option<i64>,
         user_id: Option<i64>,
     },
+    OrgMemberRemoved {
+        org_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
+    OrgMemberInvited {
+        org_id: i64,
+        invitation_id: i64,
+        actor_id: i64,
+    },
+    TeamCreated {
+        org_id: i64,
+        team_id: i64,
+        actor_id: i64,
+    },
+    TeamEdited {
+        org_id: i64,
+        team_id: i64,
+        actor_id: i64,
+        /// GitHub-style `changes` object.
+        changes: serde_json::Value,
+    },
+    TeamDeleted {
+        org_id: i64,
+        team_id: i64,
+        slug: String,
+        actor_id: i64,
+    },
+    TeamMemberAdded {
+        org_id: i64,
+        team_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
+    TeamMemberRemoved {
+        org_id: i64,
+        team_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
+    TeamRepoAdded {
+        org_id: i64,
+        team_id: i64,
+        repo_id: i64,
+        actor_id: i64,
+    },
+    TeamRepoRemoved {
+        org_id: i64,
+        team_id: i64,
+        repo_id: i64,
+        actor_id: i64,
+    },
+    UserFollowed {
+        actor_id: i64,
+        target_id: i64,
+    },
 }
 
 impl Event {
@@ -381,6 +437,16 @@ impl Event {
             Self::ReactionDeleted { .. } => "reaction_deleted",
             Self::OrgMemberAdded { .. } => "org_member_added",
             Self::AccessChanged { .. } => "access_changed",
+            Self::OrgMemberRemoved { .. } => "org_member_removed",
+            Self::OrgMemberInvited { .. } => "org_member_invited",
+            Self::TeamCreated { .. } => "team_created",
+            Self::TeamEdited { .. } => "team_edited",
+            Self::TeamDeleted { .. } => "team_deleted",
+            Self::TeamMemberAdded { .. } => "team_member_added",
+            Self::TeamMemberRemoved { .. } => "team_member_removed",
+            Self::TeamRepoAdded { .. } => "team_repo_added",
+            Self::TeamRepoRemoved { .. } => "team_repo_removed",
+            Self::UserFollowed { .. } => "user_followed",
         }
     }
 
@@ -430,8 +496,18 @@ impl Event {
             | Self::MilestoneDeleted { repo_id, .. }
             | Self::ReactionCreated { repo_id, .. }
             | Self::ReactionDeleted { repo_id, .. }
-            | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
-            Self::OrgMemberAdded { .. } => None,
+            | Self::ReleasePublished { repo_id, .. }
+            | Self::TeamRepoAdded { repo_id, .. }
+            | Self::TeamRepoRemoved { repo_id, .. } => Some(*repo_id),
+            Self::OrgMemberAdded { .. }
+            | Self::OrgMemberRemoved { .. }
+            | Self::OrgMemberInvited { .. }
+            | Self::TeamCreated { .. }
+            | Self::TeamEdited { .. }
+            | Self::TeamDeleted { .. }
+            | Self::TeamMemberAdded { .. }
+            | Self::TeamMemberRemoved { .. }
+            | Self::UserFollowed { .. } => None,
             Self::AccessChanged { repo_id, .. } => *repo_id,
         }
     }
@@ -483,7 +559,17 @@ impl Event {
             | Self::MilestoneDeleted { actor_id, .. }
             | Self::ReactionCreated { actor_id, .. }
             | Self::ReactionDeleted { actor_id, .. }
-            | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            | Self::OrgMemberAdded { actor_id, .. }
+            | Self::OrgMemberRemoved { actor_id, .. }
+            | Self::OrgMemberInvited { actor_id, .. }
+            | Self::TeamCreated { actor_id, .. }
+            | Self::TeamEdited { actor_id, .. }
+            | Self::TeamDeleted { actor_id, .. }
+            | Self::TeamMemberAdded { actor_id, .. }
+            | Self::TeamMemberRemoved { actor_id, .. }
+            | Self::TeamRepoAdded { actor_id, .. }
+            | Self::TeamRepoRemoved { actor_id, .. }
+            | Self::UserFollowed { actor_id, .. } => Some(*actor_id),
             Self::AccessChanged { .. } => None,
         }
     }

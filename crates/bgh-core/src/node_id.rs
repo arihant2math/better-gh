@@ -39,6 +39,7 @@ pub enum NodeType {
     DeployKey,
     Notification,
     IssueEvent,
+    OrganizationInvitation,
 }
 
 impl NodeType {
@@ -71,6 +72,7 @@ impl NodeType {
         Self::DeployKey,
         Self::Notification,
         Self::IssueEvent,
+        Self::OrganizationInvitation,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -103,6 +105,7 @@ impl NodeType {
             Self::DeployKey => "DeployKey",
             Self::Notification => "Notification",
             Self::IssueEvent => "IssueEvent",
+            Self::OrganizationInvitation => "OrganizationInvitation",
         }
     }
 
