@@ -376,7 +376,12 @@ Site-level account changes also emit `UserAccountChanged` /
   `-c core.hooksPath`) while the objects are quarantined
   (`GIT_QUARANTINE_PATH`), so rejected packs leave nothing behind. API ref
   writes go through `bgh_repos::refs::write_ref` (same rules, verified
-  with `git merge-base --is-ancestor`). After git exits, refs are re-read to determine which
+  with `git merge-base --is-ancestor`). PR merges, `mergeable_state`,
+  auto-merge and the merge box share one evaluator
+  (`bgh_pulls::protection`): the classic rule protecting the base branch
+  plus every active ruleset selecting it, each requirement reported with
+  its source and bypassed per source; required checks only count
+  statuses/check runs posted to the base repository. After git exits, refs are re-read to determine which
   updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config

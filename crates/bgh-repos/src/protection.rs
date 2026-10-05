@@ -128,6 +128,29 @@ impl RulesetRow {
             .find(|r| r["type"].as_str() == Some(ty))
     }
 
+    /// The rule of type `ty` (`{"type", "parameters"}`), if present.
+    pub fn find_rule(&self, ty: &str) -> Option<&Value> {
+        self.rule(ty)
+    }
+
+    /// `"always"`, `"pull_requests_only"` or `"never"`: how `actor` may
+    /// bypass this ruleset. Either bypassing mode allows merging a pull
+    /// request without meeting the ruleset's requirements.
+    pub fn bypass_mode(&self, actor: &Actor) -> &'static str {
+        let mut best = "never";
+        for b in self.bypass_actors.as_array().into_iter().flatten() {
+            if !actor.matches_bypass_actor(b) {
+                continue;
+            }
+            if b["bypass_mode"].as_str() == Some("pull_request") {
+                best = "pull_requests_only";
+            } else {
+                return "always";
+            }
+        }
+        best
+    }
+
     /// Whether `actor` may bypass this ruleset for direct pushes
     /// (`bypass_mode: pull_request` only covers pull request merges).
     pub fn bypassed_by(&self, actor: &Actor) -> bool {
@@ -136,26 +159,7 @@ impl RulesetRow {
             .into_iter()
             .flatten()
             .filter(|b| b["bypass_mode"].as_str() != Some("pull_request"))
-            .any(|b| {
-                let id = b["actor_id"].as_i64();
-                match b["actor_type"].as_str() {
-                    Some("RepositoryRole") => {
-                        let role = match id {
-                            Some(1) => Permission::Read,
-                            Some(2) => Permission::Maintain,
-                            Some(3) => Permission::Triage,
-                            Some(4) => Permission::Write,
-                            Some(5) => Permission::Admin,
-                            _ => return false,
-                        };
-                        actor.permission >= role
-                    }
-                    Some("OrganizationAdmin") => actor.org_admin,
-                    Some("Team") => id.is_some_and(|t| actor.team_ids.contains(&t)),
-                    Some("User") => id == Some(actor.user_id),
-                    _ => false,
-                }
-            })
+            .any(|b| actor.matches_bypass_actor(b))
     }
 }
 
@@ -259,6 +263,17 @@ pub struct Actor {
 
 impl Actor {
     pub async fn load(state: &AppState, access: &RepoAccess, user: &db::User) -> ApiResult<Self> {
+        Self::for_user(state, &access.owner, user.id, access.permission).await
+    }
+
+    /// [`Actor::load`] from the repository owner, a user id and the user's
+    /// effective permission on the repository.
+    pub async fn for_user(
+        state: &AppState,
+        owner: &db::User,
+        user_id: i64,
+        permission: Permission,
+    ) -> ApiResult<Self> {
         let team_ids: Vec<i64> = sqlx::query_scalar(
             "WITH RECURSIVE t AS (
                 SELECT tm.team_id AS id FROM team_members tm
@@ -268,18 +283,18 @@ impl Actor {
                 SELECT p.parent_id FROM teams p JOIN t ON p.id = t.id WHERE p.parent_id IS NOT NULL
              ) SELECT id FROM t",
         )
-        .bind(user.id)
-        .bind(access.owner.id)
+        .bind(user_id)
+        .bind(owner.id)
         .fetch_all(&state.db)
         .await?;
-        let org_admin = access.owner.is_org()
-            && bgh_core::perms::org_role(&state.db, access.owner.id, user.id)
+        let org_admin = owner.is_org()
+            && bgh_core::perms::org_role(&state.db, owner.id, user_id)
                 .await?
                 .as_deref()
                 == Some("admin");
         Ok(Self {
-            user_id: user.id,
-            permission: access.permission,
+            user_id,
+            permission,
             team_ids,
             org_admin,
         })
@@ -294,6 +309,35 @@ impl Actor {
             team_ids: Vec::new(),
             org_admin: false,
         }
+    }
+
+    /// Whether one `bypass_actors` entry selects this actor (any mode).
+    pub fn matches_bypass_actor(&self, b: &Value) -> bool {
+        let id = b["actor_id"].as_i64();
+        match b["actor_type"].as_str() {
+            Some("RepositoryRole") => {
+                let role = match id {
+                    Some(1) => Permission::Read,
+                    Some(2) => Permission::Maintain,
+                    Some(3) => Permission::Triage,
+                    Some(4) => Permission::Write,
+                    Some(5) => Permission::Admin,
+                    _ => return false,
+                };
+                self.permission >= role
+            }
+            Some("OrganizationAdmin") => self.org_admin,
+            Some("Team") => id.is_some_and(|t| self.team_ids.contains(&t)),
+            Some("User") => id == Some(self.user_id),
+            _ => false,
+        }
+    }
+
+    /// Whether the actor is listed in a `{"users": [ids], "teams": [ids]}`
+    /// value (push restrictions, dismissal restrictions, bypass
+    /// allowances). `None` / `null` lists nobody.
+    pub fn is_listed_in(&self, v: Option<&Value>) -> bool {
+        self.listed_in(v)
     }
 
     fn listed_in(&self, v: Option<&Value>) -> bool {
