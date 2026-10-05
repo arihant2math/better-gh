@@ -11,6 +11,9 @@
 //! | `history/{ref}[/{path}]` | commits touching a path |
 //! | `readme/{ref}[/{dir}]` | rendered README of a directory |
 //!
+//! Plus `GET /_bgh/render/blob/{owner}/{repo}/{blob_sha}?path=` (highlighted
+//! lines of one blob, docs/SYNC_PROTOCOL.md §10).
+//!
 //! `{ref}` may contain slashes (see `GitRepo::split_ref_path`). Responses
 //! for a full commit SHA are immutable (`max-age=31536000, immutable`,
 //! `private` for private repositories) and carry an ETag derived from the
@@ -23,6 +26,7 @@ pub mod blob;
 pub mod history;
 pub mod readme;
 pub mod refs;
+pub mod render;
 pub mod tree;
 
 use std::collections::HashMap;
@@ -39,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Bumped when cached shapes change.
-pub(crate) const CACHE_VERSION: &str = "v1";
+pub(crate) const CACHE_VERSION: &str = "v2";
 /// Redis TTL for git-derived caches (content is immutable; TTL bounds memory).
 pub(crate) const CACHE_TTL_SECS: u64 = 7 * 24 * 3600;
 /// `max-age` of ref-based (mutable) responses.
@@ -47,7 +51,7 @@ pub(crate) const SHORT_TTL_SECS: u32 = 30;
 
 pub fn web_router() -> Router<AppState> {
     Router::new()
-        .route("/_bgh/highlight.css", get(highlight_css))
+        .route("/_bgh/render/blob/{owner}/{repo}/{sha}", get(render::blob))
         .route("/_bgh/repos/{owner}/{repo}/refs", get(refs::list))
         .route("/_bgh/repos/{owner}/{repo}/tree", get(tree::root))
         .route("/_bgh/repos/{owner}/{repo}/tree/{*spec}", get(tree::get))
@@ -352,29 +356,4 @@ pub async fn summarize(
             )
         })
         .collect())
-}
-
-/// `GET /_bgh/highlight.css`: stylesheet for highlighted lines.
-async fn highlight_css(req: HeaderMap) -> Response {
-    static CSS: std::sync::LazyLock<(String, String)> = std::sync::LazyLock::new(|| {
-        let css = bgh_git::highlight::css();
-        let etag = etag_of(&[&css]);
-        (css, etag)
-    });
-    let cache = HeaderValue::from_static("public, max-age=86400");
-    if let Some(r) = not_modified(&req, &CSS.1, cache.clone()) {
-        return r;
-    }
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/css; charset=utf-8"),
-            ),
-            (header::CACHE_CONTROL, cache),
-            (header::ETAG, HeaderValue::from_str(&CSS.1).expect("etag")),
-        ],
-        CSS.0.clone(),
-    )
-        .into_response()
 }

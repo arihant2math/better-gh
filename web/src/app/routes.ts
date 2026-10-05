@@ -4,7 +4,7 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
-import { getContents, getIssueTemplates, listPullCommits, listPullFiles } from '../api/endpoints';
+import { browseKeys, getBlob, getIssueTemplates, getTree, isSha, listPullCommits, listPullFiles } from '../api/endpoints';
 import { defineRoutes, type Params } from '../router';
 import { hasSync, sync } from '../sync';
 import { issueByNumber, repoByName } from '../sync/selectors';
@@ -53,10 +53,21 @@ function prefetchTemplates(p: Params) {
   prefetchResource(`issue-templates:${p.owner}/${p.repo}`.toLowerCase(), () => getIssueTemplates(p.owner!, p.repo!), { ttlMs: 60_000 });
 }
 
+function codeTarget(p: Params): { owner: string; repo: string; ref: string; path: string } | null {
+  const ref = p.ref ?? (hasSync() ? repoByName(p.owner!, p.repo!)?.defaultBranch : undefined);
+  return ref ? { owner: p.owner!, repo: p.repo!, ref, path: (p['*'] ?? '').replace(/\/$/, '') } : null;
+}
+
 function prefetchCode(p: Params) {
-  const path = p['*'] ?? '';
-  const ref = p.ref ?? '';
-  prefetchResource(`contents:${p.owner}/${p.repo}@${ref}:${path}`, () => getContents(p.owner!, p.repo!, path, ref || undefined));
+  const t = codeTarget(p);
+  if (!t) return;
+  prefetchResource(browseKeys.tree(t.owner, t.repo, t.ref, t.path), () => getTree(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
+}
+
+function prefetchBlobView(p: Params) {
+  const t = codeTarget(p);
+  if (!t) return;
+  prefetchResource(browseKeys.blob(t.owner, t.repo, t.ref, t.path), () => getBlob(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
 }
 
 export function registerRoutes(): void {
@@ -83,7 +94,7 @@ export function registerRoutes(): void {
       title: (p) => `${p.owner}/${p.repo}`,
     },
     { path: '/:owner/:repo/tree/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchCode, title: (p) => `${p.owner}/${p.repo}` },
-    { path: '/:owner/:repo/blob/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchCode, title: (p) => `${p['*']} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/blob/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchBlobView, title: (p) => `${p['*']} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/issues', layout: RepoLayout, load: () => import('../pages/issues/IssueListPage'), title: (p) => `Issues · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/issues/new/choose',

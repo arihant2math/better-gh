@@ -136,3 +136,103 @@ export interface RestFork {
   owner: RestUser;
   default_branch: string;
 }
+
+// ---------------------------------------------------------------- code browser
+// `/_bgh/repos/{owner}/{repo}/...` (docs/packages/git-transport.md).
+
+export interface BrowsePerson {
+  name: string;
+  email: string;
+  date: string;
+  /** Account matched by verified email. */
+  login: string | null;
+  avatar_url: string | null;
+}
+
+export interface BrowseCommit {
+  sha: string;
+  summary: string;
+  message: string;
+  author: BrowsePerson;
+  committer: BrowsePerson;
+  parents: string[];
+}
+
+export interface BrowseRef {
+  name: string;
+  sha: string;
+}
+
+export interface BrowseRefs {
+  default_branch: string;
+  branches: BrowseRef[];
+  tags: BrowseRef[];
+}
+
+export interface TreeEntry {
+  name: string;
+  path: string;
+  type: 'tree' | 'blob' | 'symlink' | 'commit';
+  mode: string;
+  sha: string;
+  size: number | null;
+}
+
+export interface RenderedReadme {
+  name: string;
+  path: string;
+  sha: string;
+  /** Sanitized HTML with links resolved against the repository. */
+  html: string;
+}
+
+export interface TreeView {
+  ref: string;
+  commit: string;
+  path: string;
+  sha: string;
+  entries: TreeEntry[];
+  last_commits: Record<string, BrowseCommit> | null;
+  readme: RenderedReadme | null;
+}
+
+export interface LastCommits {
+  commit: string;
+  path: string;
+  entries: Record<string, BrowseCommit>;
+}
+
+export interface BlobView {
+  ref: string;
+  commit: string;
+  path: string;
+  name: string;
+  sha: string;
+  type: 'file' | 'symlink' | 'submodule';
+  mode: string;
+  size: number;
+  binary: boolean;
+  image: boolean;
+  mime: string;
+  lfs: { oid: string; size: number; stored: boolean } | null;
+  too_large: boolean;
+  truncated: boolean;
+  language: string | null;
+  highlighted: boolean;
+  line_count: number;
+  /** One HTML string per line (`hl-*` spans), null for binary/LFS/too large. */
+  lines: string[] | null;
+  rendered: string | null;
+  symlink_target: string | null;
+  raw_url: string;
+}
+
+export interface History {
+  ref: string;
+  commit: string;
+  path: string;
+  page: number;
+  per_page: number;
+  has_more: boolean;
+  commits: BrowseCommit[];
+}

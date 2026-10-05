@@ -110,7 +110,7 @@ async fn refs_tree_readme_and_last_commits() {
 
     // Pushing the default branch warms the root last-commit cache.
     let id = repo_id(app, &f.alice, "demo").await;
-    let key = app.state.redis_key(&format!("lc:v1:{id}:{}:", f.c2));
+    let key = app.state.redis_key(&format!("lc:v2:{id}:{}:", f.c2));
     let mut redis = app.state.redis.clone();
     let mut warmed = false;
     for _ in 0..100 {
@@ -291,7 +291,7 @@ async fn blob_views() {
     let v = res.json();
     assert_eq!(v["type"], "file");
     assert_eq!(v["name"], "main.rs");
-    assert_eq!(v["language"], "Rust");
+    assert_eq!(v["language"], "rust");
     assert_eq!(v["highlighted"], true);
     assert_eq!(v["line_count"], 4);
     assert_eq!(v["binary"], false);
@@ -315,7 +315,7 @@ async fn blob_views() {
     // Highlighting is cached in Redis by blob SHA.
     let sha = v["sha"].as_str().unwrap();
     let mut redis = app.state.redis.clone();
-    let key = app.state.redis_key(&format!("hl:v1:{sha}:Rust"));
+    let key = app.state.redis_key(&format!("hl:v2:{sha}:rust"));
     let exists: bool = redis::cmd("EXISTS")
         .arg(&key)
         .query_async(&mut redis)
@@ -353,7 +353,7 @@ async fn blob_views() {
         rendered.contains(&app.url("/alice/demo/raw/main/img/shot.png")),
         "{rendered}"
     );
-    assert_eq!(v["language"], "Markdown");
+    assert_eq!(v["language"], "markdown");
 
     // Directories are not blobs.
     app.get("/_bgh/repos/alice/demo/blob/main/src")
@@ -372,10 +372,55 @@ async fn blob_views() {
         Some("public, max-age=31536000, immutable")
     );
 
-    let css = app.get("/_bgh/highlight.css").send().await;
-    css.assert_status(200);
-    assert!(css.header("content-type").unwrap().starts_with("text/css"));
-    assert!(css.text().contains(".hl-"));
+    // Highlighted lines by blob SHA (docs/SYNC_PROTOCOL.md §10).
+    let path = format!("/_bgh/render/blob/alice/demo/{sha}?path=src/main.rs");
+    let res = app.get(&path).send().await;
+    res.assert_status(200);
+    assert_eq!(
+        res.header("cache-control"),
+        Some("public, max-age=31536000, immutable")
+    );
+    let etag = res.header("etag").unwrap().to_string();
+    let r = res.json();
+    assert_eq!(r["language"], "rust");
+    assert_eq!(r["lines"], again["lines"]);
+    app.get(&path)
+        .header("if-none-match", &etag)
+        .send()
+        .await
+        .assert_status(304);
+    // No highlighter: binary, unknown extension, unknown sha, non-blob.
+    let logo_sha = app
+        .get("/_bgh/repos/alice/demo/blob/main/logo.png")
+        .send()
+        .await
+        .json()["sha"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    app.get(&format!(
+        "/_bgh/render/blob/alice/demo/{logo_sha}?path=logo.png"
+    ))
+    .send()
+    .await
+    .assert_status(404);
+    app.get(&format!(
+        "/_bgh/render/blob/alice/demo/{sha}?path=notes.unknownext"
+    ))
+    .send()
+    .await
+    .assert_status(404);
+    app.get(&format!(
+        "/_bgh/render/blob/alice/demo/{}?path=x.rs",
+        "1".repeat(40)
+    ))
+    .send()
+    .await
+    .assert_status(404);
+    app.get(&format!("/_bgh/render/blob/alice/demo/{}?path=x.rs", f.c2))
+        .send()
+        .await
+        .assert_status(404);
 }
 
 #[tokio::test]

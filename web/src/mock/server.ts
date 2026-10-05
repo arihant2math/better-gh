@@ -15,6 +15,10 @@ import { Rng, fakeSha, iso } from './rng';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
+import { marked } from 'marked';
+
+/** Mock seed content is trusted; the real server sanitizes. */
+const renderMarkdown = (src: string, _ctx: { repo: string }): string => marked.parse(src, { async: false });
 
 export interface MockOptions {
   /** Simulated latency range in ms for HTTP. */
@@ -443,6 +447,44 @@ export class MockServer implements Transport {
         },
       };
     });
+    // ---------------- code browser (docs/packages/git-transport.md)
+    R('GET', '/_bgh/repos/:owner/:repo/refs', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      return { status: 200, body: { default_branch: repo.defaultBranch, branches: this.mockBranches(repo), tags: [] } };
+    });
+    R('GET', '/_bgh/repos/:owner/:repo/tree', (ctx) => this.browseTree(ctx, ''));
+    R('GET', '/_bgh/repos/:owner/:repo/tree/:rest*', (ctx) => this.browseTree(ctx, ctx.m[3] ?? ''));
+    R('GET', '/_bgh/repos/:owner/:repo/tree-commits/:rest*', (ctx) => {
+      const t = this.browseTarget(ctx, ctx.m[3] ?? '');
+      if (isResp(t)) return t;
+      const listing = this.listing(t.repo, t.path);
+      if (!listing) return { status: 404, body: { message: 'Not Found' } };
+      const entries: Record<string, unknown> = {};
+      for (const e of listing) entries[e.name] = this.browseCommits(t.repo, `${t.path}/${e.name}`, 1)[0];
+      return { status: 200, body: { commit: t.commit, path: t.path, entries } };
+    });
+    R('GET', '/_bgh/repos/:owner/:repo/blob/:rest*', (ctx) => {
+      const t = this.browseTarget(ctx, ctx.m[3] ?? '');
+      if (isResp(t)) return t;
+      const file = this.repoFilesFor(t.repo).find((f) => f.path === t.path);
+      if (!file) return { status: 404, body: { message: 'Not Found' } };
+      const language = languageOf(file.path);
+      const lines = highlight(file.content, language);
+      const name = file.path.split('/').pop()!;
+      return {
+        status: 200,
+        body: {
+          ref: t.ref, commit: t.commit, path: t.path, name, sha: blobSha(file.content), type: 'file', mode: '100644',
+          size: new TextEncoder().encode(file.content).length, binary: false, image: false, mime: 'application/octet-stream', lfs: null,
+          too_large: false, truncated: false, language, highlighted: !!language, line_count: lines.length, lines,
+          rendered: /\.md$/i.test(name) ? renderMarkdown(file.content, { repo: `${t.repo.owner}/${t.repo.name}` }) : null,
+          symlink_target: null, raw_url: `/${t.repo.owner}/${t.repo.name}/raw/${t.commit}/${t.path}`,
+        },
+      };
+    });
+    R('GET', '/_bgh/repos/:owner/:repo/history', (ctx) => this.browseHistory(ctx, ''));
+    R('GET', '/_bgh/repos/:owner/:repo/history/:rest*', (ctx) => this.browseHistory(ctx, ctx.m[3] ?? ''));
     R('GET', '/api/v3/repos/:owner/:repo/contents/:path*', (ctx) => this.contents(ctx, decodeURIComponent(ctx.m[3] ?? '')));
     R('GET', '/api/v3/repos/:owner/:repo/contents', (ctx) => this.contents(ctx, ''));
     R('GET', '/api/v3/repos/:owner/:repo/readme', (ctx) => this.contents(ctx, 'README.md'));
@@ -1048,6 +1090,71 @@ export class MockServer implements Transport {
     const l = login.toLowerCase();
     for (const u of this.db.tables.user.values()) if (u.login.toLowerCase() === l) return u;
     return undefined;
+  }
+
+  private mockBranches(repo: Repo): { name: string; sha: string }[] {
+    const heads = [...this.db.tables.issue.values()].filter((i) => i.repoId === repo.id && i.isPr && i.state === 'open').slice(0, 12);
+    return [{ name: repo.defaultBranch, sha: fakeSha(`${repo.id}:main`) }, ...heads.map((i) => ({ name: i.headRef ?? `pr-${i.number}`, sha: i.headSha ?? fakeSha(`${i.id}:head`) }))];
+  }
+
+  /** `{ref}/{path}` → target; mock refs are branch names or SHAs (no slashes). */
+  private browseTarget(ctx: Ctx, rest: string): { repo: Repo; ref: string; commit: string; path: string } | Resp {
+    const repo = this.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!));
+    if (!repo) return { status: 404, body: { message: 'Not Found' } };
+    const parts = decodeURIComponent(rest).replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+    const ref = parts.shift() ?? repo.defaultBranch;
+    const branch = this.mockBranches(repo).find((b) => b.name === ref);
+    const commit = branch?.sha ?? (/^[0-9a-f]{40}$/.test(ref) ? ref : null);
+    if (!commit) return { status: 404, body: { message: 'Not Found' } };
+    return { repo, ref, commit, path: parts.join('/') };
+  }
+
+  private listing(repo: Repo, path: string): { name: string; path: string; type: 'tree' | 'blob'; size: number | null; sha: string }[] | null {
+    const prefix = path ? `${path}/` : '';
+    const children = new Map<string, { type: 'tree' | 'blob'; size: number | null; sha: string }>();
+    for (const f of this.repoFilesFor(repo)) {
+      if (!f.path.startsWith(prefix)) continue;
+      const [head, ...tail] = f.path.slice(prefix.length).split('/');
+      if (tail.length) children.set(head!, { type: 'tree', size: null, sha: fakeSha(prefix + head) });
+      else children.set(head!, { type: 'blob', size: new TextEncoder().encode(f.content).length, sha: blobSha(f.content) });
+    }
+    if (children.size === 0) return null;
+    return [...children.entries()]
+      .sort(([an, a], [bn, b]) => (a.type === b.type ? an.localeCompare(bn) : a.type === 'tree' ? -1 : 1))
+      .map(([name, c]) => ({ name, path: prefix + name, ...c }));
+  }
+
+  private browseCommits(repo: Repo, salt: string, n: number): unknown[] {
+    return (this.commits(repo, salt, n, Date.now() - 3600_000) as { sha: string; commit: { message: string; author: { name: string; email: string; date: string } }; author: { login: string; avatar_url: string } }[]).map((c) => {
+      const person = { name: c.commit.author.name, email: c.commit.author.email, date: c.commit.author.date, login: c.author.login, avatar_url: c.author.avatar_url };
+      return { sha: c.sha, summary: c.commit.message.split('\n')[0], message: c.commit.message, author: person, committer: person, parents: [] };
+    });
+  }
+
+  private browseTree(ctx: Ctx, rest: string): Resp {
+    const t = this.browseTarget(ctx, rest);
+    if ('status' in t) return t;
+    const listing = this.listing(t.repo, t.path);
+    if (!listing) return { status: 404, body: { message: 'Not Found' } };
+    const entries = listing.map((e) => ({ ...e, mode: e.type === 'tree' ? '040000' : '100644' }));
+    const readmeEntry = entries.find((e) => e.type === 'blob' && /^readme(\.md)?$/i.test(e.name));
+    const readmeFile = readmeEntry && this.repoFilesFor(t.repo).find((f) => f.path === readmeEntry.path);
+    return {
+      status: 200,
+      body: {
+        ref: t.ref, commit: t.commit, path: t.path, sha: fakeSha(`tree:${t.path}`), entries, last_commits: null,
+        readme: readmeFile ? { name: readmeEntry!.name, path: readmeEntry!.path, sha: readmeEntry!.sha, html: renderMarkdown(readmeFile.content, { repo: `${t.repo.owner}/${t.repo.name}` }) } : null,
+      },
+    };
+  }
+
+  private browseHistory(ctx: Ctx, rest: string): Resp {
+    const t = this.browseTarget(ctx, rest);
+    if ('status' in t) return t;
+    const perPage = Math.min(Number(ctx.url.searchParams.get('per_page') ?? 30), 100);
+    const page = Math.max(Number(ctx.url.searchParams.get('page') ?? 1), 1);
+    const commits = this.browseCommits(t.repo, t.path, Math.min(perPage, 30));
+    return { status: 200, body: { ref: t.ref, commit: t.commit, path: t.path, page, per_page: perPage, has_more: false, commits } };
   }
 
   private contents(ctx: Ctx, rawPath: string): Resp {

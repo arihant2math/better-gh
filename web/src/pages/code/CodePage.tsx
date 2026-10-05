@@ -1,8 +1,8 @@
 import { observer } from 'mobx-react-lite';
-import { useRef, useState } from 'react';
+import { useRef, useState, type MouseEvent } from 'react';
 import { load, prefetch, useResource } from '../../api/cache';
-import { decodeContent, getContents, getHighlightedBlob, listBranches, listCommits } from '../../api/endpoints';
-import type { ContentEntry, ContentFile, Contents, HighlightedBlob, RestBranch, RestCommit } from '../../api/types';
+import { browseKeys, getBlob, getHistory, getRefs, getTree, getTreeCommits, isSha } from '../../api/endpoints';
+import type { BlobView, BrowseCommit, BrowseRefs, History, LastCommits, TreeEntry, TreeView } from '../../api/types';
 import { Link, navigate, useLocation, useParams } from '../../router';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
@@ -11,6 +11,7 @@ import { Button, IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import {
   AlertIcon,
+  BookIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -18,22 +19,39 @@ import {
   FileDirectoryFillIcon,
   FileIcon,
   GitBranchIcon,
-  BookIcon,
 } from '../../ui/icons';
-import { Markdown } from '../../ui/Markdown';
 import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import styles from './CodePage.module.css';
 
-const contentsKey = (repo: Repo, ref: string, path: string) => `contents:${repo.owner}/${repo.name}@${ref}:${path}`;
+/** Content addressed by a commit SHA never changes. */
+const opts = (ref: string) => ({ immutable: isSha(ref) });
 
-function useContents(repo: Repo, ref: string, path: string) {
-  return useResource<Contents>(contentsKey(repo, ref, path), () => getContents(repo.owner, repo.name, path, ref));
+function useTree(repo: Repo, ref: string, path: string) {
+  return useResource<TreeView>(browseKeys.tree(repo.owner, repo.name, ref, path), () => getTree(repo.owner, repo.name, ref, path), opts(ref));
 }
 
-function prefetchPath(repo: Repo, ref: string, path: string) {
-  prefetch(contentsKey(repo, ref, path), () => getContents(repo.owner, repo.name, path, ref));
+function prefetchTree(repo: Repo, ref: string, path: string) {
+  prefetch(browseKeys.tree(repo.owner, repo.name, ref, path), () => getTree(repo.owner, repo.name, ref, path), opts(ref));
+}
+
+function prefetchBlob(repo: Repo, ref: string, path: string) {
+  prefetch(browseKeys.blob(repo.owner, repo.name, ref, path), () => getBlob(repo.owner, repo.name, ref, path), opts(ref));
+}
+
+/**
+ * Follow same-origin links inside server-rendered HTML (READMEs) with the
+ * client router instead of a full page load.
+ */
+function routeLinks(e: MouseEvent<HTMLElement>) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = (e.target as HTMLElement).closest('a');
+  if (!a || a.target === '_blank') return;
+  const url = new URL(a.href, window.location.href);
+  if (url.origin !== window.location.origin || url.pathname.includes('/raw/')) return;
+  e.preventDefault();
+  navigate(url.pathname + url.search + url.hash);
 }
 
 /** Code browser: tree on the left, directory listing / file view on the right. */
@@ -84,51 +102,71 @@ function PathCrumbs({ repo, refName, path }: { repo: Repo; refName: string; path
 function BranchPicker({ repo, refName, path, isBlob }: { repo: Repo; refName: string; path: string; isBlob: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const branches = useResource<RestBranch[]>(open ? `branches:${repo.owner}/${repo.name}` : null, () => listBranches(repo.owner, repo.name));
+  const refs = useResource<BrowseRefs>(open ? browseKeys.refs(repo.owner, repo.name) : null, () => getRefs(repo.owner, repo.name));
+  const item = (name: string, isDefault: boolean) => ({
+    id: name,
+    label: name,
+    leading: <span style={{ width: 16, display: 'inline-flex', color: 'var(--accent-fg)' }}>{name === refName && <CheckIcon size={16} />}</span>,
+    trailing: isDefault ? 'default' : undefined,
+    onSelect: () => navigate(`/${repo.owner}/${repo.name}/${isBlob ? 'blob' : 'tree'}/${name}${path ? `/${path}` : ''}`),
+  });
   return (
     <>
-      <Button ref={ref} size="sm" leadingIcon={GitBranchIcon} trailingIcon={ChevronDownIcon} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        {refName}
+      <Button
+        ref={ref}
+        size="sm"
+        leadingIcon={GitBranchIcon}
+        trailingIcon={ChevronDownIcon}
+        onClick={() => setOpen((o) => !o)}
+        onMouseEnter={() => prefetch(browseKeys.refs(repo.owner, repo.name), () => getRefs(repo.owner, repo.name))}
+        aria-expanded={open}
+      >
+        {isSha(refName) ? refName.slice(0, 7) : refName}
       </Button>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
         anchor={ref}
-        aria-label="Switch branch"
+        aria-label="Switch branch or tag"
         items={
-          branches.data
+          refs.data
             ? [
-                { header: 'Branches', id: 'h' },
-                ...branches.data.map((b) => ({
-                  id: b.name,
-                  label: b.name,
-                  leading: <span style={{ width: 16, display: 'inline-flex', color: 'var(--accent-fg)' }}>{b.name === refName && <CheckIcon size={16} />}</span>,
-                  trailing: b.name === repo.defaultBranch ? 'default' : undefined,
-                  onSelect: () => navigate(`/${repo.owner}/${repo.name}/${isBlob ? 'blob' : 'tree'}/${b.name}${path ? `/${path}` : ''}`),
-                })),
+                { header: 'Branches', id: 'h-branches' },
+                ...refs.data.branches.map((b) => item(b.name, b.name === refs.data!.default_branch)),
+                ...(refs.data.tags.length ? [{ header: 'Tags', id: 'h-tags' }, ...refs.data.tags.map((t) => item(t.name, false))] : []),
               ]
-            : [{ id: 'loading', label: 'Loading branches…', disabled: true }]
+            : [{ id: 'loading', label: 'Loading refs…', disabled: true }]
         }
       />
     </>
   );
 }
 
-function LastCommit({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
-  const { data } = useResource<RestCommit[]>(`lastcommit:${repo.owner}/${repo.name}@${refName}:${path}`, () =>
-    listCommits(repo.owner, repo.name, { sha: refName, path, perPage: 1 }),
+function CommitAuthor({ c, size = 20 }: { c: BrowseCommit; size?: number }) {
+  return (
+    <>
+      <Avatar user={c.author.login ? { login: c.author.login, avatarUrl: c.author.avatar_url ?? '' } : null} size={size} />
+      <strong>{c.author.login ?? c.author.name}</strong>
+    </>
   );
-  const c = data?.[0];
+}
+
+function LastCommit({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
+  const { data } = useResource<History>(
+    browseKeys.lastCommit(repo.owner, repo.name, refName, path),
+    () => getHistory(repo.owner, repo.name, refName, path, { perPage: 1 }),
+    opts(refName),
+  );
+  const c = data?.commits[0];
   return (
     <div className={styles.lastCommit}>
       {c ? (
         <>
-          <Avatar user={c.author ? { login: c.author.login, avatarUrl: c.author.avatar_url } : null} size={20} />
-          <strong>{c.author?.login ?? c.commit.author.name}</strong>
-          <span className={styles.commitMsg}>{c.commit.message.split('\n')[0]}</span>
+          <CommitAuthor c={c} />
+          <span className={styles.commitMsg}>{c.summary}</span>
           <code className={styles.sha}>{c.sha.slice(0, 7)}</code>
           <span className={styles.subtle}>
-            <RelativeTime date={c.commit.author.date} />
+            <RelativeTime date={c.committer.date} />
           </span>
         </>
       ) : (
@@ -139,7 +177,14 @@ function LastCommit({ repo, refName, path }: { repo: Repo; refName: string; path
 }
 
 function DirView({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
-  const { data, error } = useContents(repo, refName, path);
+  const { data, error } = useTree(repo, refName, path);
+  // Last commit per entry: inlined when the server has it cached, otherwise
+  // fetched by commit SHA (immutable).
+  const commits = useResource<LastCommits>(
+    data && !data.last_commits ? browseKeys.treeCommits(repo.owner, repo.name, data.commit, path) : null,
+    () => getTreeCommits(repo.owner, repo.name, data!.commit, path),
+    { immutable: true },
+  );
   if (error) return <EmptyState icon={AlertIcon} title="Path not found" />;
   if (!data) {
     return (
@@ -152,8 +197,7 @@ function DirView({ repo, refName, path }: { repo: Repo; refName: string; path: s
       </div>
     );
   }
-  if (!Array.isArray(data)) return <FileView repo={repo} refName={refName} path={path} />;
-  const readme = data.find((e) => e.type === 'file' && /^readme(\.md)?$/i.test(e.name));
+  const last = data.last_commits ?? commits.data?.entries;
   return (
     <>
       <div className={styles.listing} role="list">
@@ -163,36 +207,37 @@ function DirView({ repo, refName, path }: { repo: Repo; refName: string; path: s
             <span>..</span>
           </Link>
         )}
-        {data.map((e) => (
-          <EntryRow key={e.path} repo={repo} refName={refName} entry={e} />
+        {data.entries.map((e) => (
+          <EntryRow key={e.path} repo={repo} refName={refName} entry={e} commit={last?.[e.name]} pending={!last} />
         ))}
       </div>
-      {readme && <Readme repo={repo} refName={refName} path={readme.path} />}
+      {data.readme && (
+        <section className={styles.readme}>
+          <header className={styles.readmeHeader}>
+            <BookIcon size={16} /> {data.readme.name}
+          </header>
+          <div className={cx('markdown-body', styles.readmeBody)} onClick={routeLinks} dangerouslySetInnerHTML={{ __html: data.readme.html }} />
+        </section>
+      )}
     </>
   );
 }
 
-function EntryRow({ repo, refName, entry }: { repo: Repo; refName: string; entry: ContentEntry }) {
-  const to = `/${repo.owner}/${repo.name}/${entry.type === 'dir' ? 'tree' : 'blob'}/${refName}/${entry.path}`;
+function EntryRow({ repo, refName, entry, commit, pending }: { repo: Repo; refName: string; entry: TreeEntry; commit?: BrowseCommit; pending: boolean }) {
+  const isDir = entry.type === 'tree';
+  const to = `/${repo.owner}/${repo.name}/${isDir ? 'tree' : 'blob'}/${refName}/${entry.path}`;
   return (
-    <Link to={to} className={styles.entry} role="listitem">
-      {entry.type === 'dir' ? <FileDirectoryFillIcon size={16} className={styles.dirIcon} /> : <FileIcon size={16} className={styles.fileIcon} />}
+    <Link
+      to={to}
+      className={styles.entry}
+      role="listitem"
+      onMouseEnter={() => (isDir ? prefetchTree(repo, refName, entry.path) : prefetchBlob(repo, refName, entry.path))}
+    >
+      {isDir ? <FileDirectoryFillIcon size={16} className={styles.dirIcon} /> : <FileIcon size={16} className={styles.fileIcon} />}
       <span className={styles.entryName}>{entry.name}</span>
-      {entry.type === 'file' && <span className={styles.subtle}>{formatSize(entry.size)}</span>}
+      <span className={styles.entryCommit}>{commit ? commit.summary : pending ? <Skeleton width={160} /> : null}</span>
+      <span className={styles.entryTime}>{commit && <RelativeTime date={commit.committer.date} />}</span>
     </Link>
-  );
-}
-
-function Readme({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
-  const { data } = useContents(repo, refName, path);
-  const file = data && !Array.isArray(data) && data.type === 'file' ? (data as ContentFile) : null;
-  return (
-    <section className={styles.readme}>
-      <header className={styles.readmeHeader}>
-        <BookIcon size={16} /> README
-      </header>
-      <div className={styles.readmeBody}>{file ? <Markdown source={decodeContent(file.content)} repo={`${repo.owner}/${repo.name}`} /> : <Skeleton width="60%" />}</div>
-    </section>
   );
 }
 
@@ -202,15 +247,71 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function FileNotice({ children }: { children: React.ReactNode }) {
+  return <div className={styles.notice}>{children}</div>;
+}
+
+function FileBody({ blob }: { blob: BlobView }) {
+  if (blob.type === 'submodule') return <FileNotice>Submodule at commit {blob.sha.slice(0, 7)}.</FileNotice>;
+  if (blob.symlink_target !== null) return <FileNotice>Symbolic link to {blob.symlink_target}</FileNotice>;
+  if (blob.image) {
+    return (
+      <div className={styles.image}>
+        <img src={blob.raw_url} alt={blob.name} />
+      </div>
+    );
+  }
+  if (blob.lfs) {
+    return (
+      <FileNotice>
+        Stored with Git LFS ({formatSize(blob.lfs.size)}).{' '}
+        {blob.lfs.stored ? <a href={blob.raw_url}>Download</a> : 'The object has not been uploaded.'}
+      </FileNotice>
+    );
+  }
+  if (blob.too_large) {
+    return (
+      <FileNotice>
+        This file is too large to display. <a href={blob.raw_url}>View raw</a>
+      </FileNotice>
+    );
+  }
+  if (blob.binary || !blob.lines) {
+    return (
+      <FileNotice>
+        Binary file not shown. <a href={blob.raw_url}>Download</a>
+      </FileNotice>
+    );
+  }
+  if (blob.rendered !== null) {
+    return <div className={cx('markdown-body', styles.readmeBody)} onClick={routeLinks} dangerouslySetInnerHTML={{ __html: blob.rendered }} />;
+  }
+  return (
+    <div className={styles.fileBody}>
+      <table className={styles.code}>
+        <tbody>
+          {blob.lines.map((line, i) => (
+            <tr key={i} id={`L${i + 1}`}>
+              <td className={styles.lineNo}>{i + 1}</td>
+              {/* Server-escaped, highlighted HTML (docs/SYNC_PROTOCOL.md §10). */}
+              <td className={styles.lineCode} dangerouslySetInnerHTML={{ __html: line }} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {blob.truncated && <FileNotice>Only the first part of this file is shown. <a href={blob.raw_url}>View raw</a></FileNotice>}
+    </div>
+  );
+}
+
 function FileView({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
-  const { data, error } = useContents(repo, refName, path);
-  const file = data && !Array.isArray(data) ? (data as ContentFile) : null;
-  // Highlighting is keyed by blob sha → immutable, cached forever.
-  const hl = useResource<HighlightedBlob | null>(file ? `hl:${file.sha}` : null, () => getHighlightedBlob(repo.owner, repo.name, file!.sha, path), {
-    immutable: true,
-  });
+  const { data: blob, error } = useResource<BlobView>(
+    browseKeys.blob(repo.owner, repo.name, refName, path),
+    () => getBlob(repo.owner, repo.name, refName, path),
+    opts(refName),
+  );
   if (error) return <EmptyState icon={AlertIcon} title="File not found" />;
-  if (!file) {
+  if (!blob) {
     return (
       <div className={styles.file}>
         <div className={styles.fileHeader}>
@@ -222,52 +323,33 @@ function FileView({ repo, refName, path }: { repo: Repo; refName: string; path: 
       </div>
     );
   }
-  const text = decodeContent(file.content);
-  const lines = text.replace(/\n$/, '').split('\n');
-  const isMarkdown = /\.md$/i.test(path);
   return (
     <div className={styles.file}>
       <div className={styles.fileHeader}>
         <span>
-          {lines.length} lines · {formatSize(file.size)}
+          {blob.lines ? `${blob.line_count} lines · ` : ''}
+          {formatSize(blob.size)}
         </span>
-        {hl.data && <span className={styles.lang}>{hl.data.language}</span>}
+        {blob.language && <span className={styles.lang}>{blob.language}</span>}
         <span style={{ flex: 1 }} />
-        <IconButton
-          icon={CopyIcon}
-          label="Copy raw contents"
-          size="sm"
-          onClick={() => {
-            void navigator.clipboard?.writeText(text);
-            toast({ title: 'Copied to clipboard' });
-          }}
-        />
-        <Button size="sm" onClick={() => window.open(file.download_url ?? '#', '_blank')}>
+        {blob.lines && (
+          <IconButton
+            icon={CopyIcon}
+            label="Copy raw contents"
+            size="sm"
+            onClick={() => {
+              void fetch(blob.raw_url, { credentials: 'same-origin' })
+                .then((r) => r.text())
+                .then((t) => navigator.clipboard?.writeText(t))
+                .then(() => toast({ title: 'Copied to clipboard' }));
+            }}
+          />
+        )}
+        <Button size="sm" onClick={() => window.open(blob.raw_url, '_blank')}>
           Raw
         </Button>
       </div>
-      {isMarkdown ? (
-        <div className={styles.readmeBody}>
-          <Markdown source={text} repo={`${repo.owner}/${repo.name}`} />
-        </div>
-      ) : (
-        <div className={styles.fileBody}>
-          <table className={styles.code}>
-            <tbody>
-              {lines.map((line, i) => (
-                <tr key={i} id={`L${i + 1}`}>
-                  <td className={styles.lineNo}>{i + 1}</td>
-                  {hl.data?.lines[i] !== undefined ? (
-                    <td className={styles.lineCode} dangerouslySetInnerHTML={{ __html: hl.data.lines[i] }} />
-                  ) : (
-                    <td className={styles.lineCode}>{line}</td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <FileBody blob={blob} />
     </div>
   );
 }
@@ -284,8 +366,8 @@ function TreePanel({ repo, refName, current }: { repo: Repo; refName: string; cu
 }
 
 function TreeDir({ repo, refName, path, depth, current }: { repo: Repo; refName: string; path: string; depth: number; current: string }) {
-  const { data } = useContents(repo, refName, path);
-  if (!data || !Array.isArray(data)) {
+  const { data } = useTree(repo, refName, path);
+  if (!data) {
     return (
       <div style={{ paddingLeft: 12 + depth * 14 }} className={styles.treeLoading}>
         <Skeleton width={90} height={10} />
@@ -294,14 +376,14 @@ function TreeDir({ repo, refName, path, depth, current }: { repo: Repo; refName:
   }
   return (
     <>
-      {data.map((e) => (
-        <TreeEntry key={e.path} repo={repo} refName={refName} entry={e} depth={depth} current={current} />
+      {data.entries.map((e) => (
+        <TreeItem key={e.path} repo={repo} refName={refName} entry={e} depth={depth} current={current} />
       ))}
     </>
   );
 }
 
-function TreeEntry({ repo, refName, entry, depth, current }: { repo: Repo; refName: string; entry: ContentEntry; depth: number; current: string }) {
+function TreeItem({ repo, refName, entry, depth, current }: { repo: Repo; refName: string; entry: TreeEntry; depth: number; current: string }) {
   const isAncestor = current === entry.path || current.startsWith(`${entry.path}/`);
   const [open, setOpen] = useState(isAncestor);
   const [prevAncestor, setPrevAncestor] = useState(isAncestor);
@@ -310,7 +392,7 @@ function TreeEntry({ repo, refName, entry, depth, current }: { repo: Repo; refNa
     if (isAncestor) setOpen(true);
   }
   const indent = { paddingLeft: 8 + depth * 14 };
-  if (entry.type === 'dir') {
+  if (entry.type === 'tree') {
     return (
       <>
         <button
@@ -318,10 +400,10 @@ function TreeEntry({ repo, refName, entry, depth, current }: { repo: Repo; refNa
           className={cx(styles.treeItem, current === entry.path && styles.treeActive)}
           style={indent}
           aria-expanded={open}
-          onMouseEnter={() => prefetchPath(repo, refName, entry.path)}
+          onMouseEnter={() => prefetchTree(repo, refName, entry.path)}
           onClick={() => {
             setOpen((o) => !o);
-            void load(contentsKey(repo, refName, entry.path), () => getContents(repo.owner, repo.name, entry.path, refName));
+            void load(browseKeys.tree(repo.owner, repo.name, refName, entry.path), () => getTree(repo.owner, repo.name, refName, entry.path), opts(refName));
           }}
         >
           {open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
@@ -338,6 +420,7 @@ function TreeEntry({ repo, refName, entry, depth, current }: { repo: Repo; refNa
       className={cx(styles.treeItem, current === entry.path && styles.treeActive)}
       style={{ paddingLeft: 8 + depth * 14 + 16 }}
       aria-current={current === entry.path ? 'page' : undefined}
+      onMouseEnter={() => prefetchBlob(repo, refName, entry.path)}
     >
       <FileIcon size={14} />
       <span className={styles.treeName}>{entry.name}</span>
