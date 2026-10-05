@@ -3,13 +3,17 @@
 //! See `docs/packages/accounts.md` for the endpoint inventory. Migrations:
 //! 0100-0199.
 
+pub mod avatars;
 pub mod emails;
 pub mod gpg;
 pub mod json;
 pub mod keys;
+pub mod meta;
+pub mod oauth;
 pub mod orgs;
 pub mod session;
 pub mod social;
+pub mod sso;
 pub mod teams;
 pub mod tokens;
 pub mod totp;
@@ -28,6 +32,8 @@ pub use users::{NewAccount, create_user};
 /// REST routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/", get(meta::root))
+        .route("/rate_limit", get(meta::rate_limit))
         // users
         .route(
             "/user",
@@ -79,6 +85,17 @@ pub fn router() -> Router<AppState> {
             get(keys::get_gpg).delete(keys::delete_gpg),
         )
         .route("/users/{username}/gpg_keys", get(keys::list_user_gpg))
+        // OAuth app token API
+        .route(
+            "/applications/{client_id}/token",
+            post(oauth::check_app_token)
+                .patch(oauth::reset_app_token)
+                .delete(oauth::delete_app_token),
+        )
+        .route(
+            "/applications/{client_id}/grant",
+            delete(oauth::delete_app_grant),
+        )
         // organizations
         .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
         .route("/organizations", get(orgs::list_all))
@@ -225,6 +242,55 @@ pub fn web_router() -> Router<AppState> {
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
         .route("/_bgh/orgs", post(orgs::web_create_org))
+        // avatars
+        .route("/avatars/u/{id}", get(avatars::serve))
+        .route(
+            "/_bgh/user/avatar",
+            put(avatars::upload_mine).delete(avatars::delete_mine),
+        )
+        .route(
+            "/_bgh/orgs/{org}/avatar",
+            put(avatars::upload_org).delete(avatars::delete_org),
+        )
+        // SSO
+        .route("/_bgh/sso", get(sso::list))
+        .route("/_bgh/sso/{id}/login", get(sso::login))
+        .route("/_bgh/sso/{id}/callback", get(sso::callback))
+        .route("/_bgh/user/identities", get(sso::my_identities))
+        .route("/_bgh/user/identities/{id}", delete(sso::unlink_identity))
+        // OAuth
+        .route(
+            "/login/oauth/authorize",
+            get(oauth::authorize_page).post(oauth::authorize_submit),
+        )
+        .route("/login/oauth/access_token", post(oauth::access_token))
+        .route("/login/device/code", post(oauth::device_code))
+        .route(
+            "/login/device",
+            get(oauth::device_page).post(oauth::device_submit),
+        )
+        .route(
+            "/_bgh/oauth/authorize",
+            get(oauth::authorize_info).post(oauth::authorize_json),
+        )
+        .route("/_bgh/device", post(oauth::device_decide))
+        .route("/_bgh/device/{user_code}", get(oauth::device_info))
+        .route(
+            "/_bgh/applications",
+            get(oauth::list_apps).post(oauth::create_app),
+        )
+        .route(
+            "/_bgh/applications/{id}",
+            get(oauth::get_app)
+                .patch(oauth::update_app)
+                .delete(oauth::delete_app),
+        )
+        .route(
+            "/_bgh/applications/{id}/client_secret",
+            post(oauth::regenerate_secret),
+        )
+        .route("/_bgh/authorizations", get(oauth::list_grants))
+        .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
 }
 
 /// Background jobs and event listeners.

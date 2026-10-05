@@ -92,10 +92,7 @@ pub fn parse_ssh_key(input: &str) -> Option<SshPublicKey> {
                 return None;
             }
             // Modulus bits (mpint may carry a leading zero byte).
-            let n = match n.iter().position(|b| *b != 0) {
-                Some(i) => &n[i..],
-                None => return None,
-            };
+            let n = &n[n.iter().position(|b| *b != 0)?..];
             let bits = n.len() * 8 - n[0].leading_zeros() as usize;
             if bits < 1024 {
                 return None;

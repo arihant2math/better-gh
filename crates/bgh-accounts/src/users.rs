@@ -58,30 +58,61 @@ pub async fn create_user(
 
     let password = input.password.to_string();
     let hash = tokio::task::spawn_blocking(move || crypto::hash_password(&password)).await??;
-
     let mut tx = Tx::begin(state).await?;
+    let user = insert_user(
+        &mut tx,
+        input.login,
+        input.email,
+        input.name,
+        Some(&hash),
+        input.site_admin,
+    )
+    .await?;
+    audit::log(
+        &mut *tx,
+        actor.or(Some(&user)),
+        "user.create",
+        audit::Target::User(user.id),
+        json!({ "login": user.login, "site_admin": user.site_admin }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(user)
+}
+
+/// Insert a user (and its verified primary email) inside `tx`. `site_admin:
+/// None` makes the first user account a site admin. Unique violations map to
+/// 422 `already_exists`.
+pub async fn insert_user(
+    tx: &mut Tx,
+    login: &str,
+    email: &str,
+    name: Option<&str>,
+    password_hash: Option<&str>,
+    site_admin: Option<bool>,
+) -> ApiResult<db::User> {
     // Serialize sign-ups so exactly one "first user" becomes admin.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('bgh_create_user'))")
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
-    let site_admin = match input.site_admin {
+    let site_admin = match site_admin {
         Some(v) => v,
         None => {
             sqlx::query_scalar::<_, bool>(
                 "SELECT NOT EXISTS (SELECT 1 FROM users WHERE type = 'User')",
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?
         }
     };
-    let user = db::NewUser {
-        login: input.login,
-        email: Some(input.email),
-        name: input.name,
-        password_hash: Some(&hash),
+    db::NewUser {
+        login,
+        email: Some(email),
+        name,
+        password_hash,
         site_admin,
     }
-    .insert(&mut tx)
+    .insert(tx)
     .await
     .map_err(|e| match unique_violation(&e).as_deref() {
         Some("users_login_key") => {
@@ -91,17 +122,7 @@ pub async fn create_user(
             ApiError::invalid_field(FieldError::already_exists("User", "email"))
         }
         _ => e.into(),
-    })?;
-    audit::log(
-        &mut *tx,
-        actor.or(Some(&user)),
-        "user.create",
-        audit::Target::User(user.id),
-        json!({ "login": user.login, "site_admin": site_admin }),
-    )
-    .await?;
-    tx.commit().await?;
-    Ok(user)
+    })
 }
 
 /// Public profile counters.

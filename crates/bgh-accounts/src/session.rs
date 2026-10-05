@@ -299,6 +299,16 @@ pub struct SessionJson {
     pub current: bool,
 }
 
+/// (id, user_agent, ip, created, last_seen, expires).
+type SessionRow = (
+    i64,
+    Option<String>,
+    Option<String>,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+);
+
 fn current_session(auth: &AuthContext) -> Option<i64> {
     match auth.method {
         AuthMethod::Session { session_id } => Some(session_id),
@@ -312,14 +322,7 @@ pub async fn list_sessions(
     auth: RequireUser,
 ) -> ApiResult<Json<Vec<SessionJson>>> {
     util::require_session(&auth)?;
-    let rows: Vec<(
-        i64,
-        Option<String>,
-        Option<String>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    let rows: Vec<SessionRow> = sqlx::query_as(
         "SELECT id, user_agent, ip, created_at, last_seen_at, expires_at FROM sessions
               WHERE user_id = $1 AND expires_at > now() ORDER BY last_seen_at DESC, id DESC",
     )

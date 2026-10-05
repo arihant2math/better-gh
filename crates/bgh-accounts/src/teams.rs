@@ -1373,23 +1373,67 @@ pub async fn my_teams(
     .fetch_all(&state.db)
     .await?;
     let page = p.page(rows);
-    let orgs = views::users_by_id(&state, page.items.iter().map(|t| Some(t.org_id))).await?;
-    let mut settings: HashMap<i64, db::OrgSettings> = HashMap::new();
-    let mut items = Vec::with_capacity(page.items.len());
-    for t in &page.items {
-        let Some(org) = orgs.get(&t.org_id) else {
-            continue;
-        };
-        if !settings.contains_key(&org.id) {
-            if let Some(s) = db::OrgSettings::find(&state.db, org.id).await? {
-                settings.insert(org.id, s);
-            }
+    let org_ids: Vec<i64> = page.items.iter().map(|t| t.org_id).collect();
+    let orgs = views::users_by_id(&state, org_ids.iter().map(|i| Some(*i))).await?;
+    let settings: Vec<db::OrgSettings> = sqlx::query_as(&format!(
+        "SELECT {} FROM org_settings WHERE org_id = ANY($1)",
+        db::OrgSettings::COLUMNS
+    ))
+    .bind(&org_ids)
+    .fetch_all(&state.db)
+    .await?;
+    // One organization-full per distinct org (usually few).
+    let mut full_orgs = HashMap::new();
+    for s in &settings {
+        if let Some(org) = orgs.get(&s.org_id) {
+            full_orgs.insert(s.org_id, orgs::org_full(&state, org, s, true).await?);
         }
-        let Some(s) = settings.get(&org.id) else {
-            continue;
-        };
-        items.push(team_full(&state, org, s, t).await?);
     }
+    let team_ids: Vec<i64> = page.items.iter().map(|t| t.id).collect();
+    let parent_ids: Vec<i64> = page.items.iter().filter_map(|t| t.parent_id).collect();
+    let counts: HashMap<i64, (i64, i64)> = sqlx::query_as::<_, (i64, i64, i64)>(
+        "SELECT t.id,
+                (SELECT count(*) FROM team_members WHERE team_id = t.id),
+                (SELECT count(*) FROM team_repos WHERE team_id = t.id)
+           FROM teams t WHERE t.id = ANY($1)",
+    )
+    .bind(&team_ids)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|(id, m, r)| (id, (m, r)))
+    .collect();
+    let parents: HashMap<i64, db::Team> = sqlx::query_as::<_, db::Team>(&format!(
+        "SELECT {} FROM teams WHERE id = ANY($1)",
+        db::Team::COLUMNS
+    ))
+    .bind(&parent_ids)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|t| (t.id, t))
+    .collect();
+    let items = page
+        .items
+        .iter()
+        .filter_map(|t| {
+            let org = orgs.get(&t.org_id)?;
+            let organization = full_orgs.get(&t.org_id)?.clone();
+            let (members_count, repos_count) = counts.get(&t.id).copied().unwrap_or_default();
+            Some(TeamFull {
+                team: TeamSimple::new(&state.urls, &org.login, t),
+                parent: t
+                    .parent_id
+                    .and_then(|p| parents.get(&p))
+                    .map(|p| TeamSimple::new(&state.urls, &org.login, p)),
+                members_count,
+                repos_count,
+                created_at: t.created_at.into(),
+                updated_at: t.updated_at.into(),
+                organization,
+            })
+        })
+        .collect();
     Ok(Page {
         items,
         link: page.link,
