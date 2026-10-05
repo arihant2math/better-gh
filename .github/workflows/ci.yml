@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust-lint:
+    name: Rust (fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  rust-test:
+    name: Rust (tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bgh
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost/bgh
+      REDIS_URL: redis://127.0.0.1/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+      # Integration tests drive the real git CLI (preinstalled, with git-lfs).
+      - run: git config --global user.name ci && git config --global user.email ci@example.com
+      - run: cargo test --workspace --locked --no-fail-fast
+
+  web:
+    name: Web (typecheck, lint, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      # Includes the bundle budget check (scripts/size-check.mjs).
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 7
+
+  # Single binary with the web client embedded, built in release mode.
+  release-binary:
+    name: Release binary (embed-web)
+    needs: web
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+      - run: cargo build --release --locked -p bgh-server --bin bgh --features embed-web
+      - run: ./target/release/bgh --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bgh-linux-x86_64
+          path: target/release/bgh
+          retention-days: 14
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: bgh:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test the image
+        run: |
+          docker run --rm bgh:ci --version
+          docker run --rm --entrypoint git bgh:ci --version
+
+  scripts:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/lib/*.sh
+      - run: python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/lib/tls-proxy.py
+
+  # Real gh CLI + REST smoke against a throwaway server. Informational until
+  # the domain packages land: failures are reported, not fatal (add --strict
+  # to gate on it).
+  compat:
+    name: gh compatibility (report)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bgh
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost/bgh
+      REDIS_URL: redis://127.0.0.1/
+      # gh is preinstalled on GitHub-hosted runners; keep it away from the
+      # workflow's own GitHub token.
+      GH_TOKEN: ""
+      GITHUB_TOKEN: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
+      # psql (creates the throwaway database), git, gh, jq and python3 are
+      # preinstalled on ubuntu-latest.
+      - run: ./scripts/api-smoke.sh --json api-smoke.json
+      # Port 443 needs root; the harness falls back to a high port (gh pr
+      # checkout and other remote-matching commands then can't match hosts).
+      - run: ./scripts/gh-compat.sh --json gh-compat.json
+      - run: |
+          {
+            echo "## gh compatibility"
+            jq -r '"\(.summary.pass) passed, \(.summary.fail) failed, \(.summary.skip) skipped of \(.summary.total)"' gh-compat.json
+            echo
+            echo "| Result | Command | Detail |"
+            echo "|---|---|---|"
+            jq -r '.results[] | select(.kind == "gh") | "| \(.status) | `\(.name)` | \(.detail | gsub("\\|"; "\\\\|")) |"' gh-compat.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compat-results
+          path: |
+            gh-compat.json
+            api-smoke.json
