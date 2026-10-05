@@ -99,7 +99,11 @@ every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
-`bgh admin create-org --login --admin <user> [--name]`.
+`bgh admin create-org --login --admin <user> [--name]`,
+`bgh admin create-token --user <login> [--scopes a,b] [--name]
+[--expires-in-days]` (prints a PAT), `bgh healthcheck` (probes `/healthz`
+on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
+reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
 ## HTTP surface
 
@@ -309,7 +313,10 @@ optimistic-mutation reconciliation) is specified normatively in
 * Keyboard-first: command palette (⌘K), `g i`, `c`, `j/k` navigation etc.
 * Virtualized lists and diffs; skeleton-free instant navigation from local
   data; prefetch on hover.
-* Built assets embedded/served by `bgh-server` with brotli precompression.
+* Built assets served by `bgh-server` with brotli precompression, from
+  `BGH_WEB_DIR` by default or compiled into the binary with the cargo
+  feature `embed-web` (release/Docker builds; a `BGH_WEB_DIR` containing
+  an `index.html` still wins).
 
 ## Testing
 
@@ -324,5 +331,8 @@ optimistic-mutation reconciliation) is specified normatively in
   them); leftovers of dead processes are cleaned up on the next run.
 * Each domain crate has integration tests in `tests/` hitting the HTTP
   router with real requests and asserting GitHub-compatible JSON.
-* `scripts/gh-compat.sh` exercises the real `gh` CLI against a running
-  server.
+* `scripts/gh-compat.sh` exercises the real `gh` CLI (GHES mode, behind a
+  throwaway TLS proxy) against a fresh server or a running one and reports
+  PASS/FAIL/SKIP per command (`--json` for machine-readable results);
+  `scripts/api-smoke.sh` checks core REST shapes with curl + jq. Both start
+  `bgh` on a temporary database by default (`scripts/lib/test-server.sh`).
