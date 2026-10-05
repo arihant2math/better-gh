@@ -120,6 +120,7 @@ interface Repo {
   name: string;
   description: string | null;
   private: boolean;
+  visibility: "public" | "private" | "internal"; // `private` is true for internal too
   fork: boolean;
   archived: boolean;
   defaultBranch: string;

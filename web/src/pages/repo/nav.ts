@@ -40,6 +40,7 @@ export function currentRepoTab(section: string): string {
   }
   if (section === 'pull') return 'pulls';
   if (section === 'labels' || section === 'milestones' || section === 'milestone') return 'issues';
+  if (section === 'graphs' || section === 'community' || section === 'network') return 'pulse';
   return section;
 }
 
@@ -50,8 +51,8 @@ export function watchLabel(watching: ViewerRepo['watching'] | undefined, custom 
   return 'Watch';
 }
 
-/** Tabs that are announced in the header but not built yet (P31 Insights, P66 Security). */
-export const PLACEHOLDER_TABS = new Set(['security', 'pulse']);
+/** Tabs that are announced in the header but not built yet (P66 Security). */
+export const PLACEHOLDER_TABS = new Set(['security']);
 
 /** Ahead/behind summary of a fork branch against its upstream branch. */
 export function syncSummary(aheadBy: number, behindBy: number, upstream: string): string {

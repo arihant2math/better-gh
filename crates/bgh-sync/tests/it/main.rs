@@ -4,6 +4,7 @@
 
 mod common;
 
+mod access_policy;
 mod bench;
 mod bootstrap;
 mod compact;

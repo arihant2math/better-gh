@@ -210,3 +210,89 @@ pub(crate) async fn spa_pages(
     }
     next.run(req).await
 }
+
+/// Rewrite an HTML-host diff URL (`/{o}/{r}/pull/{n}.diff`,
+/// `/{o}/{r}/commit/{sha}.patch`, `/{o}/{r}/compare/{a}...{b}.diff`, ...)
+/// in place into the API request serving it with the matching media type.
+/// Returns false (request untouched) for any other request.
+pub(crate) fn rewrite_diff_request(req: &mut Request) -> bool {
+    if !matches!(*req.method(), Method::GET | Method::HEAD) {
+        return false;
+    }
+    let Some((api_path, media)) = diff_target(req.uri().path()) else {
+        return false;
+    };
+    let Ok(uri) = api_path.parse() else {
+        return false;
+    };
+    *req.uri_mut() = uri;
+    req.headers_mut().insert(
+        header::ACCEPT,
+        HeaderValue::from_static(if media == "diff" {
+            "application/vnd.github.diff"
+        } else {
+            "application/vnd.github.patch"
+        }),
+    );
+    true
+}
+
+/// `(api path, "diff" | "patch")` for an HTML-host diff URL.
+fn diff_target(path: &str) -> Option<(String, &'static str)> {
+    let (rest, media) = match path.strip_suffix(".diff") {
+        Some(p) => (p, "diff"),
+        None => (path.strip_suffix(".patch")?, "patch"),
+    };
+    let mut it = rest.trim_start_matches('/').splitn(4, '/');
+    let (owner, repo, kind, target) = (it.next()?, it.next()?, it.next()?, it.next()?);
+    if owner.is_empty() || repo.is_empty() || target.is_empty() {
+        return None;
+    }
+    let api = match kind {
+        "pull" if target.parse::<u64>().is_ok() => format!("pulls/{target}"),
+        "commit" if !target.contains('/') => format!("commits/{target}"),
+        "compare" => format!("compare/{target}"),
+        _ => return None,
+    };
+    Some((format!("/repos/{owner}/{repo}/{api}"), media))
+}
+
+/// Run a rewritten diff request through the API router; successful
+/// bodies are served as plain text like github.com's `.diff` URLs.
+pub(crate) async fn serve_diff(api: axum::Router, req: Request) -> Response {
+    let mut resp = match api.oneshot(req).await {
+        Ok(r) => r,
+        Err(e) => match e {},
+    };
+    if resp.status().is_success() {
+        resp.headers_mut().insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
+    }
+    resp
+}
+
+#[cfg(test)]
+mod diff_tests {
+    use super::diff_target;
+
+    #[test]
+    fn maps_html_diff_urls() {
+        assert_eq!(
+            diff_target("/o/r/pull/12.diff"),
+            Some(("/repos/o/r/pulls/12".into(), "diff"))
+        );
+        assert_eq!(
+            diff_target("/o/r/commit/abc123.patch"),
+            Some(("/repos/o/r/commits/abc123".into(), "patch"))
+        );
+        assert_eq!(
+            diff_target("/o/r/compare/main...feature/x.diff"),
+            Some(("/repos/o/r/compare/main...feature/x".into(), "diff"))
+        );
+        assert_eq!(diff_target("/o/r/pull/12"), None);
+        assert_eq!(diff_target("/o/r/pull/x.diff"), None);
+        assert_eq!(diff_target("/o/r/blob/main/a.diff"), None);
+    }
+}

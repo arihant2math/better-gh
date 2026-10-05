@@ -23,7 +23,7 @@ import type { Permission, Repo, Team } from '../../../sync/models';
 import { Avatar } from '../../../ui/Badge';
 import { Button } from '../../../ui/Button';
 import { Dialog } from '../../../ui/Dialog';
-import { GlobeIcon, LockIcon, PeopleIcon, PersonAddIcon, PersonIcon, SearchIcon } from '../../../ui/icons';
+import { GlobeIcon, LockIcon, OrganizationIcon, PeopleIcon, PersonAddIcon, PersonIcon, SearchIcon } from '../../../ui/icons';
 import { Field, Input, Select } from '../../../ui/Input';
 import { toast } from '../../../ui/Toast';
 import { ROLES, roleLabel } from '../model';
@@ -70,10 +70,18 @@ export default observer(function AccessSettings({ repo }: SectionProps) {
       <PageHeader title="Collaborators and teams" description="Manage who can see and change this repository." />
       <div className={styles.box} style={{ marginBottom: 24 }}>
         <div className={styles.boxRow}>
-          {repo.private ? <LockIcon size={16} /> : <GlobeIcon size={16} />}
+          {repo.visibility === 'internal' ? <OrganizationIcon size={16} /> : repo.private ? <LockIcon size={16} /> : <GlobeIcon size={16} />}
           <span className={styles.boxText}>
-            <span className={styles.boxTitle}>{repo.private ? 'Private repository' : 'Public repository'}</span>
-            <span className={styles.small}>{repo.private ? 'Only those with access to this repository can view it.' : 'This repository is public and visible to anyone.'}</span>
+            <span className={styles.boxTitle}>
+              {repo.visibility === 'internal' ? 'Internal repository' : repo.private ? 'Private repository' : 'Public repository'}
+            </span>
+            <span className={styles.small}>
+              {repo.visibility === 'internal'
+                ? 'Everyone signed in to this site can view it; only those with access can change it.'
+                : repo.private
+                  ? 'Only those with access to this repository can view it.'
+                  : 'This repository is public and visible to anyone.'}
+            </span>
           </span>
         </div>
         <div className={styles.boxRow}>

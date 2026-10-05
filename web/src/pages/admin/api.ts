@@ -311,7 +311,51 @@ export interface OidcProvider {
   login_claim: string | null;
   /** Email domains allowed to sign in; empty = any. */
   allowed_domains: string[];
+  /** Claim listing the user's groups (team sync); `null` = off. */
+  groups_claim: string | null;
 }
+
+/** `auth_providers.ldap` (bgh_core::settings::LdapSettings). */
+export interface LdapSettings {
+  enabled: boolean;
+  host: string;
+  port: number;
+  encryption: 'none' | 'ldaps' | 'starttls';
+  ca_cert: string | null;
+  verify_certificate: boolean;
+  bind_dn: string | null;
+  /** Write-only (`REDACTED` when stored). */
+  bind_password: string | null;
+  user_search_bases: string[];
+  uid_field: string;
+  user_filter: string | null;
+  admin_group: string | null;
+  restricted_group: string | null;
+  name_field: string;
+  email_field: string;
+  ssh_key_field: string | null;
+  gpg_key_field: string | null;
+  jit_provisioning: boolean;
+  sync_enabled: boolean;
+  sync_interval_hours: number;
+}
+
+export interface LdapTestResult {
+  ok: boolean;
+  message: string;
+  user?: { dn: string; uid: string; name: string | null; emails: string[]; ssh_keys: number; gpg_keys: number; disabled: boolean };
+}
+
+export interface LdapSyncReport {
+  users: number;
+  suspended: number;
+  teams: number;
+  team_members_added: number;
+  team_members_removed: number;
+}
+
+export const testLdap = (settings: LdapSettings, login?: string) => api.post<LdapTestResult>('/_bgh/admin/ldap/test', { settings, login: login || null });
+export const syncLdap = () => api.post<LdapSyncReport>('/_bgh/admin/ldap/sync', {});
 
 export interface SiteSettings {
   signup: { policy: 'open' | 'invite' | 'closed'; allowed_email_domains: string[] };
@@ -326,7 +370,7 @@ export interface SiteSettings {
     search_unauthenticated_per_minute: number;
     graphql_per_hour: number;
   };
-  auth_providers: { password_login: boolean; oidc: OidcProvider[] };
+  auth_providers: { password_login: boolean; password_login_admin_exempt: boolean; oidc: OidcProvider[]; ldap: LdapSettings };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   git_maintenance: GitMaintenanceSettings;
@@ -335,6 +379,8 @@ export interface SiteSettings {
   /** Data retention windows in days; 0 keeps rows forever. */
   retention: RetentionSettings;
   actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
+  /** Access policy: private mode, anonymous directory, allowed visibilities. */
+  privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
 }
 
 export interface RetentionSettings {
