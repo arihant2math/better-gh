@@ -23,6 +23,7 @@ pub mod expr;
 pub mod json;
 pub mod logs;
 pub mod models;
+pub mod oidc;
 pub mod protocol;
 pub mod rerequest;
 pub mod reusable;
@@ -313,6 +314,15 @@ pub fn router() -> Router<AppState> {
             &o("/actions/runners/generate-jitconfig"),
             post(runners::org_jitconfig),
         )
+        // OIDC subject claim templates
+        .route(
+            &r("/actions/oidc/customization/sub"),
+            get(oidc::api::repo_get).put(oidc::api::repo_put),
+        )
+        .route(
+            &o("/actions/oidc/customization/sub"),
+            get(oidc::api::org_get).put(oidc::api::org_put),
+        )
         .merge(api::runner_groups::routes())
 }
 
@@ -321,6 +331,7 @@ pub fn web_router() -> Router<AppState> {
     web::routes()
         .merge(ui::routes())
         .merge(api::site_runners::routes())
+        .merge(oidc::routes())
         .route(
             "/_bgh/repos/{owner}/{repo}/deployments",
             get(deploy_api::web_summary),

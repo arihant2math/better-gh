@@ -27,6 +27,9 @@ pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
         if let Err(err) = crate::server::expire_artifacts(&state).await {
             tracing::warn!(?err, "expiring artifacts failed");
         }
+        if let Err(err) = crate::oidc::rotate(&state, false).await {
+            tracing::warn!(?err, "rotating the OIDC signing key failed");
+        }
     }
 }
 

@@ -304,6 +304,11 @@ runner. Plan for that:
   OAuth tokens need the `workflow` scope for that (git push over HTTP and
   the contents API); SSH keys and browser sessions are full credentials.
 
+Jobs with `permissions: id-token: write` can request OpenID Connect
+tokens (issuer `https://<host>/_services/token`) for keyless AWS, GCP and
+Azure authentication; signing keys live in `{BGH_DATA_DIR}/actions/oidc/`.
+See [ACTIONS_OIDC.md](ACTIONS_OIDC.md) for the cloud trust setup.
+
 ## Backup and restore
 
 What to back up:

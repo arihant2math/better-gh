@@ -312,6 +312,8 @@ async fn prepare_spec(
     .bind(triggering_actor)
     .execute(&mut **tx)
     .await?;
+    spec.id_token_request_url =
+        crate::oidc::allowed(&permissions).then(|| crate::oidc::request_url(state));
     spec.token_permissions = permissions
         .iter()
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))

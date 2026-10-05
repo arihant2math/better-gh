@@ -170,6 +170,7 @@ fn spec(steps: Vec<Step>) -> JobSpec {
         timeout_minutes: 10,
         environment: None,
         token_permissions: IndexMap::new(),
+        id_token_request_url: None,
     }
 }
 

@@ -1186,6 +1186,11 @@ async fn materialize(
     let mut github = context::github_context(state, run, &info, Some(key));
     if let Some(sha) = &scope.job_workflow_sha {
         github["job_workflow_sha"] = json!(sha);
+        // The called workflow (the OIDC `job_workflow_ref` claim).
+        github["job_workflow_ref"] = json!(format!(
+            "{}/{}@{}",
+            scope.source.full_name, scope.path, scope.source.git_ref
+        ));
     }
     let full_key = scope.key(key);
     let needs = scope.results(&job.needs, rows);
@@ -1432,6 +1437,7 @@ async fn materialize(
             timeout_minutes: timeout as u64,
             environment,
             token_permissions: IndexMap::new(),
+            id_token_request_url: None,
         };
         let stored = StoredJob {
             spec,
