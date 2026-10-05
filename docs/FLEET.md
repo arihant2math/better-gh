@@ -1,28 +1,17 @@
 # Phase 4 fleet (foreman-maintained, branch bgh/foreman only)
 
-Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:45 UTC (integration head 7ac1b95). STOPPED NEW LAUNCHES (orchestrator/user decision 17:48): only P25 P28 P49 P50 P51 finish; integrator drains the queue, then a final full gate.
+Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 18:22 UTC (integration head 6209ca1).
 
 | Pkg | Session | Status | Integrated |
 |---|---|---|---|
-| P1–P19 P21 P22 P24 P26 P29 P31–P35 | (archived) | done | yes |
-| P20 | session_01YKLKPRAJnD9iwrqFqwFppG | ready | – |
-| P23 | session_011a5XX8Do8JZq7A3nb5YxMQ | ready (in batch 7) | – |
-| P27 | session_01DhMk89Z1C3StA4YVVnw7nm | ready (in batch 7) | – |
-| P37 | session_011o3zDh28KNGENgEM7MooWB | ready | – |
-| P47 | session_011LfNiSENea9TZ1ajuzWFWH | ready (in batch 7) | – |
-| P36 | session_017gT9WihAABZpQdE8oFpAoA | ready (bounce fixed, in batch 7) | – |
-| P25 | session_01TU99LstbiDzVfq5YrKsfhR | running | – |
-| P38 | session_01JD3SCGswJFpG9KW6rU73Pi | ready | – |
-| P46 | session_01Fdy1y7wDZ4h259dMZKmFUn | ready | – |
-| P41 | session_019G1WTXr3Mz4YC5iKhUBtG5 | ready | – |
-| P42 | session_01CjtG4VR13kvpeAxtZtxVE2 | ready | – |
-| P51 | session_01Dfzr6SecvGXLsxpcFHL7Zb | running | – |
-| P65 | session_011JdkwUVtjabABsRtPAjgBx | ready | – |
-| P50 | session_01DAJAyPoAe9eeuKtZHeAemr | running | – |
-| P61 | session_01MJEBcx6auSQf7p1TLMCmFf | ready | – |
+| P1–P19 P21–P24 P26 P27 P29 P31–P38 P41 P42 P47 P51 P61 P65 (41) | (archived) | done | yes, head 6209ca1 |
+| P20 | session_01YKLKPRAJnD9iwrqFqwFppG | ready again after bounce (rulesets.rs vs P23) | – |
+| P46 | session_01Fdy1y7wDZ4h259dMZKmFUn | ready again after bounce (auth/perms vs P47) | – |
+| P25 | session_01TU99LstbiDzVfq5YrKsfhR | bounced 18:40 (protection.rs vs P23), fixing | – |
+| P28 | session_0175PRhG1uGz8ANg7JsaM4kv | ready | – |
+| P50 | session_01DAJAyPoAe9eeuKtZHeAemr | ready | – |
 | P49 | session_01GKWEGkpY6svMi9tt5fJRB3 | running | – |
-| P28 | session_0175PRhG1uGz8ANg7JsaM4kv | running | – |
-| integrator | session_0199JgoqhKWUQwuSikBwmDCv | running; 6 batches, 12 pkgs landed, head 7ac1b95 (rust 1066, web 459) | – |
+| integrator | session_0199JgoqhKWUQwuSikBwmDCv | draining; 9 batches; rust 1180 / web 517 at 6209ca1 | – |
 Not started (dropped from this phase by decision): P39 P40 P43 P44 P45 P48 P52–P60 P62–P64 P66–P86 and P30.
 
 ## Integration process (since 15:53 UTC)
