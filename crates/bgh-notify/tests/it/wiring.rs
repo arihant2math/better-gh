@@ -180,7 +180,10 @@ async fn star_and_watch() {
 
 #[tokio::test]
 async fn repository_lifecycle_actions() {
-    let app = bgh_server::test_app().await;
+    let app = TestApp::spawn_with_config(bgh_server::factory(), |c| {
+        c.webhook_allowed_hosts = vec!["127.0.0.1".into()];
+    })
+    .await;
     let hook = global_hook(&app, &["*"]).await;
     let alice = app.create_user("alice").await;
     app.create_org("acme", &alice).await;
@@ -305,6 +308,34 @@ async fn repository_lifecycle_actions() {
     );
     assert_eq!(p["changes"]["owner"]["from"]["user"]["login"], "alice");
     assert_eq!(p["repository"]["full_name"], "acme/hello");
+
+    // Out of the organization: its hooks still hear about it, the global
+    // hook exactly once.
+    let org_hook = app
+        .post("/api/v3/orgs/acme/hooks")
+        .auth(&alice)
+        .json(&json!({"events": ["repository"], "config": {"url": "http://127.0.0.1:9/o"}}))
+        .send()
+        .await;
+    org_hook.assert_status(201);
+    let org_hook = org_hook.json()["id"].as_i64().unwrap();
+    clear(&app, hook).await;
+    clear(&app, org_hook).await;
+    app.post("/api/v3/repos/acme/hello/transfer")
+        .auth(&alice)
+        .json(&json!({"new_owner": "alice"}))
+        .send()
+        .await
+        .assert_status(202);
+    let got = deliveries(&app, hook).await;
+    let p = one(&got, "repository", Some("transferred"), &["changes"]);
+    assert_eq!(
+        p["changes"]["owner"]["from"]["organization"]["login"],
+        "acme"
+    );
+    assert_eq!(p["repository"]["full_name"], "alice/hello");
+    let got = deliveries(&app, org_hook).await;
+    one(&got, "repository", Some("transferred"), &["changes"]);
 }
 
 #[tokio::test]

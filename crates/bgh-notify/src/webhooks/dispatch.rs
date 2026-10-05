@@ -194,6 +194,11 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
     let deliveries = payloads::for_event(state, event)
         .await
         .map_err(ApiError::internal)?;
+    // A transferred repository's previous organization also hears about it.
+    let previous_org = match event {
+        Event::RepositoryTransferred { old_owner_id, .. } => Some(*old_owner_id),
+        _ => None,
+    };
     let event_id = events::current_event_id();
     let mut tx = Tx::begin(state).await?;
     let mut n = 0;
@@ -202,7 +207,7 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
         for h in &hooks {
             let in_scope = match (h.repo_id, h.org_id) {
                 (Some(r), _) => d.repo_id == Some(r),
-                (None, Some(o)) => d.org_id == Some(o),
+                (None, Some(o)) => d.org_id == Some(o) || previous_org == Some(o),
                 (None, None) => true,
             };
             if in_scope

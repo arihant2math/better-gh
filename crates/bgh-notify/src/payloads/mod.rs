@@ -826,22 +826,16 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             } else {
                 "user"
             };
-            let mut out = vec![b.emit(
+            // The previous organization's hooks get it too (see
+            // `webhooks::dispatch`).
+            Ok(vec![b.emit(
                 "repository",
                 Some("transferred"),
                 vec![(
                     "changes",
                     json!({ "owner": { "from": { key: user_json(&state.urls, &old_owner) } } }),
                 )],
-            )];
-            // The previous organization's hooks hear about it too.
-            if old_owner.is_org() && ctx.org_id() != Some(old_owner.id) {
-                let mut extra = out[0].clone();
-                extra.repo_id = None;
-                extra.org_id = Some(old_owner.id);
-                out.push(extra);
-            }
-            Ok(out)
+            )])
         }
         E::RepositoryRenamed { old_name, .. } => Ok(vec![b.emit(
             "repository",

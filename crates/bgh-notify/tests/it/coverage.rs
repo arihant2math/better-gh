@@ -78,6 +78,7 @@ fn samples() -> Vec<Event> {
                     refname: "refs/heads/b".into(),
                 },
             ],
+            origin: None,
         }),
         Event::RepositoryCreated {
             repo_id: 1,
