@@ -1,0 +1,62 @@
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, var(--accent-subtle), transparent 60%),
+    var(--bg-app);
+}
+
+.card {
+  width: min(380px, 100%);
+  padding: 32px 28px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  animation: rise 200ms var(--ease);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  text-align: center;
+}
+
+.mock {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.switch {
+  margin-top: 18px;
+  color: var(--fg-muted);
+  text-align: center;
+  font-size: var(--fs-md);
+}

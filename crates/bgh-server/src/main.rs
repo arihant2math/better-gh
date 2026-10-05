@@ -5,6 +5,8 @@
 //! bgh migrate                                   apply database migrations and exit
 //! bgh admin create-user --login L --email E --password P [--site-admin]
 //! bgh admin create-org --login L --admin USER [--name NAME]
+//! bgh admin create-token --user L [--scopes repo,read:org] [--name N] [--expires-in-days D]
+//! bgh healthcheck                               exit 0 if the local server is healthy
 //! ```
 //! Configuration comes from environment variables (see `bgh_core::config`).
 
@@ -35,8 +37,17 @@ enum Command {
         #[command(subcommand)]
         command: AdminCommand,
     },
+    /// Probe `GET /healthz` on the local server (BGH_LISTEN); exit status 0
+    /// when it answers 200. For container and service-manager health checks.
+    Healthcheck {
+        /// Seconds to wait for the answer.
+        #[arg(long, default_value_t = 5)]
+        timeout: u64,
+    },
 }
 
+// Variant names are the CLI's subcommand names (`create-user`, ...).
+#[allow(clippy::enum_variant_names)]
 #[derive(Subcommand)]
 enum AdminCommand {
     /// Create a user account.
@@ -62,6 +73,21 @@ enum AdminCommand {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Create a personal access token for a user and print it to stdout.
+    CreateToken {
+        /// Login of the token's owner.
+        #[arg(long)]
+        user: String,
+        /// Comma-separated classic scopes.
+        #[arg(long, default_value = "repo,read:org")]
+        scopes: String,
+        /// Token name (GitHub's "note").
+        #[arg(long, default_value = "bgh admin create-token")]
+        name: String,
+        /// Lifetime in days (default: never expires).
+        #[arg(long)]
+        expires_in_days: Option<i64>,
+    },
 }
 
 #[tokio::main]
@@ -83,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Admin { command } => admin(config, command).await,
+        Command::Healthcheck { timeout } => healthcheck(&config, timeout).await,
     }
 }
 
@@ -128,7 +155,90 @@ async fn admin(config: Config, command: AdminCommand) -> anyhow::Result<()> {
                 org.login, org.id, admin_user.login
             );
         }
+        AdminCommand::CreateToken {
+            user,
+            scopes,
+            name,
+            expires_in_days,
+        } => {
+            let owner = bgh_core::models::db::User::find_by_login(&state.db, &user)
+                .await?
+                .with_context(|| format!("no user {user:?}"))?;
+            let scopes: Vec<String> = scopes
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            for s in &scopes {
+                anyhow::ensure!(
+                    bgh_accounts::tokens::KNOWN_SCOPES.contains(&s.as_str()),
+                    "unknown scope {s:?}"
+                );
+                anyhow::ensure!(
+                    s != "site_admin" || owner.site_admin,
+                    "site_admin scope requires a site administrator"
+                );
+            }
+            let expires_at =
+                expires_in_days.map(|d| chrono::Utc::now() + chrono::Duration::days(d));
+            let mut tx = state.db.begin().await?;
+            let (row, token) =
+                bgh_core::auth::create_access_token(&mut *tx, owner.id, &name, &scopes, expires_at)
+                    .await
+                    .map_err(api)?;
+            bgh_core::audit::log(
+                &mut *tx,
+                None,
+                "personal_access_token.create",
+                bgh_core::audit::Target::Token(row.id),
+                serde_json::json!({ "scopes": scopes, "user": owner.login, "via": "cli" }),
+            )
+            .await?;
+            tx.commit().await?;
+            eprintln!(
+                "created token {} for {} (scopes: {})",
+                row.id,
+                owner.login,
+                scopes.join(",")
+            );
+            println!("{token}");
+        }
     }
+    Ok(())
+}
+
+/// `bgh healthcheck`: HTTP/1.1 `GET /healthz` against the configured listen
+/// address (loopback when it binds all interfaces), without a DB connection.
+async fn healthcheck(config: &Config, timeout: u64) -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut addr = config.listen_addr;
+    if addr.ip().is_unspecified() {
+        addr.set_ip(match addr {
+            std::net::SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+            std::net::SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+        });
+    }
+    let probe = async {
+        let mut stream = tokio::net::TcpStream::connect(addr).await?;
+        stream
+            .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await?;
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await?;
+        anyhow::Ok(String::from_utf8_lossy(&buf).into_owned())
+    };
+    let response = tokio::time::timeout(std::time::Duration::from_secs(timeout), probe)
+        .await
+        .with_context(|| format!("no answer from {addr} within {timeout}s"))?
+        .with_context(|| format!("probing {addr}"))?;
+    let status = response.lines().next().unwrap_or_default();
+    let body = response.split("\r\n\r\n").nth(1).unwrap_or_default().trim();
+    anyhow::ensure!(
+        status.split_whitespace().nth(1) == Some("200"),
+        "unhealthy: {status} {body}"
+    );
+    println!("{body}");
     Ok(())
 }
 

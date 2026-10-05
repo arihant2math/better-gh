@@ -93,13 +93,37 @@ russh = { version = "0.64", default-features = false, features = ["ring", "flate
 # testing
 tempfile = "3"
 
+# packaging
+rust-embed = { version = "8.7", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
+mime_guess = "2"
+
 [profile.dev]
-# Faster builds; enough debuginfo for backtraces.
+# Faster builds; enough debuginfo for backtraces with file:line in our code.
 debug = "line-tables-only"
 
 [profile.dev.package."*"]
+# Dependencies: lightly optimized (tests and the dev server stay snappy) and
+# without debuginfo (smaller target dir, faster links). They rarely rebuild.
 opt-level = 1
+debug = false
+
+# Password hashing (Argon2id) runs on every signup, login and git
+# password auth; keep it fast in dev builds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
 
 [profile.release]
+# Whole-program optimization across crates; one codegen unit per crate for
+# the best inlining. Release builds are for packaging (Docker, CI artifacts).
 lto = "thin"
-codegen-units = 4
+codegen-units = 1
+# Keep symbol names (readable panic backtraces), drop DWARF (the
+# precompiled std ships with debuginfo even when `debug = false`).
+debug = false
+strip = "debuginfo"
+# Unwind, not abort: a panicking request handler or job must not take the
+# whole server down (tokio contains panics per task).
+panic = "unwind"
