@@ -390,6 +390,121 @@ fn scan(text: &str, ctx: &RenderContext<'_>) -> Vec<Segment> {
     out
 }
 
+/// An issue reference found in text: `#12` (`owner`/`repo` = `None`) or
+/// `owner/repo#12` / a full issue or pull request URL on this instance.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IssueRef {
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+    pub number: i64,
+}
+
+/// References found in Markdown text (outside code and existing links).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct References {
+    /// `@login` mentions, deduplicated, in order of appearance.
+    pub mentions: Vec<String>,
+    /// `@org/team` mentions as `(org, team_slug)`.
+    pub team_mentions: Vec<(String, String)>,
+    /// Issue references, deduplicated.
+    pub issues: Vec<IssueRef>,
+}
+
+/// Extract `@mentions`, team mentions and issue references from Markdown,
+/// with the same syntax rules as [`render`] (ignoring code spans/blocks).
+/// Links to `{base_url}/{owner}/{repo}/issues|pull/{n}` count as issue
+/// references too.
+pub fn extract_references(text: &str, base_url: &str) -> References {
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    // A placeholder repo enables `#123` detection; resolved by the caller.
+    let ctx = RenderContext::new(base_url).with_repo("\0", "\0");
+    let mut out = References::default();
+    let base = base_url.trim_end_matches('/');
+    let push_issue = |out: &mut References, r: IssueRef| {
+        if !out.issues.contains(&r) {
+            out.issues.push(r);
+        }
+    };
+    for node in root.descendants() {
+        let value = node.data.borrow().value.clone();
+        match value {
+            NodeValue::Text(t) if !inside_link_or_code(node) => {
+                for seg in scan(&t, &ctx) {
+                    let Segment::Link { text, class, .. } = seg else {
+                        continue;
+                    };
+                    match class {
+                        "user-mention" => {
+                            let login = text.trim_start_matches('@').to_string();
+                            if !out.mentions.iter().any(|m| m.eq_ignore_ascii_case(&login)) {
+                                out.mentions.push(login);
+                            }
+                        }
+                        "team-mention" => {
+                            if let Some((org, team)) = text.trim_start_matches('@').split_once('/')
+                            {
+                                let t = (org.to_string(), team.to_string());
+                                if !out.team_mentions.contains(&t) {
+                                    out.team_mentions.push(t);
+                                }
+                            }
+                        }
+                        "issue-link" => {
+                            if let Some(r) = parse_issue_ref(&text) {
+                                push_issue(&mut out, r);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            NodeValue::Link(link) => {
+                if let Some(rest) = link.url.strip_prefix(base) {
+                    let parts: Vec<&str> = rest.trim_start_matches('/').split('/').collect();
+                    if parts.len() == 4
+                        && (parts[2] == "issues" || parts[2] == "pull")
+                        && let Ok(number) = parts[3]
+                            .split(['#', '?'])
+                            .next()
+                            .unwrap_or("")
+                            .parse::<i64>()
+                    {
+                        push_issue(
+                            &mut out,
+                            IssueRef {
+                                owner: Some(parts[0].to_string()),
+                                repo: Some(parts[1].to_string()),
+                                number,
+                            },
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn parse_issue_ref(text: &str) -> Option<IssueRef> {
+    let (path, num) = text.rsplit_once('#')?;
+    let number = num.parse().ok()?;
+    if path.is_empty() {
+        return Some(IssueRef {
+            owner: None,
+            repo: None,
+            number,
+        });
+    }
+    let (owner, repo) = path.split_once('/')?;
+    Some(IssueRef {
+        owner: Some(owner.to_string()),
+        repo: Some(repo.to_string()),
+        number,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,6 +561,20 @@ mod tests {
         assert!(!html.contains("http://h/example"), "{html}");
         assert!(html.contains("<code>#5</code>"), "{html}");
         assert!(!html.contains("issues/5"), "{html}");
+    }
+
+    #[test]
+    fn extracts_references() {
+        let r = extract_references(
+            "Hi @alice and @Alice, see #12, o/r#3 and http://h.io/x/y/issues/9.\n\n`@bob #4`\n\n@org/team",
+            "http://h.io",
+        );
+        assert_eq!(r.mentions, vec!["alice".to_string()]);
+        assert_eq!(r.team_mentions, vec![("org".into(), "team".into())]);
+        let nums: Vec<i64> = r.issues.iter().map(|i| i.number).collect();
+        assert_eq!(nums, vec![12, 3, 9]);
+        assert_eq!(r.issues[0].owner, None);
+        assert_eq!(r.issues[1].owner.as_deref(), Some("o"));
     }
 
     #[test]
