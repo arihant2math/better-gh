@@ -7,6 +7,7 @@ import { DiffViewer } from '../../components/diff/DiffViewer';
 import { Link, navigate, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Issue, Repo } from '../../sync/models';
+import { checksSummary } from '../../sync/pullSelectors';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -14,6 +15,7 @@ import { AlertIcon, ArrowLeftIcon, ArrowRightIcon, GitCommitIcon } from '../../u
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import styles from '../issues/IssueView.module.css';
+import { RollupIcon } from './ChecksIcon';
 import pr from './PullDetail.module.css';
 
 function useCommits(repo: Repo, issue: Issue) {
@@ -58,6 +60,7 @@ export default observer(function CommitsTab({ repo, pr: issue, sha, base }: { re
                     <RelativeTime date={c.commit.author.date} />
                   </div>
                 </div>
+                {c.sha === issue.headSha && <HeadStatus sha={c.sha} />}
                 <code className={pr.sha}>{c.sha.slice(0, 7)}</code>
               </Link>
             ))}
@@ -66,6 +69,12 @@ export default observer(function CommitsTab({ repo, pr: issue, sha, base }: { re
       ))}
     </div>
   );
+});
+
+/** Checks rollup of the head commit (the only commit whose checks are synced). */
+const HeadStatus = observer(function HeadStatus({ sha }: { sha: string }) {
+  const s = checksSummary(sha);
+  return s.state ? <RollupIcon state={s.state} title={`${s.success}/${s.total} checks passed`} /> : null;
 });
 
 const CommitDiff = observer(function CommitDiff({ repo, sha, commits, base }: { repo: Repo; sha: string; commits?: RestCommit[]; base: string }) {

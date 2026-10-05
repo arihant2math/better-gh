@@ -13,9 +13,9 @@ import type { Issue, Repo } from '../../sync/models';
 import { addPendingComment, addReviewComment } from '../../sync/pullMutations';
 import { pendingReview, threadsForPull, type ReviewThread } from '../../sync/pullSelectors';
 import { repoFullName } from '../../sync/selectors';
-import { Button } from '../../ui/Button';
+import { Button, IconButton } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
-import { AlertIcon, ColumnsIcon, FilterIcon, RowsIcon } from '../../ui/icons';
+import { AlertIcon, ColumnsIcon, CommentIcon, FilterIcon, RowsIcon } from '../../ui/icons';
 import { Input } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
 import { MarkdownEditor } from '../issues/Timeline';
@@ -186,12 +186,13 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
     }
     return m;
   }, [threads]);
-  const selAnchor = selection ? `${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}` : null;
+  // `end === 0` = a comment on the whole file (subject_type: file).
+  const selAnchor = selection ? (selection.end === 0 ? 'file' : `${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}`) : null;
 
   const hasPending = !!pendingReview(pr.id);
   const submit = (asReview: boolean) => {
     if (!selection || !draft.trim()) return;
-    const loc = {
+    const loc = selection.end === 0 ? { path: selection.path, subjectType: 'file' as const, commitId: pr.headSha } : {
       path: selection.path,
       line: selection.end,
       side: selection.side,
@@ -231,7 +232,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
           {selection && selection.path === path && anchor === selAnchor && (
             <div className={styles.composer}>
               <div className={styles.composerLabel}>
-                {selection.start === selection.end ? `Comment on line ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}` : `Comment on lines ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.start} to ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}`}
+                {selection.end === 0 ? 'Comment on this file' : selection.start === selection.end ? `Comment on line ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}` : `Comment on lines ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.start} to ${selection.side === 'LEFT' ? 'L' : 'R'}${selection.end}`}
               </div>
               <MarkdownEditor
                 value={draft}
@@ -247,7 +248,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
                 }}
                 extraActions={
                   <>
-                    {selection.side === 'RIGHT' && (
+                    {selection.side === 'RIGHT' && selection.end > 0 && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -375,6 +376,17 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
           setToggled((m) => new Map(m).set(p, now));
         }}
         onNeedFile={fetchPatch}
+        fileActions={(f) => (
+          <IconButton
+            icon={CommentIcon}
+            size="sm"
+            label="Comment on this file"
+            onClick={() => {
+              setSelection({ path: f.path, side: 'RIGHT', start: 0, end: 0 });
+              setToggled((m) => new Map(m).set(f.path, false));
+            }}
+          />
+        )}
         annotations={annotations}
         pendingFiles={filter || hideViewed ? 0 : pending}
         onNeedMoreFiles={loadNext}
