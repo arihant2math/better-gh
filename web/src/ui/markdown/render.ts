@@ -287,3 +287,4 @@ export function renderMarkdown(src: string, ctx: RenderContext = {}): string {
 
 export { enhance } from './enhance';
 export { countTasks, setTask } from './tasks';
+export { MarkdownView } from './view';

@@ -68,7 +68,7 @@ renders the same DOM after canonicalization (sorted attributes, `rel` /
   76 KB gzip, over the 60 KB lazy cap — temml is KaTeX-syntax compatible,
   59 KB), Mermaid (`securityLevel: strict`, theme follows color scheme),
   camo signing.
-* `ui/Markdown.tsx`: loads the render chunk + emoji JSON (`?raw`, 15 KB
+* `ui/Markdown.tsx` (shell loader) + `ui/markdown/view.tsx` (lazy view): loads the render chunk + emoji JSON (`?raw`, 15 KB
   gzip) in parallel; fetches repo autolinks once per repo per session;
   `onSourceChange` enables task checkboxes and rewrites the nth task
   (`tasks.ts`; refuses when rendered/source counts differ); `#anchor`
@@ -78,7 +78,9 @@ renders the same DOM after canonicalization (sorted attributes, `rel` /
   saves through the optimistic issue/comment edit mutation (hotspot file:
   additive prop only).
 * Mock backend: the three `/_bgh` endpoints above.
-* Bundle: initial JS +0.4 KB. `size-check.mjs` budgets chunks reachable
+* Bundle: initial JS 144.1 KB vs 144.2 KB on the integration branch (the
+  rendered view, `ui/markdown/view.tsx`, moved into the lazy chunk; the
+  shell `ui/Markdown.tsx` is only the loader and raw-text fallback). `size-check.mjs` budgets chunks reachable
   only through the Mermaid entry at 150 KB gzip (documented in
   `web/README.md`); everything else keeps the 60 KB cap.
 
