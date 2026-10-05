@@ -274,15 +274,21 @@ async fn invite_accept_and_remove() {
         .await
         .assert_status(404);
 
-    // Sync + audit trail.
-    let synced: Vec<String> = sqlx::query_scalar(
-        "SELECT action::text FROM sync_actions WHERE scope = $1 AND model = 'collaborator' ORDER BY id",
-    )
-    .bind(format!("repo:{repo_id}"))
-    .fetch_all(&app.state.db)
-    .await
-    .unwrap();
+    // Sync (bob's `viewerRepo`: accepted, permission changed) + audit trail.
+    let viewer_repo = || async {
+        sqlx::query_as::<_, (String, serde_json::Value)>(
+            "SELECT action::text, data FROM sync_actions
+              WHERE scope = $1 AND model = 'viewerRepo' AND model_id = $2 ORDER BY id",
+        )
+        .bind(format!("user:{}", bob.id))
+        .bind(repo_id)
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap()
+    };
+    let synced = viewer_repo().await;
     assert_eq!(synced.len(), 2, "{synced:?}");
+    assert_eq!(synced[1].1["permission"], "read", "{synced:?}");
 
     // Bob removes himself.
     app.delete("/api/v3/repos/alice/secret/collaborators/bob")
@@ -295,6 +301,7 @@ async fn invite_accept_and_remove() {
         .send()
         .await
         .assert_status(404);
+    assert_eq!(viewer_repo().await.last().unwrap().0, "D");
     let actions: Vec<String> = sqlx::query_scalar(
         "SELECT action FROM audit_log WHERE repo_id = $1 AND action LIKE 'repo.%member' ORDER BY id",
     )

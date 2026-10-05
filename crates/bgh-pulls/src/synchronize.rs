@@ -281,14 +281,8 @@ pub async fn synchronize(state: &AppState, pull_id: i64, actor_id: Option<i64>) 
         .bind(u.start_line)
         .fetch_one(&mut *tx)
         .await?;
-        tx.sync(
-            &scope,
-            "reviewComment",
-            row.id,
-            SyncAction::Update,
-            &crate::comments::sync_json(&row),
-        )
-        .await?;
+        tx.sync_model(SyncModel::ReviewComment, row.id, SyncAction::Update)
+            .await?;
     }
     if force_pushed {
         timeline::record(
@@ -323,14 +317,8 @@ pub async fn synchronize(state: &AppState, pull_id: i64, actor_id: Option<i64>) 
                         "dismissal_message": null, "dismissal_commit_id": new_head}}),
             )
             .await?;
-            tx.sync(
-                &scope,
-                "review",
-                id,
-                SyncAction::Update,
-                &json!({"id": id, "state": "DISMISSED"}),
-            )
-            .await?;
+            tx.sync_model(SyncModel::Review, id, SyncAction::Update)
+                .await?;
             tx.emit(Event::PullRequestReviewDismissed {
                 repo_id,
                 pull_id: pull.id(),

@@ -101,6 +101,19 @@ async fn assert_quiet(ws: &mut Ws) {
     assert_eq!(m, json!({"t": "pong"}), "expected no pending messages");
 }
 
+/// Drop the inserts of GitHub's default labels, recorded with every new
+/// repository.
+async fn without_default_labels(app: &TestApp, items: Vec<Value>) -> Vec<Value> {
+    let defaults: Vec<i64> = sqlx::query_scalar("SELECT id FROM labels WHERE is_default")
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap();
+    items
+        .into_iter()
+        .filter(|d| !(d["model"] == "label" && defaults.contains(&d["mid"].as_i64().unwrap())))
+        .collect()
+}
+
 async fn head(app: &TestApp) -> i64 {
     scalar(app, "SELECT coalesce(max(id), 0) FROM sync_actions").await
 }
@@ -170,6 +183,7 @@ async fn replay_ready_live_and_tx_echo() {
     // Replay from 0: the repo insert and both labels, ascending, only this scope.
     let (items, ready, _) = subscribe(&mut ws, std::slice::from_ref(&scope), 0).await;
     assert_eq!(ready, json!({"t": "ready", "scopes": [scope], "id": h}));
+    let items = without_default_labels(&app, items).await;
     let models: Vec<(&str, i64)> = items
         .iter()
         .map(|d| (d["model"].as_str().unwrap(), d["mid"].as_i64().unwrap()))
@@ -261,6 +275,7 @@ async fn resume_from_since_and_add_scopes() {
 
     // A second sub adds a scope with its own since.
     let (items, ready, _) = subscribe(&mut ws, &[format!("repo:{r2}")], 0).await;
+    let items = without_default_labels(&app, items).await;
     let mids: Vec<i64> = items.iter().map(|d| d["mid"].as_i64().unwrap()).collect();
     assert_eq!(mids, vec![r2, l2]);
     assert_eq!(ready["scopes"], json!([format!("repo:{r2}")]));
@@ -504,6 +519,37 @@ async fn sign_out_closes_that_sessions_sockets() {
         Frame::Close(code) => assert_eq!(code, Some(4001)),
         Frame::Json(v) => panic!("unexpected {v}"),
     }
+}
+
+#[tokio::test]
+async fn revoking_a_session_closes_its_sockets() {
+    let app = bgh_server::test_app().await;
+    let ada = app.create_user("ada").await;
+    let laptop = app.session_cookie(&ada).await;
+    let phone = app.session_cookie(&ada).await;
+    let mut ws_laptop = connect_cookie(&app, &laptop).await;
+    let mut ws_phone = connect_cookie(&app, &phone).await;
+    for ws in [&mut ws_laptop, &mut ws_phone] {
+        assert_eq!(next(ws).await["t"], "hello");
+    }
+    let token = laptop.split_once('=').unwrap().1;
+    let laptop_id: i64 = sqlx::query_scalar("SELECT id FROM sessions WHERE token_hash = $1")
+        .bind(bgh_core::crypto::sha256_hex(token))
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    // Revoked from the phone through the accounts sessions API (raw SQL
+    // delete + `Event::SessionEnded`, forwarded to the hubs by bgh-sync).
+    app.delete(&format!("/_bgh/sessions/{laptop_id}"))
+        .cookie(&phone)
+        .send()
+        .await
+        .assert_status(204);
+    match next_frame(&mut ws_laptop).await {
+        Frame::Close(code) => assert_eq!(code, Some(4001)),
+        Frame::Json(v) => panic!("unexpected {v}"),
+    }
+    assert_quiet(&mut ws_phone).await;
 }
 
 #[tokio::test]

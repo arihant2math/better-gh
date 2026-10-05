@@ -35,48 +35,10 @@ use crate::util::{self, Patch};
 // Sync
 // ---------------------------------------------------------------------------
 
-#[derive(sqlx::FromRow)]
-struct TeamSyncRow {
-    #[sqlx(flatten)]
-    team: db::Team,
-    member_ids: Vec<i64>,
-    repo_ids: Vec<i64>,
-}
-
 /// Record the `team` sync model (full row with member/repo ids) in `tx`.
 pub async fn sync_team(tx: &mut Tx, team_id: i64, action: SyncAction) -> ApiResult<()> {
-    let row: Option<TeamSyncRow> = sqlx::query_as(&format!(
-        "SELECT {},
-                ARRAY(SELECT user_id FROM team_members WHERE team_id = t.id ORDER BY user_id) AS member_ids,
-                ARRAY(SELECT repo_id FROM team_repos WHERE team_id = t.id ORDER BY repo_id) AS repo_ids
-           FROM teams t WHERE t.id = $1",
-        db::prefixed("t", db::Team::COLUMNS)
-    ))
-    .bind(team_id)
-    .fetch_optional(&mut **tx)
-    .await?;
-    let Some(r) = row else {
-        return Ok(());
-    };
-    let t = &r.team;
-    tx.sync(
-        &sync::org_scope(t.org_id),
-        "team",
-        t.id,
-        action,
-        &json!({
-            "id": t.id,
-            "orgId": t.org_id,
-            "slug": t.slug,
-            "name": t.name,
-            "description": t.description,
-            "privacy": t.privacy,
-            "parentId": t.parent_id,
-            "memberIds": r.member_ids,
-            "repoIds": r.repo_ids,
-        }),
-    )
-    .await
+    tx.sync_model(SyncModel::Team, team_id, action).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -745,14 +707,7 @@ pub async fn delete(State(state): State<AppState>, tp: TeamPath) -> ApiResult<St
     .await?;
     let scope = sync::org_scope(org_id);
     for (id, slug) in &deleted {
-        tx.sync(
-            &scope,
-            "team",
-            *id,
-            SyncAction::Delete,
-            &json!({ "id": id }),
-        )
-        .await?;
+        tx.sync_delete(&scope, SyncModel::Team, *id).await?;
         tx.emit(Event::TeamDeleted {
             org_id,
             team_id: *id,

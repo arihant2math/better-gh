@@ -130,14 +130,10 @@ pub async fn rename_account(
             .await?;
     }
     if renamed.is_org() {
-        tx.sync(
-            &sync::org_scope(renamed.id),
-            "organization",
-            renamed.id,
-            SyncAction::Update,
-            &json!({ "id": renamed.id, "login": renamed.login, "name": renamed.name }),
-        )
-        .await?;
+        tx.sync_model(SyncModel::Org, renamed.id, SyncAction::Update)
+            .await?;
+    } else {
+        tx.sync_user(renamed.id).await?;
     }
     let action = if renamed.is_org() {
         "org.rename"
@@ -324,14 +320,8 @@ pub async fn delete_account(
     )
     .await?;
     if account.is_org() {
-        tx.sync(
-            &sync::org_scope(account.id),
-            "organization",
-            account.id,
-            SyncAction::Delete,
-            &json!({ "id": account.id }),
-        )
-        .await?;
+        tx.sync_delete(&sync::org_scope(account.id), SyncModel::Org, account.id)
+            .await?;
     }
     tx.emit(user_event(account, "deleted", actor, json!({})));
     tx.commit().await?;

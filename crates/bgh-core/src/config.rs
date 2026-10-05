@@ -9,6 +9,8 @@ use std::str::FromStr;
 
 use anyhow::Context;
 
+use crate::settings::{OidcProvider, RateLimitSettings};
+
 #[derive(Debug, Clone)]
 pub struct Config {
     /// `BGH_LISTEN` (default `0.0.0.0:3000`).
@@ -54,11 +56,18 @@ pub struct Config {
     pub smtp_url: Option<String>,
     /// `BGH_MAIL_FROM` (default `Better GitHub <noreply@{hostname}>`).
     pub mail_from: Option<String>,
-    /// `BGH_RATE_LIMIT` requests per hour for authenticated callers
-    /// (default 5000; 0 disables rate limiting).
-    pub rate_limit_authenticated: u32,
-    /// `BGH_RATE_LIMIT_ANONYMOUS` requests per hour per IP (default 60).
-    pub rate_limit_anonymous: u32,
+    /// API rate-limit defaults (`BGH_RATE_LIMIT*`, see [`crate::ratelimit`]);
+    /// the `rate_limits` site setting overrides them field by field:
+    /// `BGH_RATE_LIMIT_ENABLED` (default false: budgets are counted and
+    /// reported, not enforced), `BGH_RATE_LIMIT` (core requests per hour per
+    /// user, 5000; `0` = not enforced), `BGH_RATE_LIMIT_ANONYMOUS` (core per
+    /// hour per IP, 60), `BGH_RATE_LIMIT_SEARCH` /
+    /// `BGH_RATE_LIMIT_SEARCH_ANONYMOUS` (search per minute, 30 / 10),
+    /// `BGH_RATE_LIMIT_GRAPHQL` (GraphQL per hour per user, 5000).
+    pub rate_limits: RateLimitSettings,
+    /// Single OIDC provider from `BGH_OIDC_*` (see `bgh_accounts::sso`), the
+    /// default of the `auth_providers.oidc` site setting.
+    pub oidc: Option<OidcProvider>,
     /// `BGH_TRUST_PROXY` (default false): take the client IP from
     /// `X-Forwarded-For` / `X-Real-IP` (set when behind a reverse proxy).
     pub trust_proxy: bool,
@@ -93,8 +102,8 @@ impl Default for Config {
             site_name: "Better GitHub".into(),
             smtp_url: None,
             mail_from: None,
-            rate_limit_authenticated: 5000,
-            rate_limit_anonymous: 60,
+            rate_limits: RateLimitSettings::default(),
+            oidc: None,
             trust_proxy: false,
             webhook_allowed_hosts: Vec::new(),
             webhook_timeout_secs: 10,
@@ -176,16 +185,61 @@ impl Config {
             site_name: parse("BGH_SITE_NAME")?.unwrap_or(d.site_name),
             smtp_url: parse("BGH_SMTP_URL")?,
             mail_from: parse("BGH_MAIL_FROM")?,
-            rate_limit_authenticated: typed(
-                "BGH_RATE_LIMIT",
-                parse("BGH_RATE_LIMIT")?,
-                d.rate_limit_authenticated,
-            )?,
-            rate_limit_anonymous: typed(
-                "BGH_RATE_LIMIT_ANONYMOUS",
-                parse("BGH_RATE_LIMIT_ANONYMOUS")?,
-                d.rate_limit_anonymous,
-            )?,
+            rate_limits: {
+                let mut r = d.rate_limits.clone();
+                r.enabled = boolean("BGH_RATE_LIMIT_ENABLED", r.enabled)?;
+                let core = typed(
+                    "BGH_RATE_LIMIT",
+                    parse("BGH_RATE_LIMIT")?,
+                    r.authenticated_per_hour,
+                )?;
+                if core <= 0 {
+                    // Legacy spelling of "don't enforce".
+                    r.enabled = false;
+                } else {
+                    r.authenticated_per_hour = core;
+                }
+                let positive = |key: &str, default: i64| -> anyhow::Result<i64> {
+                    let v = typed(key, parse(key)?, default)?;
+                    anyhow::ensure!(v > 0, "{key} must be positive");
+                    Ok(v)
+                };
+                r.unauthenticated_per_hour =
+                    positive("BGH_RATE_LIMIT_ANONYMOUS", r.unauthenticated_per_hour)?;
+                r.search_authenticated_per_minute =
+                    positive("BGH_RATE_LIMIT_SEARCH", r.search_authenticated_per_minute)?;
+                r.search_unauthenticated_per_minute = positive(
+                    "BGH_RATE_LIMIT_SEARCH_ANONYMOUS",
+                    r.search_unauthenticated_per_minute,
+                )?;
+                r.graphql_per_hour = positive("BGH_RATE_LIMIT_GRAPHQL", r.graphql_per_hour)?;
+                r
+            },
+            oidc: match (parse("BGH_OIDC_ISSUER")?, parse("BGH_OIDC_CLIENT_ID")?) {
+                (Some(issuer), Some(client_id)) => Some(OidcProvider {
+                    name: parse("BGH_OIDC_ID")?.unwrap_or_else(|| "oidc".into()),
+                    display_name: Some(
+                        parse("BGH_OIDC_NAME")?.unwrap_or_else(|| "Single sign-on".into()),
+                    ),
+                    issuer,
+                    client_id,
+                    client_secret: parse("BGH_OIDC_CLIENT_SECRET")?,
+                    scopes: parse("BGH_OIDC_SCOPES")?
+                        .map(|v| v.split_whitespace().map(str::to_string).collect())
+                        .unwrap_or_default(),
+                    auto_create_users: boolean("BGH_OIDC_AUTO_CREATE", true)?,
+                    login_claim: parse("BGH_OIDC_LOGIN_CLAIM")?,
+                    allowed_domains: parse("BGH_OIDC_ALLOWED_DOMAINS")?
+                        .map(|v| {
+                            v.split(',')
+                                .map(|d| d.trim().to_lowercase())
+                                .filter(|d| !d.is_empty())
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                }),
+                _ => None,
+            },
             trust_proxy: boolean("BGH_TRUST_PROXY", d.trust_proxy)?,
             webhook_allowed_hosts: parse("BGH_WEBHOOK_ALLOWED_HOSTS")?
                 .map(|v| {
@@ -385,6 +439,42 @@ mod tests {
         let d = Config::default();
         assert_eq!(d.host(), "localhost:3000");
         assert_eq!(d.hostname(), "localhost");
+    }
+
+    #[test]
+    fn rate_limits_and_oidc() {
+        let d = Config::from_lookup(|_| None).unwrap();
+        assert!(!d.rate_limits.enabled);
+        assert_eq!(d.rate_limits.authenticated_per_hour, 5000);
+        assert!(d.oidc.is_none());
+        let c = Config::from_lookup(|k| match k {
+            "BGH_RATE_LIMIT_ENABLED" => Some("true".into()),
+            "BGH_RATE_LIMIT" => Some("100".into()),
+            "BGH_RATE_LIMIT_SEARCH_ANONYMOUS" => Some("2".into()),
+            "BGH_OIDC_ISSUER" => Some("https://id.example.com".into()),
+            "BGH_OIDC_CLIENT_ID" => Some("bgh".into()),
+            "BGH_OIDC_SCOPES" => Some("openid email".into()),
+            "BGH_OIDC_AUTO_CREATE" => Some("no".into()),
+            _ => None,
+        })
+        .unwrap();
+        assert!(c.rate_limits.enabled);
+        assert_eq!(c.rate_limits.authenticated_per_hour, 100);
+        assert_eq!(c.rate_limits.unauthenticated_per_hour, 60);
+        assert_eq!(c.rate_limits.search_unauthenticated_per_minute, 2);
+        let p = c.oidc.unwrap();
+        assert_eq!((p.name.as_str(), p.client_id.as_str()), ("oidc", "bgh"));
+        assert_eq!(p.scopes, ["openid", "email"]);
+        assert!(!p.auto_create_users);
+        // Legacy `BGH_RATE_LIMIT=0`: not enforced.
+        let off = Config::from_lookup(|k| match k {
+            "BGH_RATE_LIMIT_ENABLED" => Some("1".into()),
+            "BGH_RATE_LIMIT" => Some("0".into()),
+            _ => None,
+        })
+        .unwrap();
+        assert!(!off.rate_limits.enabled);
+        assert_eq!(off.rate_limits.authenticated_per_hour, 5000);
     }
 
     #[test]

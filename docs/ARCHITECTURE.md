@@ -96,14 +96,14 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 `BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
 `BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`, `BGH_SMTP_URL` (unset: mail is
-logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`, `BGH_RATE_LIMIT`
-(`5000`/h per user, `0` disables), `BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP),
-`BGH_TRUST_PROXY` (`false`; take client IPs from `X-Forwarded-For`), and
-`BGH_OIDC_*` for a single SSO provider (see `bgh_accounts::sso`; site
-setting `auth.oidc` overrides).
-(`BGH_RATE_LIMIT*` are read but the API rate limiter currently follows
-the `rate_limits` site setting below.) CI settings `BGH_ACTIONS_*`
-(see `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
+logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`,
+`BGH_RATE_LIMIT_ENABLED` (`false`), `BGH_RATE_LIMIT` (`5000`/h per user),
+`BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP), `BGH_RATE_LIMIT_SEARCH` /
+`_SEARCH_ANONYMOUS` (`30` / `10` per minute), `BGH_RATE_LIMIT_GRAPHQL`
+(`5000`/h), `BGH_TRUST_PROXY` (`false`; take client IPs from
+`X-Forwarded-For`), and `BGH_OIDC_*` for a single SSO provider (see
+`bgh_accounts::sso`). CI settings `BGH_ACTIONS_*` (see
+`bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
@@ -111,7 +111,12 @@ cached 5 s per process): sign-up policy (`open|invite|closed` + allowed
 email domains), default repository visibility, max repository size and
 per-owner `storage_quotas` (checked on push), organization creation
 policy, announcement banner, API rate limits, auth providers (password
-login, OIDC), SMTP, maintenance mode. `BGH_SIGNUP_ENABLED=false` still
+login, OIDC), SMTP, maintenance mode. Their defaults come from the
+environment where one exists (`SiteSettings::defaults(&config)`:
+`BGH_RATE_LIMIT*` → `rate_limits`, `BGH_OIDC_*` → `auth_providers.oidc`);
+stored fields override them field by field. SMTP is a transport choice
+instead: the `smtp` setting when enabled, else `BGH_SMTP_URL`, else the
+dev transport (`bgh_core::mail`). `BGH_SIGNUP_ENABLED=false` still
 disables sign-up regardless of the setting.
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
@@ -165,8 +170,12 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
 Cross-cutting middleware: maintenance mode (`settings::maintenance_middleware`,
 503 + `Retry-After` for API/`_bgh`/git requests except site admins,
 `/healthz`, `/_bgh/site`, `/_bgh/session`) and API rate limiting
-(`ratelimit::rate_limit_middleware` on `/api/v3`, Redis hourly window per
-user / client IP, disabled by default like GHES). Repositories with
+(`ratelimit::middleware` on `/api/v3`, `ratelimit::root_middleware` for
+`/api/graphql` and `/api/v3/`): Redis fixed windows per user / client IP
+with separate `core` (hour), `search` (minute) and `graphql` (hour)
+budgets, `X-RateLimit-*` on every API response, `GET /rate_limit` in
+GitHub's shape (not counted), enforcement (403 + `Retry-After`) off by
+default like GHES. Repositories with
 `disabled = true` answer 403 "Repository access blocked" to everyone but
 site admins (`RepoAccess`). Suspended users get 403 on every credential
 (token, session, password).
@@ -209,8 +218,7 @@ and octokit-style raw requests.
   OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
   Basic auth with a password is accepted for git transport only, and never
   for accounts with two-factor authentication.
-* API rate limits: `bgh_core::ratelimit::middleware` on `/api/v3`
-  (Redis fixed windows, `X-RateLimit-*` headers).
+* API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations
 
@@ -249,11 +257,13 @@ optimistic-mutation reconciliation) is specified normatively in
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
   JSONB, tx UUID NULL, created_at)` **in the same transaction** via
-  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)`. `tx` is
-  the request's `X-Client-Tx` header (taken from the request context), so
-  the delta echoes it. `record` serializes writers with a transaction-scoped
-  advisory lock so sync ids become visible in id order. After commit, call
-  `bgh_core::sync::notify(&state, ...)` which publishes on the Redis channel
+  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)` (`Tx`
+  collects them and writes them all with `sync::record_all` right before
+  committing). `tx` is the request's `X-Client-Tx` header (taken from the
+  request context), so the delta echoes it. Writing takes a
+  transaction-scoped advisory lock so sync ids become visible in id order;
+  `Tx` takes it only at commit, after all row locks. After commit,
+  `bgh_core::sync::notify(&state, ...)` publishes on the Redis channel
   `sync:{scope}`. The request context is a tokio task-local installed by
   `bgh_sync::http_middleware` (mounted for every route), which also adds
   `X-Bgh-Sync-Id` and implements `X-Client-Tx` idempotency in Redis.

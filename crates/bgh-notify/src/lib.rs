@@ -9,15 +9,14 @@
 //!   and redelivery; [`webhooks::dispatch`] turns domain events into
 //!   deliveries with payloads from [`payloads`], delivered by the
 //!   `notify.deliver_webhook` job (retries, timeouts, SSRF protection).
-//! * Email: notification emails (`notify.email`) and the `mail.send`
-//!   transport ([`mailer`]) for every crate's [`bgh_core::mail`] messages;
-//!   per-user settings and unsubscribe links in [`settings`].
+//! * Email: notification emails (`notify.email`), delivered through the
+//!   shared `mail.send` job of [`bgh_core::mail`]; per-user settings and
+//!   unsubscribe links in [`settings`].
 //!
 //! Migrations: 0500-0599. Status: `docs/packages/notify.md`.
 
 pub mod email;
 pub mod fanout;
-pub mod mailer;
 pub mod payloads;
 pub mod reasons;
 pub mod settings;
@@ -166,7 +165,6 @@ pub fn web_router() -> Router<AppState> {
 
 /// Jobs and event listeners.
 pub fn register(reg: &mut Registry) {
-    reg.job(mailer::send_email);
     reg.job(email::send_notification_emails);
     reg.job(webhooks::deliver::deliver_webhook);
     reg.on_event("notify.notifications", fanout::on_event);

@@ -289,6 +289,7 @@ async fn finish_create(
         .fetch_one(&mut *tx)
         .await?;
     }
+    bgh_core::labels::create_defaults(&mut tx, repo.id).await?;
     tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Insert)
         .await?;
     tx.sync_viewer_repo(auth.user.id, repo.id).await?;

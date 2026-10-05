@@ -20,20 +20,13 @@ struct Subject {
 }
 
 /// Re-sync the reacted row (reaction counts live on issues and comments).
-async fn sync_subject(
-    tx: &mut Tx,
-    state: &AppState,
-    access: &RepoAccess,
-    subject: &Subject,
-) -> ApiResult<()> {
+async fn sync_subject(tx: &mut Tx, subject: &Subject) -> ApiResult<()> {
     match &subject.comment {
-        Some(c) => {
-            let info = json::RepoInfo::from_access(access);
-            crate::service::sync_comment(tx, state, &info, c, SyncAction::Update).await
-        }
+        Some(c) => crate::service::sync_comment(tx, c.id, SyncAction::Update).await,
         None => {
-            let issue = crate::service::issue_by_id(&mut **tx, subject.issue.id).await?;
-            crate::service::sync_issue_row(tx, &issue, SyncAction::Update).await
+            tx.sync_issue(subject.issue.id, SyncAction::Update, false)
+                .await?;
+            Ok(())
         }
     }
 }
@@ -162,7 +155,7 @@ async fn create(
     .await?;
     let (row, status) = match inserted {
         Some(r) => {
-            sync_subject(&mut tx, state, access, subject).await?;
+            sync_subject(&mut tx, subject).await?;
             tx.emit(Event::ReactionCreated {
                 repo_id: access.repo.id,
                 subject_type: subject.kind.to_string(),
@@ -221,7 +214,7 @@ async fn delete(
         .bind(row.id)
         .execute(&mut *tx)
         .await?;
-    sync_subject(&mut tx, state, access, subject).await?;
+    sync_subject(&mut tx, subject).await?;
     tx.emit(Event::ReactionDeleted {
         repo_id: access.repo.id,
         subject_type: subject.kind.to_string(),

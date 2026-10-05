@@ -9,7 +9,6 @@ use bgh_core::node_id::{self, NodeType};
 use bgh_core::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::git;
 use crate::jobs::ChecksChanged;
@@ -132,17 +131,8 @@ pub async fn create_status(
     .bind(actor_id)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &bgh_core::sync::repo_scope(repo_id),
-        "commitStatus",
-        row.id,
-        SyncAction::Insert,
-        &json!({"id": row.id, "repoId": repo_id, "sha": row.sha, "state": row.state,
-                "context": row.context, "description": row.description,
-                "targetUrl": row.target_url, "creatorId": row.creator_id,
-                "createdAt": Timestamp::from(row.created_at)}),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CommitStatus, row.id, SyncAction::Insert)
+        .await?;
     tx.enqueue(&ChecksChanged {
         repo_id,
         sha: sha.to_string(),

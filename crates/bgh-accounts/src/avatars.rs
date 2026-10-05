@@ -278,7 +278,7 @@ async fn store(
         Some(format!("/avatars/u/{}?v={}", account.id, &sha[..12])),
     )
     .await?;
-    util::sync_profile(&mut tx, &state.urls, &user).await?;
+    util::sync_profile(&mut tx, &user).await?;
     audit::log(
         &mut *tx,
         Some(actor),
@@ -309,7 +309,7 @@ async fn clear(state: &AppState, account: &db::User) -> ApiResult<db::User> {
         .execute(&mut *tx)
         .await?;
     let user = set_avatar_url(&mut tx, account.id, None).await?;
-    util::sync_profile(&mut tx, &state.urls, &user).await?;
+    util::sync_profile(&mut tx, &user).await?;
     tx.commit().await?;
     Ok(user)
 }

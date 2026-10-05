@@ -2,13 +2,9 @@
 //! shapes, request metadata, mail.
 
 use axum::http::{HeaderMap, header};
-use bgh_core::jobs::JobPayload;
 use bgh_core::mail;
 use bgh_core::prelude::*;
-use bgh_core::sync;
-use bgh_core::urls::Urls;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{Value, json};
+use serde::{Deserialize, Deserializer};
 
 /// A PATCH body field: absent (leave unchanged), `null`, or a value. Use
 /// with `#[serde(default)]`.
@@ -115,102 +111,28 @@ pub fn non_empty(s: Option<String>) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Sync (compact client shapes, docs/SYNC_PROTOCOL.md section 3)
+// Sync
 // ---------------------------------------------------------------------------
 
-/// `user` sync model.
-pub fn user_sync_json(urls: &Urls, u: &db::User) -> Value {
-    json!({
-        "id": u.id,
-        "login": u.login,
-        "name": u.name,
-        "avatarUrl": urls.avatar(u.id, u.avatar_url.as_deref()),
-        "type": if u.kind == "Bot" { "Bot" } else { "User" },
-    })
-}
-
-/// `org` sync model.
-pub fn org_sync_json(urls: &Urls, org: &db::User, description: Option<&str>) -> Value {
-    json!({
-        "id": org.id,
-        "login": org.login,
-        "name": org.name,
-        "avatarUrl": urls.avatar(org.id, org.avatar_url.as_deref()),
-        "description": description,
-    })
-}
-
-/// `membership` sync model.
-pub fn membership_sync_json(id: i64, org_id: i64, user_id: i64, role: &str) -> Value {
-    json!({ "id": id, "orgId": org_id, "userId": user_id, "role": role })
-}
-
-/// Record a profile change of `user` in its own scope and every org scope
-/// it belongs to (orgs record their `org` row instead).
-pub async fn sync_profile(tx: &mut Tx, urls: &Urls, user: &db::User) -> ApiResult<()> {
+/// Record a profile change of `user`: a user's `user` row in its own scope
+/// and every org scope it belongs to, an organization's `org` row.
+pub async fn sync_profile(tx: &mut Tx, user: &db::User) -> ApiResult<()> {
     if user.is_org() {
-        let description: Option<String> =
-            sqlx::query_scalar("SELECT description FROM org_settings WHERE org_id = $1")
-                .bind(user.id)
-                .fetch_optional(&mut **tx)
-                .await?
-                .flatten();
-        return tx
-            .sync(
-                &sync::org_scope(user.id),
-                "org",
-                user.id,
-                SyncAction::Update,
-                &org_sync_json(urls, user, description.as_deref()),
-            )
-            .await;
+        tx.sync_model(SyncModel::Org, user.id, SyncAction::Update)
+            .await?;
+        return Ok(());
     }
-    let data = user_sync_json(urls, user);
-    tx.sync(
-        &sync::user_scope(user.id),
-        "user",
-        user.id,
-        SyncAction::Update,
-        &data,
-    )
-    .await?;
-    let orgs: Vec<i64> = sqlx::query_scalar("SELECT org_id FROM org_members WHERE user_id = $1")
-        .bind(user.id)
-        .fetch_all(&mut **tx)
-        .await?;
-    for org_id in orgs {
-        tx.sync(
-            &sync::org_scope(org_id),
-            "user",
-            user.id,
-            SyncAction::Update,
-            &data,
-        )
-        .await?;
-    }
-    Ok(())
+    tx.sync_user(user.id).await
 }
 
 // ---------------------------------------------------------------------------
 // Mail
 // ---------------------------------------------------------------------------
 
-/// Background job delivering one email (`bgh_core::mail`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SendMail(pub mail::Message);
-
-impl JobPayload for SendMail {
-    const KIND: &'static str = "accounts.send_mail";
-}
-
-pub async fn send_mail_job(state: AppState, job: SendMail) -> anyhow::Result<()> {
-    mail::send(&state, &job.0).await
-}
-
-/// Queue an email in `tx` (sent after commit by the job worker).
-pub async fn queue_mail(tx: &mut Tx, to: &str, subject: &str, text: String) -> ApiResult<()> {
-    tx.enqueue(&SendMail(mail::Message::new(to, subject, text)))
-        .await?;
+/// Queue an email in `tx` (delivered after commit by the shared `mail.send`
+/// job, see `bgh_core::mail`).
+pub async fn queue_mail(tx: &mut Tx, email: mail::Email) -> ApiResult<()> {
+    tx.enqueue(&mail::SendEmail::new(email)).await?;
     Ok(())
 }
 

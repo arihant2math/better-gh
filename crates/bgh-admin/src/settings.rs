@@ -80,7 +80,17 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     if s.repositories.max_repo_size_mb.is_some_and(|m| m <= 0) {
         return Err(bad("repositories.max_repo_size_mb"));
     }
-    if s.rate_limits.authenticated_per_hour <= 0 || s.rate_limits.unauthenticated_per_hour <= 0 {
+    let r = &s.rate_limits;
+    if [
+        r.authenticated_per_hour,
+        r.unauthenticated_per_hour,
+        r.search_authenticated_per_minute,
+        r.search_unauthenticated_per_minute,
+        r.graphql_per_hour,
+    ]
+    .iter()
+    .any(|n| *n <= 0)
+    {
         return Err(bad("rate_limits"));
     }
     if !matches!(s.smtp.tls.as_str(), "none" | "starttls" | "tls") {
@@ -126,14 +136,17 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     Ok(())
 }
 
-/// `GET /_bgh/admin/settings` → all sections (secrets redacted).
+/// `GET /_bgh/admin/settings` → all sections, effective values (the
+/// environment's defaults overridden by stored fields; secrets redacted).
 pub async fn get(State(state): State<AppState>, _auth: RequireSiteAdmin) -> ApiResult<Json<Value>> {
-    let s = settings::load_uncached(&state.db).await?;
+    let s = settings::load_uncached(&state.config, &state.db).await?;
     Ok(Json(redact(serde_json::to_value(&s)?)))
 }
 
-/// `PATCH /_bgh/admin/settings` with `{section: {field: value}}`: fields
-/// are merged into the stored section; the result is validated as a whole.
+/// `PATCH /_bgh/admin/settings` with `{section: {field: value}}`: the
+/// fields are merged into the stored section (fields never set keep
+/// following the environment's defaults, e.g. `BGH_RATE_LIMIT*`); the
+/// result is validated as a whole.
 pub async fn update(
     State(state): State<AppState>,
     auth: RequireSiteAdmin,
@@ -153,8 +166,12 @@ pub async fn update(
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('bgh_site_settings'))")
         .execute(&mut *tx)
         .await?;
-    let current = serde_json::to_value(settings::load_uncached(&mut *tx).await?)?;
-    let mut merged = current.clone();
+    let mut stored: Map<String, Value> = settings::load_rows(&mut *tx).await?.into_iter().collect();
+    let defaults = SiteSettings::defaults(&state.config);
+    let current = serde_json::to_value(SiteSettings::from_rows_with(
+        defaults.clone(),
+        stored.clone(),
+    ))?;
     for (key, patch) in &body {
         let Value::Object(patch) = patch else {
             return Err(ApiError::invalid_field(FieldError::invalid(
@@ -162,20 +179,40 @@ pub async fn update(
                 key,
             )));
         };
-        let old = current.get(key).cloned().unwrap_or(json!({}));
-        let mut section = old.clone();
+        let mut section = match stored.get(key) {
+            Some(Value::Object(fields)) => Value::Object(fields.clone()),
+            _ => json!({}),
+        };
         for (k, v) in patch {
             section[k] = v.clone();
         }
+        let old = current.get(key).cloned().unwrap_or(json!({}));
         keep_secrets(key, &mut section, &old);
-        merged[key] = section;
+        stored.insert(key.clone(), section);
     }
-    let typed: SiteSettings = serde_json::from_value(merged.clone())
-        .map_err(|e| ApiError::unprocessable(format!("Invalid settings: {e}")))?;
+    let mut typed = defaults;
+    for (key, section) in &stored {
+        let (true, Value::Object(fields)) = (SECTIONS.contains(&key.as_str()), section) else {
+            continue;
+        };
+        let res = typed.apply_section(key, fields);
+        // Only the patched sections must be valid; a bad stored row of
+        // another section keeps its defaults (as in `settings::load`).
+        if body.contains_key(key) {
+            res.map_err(|e| ApiError::unprocessable(format!("Invalid settings: {e}")))?;
+        }
+    }
     validate(&typed)?;
     let normalized = serde_json::to_value(&typed)?;
     for key in body.keys() {
-        settings::store_section(&mut *tx, key, &normalized[key]).await?;
+        // Store only the fields set (normalized), not the defaults.
+        let fields: Map<String, Value> = stored[key]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, _)| Some((k.clone(), normalized[key].get(k)?.clone())))
+            .collect();
+        settings::store_section(&mut *tx, key, &Value::Object(fields)).await?;
     }
     let changed: Map<String, Value> = body
         .keys()
@@ -225,7 +262,7 @@ pub async fn get_announcement(
     State(state): State<AppState>,
     _auth: RequireSiteAdmin,
 ) -> ApiResult<Json<AnnouncementJson>> {
-    let s = settings::load_uncached(&state.db).await?;
+    let s = settings::load_uncached(&state.config, &state.db).await?;
     Ok(Json(AnnouncementJson::from(&s.announcement)))
 }
 
@@ -299,23 +336,15 @@ pub async fn delete_announcement(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /rate_limit`: 404 "Rate limiting is not enabled." unless enabled.
+/// `GET /rate_limit`: the caller's budgets in GitHub's shape (always
+/// available, not counted; see `bgh_core::ratelimit`).
 pub async fn rate_limit(
     State(state): State<AppState>,
     auth: MaybeUser,
     req: axum::extract::Request,
 ) -> ApiResult<Json<Value>> {
     let ip = bgh_core::auth::client_ip(&state.config, req.headers(), req.extensions());
-    let q = bgh_core::ratelimit::quota(&state, auth.as_ref(), &ip, false)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Status(
-                StatusCode::NOT_FOUND,
-                "Rate limiting is not enabled.".into(),
-            )
-        })?;
-    Ok(Json(json!({
-        "resources": { "core": q },
-        "rate": q,
-    })))
+    Ok(Json(
+        bgh_core::ratelimit::status(&state, auth.as_ref(), &ip).await?,
+    ))
 }

@@ -12,13 +12,13 @@ pub fn cookie_from(res: &TestResponse) -> String {
 }
 
 /// Run queued jobs and return every mail written to the dev outbox.
-pub async fn mails(app: &TestApp) -> Vec<bgh_core::mail::Message> {
+pub async fn mails(app: &TestApp) -> Vec<bgh_core::mail::Email> {
     app.drain_jobs().await;
     bgh_core::mail::outbox(&app.state.config).await
 }
 
 /// The last mail sent to `to`.
-pub async fn last_mail_to(app: &TestApp, to: &str) -> bgh_core::mail::Message {
+pub async fn last_mail_to(app: &TestApp, to: &str) -> bgh_core::mail::Email {
     mails(app)
         .await
         .into_iter()
