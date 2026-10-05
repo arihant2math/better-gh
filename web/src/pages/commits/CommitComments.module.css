@@ -1,0 +1,66 @@
+/* Commit comments: the general thread under a commit (inline threads use pulls/Review.module.css). */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 920px;
+  padding: var(--sp-4);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold, 600);
+}
+
+.heading code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.muted {
+  color: var(--fg-muted);
+  font-weight: normal;
+  font-size: var(--fs-md);
+}
+
+.box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.timelineComment {
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.newComment {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.composer {
+  min-width: 0;
+}
+
+.timeLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.timeLink:hover {
+  text-decoration: underline;
+}
+
+.standalone {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

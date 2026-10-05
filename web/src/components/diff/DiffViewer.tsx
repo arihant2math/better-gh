@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { DiffView, type DiffFileEntry } from './DiffView';
+import type { ReactNode } from 'react';
+import { DiffView, type DiffAnnotations, type DiffFileEntry } from './DiffView';
 import { parseDiff, type DiffFile } from './parseDiff';
 
 export function toEntries(files: DiffFile[]): DiffFileEntry[] {
@@ -16,10 +17,26 @@ export function toEntries(files: DiffFile[]): DiffFileEntry[] {
 
 /**
  * Read-only diff of a raw `.diff` text (commits, compare previews): file
- * tree, collapse, local "viewed" state, unified/split. For review features
- * use `DiffView` directly.
+ * tree, collapse, local "viewed" state, unified/split. Optional
+ * `annotations` (inline threads / line composer, e.g. commit comments) and a
+ * `footer` rendered after the last file. For review features use `DiffView`
+ * directly.
  */
-export function DiffViewer({ diff, showTree = true, mode = 'unified', keyboard = false }: { diff: string | DiffFile[]; showTree?: boolean; mode?: 'unified' | 'split'; keyboard?: boolean }) {
+export function DiffViewer({
+  diff,
+  showTree = true,
+  mode = 'unified',
+  keyboard = false,
+  annotations,
+  footer,
+}: {
+  diff: string | DiffFile[];
+  showTree?: boolean;
+  mode?: 'unified' | 'split';
+  keyboard?: boolean;
+  annotations?: DiffAnnotations;
+  footer?: ReactNode;
+}) {
   const files = useMemo(() => toEntries(typeof diff === 'string' ? parseDiff(diff) : diff), [diff]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [viewed, setViewed] = useState<ReadonlySet<string>>(() => new Set());
@@ -36,6 +53,8 @@ export function DiffViewer({ diff, showTree = true, mode = 'unified', keyboard =
       mode={mode}
       tree={showTree}
       keyboard={keyboard}
+      annotations={annotations}
+      footer={footer}
       collapsed={collapsed}
       onToggleCollapsed={(p) => setCollapsed((c) => toggle(c, p))}
       isViewed={isViewed}
