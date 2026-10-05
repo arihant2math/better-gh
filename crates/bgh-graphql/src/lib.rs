@@ -61,9 +61,26 @@ pub fn sdl() -> String {
     schema().sdl()
 }
 
-/// REST API routes (none: GraphQL lives outside `/api/v3`).
+/// GHES version reported by `GET /meta`. Clients (`gh`) gate GraphQL
+/// feature detection on it; 3.17 selects the classic issue search syntax and
+/// no classic projects.
+pub const COMPAT_GHES_VERSION: &str = "3.17.0";
+
+/// REST API routes: `GET /meta` (GraphQL itself lives outside `/api/v3`).
 pub fn router() -> Router<AppState> {
-    Router::new()
+    Router::new().route("/meta", get(meta))
+}
+
+/// `GET /meta` (GitHub Enterprise Server shape).
+async fn meta() -> axum::Json<Value> {
+    axum::Json(json!({
+        "verifiable_password_authentication": false,
+        "installed_version": COMPAT_GHES_VERSION,
+        "bgh_version": env!("CARGO_PKG_VERSION"),
+        "ssh_key_fingerprints": {},
+        "hooks": [], "web": [], "api": [], "git": [], "packages": [],
+        "pages": [], "importer": [], "actions": [], "dependabot": [],
+    }))
 }
 
 /// `/api/graphql` (POST for queries and mutations, GET for queries).

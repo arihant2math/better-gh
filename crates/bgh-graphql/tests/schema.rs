@@ -124,3 +124,14 @@ async fn introspection_feature_detection() {
     assert!(names("PullRequest").contains(&"headRefName".to_string()));
     assert!(names("StatusCheckRollupContextConnection").contains(&"checkRunCount".to_string()));
 }
+
+#[tokio::test]
+async fn meta_reports_ghes_version() {
+    let app = bgh_server::test_app().await;
+    let res = app.get("/api/v3/meta").send().await;
+    res.assert_status(200);
+    assert_eq!(
+        res.json()["installed_version"],
+        bgh_graphql::COMPAT_GHES_VERSION
+    );
+}
