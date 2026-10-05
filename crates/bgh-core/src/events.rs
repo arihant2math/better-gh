@@ -157,6 +157,34 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    /// A user starred (`starred: true`) or unstarred a repository.
+    RepositoryStarred {
+        repo_id: i64,
+        actor_id: i64,
+        starred: bool,
+    },
+    /// `fork_id` was created as a fork of `repo_id`.
+    RepositoryForked {
+        repo_id: i64,
+        fork_id: i64,
+        actor_id: i64,
+    },
+    RepositoryRenamed {
+        repo_id: i64,
+        actor_id: i64,
+        old_name: String,
+    },
+    RepositoryTransferred {
+        repo_id: i64,
+        actor_id: i64,
+        old_owner_id: i64,
+    },
+    /// A collaborator was added (invitation accepted or direct add).
+    CollaboratorAdded {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
 }
 
 impl Event {
@@ -182,6 +210,11 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::RepositoryStarred { .. } => "repository_starred",
+            Self::RepositoryForked { .. } => "repository_forked",
+            Self::RepositoryRenamed { .. } => "repository_renamed",
+            Self::RepositoryTransferred { .. } => "repository_transferred",
+            Self::CollaboratorAdded { .. } => "collaborator_added",
         }
     }
 
@@ -205,7 +238,12 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
-            | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
+            | Self::ReleasePublished { repo_id, .. }
+            | Self::RepositoryStarred { repo_id, .. }
+            | Self::RepositoryForked { repo_id, .. }
+            | Self::RepositoryRenamed { repo_id, .. }
+            | Self::RepositoryTransferred { repo_id, .. }
+            | Self::CollaboratorAdded { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
         }
     }
@@ -231,7 +269,12 @@ impl Event {
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
-            | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            | Self::OrgMemberAdded { actor_id, .. }
+            | Self::RepositoryStarred { actor_id, .. }
+            | Self::RepositoryForked { actor_id, .. }
+            | Self::RepositoryRenamed { actor_id, .. }
+            | Self::RepositoryTransferred { actor_id, .. }
+            | Self::CollaboratorAdded { actor_id, .. } => Some(*actor_id),
         }
     }
 }
