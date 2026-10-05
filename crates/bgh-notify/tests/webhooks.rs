@@ -22,6 +22,8 @@ struct Received {
     body: Bytes,
 }
 
+type Shared = (Arc<Mutex<Vec<Received>>>, Arc<Mutex<u16>>);
+
 #[derive(Clone)]
 struct Receiver {
     got: Arc<Mutex<Vec<Received>>>,
@@ -34,23 +36,21 @@ impl Receiver {
         let got = Arc::new(Mutex::new(Vec::new()));
         let status = Arc::new(Mutex::new(200u16));
         let st = (got.clone(), status.clone());
-        let app = Router::new()
-            .route(
-                "/hook",
-                post(
-                    |AxState((got, status)): AxState<(
-                        Arc<Mutex<Vec<Received>>>,
-                        Arc<Mutex<u16>>,
-                    )>,
-                     headers: HeaderMap,
-                     body: Bytes| async move {
-                        got.lock().unwrap().push(Received { headers, body });
-                        let code = *status.lock().unwrap();
-                        (StatusCode::from_u16(code).unwrap(), "thanks")
-                    },
-                ),
-            )
-            .with_state(st);
+        let app =
+            Router::new()
+                .route(
+                    "/hook",
+                    post(
+                        |AxState((got, status)): AxState<Shared>,
+                         headers: HeaderMap,
+                         body: Bytes| async move {
+                            got.lock().unwrap().push(Received { headers, body });
+                            let code = *status.lock().unwrap();
+                            (StatusCode::from_u16(code).unwrap(), "thanks")
+                        },
+                    ),
+                )
+                .with_state(st);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
