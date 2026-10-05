@@ -4,6 +4,7 @@ import type { RunGraph as Graph, WorkflowJob } from '../../api/actions';
 import { Link } from '../../router';
 import { cx } from '../../ui/Button';
 import { layoutGraph, MAX_ROWS, type LayoutInput } from './graphLayout';
+import { calledLabel, pendingCalled } from './calls';
 import { groupJobs } from './RunShell';
 import { Duration, StatusIcon, visualStatus } from './shared';
 import styles from './Run.module.css';
@@ -13,7 +14,13 @@ interface NodeData {
   name: string;
   jobs: WorkflowJob[];
   matrix: boolean;
+  /** `uses:` of a job calling a reusable workflow. */
+  uses?: string | null;
+  /** Names of called jobs not created yet (their `needs` are still running). */
+  pending?: string[];
 }
+
+const fileName = (uses: string) => uses.replace(/@.*$/, '').split('/').pop() ?? uses;
 
 /** Status of a group: failure wins, then running, then queued, else the shared conclusion. */
 function groupStatus(jobs: WorkflowJob[]): { status: string; conclusion: string | null } {
@@ -36,7 +43,11 @@ export const RunGraph = observer(function RunGraph({ graph, jobs, runBase }: { g
     const groups = groupJobs(jobs, graph);
     if (!graph) return groups.map((g) => ({ ...g, matrix: g.jobs.length > 1 }));
     const byKey = new Map(groups.map((g) => [g.key, g]));
-    const out: NodeData[] = graph.jobs.map((g) => ({ key: g.key, name: g.name, jobs: byKey.get(g.key)?.jobs ?? [], matrix: g.matrix || (byKey.get(g.key)?.jobs.length ?? 0) > 1 }));
+    const out: NodeData[] = graph.jobs.map((g) => {
+      const jobs = byKey.get(g.key)?.jobs ?? [];
+      const pending = g.uses ? pendingCalled(graph, g.key, jobs) : [];
+      return { key: g.key, name: g.name, jobs, matrix: g.matrix || jobs.length > 1 || !!g.uses, uses: g.uses, pending };
+    });
     // Jobs the graph doesn't know (shouldn't happen) still show up.
     for (const g of groups) if (!graph.jobs.some((x) => x.key === g.key)) out.push({ ...g, matrix: g.jobs.length > 1 });
     return out;
@@ -44,13 +55,13 @@ export const RunGraph = observer(function RunGraph({ graph, jobs, runBase }: { g
 
   const needs = useMemo(() => new Map(graph?.jobs.map((g) => [g.key, g.needs]) ?? []), [graph]);
   const layout = useMemo(() => {
-    const input: LayoutInput[] = nodes.map((n) => ({ key: n.key, needs: needs.get(n.key) ?? [], rows: Math.max(1, n.jobs.length), group: n.matrix }));
+    const input: LayoutInput[] = nodes.map((n) => ({ key: n.key, needs: needs.get(n.key) ?? [], rows: Math.max(1, n.jobs.length + (n.pending?.length ?? 0)), group: n.matrix }));
     return layoutGraph(input);
   }, [nodes, needs]);
 
   if (!nodes.length) return null;
   const byKey = new Map(nodes.map((n) => [n.key, n]));
-  const doneKeys = new Set(nodes.filter((n) => n.jobs.length && n.jobs.every((j) => j.status === 'completed')).map((n) => n.key));
+  const doneKeys = new Set(nodes.filter((n) => n.jobs.length && !n.pending?.length && n.jobs.every((j) => j.status === 'completed')).map((n) => n.key));
 
   return (
     <div className={styles.graphScroll}>
@@ -85,20 +96,49 @@ export const RunGraph = observer(function RunGraph({ graph, jobs, runBase }: { g
               </div>
             );
           }
-          const st = groupStatus(n.jobs);
+          let st = groupStatus(n.jobs);
+          const pending = n.pending ?? [];
+          if (pending.length && st.status === 'completed' && st.conclusion !== 'failure') st = { status: 'in_progress', conclusion: null };
+          const total = n.jobs.length + pending.length;
+          const pendingShown = pending.slice(0, Math.max(0, MAX_ROWS - n.jobs.length));
           return (
-            <div key={ln.key} className={cx(styles.node, styles.nodeGroup, !n.jobs.length && styles.nodePending)} style={style}>
+            <div
+              key={ln.key}
+              className={cx(styles.node, styles.nodeGroup, n.uses && styles.nodeCall, !n.jobs.length && styles.nodePending)}
+              style={style}
+              data-call={n.uses ? n.key : undefined}
+            >
               <div className={styles.groupHead}>
                 <StatusIcon status={st.status} conclusion={st.conclusion} size={14} />
                 <span className={styles.nodeName}>{n.name}</span>
-                <span className={styles.groupCount}>{n.jobs.length ? `${n.jobs.length} job${n.jobs.length === 1 ? '' : 's'}` : 'Matrix'}</span>
+                {n.uses ? (
+                  <span className={styles.groupCount} title={`Calls ${n.uses}`}>
+                    {fileName(n.uses).replace(/\.ya?ml$/, '')}
+                  </span>
+                ) : (
+                  <span className={styles.groupCount}>{n.jobs.length ? `${n.jobs.length} job${n.jobs.length === 1 ? '' : 's'}` : 'Matrix'}</span>
+                )}
               </div>
               {n.jobs.slice(0, MAX_ROWS).map((j) => (
                 <Link key={j.id} to={`${runBase}/job/${j.id}`} className={cx(styles.groupRow, styles.nodeLink)}>
-                  <JobLine job={j} />
+                  <JobLine job={j} label={n.uses ? calledLabel(j.name, n.name) : undefined} />
                 </Link>
               ))}
-              {n.jobs.length > MAX_ROWS && <div className={styles.groupMore}>and {n.jobs.length - MAX_ROWS} more…</div>}
+              {pendingShown.map((name) => (
+                <div key={`pending:${name}`} className={cx(styles.groupRow, styles.groupRowPending)}>
+                  <StatusIcon status="pending" conclusion={null} />
+                  <span className={styles.nodeName} title={name}>
+                    {calledLabel(name, n.name)}
+                  </span>
+                </div>
+              ))}
+              {!total && n.uses && (
+                <div className={cx(styles.groupRow, styles.groupRowPending)}>
+                  <StatusIcon status="pending" conclusion={null} />
+                  <span className={styles.nodeName}>Waiting to call workflow</span>
+                </div>
+              )}
+              {total > MAX_ROWS && <div className={styles.groupMore}>and {total - MAX_ROWS} more…</div>}
             </div>
           );
         })}
@@ -107,13 +147,13 @@ export const RunGraph = observer(function RunGraph({ graph, jobs, runBase }: { g
   );
 });
 
-const JobLine = observer(function JobLine({ job }: { job: WorkflowJob }) {
+const JobLine = observer(function JobLine({ job, label }: { job: WorkflowJob; label?: string }) {
   const running = job.status === 'in_progress';
   return (
     <>
       <StatusIcon status={job.status} conclusion={job.conclusion} />
       <span className={styles.nodeName} title={job.name}>
-        {job.name}
+        {label ?? job.name}
       </span>
       {(job.status === 'completed' || running) && job.conclusion !== 'skipped' && <Duration start={job.started_at} end={job.completed_at} running={running} />}
     </>

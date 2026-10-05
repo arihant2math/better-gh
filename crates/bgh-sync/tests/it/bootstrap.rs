@@ -150,6 +150,7 @@ async fn bootstrap_shapes_of_every_model() {
             "name",
             "description",
             "private",
+            "visibility",
             "fork",
             "archived",
             "defaultBranch",

@@ -505,9 +505,11 @@ pub async fn readable_repos(
     let only_ids = (!all).then_some(selected.as_slice());
     let private_ids =
         crate::perms::private_readable_ids(db, auth.user.id, &[], Some(owner), only_ids).await?;
+    // Internal repositories count only when covered (explicit ids).
     Ok(crate::perms::ReadableRepos {
         all: false,
         private_ids,
+        internal: false,
     })
 }
 

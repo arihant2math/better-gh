@@ -209,7 +209,7 @@ pub async fn load_run(state: &AppState, access: &RepoAccess, run_id: i64) -> Api
 pub async fn load_job(state: &AppState, access: &RepoAccess, job_id: i64) -> ApiResult<JobRow> {
     JobRow::find(&state.db, job_id)
         .await?
-        .filter(|j| j.repo_id == access.repo.id)
+        .filter(|j| j.repo_id == access.repo.id && !j.is_call())
         .ok_or(ApiError::NotFound)
 }
 
@@ -239,7 +239,8 @@ pub async fn get_attempt(
     if attempt < run.run_attempt {
         // Reconstruct the attempt's status from its jobs.
         let rows: Vec<(Option<String>,)> = sqlx::query_as(
-            "SELECT conclusion FROM actions_jobs WHERE run_id = $1 AND run_attempt = $2",
+            "SELECT conclusion FROM actions_jobs
+              WHERE run_id = $1 AND run_attempt = $2 AND kind = 'job'",
         )
         .bind(run.id)
         .bind(attempt)
@@ -429,14 +430,16 @@ async fn list_jobs_inner(
 ) -> ApiResult<Response> {
     let attempt_filter = attempt;
     let total: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM actions_jobs WHERE run_id = $1 AND ($2::int IS NULL OR run_attempt = $2)",
+        "SELECT count(*) FROM actions_jobs
+          WHERE run_id = $1 AND ($2::int IS NULL OR run_attempt = $2) AND kind = 'job'",
     )
     .bind(run.id)
     .bind(attempt_filter)
     .fetch_one(&state.db)
     .await?;
     let rows: Vec<JobRow> = sqlx::query_as(&format!(
-        "SELECT {} FROM actions_jobs WHERE run_id = $1 AND ($2::int IS NULL OR run_attempt = $2)
+        "SELECT {} FROM actions_jobs
+          WHERE run_id = $1 AND ($2::int IS NULL OR run_attempt = $2) AND kind = 'job'
           ORDER BY run_attempt DESC, id LIMIT $3 OFFSET $4",
         JobRow::COLUMNS
     ))
@@ -600,7 +603,8 @@ pub async fn build_run_logs_zip(
     attempt: i32,
 ) -> anyhow::Result<Vec<u8>> {
     let jobs: Vec<JobRow> = sqlx::query_as(&format!(
-        "SELECT {} FROM actions_jobs WHERE run_id = $1 AND run_attempt = $2 ORDER BY id",
+        "SELECT {} FROM actions_jobs
+          WHERE run_id = $1 AND run_attempt = $2 AND kind = 'job' ORDER BY id",
         JobRow::COLUMNS
     ))
     .bind(run_id)
