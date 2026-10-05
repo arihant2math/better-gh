@@ -65,6 +65,10 @@ migrations (range 1700–1799 unused).
   (`PUT|DELETE /orgs/{org}/public_members/{me}`), Leave
   (`DELETE /orgs/{org}/memberships/{me}`, type-to-confirm; disabled with
   a reason for the sole owner), pending org invitations.
+* Bundle: all new UI is lazy route chunks (`OrgInvitationPage`,
+  `RepoInvitationPage`, `OrganizationSettings`; the banner lives in the
+  dashboard chunk); the initial bundle only gains three route-table
+  entries (143.0 KB gzip after the last integration merge).
 * API wrappers: `src/api/invitations.ts`; pure helpers
   `pages/invitations/model.ts`.
 * Mock: `src/mock/extra/invitations.ts` (seeded `initech` org invitation
