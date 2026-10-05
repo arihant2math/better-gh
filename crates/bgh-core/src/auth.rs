@@ -445,6 +445,35 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> ApiResult<Option<AuthCo
     Ok(ctx)
 }
 
+/// Resolve the caller of a full request from middleware, caching the result
+/// for the extractors that run later.
+pub async fn resolve_request(
+    state: &AppState,
+    req: &mut Request,
+) -> ApiResult<Option<AuthContext>> {
+    if let Some(Resolved(ctx)) = req.extensions().get::<Resolved>() {
+        return Ok(ctx.clone());
+    }
+    let ctx = authenticate(state, req.headers(), AuthOptions::default()).await?;
+    if let (Some(ctx), Some(slot)) = (&ctx, req.extensions().get::<AuthSlot>()) {
+        let _ = slot.0.set(ctx.clone());
+    }
+    req.extensions_mut().insert(Resolved(ctx.clone()));
+    Ok(ctx)
+}
+
+/// Client IP: first `X-Forwarded-For` hop, else `X-Real-IP`.
+pub fn client_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// Optional authentication: `MaybeUser(None)` for anonymous callers.
 /// Bad credentials still fail with 401.
 #[derive(Debug, Clone)]

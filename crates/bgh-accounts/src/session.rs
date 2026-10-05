@@ -3,9 +3,11 @@
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use bgh_core::audit;
 use bgh_core::auth;
 use bgh_core::prelude::*;
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::users::{self, NewAccount};
 
@@ -73,6 +75,7 @@ pub async fn signup(
     if !state.config.signup_enabled {
         return Err(ApiError::forbidden("Sign up is disabled on this instance."));
     }
+    bgh_core::settings::check_signup(&state, body.email.trim()).await?;
     let user = users::create_user(
         &state,
         NewAccount {
@@ -97,19 +100,62 @@ pub async fn login(
     if body.login.is_empty() || body.password.is_empty() {
         return Err(ApiError::bad_credentials());
     }
-    let user = auth::verify_login(&state, body.login.trim(), &body.password)
-        .await?
-        .ok_or_else(ApiError::bad_credentials)?;
+    let ip = auth::client_ip(&headers);
+    let Some(user) = auth::verify_login(&state, body.login.trim(), &body.password).await? else {
+        audit::log_with_ip(
+            &state.db,
+            None,
+            "user.failed_login",
+            audit::Target::None,
+            json!({ "login": body.login.trim() }),
+            ip.as_deref(),
+        )
+        .await?;
+        return Err(ApiError::bad_credentials());
+    };
     if user.is_suspended() {
+        audit::log_with_ip(
+            &state.db,
+            Some(&user),
+            "user.failed_login",
+            audit::Target::User(user.id),
+            json!({ "reason": "suspended" }),
+            ip.as_deref(),
+        )
+        .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
+    audit::log_with_ip(
+        &state.db,
+        Some(&user),
+        "user.login",
+        audit::Target::User(user.id),
+        json!({}),
+        ip.as_deref(),
+    )
+    .await?;
     start_session(&state, &headers, &user, StatusCode::OK).await
 }
 
 /// `DELETE /_bgh/session` → 204, clears the cookie.
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let caller = auth::authenticate(&state, &headers, Default::default())
+        .await
+        .ok()
+        .flatten();
     if let Some(token) = auth::cookie(&headers, auth::SESSION_COOKIE) {
         auth::destroy_session(&state, &token).await?;
+    }
+    if let Some(ctx) = &caller {
+        audit::log_with_ip(
+            &state.db,
+            Some(&ctx.user),
+            "user.logout",
+            audit::Target::User(ctx.user.id),
+            json!({}),
+            auth::client_ip(&headers).as_deref(),
+        )
+        .await?;
     }
     Ok((
         StatusCode::NO_CONTENT,

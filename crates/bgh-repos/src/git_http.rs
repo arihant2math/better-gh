@@ -123,6 +123,7 @@ pub async fn receive_pack(
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;
     let pusher = auth.ok_or_else(|| challenge("Authentication required."))?;
+    bgh_core::settings::check_push_quota(&state, &access.repo).await?;
     let rules = protection::load_rules(&state, access.repo.id).await?;
 
     let outcome = smart_http::receive_pack(
