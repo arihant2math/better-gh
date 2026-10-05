@@ -76,7 +76,10 @@ pub async fn handler(
         let mut s = Socket { ws: socket };
         match auth {
             None => s.close(CLOSE_UNAUTHENTICATED, "unauthenticated").await,
-            Some(auth) => session(state, Arc::new(auth), q.v, s).await,
+            Some(auth) => {
+                let _open = bgh_core::observability::ws_connected();
+                session(state, Arc::new(auth), q.v, s).await
+            }
         }
     })
 }

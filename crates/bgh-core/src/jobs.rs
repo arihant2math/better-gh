@@ -175,6 +175,7 @@ pub async fn run_one(
         return Ok(false);
     };
 
+    let started = std::time::Instant::now();
     let result = match registry.get(&job.kind) {
         None => Err(anyhow::anyhow!(
             "no handler registered for job kind {:?}",
@@ -197,11 +198,15 @@ pub async fn run_one(
                 .bind(job.id)
                 .execute(&state.db)
                 .await?;
+            crate::observability::job_finished(&job.kind, "ok", started.elapsed());
             tracing::debug!(job.id, kind = %job.kind, "job done");
         }
         Err(err) => {
             let msg = format!("{err:#}");
-            if job.attempts >= job.max_attempts {
+            let permanent = job.attempts >= job.max_attempts;
+            let outcome = if permanent { "failed" } else { "retry" };
+            crate::observability::job_finished(&job.kind, outcome, started.elapsed());
+            if permanent {
                 tracing::error!(job.id, kind = %job.kind, error = %msg, "job failed permanently");
                 sqlx::query(
                     "UPDATE jobs SET failed_at = now(), locked_at = NULL, locked_by = NULL,

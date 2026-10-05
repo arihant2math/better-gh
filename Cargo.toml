@@ -77,7 +77,15 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+# observability (P61): metrics facade + Prometheus text exporter (no HTTP server)
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
+# optional OTLP trace export (`bgh-server --features otlp`)
+opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+tracing-opentelemetry = { version = "0.32", default-features = false }
 uuid = { version = "1", features = ["v4", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 

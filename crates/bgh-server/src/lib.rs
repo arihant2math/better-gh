@@ -4,6 +4,8 @@
 //!
 //! Routing layout:
 //! * `/healthz`
+//! * `/metrics`: Prometheus metrics, only with `BGH_METRICS_TOKEN` (see
+//!   [`telemetry`]; or on the separate `BGH_METRICS_LISTEN` listener)
 //! * `/api/v3/...`: each crate's `router()` nested here (JSON 404 fallback
 //!   for unknown paths and wrong methods, ETag/Last-Modified/304 inside the
 //!   rate limiter, `X-GitHub-Media-Type`, CORS)
@@ -17,6 +19,7 @@
 
 pub mod embedded;
 mod serve;
+pub mod telemetry;
 mod web;
 
 use std::time::Duration;
@@ -109,7 +112,9 @@ fn web_routes() -> Router<AppState> {
 
 /// Build the complete application router.
 pub fn app(state: AppState) -> Router {
+    telemetry::install();
     let api = api_routes()
+        .route_layer(middleware::from_fn(telemetry::route_label))
         .fallback(api_not_found)
         // A known path with the wrong method is a JSON 404, like GitHub
         // (not axum's empty 405).
@@ -135,6 +140,7 @@ pub fn app(state: AppState) -> Router {
     let web_files = WebFiles::new(state.config.web_dir.clone());
     let shell_state = state.clone();
     let spa_files = web_files.clone();
+    let span_config = state.config.clone();
 
     // Don't spend CPU compressing git packs (already compressed) or tiny bodies.
     let compress_when = DefaultPredicate::new()
@@ -150,9 +156,11 @@ pub fn app(state: AppState) -> Router {
 
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/metrics", get(telemetry::metrics_main))
         .nest("/api/v3", api)
         .merge(web_routes())
         .route("/_bgh/{*rest}", any(api_not_found))
+        .route_layer(middleware::from_fn(telemetry::route_label))
         .fallback(move |mut req: Request| {
             let web_files = web_files.clone();
             let state = shell_state.clone();
@@ -207,9 +215,10 @@ pub fn app(state: AppState) -> Router {
         .layer(
             TraceLayer::new_for_http()
                 .on_response(DefaultOnResponse::new().level(tracing::Level::INFO))
-                .make_span_with(request_span),
+                .make_span_with(move |req: &Request<Body>| request_span(&span_config, req)),
         )
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+        .layer(middleware::from_fn(telemetry::http_metrics))
         .with_state(state)
 }
 
@@ -228,18 +237,25 @@ pub async fn test_app() -> bgh_core::testing::TestApp {
     bgh_core::testing::TestApp::spawn_with(factory()).await
 }
 
-/// Tracing span per request, tagged with the `x-request-id`.
-fn request_span(req: &Request<Body>) -> tracing::Span {
+/// Tracing span per request, tagged with the `x-request-id` and the client
+/// IP (`BGH_TRUST_PROXY` aware). Authentication records `user_id`,
+/// `token_id` and `auth_method` (see `bgh_core::observability`).
+fn request_span(config: &bgh_core::Config, req: &Request<Body>) -> tracing::Span {
     let request_id = req
         .headers()
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("-");
+    let client_ip = bgh_core::auth::client_ip(config, req.headers(), req.extensions());
     tracing::info_span!(
         "http",
         method = %req.method(),
         path = %req.uri().path(),
-        request_id
+        request_id,
+        client_ip,
+        user_id = tracing::field::Empty,
+        token_id = tracing::field::Empty,
+        auth_method = tracing::field::Empty,
     )
 }
 

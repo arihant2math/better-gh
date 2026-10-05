@@ -228,6 +228,7 @@ pub async fn signal_signed_out(state: &AppState, user_id: i64, session_id: Optio
         .query_async(&mut conn)
         .await;
     if let Err(err) = res {
+        crate::observability::redis_error("sync_publish");
         tracing::warn!(?err, "publishing sync sign-out");
     }
 }
@@ -257,6 +258,7 @@ pub async fn notify(state: &AppState, records: &[SyncRecord]) {
     }
     let mut conn = state.redis.clone();
     if let Err(err) = pipe.query_async::<()>(&mut conn).await {
+        crate::observability::redis_error("sync_publish");
         tracing::warn!(?err, "publishing sync records to redis");
     }
 }
