@@ -247,6 +247,18 @@ and octokit-style raw requests.
   without a query (`apps::effective_cap`) and `token_permissions` checks
   categories. They work for git (`x-access-token:<token>`, `contents`
   required) and get a rate-limit bucket per installation.
+  P46 adds user-to-server tokens (`bghu_…`, 8 h, kind `app` owned by the
+  user with `github_app_id`; single-use `bghr_…` refresh tokens) issued by
+  the OAuth endpoints for a GitHub App's client id and secret: the user
+  capped to the app's installations and permissions
+  (`apps::user_to_server_cap`). An app's webhook gets the events its
+  installations subscribed to (`webhook_deliveries.app_id`, payload with
+  `installation`) plus `installation` / `installation_repositories`;
+  check suites created with app credentials belong to the app
+  (`check_suites.app_id`; built-in Actions is app 15368, real app ids are
+  above it). Manifest flow: `POST /settings/apps/new` →
+  `/app-manifests/{code}/conversions`. Details:
+  `docs/packages/p46-github-apps-2.md`.
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations

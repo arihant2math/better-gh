@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { getAppHook, getHookDelivery, listHookDeliveries, redeliverHook, updateApp, type AppDetail, type HookDelivery } from '../../api/apps';
-import { invalidate, useResource } from '../../api/cache';
+import { refresh, useResource } from '../../api/cache';
 import { apiFieldErrors, Banner, ButtonRow, Checkbox, FormStack, ItemList, ItemRow, Pill, Section } from '../../components/settings/kit';
 import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
@@ -42,7 +42,7 @@ function DeliverySettings({ app, onUpdated }: { app: AppDetail; onUpdated: (a: A
         webhook_content_type: contentType,
         webhook_insecure_ssl: insecure,
       });
-      invalidate(hookKey(app.slug));
+      void refresh(hookKey(app.slug), () => getAppHook(app.slug));
       onUpdated(updated);
       toast({ kind: 'success', title: 'Webhook settings saved' });
     } catch (e) {
@@ -106,9 +106,9 @@ function Deliveries({ slug, hasUrl }: { slug: string; hasUrl: boolean }) {
   const [filter, setFilter] = useState<'' | 'success' | 'failure'>('');
   const res = useResource(deliveriesKey(slug, filter), () => listHookDeliveries(slug, filter || undefined));
   const [open, setOpen] = useState<number | null>(null);
-  const refresh = () => {
-    invalidate(deliveriesKey(slug, filter));
-    invalidate(hookKey(slug));
+  const reload = () => {
+    void refresh(deliveriesKey(slug, filter), () => listHookDeliveries(slug, filter || undefined));
+    void refresh(hookKey(slug), () => getAppHook(slug));
   };
   return (
     <Section
@@ -121,7 +121,7 @@ function Deliveries({ slug, hasUrl }: { slug: string; hasUrl: boolean }) {
             <option value="success">Succeeded</option>
             <option value="failure">Failed</option>
           </Select>
-          <Button size="sm" leadingIcon={SyncIcon} onClick={refresh}>
+          <Button size="sm" leadingIcon={SyncIcon} onClick={reload}>
             Refresh
           </Button>
         </ButtonRow>
@@ -151,7 +151,7 @@ function Deliveries({ slug, hasUrl }: { slug: string; hasUrl: boolean }) {
                 </span>
               }
             >
-              {open === d.id && <DeliveryDetail slug={slug} id={d.id} onRedelivered={refresh} />}
+              {open === d.id && <DeliveryDetail slug={slug} id={d.id} onRedelivered={reload} />}
             </ItemRow>
           ))}
         </ItemList>

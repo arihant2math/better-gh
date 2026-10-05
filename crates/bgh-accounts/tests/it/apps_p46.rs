@@ -625,3 +625,40 @@ async fn permission_upgrade_mails_account_admins() {
     assert_eq!(res["permissions_outdated"], true);
     assert_eq!(res["installation"]["permissions"]["contents"], "read");
 }
+
+/// PyGithub mints installation tokens with `{"permissions": {}}`: an empty
+/// map narrows nothing (GitHub's behaviour).
+#[tokio::test]
+async fn empty_permission_map_narrows_nothing() {
+    let fx = fixture().await;
+    let app = &fx.app;
+    let res = app
+        .post("/_bgh/apps/user-bot/keys")
+        .cookie(&fx.cookie)
+        .send()
+        .await;
+    let pem = res.json()["pem"].as_str().unwrap().to_string();
+    let app_id = app
+        .get("/_bgh/apps/user-bot")
+        .cookie(&fx.cookie)
+        .send()
+        .await
+        .json()["id"]
+        .as_i64()
+        .unwrap();
+    let jwt = bgh_core::apps::sign_jwt(&pem, &json!(app_id), now() - 30, now() + 540).unwrap();
+    let res = app
+        .post(&format!(
+            "/api/v3/app/installations/{}/access_tokens",
+            fx.inst
+        ))
+        .header("authorization", &format!("Bearer {jwt}"))
+        .json(&json!({"permissions": {}}))
+        .send()
+        .await;
+    res.assert_status(201);
+    assert_eq!(
+        res.json()["permissions"],
+        json!({"contents": "read", "issues": "write", "metadata": "read"})
+    );
+}

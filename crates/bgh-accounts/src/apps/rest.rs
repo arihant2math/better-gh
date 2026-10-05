@@ -289,7 +289,8 @@ pub async fn create_access_token(
     };
     // Permissions.
     let granted = &inst.permissions.0;
-    let permissions = match body.permissions {
+    // An empty map (PyGithub's default) narrows nothing, like GitHub.
+    let permissions = match body.permissions.filter(|p| !p.is_empty()) {
         Some(requested) => {
             let mut out = BTreeMap::new();
             for (k, v) in requested {
