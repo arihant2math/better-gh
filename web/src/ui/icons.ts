@@ -35,6 +35,7 @@ export {
   GraphIcon,
   HomeIcon,
   InboxIcon,
+  InfoIcon,
   IssueClosedIcon,
   IssueOpenedIcon,
   IssueReopenedIcon,
