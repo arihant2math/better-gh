@@ -2,11 +2,12 @@ import { observer } from 'mobx-react-lite';
 import { invalidate, useResource } from '../../api/cache';
 import { getAccount, profileKeys } from '../../api/profile';
 import { NotFound } from '../../app/NotFound';
-import { useReducer } from 'react';
-import { useParams } from '../../router';
+import { useEffect, useReducer } from 'react';
+import { navigate, useParams } from '../../router';
 import { orgByLogin, userByLogin } from '../../sync/selectors';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { canonicalAccountUrl } from './canonical';
 import { OrgProfile } from './OrgProfile';
 import styles from './ProfilePage.module.css';
 import { UserProfile } from './UserProfile';
@@ -23,10 +24,16 @@ export default observer(function ProfilePage() {
   const [, retry] = useReducer((x: number) => x + 1, 0);
   // Unknown to the store: ask the server what it is (shared with UserProfile's header).
   const account = useResource(known ? null : profileKeys.account(owner), () => getAccount(owner));
+  const a = account.data;
+  // A renamed account: `GET /users/{old}` follows the 301 to the current login; show the canonical URL.
+  useEffect(() => {
+    if (!a) return;
+    const to = canonicalAccountUrl(window.location, owner, a.login);
+    if (to) navigate(to, { replace: true });
+  }, [a, owner]);
 
   if (org) return <OrgProfile key={org.login} login={org.login} synced={org} />;
   if (user) return <UserProfile key={user.login} login={user.login} synced={user} />;
-  const a = account.data;
   if (a?.type === 'Organization') return <OrgProfile key={a.login} login={a.login} synced={undefined} />;
   if (a) return <UserProfile key={a.login} login={a.login} synced={undefined} />;
   if (account.error) {

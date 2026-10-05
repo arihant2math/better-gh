@@ -474,3 +474,25 @@
 .okIcon {
   color: var(--success);
 }
+
+/* Account lifecycle dialogs (rename, delete). */
+.dialogStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-width: 520px;
+}
+
+.warnList {
+  margin: var(--sp-1) 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Transfer request linked from an email (`?id=`). */
+.highlightRow {
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 0 var(--accent);
+}

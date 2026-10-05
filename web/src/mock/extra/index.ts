@@ -13,6 +13,7 @@ import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
 import { installLicenseMocks } from './licenses';
+import { installLifecycleMocks } from './lifecycle';
 import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
@@ -41,4 +42,6 @@ export function installExtraMocks(server: MockServer): void {
   installInsightsMocks(server);
   installAppsMocks(server);
   installRunnerMocks(server);
+  // Last: its overrides (rename, transfer to a user, delete snapshots) run before the routes above.
+  installLifecycleMocks(server);
 }
