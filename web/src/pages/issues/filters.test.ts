@@ -70,3 +70,27 @@ describe('issue query language', () => {
     expect(applyFilter(issues, parseQuery('no:label'), ctx).items.map((i) => i.number)).toEqual([3]);
   });
 });
+
+describe('issue types and dependencies (P41)', () => {
+  const items = [
+    issue(1, { issueType: { id: 1, name: 'Bug', color: 'red' }, openBlockedBy: 1, blockedByIds: [2] }),
+    issue(2, { blockingIds: [1] }),
+    issue(3, { issueType: { id: 2, name: 'Feature', color: 'blue' }, openBlockedBy: 0, blockedByIds: [9] }),
+  ];
+  const numbers = (q: string) => applyFilter(items, parseQuery(q), ctx).items.map((i) => i.number);
+
+  it('filters by type, no:type, is:blocked and is:blocking', () => {
+    expect(numbers('type:bug')).toEqual([1]);
+    expect(numbers('type:"Feature"')).toEqual([3]);
+    expect(numbers('no:type')).toEqual([2]);
+    expect(numbers('is:blocked')).toEqual([1]);
+    expect(numbers('is:blocking')).toEqual([2]);
+    expect(numbers('type:issue')).toEqual([3, 2, 1]);
+  });
+
+  it('round-trips the new qualifiers', () => {
+    const f = parseQuery('is:open is:blocked type:Bug no:type');
+    expect(f).toMatchObject({ blocked: true, type: 'Bug', no: ['type'] });
+    expect(serializeQuery(f)).toBe('is:open is:blocked type:Bug no:type');
+  });
+});

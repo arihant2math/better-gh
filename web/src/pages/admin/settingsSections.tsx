@@ -489,6 +489,12 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         label="Password sign-in"
         description="Built-in username and password login, on the web and for Git over HTTPS. Turn off to require LDAP or single sign-on; personal access tokens keep working."
       />
+      <Switch
+        checked={value.require_2fa}
+        onChange={(require_2fa) => onChange({ require_2fa })}
+        label="Require two-factor authentication"
+        description="Every account must set up two-factor authentication before using the site in a browser (tokens keep working). Enable 2FA on your own account first."
+      />
       {!value.password_login && (
         <Switch
           checked={value.password_login_admin_exempt}

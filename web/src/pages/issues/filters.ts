@@ -3,6 +3,7 @@
  *
  *   is:open label:bug -label:wontfix author:grace assignee:@me
  *   milestone:"v1.0" no:assignee sort:updated-desc review:approved  free text #123
+ *   type:Bug no:type is:blocked is:blocking
  */
 import type { ID, Issue } from '../../sync/models';
 
@@ -18,7 +19,11 @@ export interface IssueFilter {
   assignee?: string;
   reviewRequested?: string;
   milestone?: string;
-  no: ('label' | 'assignee' | 'milestone')[];
+  /** Issue type name (`type:Bug`; `type:issue` / `type:pr` are ignored). */
+  type?: string;
+  blocked?: boolean;
+  blocking?: boolean;
+  no: ('label' | 'assignee' | 'milestone' | 'type')[];
   review?: 'approved' | 'changes_requested' | 'required';
   sort: SortKey;
   text: string;
@@ -68,6 +73,8 @@ export function parseQuery(q: string): IssueFilter {
           sawState = true;
         } else if (v === 'unmerged') f.merged = false;
         else if (v === 'draft') f.draft = true;
+        else if (v === 'blocked' && key === 'is') f.blocked = true;
+        else if (v === 'blocking' && key === 'is') f.blocking = true;
         else if (v === 'all') {
           f.state = 'all';
           sawState = true;
@@ -91,8 +98,11 @@ export function parseQuery(q: string): IssueFilter {
       case 'milestone':
         f.milestone = value;
         break;
+      case 'type':
+        if (v !== 'issue' && v !== 'pr' && v !== 'pull-request') f.type = value;
+        break;
       case 'no':
-        if (v === 'label' || v === 'assignee' || v === 'milestone') f.no.push(v);
+        if (v === 'label' || v === 'assignee' || v === 'milestone' || v === 'type') f.no.push(v);
         break;
       case 'review':
         if (v === 'approved' || v === 'changes_requested' || v === 'required') f.review = v;
@@ -118,12 +128,15 @@ export function serializeQuery(f: IssueFilter): string {
   else parts.push('is:all');
   if (f.merged === false) parts.push('is:unmerged');
   if (f.draft) parts.push('is:draft');
+  if (f.blocked) parts.push('is:blocked');
+  if (f.blocking) parts.push('is:blocking');
   f.labels.forEach((l) => parts.push(`label:${quote(l)}`));
   f.excludeLabels.forEach((l) => parts.push(`-label:${quote(l)}`));
   if (f.author) parts.push(`author:${f.author}`);
   if (f.assignee) parts.push(`assignee:${f.assignee}`);
   if (f.reviewRequested) parts.push(`review-requested:${f.reviewRequested}`);
   if (f.milestone) parts.push(`milestone:${quote(f.milestone)}`);
+  if (f.type) parts.push(`type:${quote(f.type)}`);
   f.no.forEach((n) => parts.push(`no:${n}`));
   if (f.review) parts.push(`review:${f.review}`);
   if (f.sort !== 'created-desc') parts.push(`sort:${f.sort}`);
@@ -166,6 +179,10 @@ export function matchesIgnoringState(i: Issue, f: IssueFilter, ctx: FilterContex
   if (f.no.includes('label') && i.labelIds.length) return false;
   if (f.no.includes('assignee') && i.assigneeIds.length) return false;
   if (f.no.includes('milestone') && i.milestoneId != null) return false;
+  if (f.no.includes('type') && i.issueType) return false;
+  if (f.type && i.issueType?.name.toLowerCase() !== f.type.toLowerCase()) return false;
+  if (f.blocked && !((i.openBlockedBy ?? 0) > 0)) return false;
+  if (f.blocking && !(i.blockingIds ?? []).length) return false;
   if (f.review) {
     const d = i.reviewDecision ?? null;
     if (f.review === 'required' ? d !== 'review_required' : d !== f.review) return false;

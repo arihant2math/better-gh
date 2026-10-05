@@ -192,6 +192,11 @@ pub fn app(state: AppState) -> Router {
             state.clone(),
             bgh_sync::http_middleware,
         ))
+        // Site-wide 2FA requirement for browser sessions (P36).
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_accounts::security::require_two_factor_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bgh_core::privacy::private_mode_middleware,

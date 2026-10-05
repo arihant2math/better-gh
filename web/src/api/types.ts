@@ -37,6 +37,7 @@ export interface RestCommit {
     committer: { name: string; date: string };
   };
   author: RestUser | null;
+  parents?: { sha: string }[];
 }
 
 /** `GET /_bgh/repos/{o}/{r}/pulls/{n}/requirements` (merge box data). */
@@ -138,6 +139,41 @@ export interface HighlightedBlob {
   language: string;
   /** One HTML string per line, using `hl-*` classes. */
   lines: string[];
+}
+
+/** `GET /_bgh/repos/{o}/{r}/blob-lines/{commitish}?path=` (diff viewer, P37). */
+export interface BlobLines {
+  /** Commit the path was resolved in (the merge base for `a...b`). */
+  commit: string;
+  path: string;
+  /** Blob SHA. */
+  sha: string;
+  size: number;
+  binary: boolean;
+  image: boolean;
+  mime: string;
+  total_lines: number;
+  start: number;
+  end: number;
+  lines: string[] | null;
+  html: string[] | null;
+  language: string | null;
+  raw_url: string;
+}
+
+/** `GET /_bgh/repos/{o}/{r}/commits/{sha}/annotations` entry (diff viewer, P37). */
+export interface CommitAnnotation {
+  check_run_id: number;
+  check_run_name: string;
+  path: string;
+  start_line: number;
+  end_line: number;
+  start_column: number | null;
+  end_column: number | null;
+  annotation_level: 'notice' | 'warning' | 'failure';
+  title: string | null;
+  message: string;
+  raw_details: string | null;
 }
 
 /** `GET /repos/{o}/{r}/pulls/{n}/files` entry (also compare / commit `files`). */

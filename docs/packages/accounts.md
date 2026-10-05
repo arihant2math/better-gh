@@ -284,11 +284,10 @@ Profile changes record `user` in `user:{id}` and in each org scope
   `/_bgh/oauth/authorize` and `/_bgh/device` JSON endpoints instead and must
   provide `/login`, `/login/two-factor`, `/password_reset/{token}` and
   `/settings/emails/verify`.
-- TOTP secrets are stored in plaintext; there is no server secret key to
-  encrypt them yet.
-- Org-level enforcement of `two_factor_requirement_enabled` is not
-  implemented. The `DELETE /orgs/{org}` endpoint is left to admin (B7),
-  because it needs repo storage cleanup.
+- TOTP secrets are encrypted at rest with the server key, and
+  `two_factor_requirement_enabled` is enforced (P36, see
+  `docs/packages/p36-account-security.md`). The `DELETE /orgs/{org}`
+  endpoint is left to admin (B7), because it needs repo storage cleanup.
 - `GET /api/v3/` (trailing slash) is mounted as an absolute web route; it
   is rate limited by `ratelimit::root_middleware`.
 - `auth_providers.password_login` is enforced since P14 (see

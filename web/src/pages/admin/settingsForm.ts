@@ -86,6 +86,8 @@ export interface AuthForm {
   password_login_admin_exempt: boolean;
   oidc: OidcForm[];
   ldap: LdapForm;
+  /** Every account must use 2FA (P36). */
+  require_2fa: boolean;
 }
 
 export interface SettingsForm {
@@ -234,6 +236,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       password_login_admin_exempt: s.auth_providers.password_login_admin_exempt,
       oidc: s.auth_providers.oidc.map(oidcToForm),
       ldap: ldapToForm(s.auth_providers.ldap),
+      require_2fa: s.auth_providers.require_2fa ?? false,
     },
     smtp: {
       enabled: s.smtp.enabled,
@@ -444,6 +447,7 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
       case 'auth_providers':
         out.auth_providers = {
           password_login: f.auth_providers.password_login,
+          require_2fa: f.auth_providers.require_2fa,
           password_login_admin_exempt: f.auth_providers.password_login_admin_exempt,
           ldap: ldapValue(f.auth_providers.ldap),
           oidc: f.auth_providers.oidc.map((p) => ({

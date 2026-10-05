@@ -557,6 +557,62 @@ pub mod templates {
             &format!("You received this email because @{inviter} invited you to {full_name}."),
         )
     }
+
+    /// A personal access token expires soon (sent 7 days and 1 day before).
+    pub fn token_expiring(
+        site: &str,
+        to: &str,
+        login: &str,
+        token_name: &str,
+        expires: &str,
+        url: &str,
+    ) -> Email {
+        let name = if token_name.is_empty() {
+            "(unnamed)"
+        } else {
+            token_name
+        };
+        simple(
+            site,
+            to,
+            login,
+            format!("[{site}] Your personal access token \"{name}\" is about to expire"),
+            &[
+                format!("Your personal access token \"{name}\" expires on {expires}."),
+                "If the token is still needed, generate a new one to replace it.".to_string(),
+            ],
+            Some((url, "Regenerate token")),
+            &format!("You received this security notice for your {site} account."),
+        )
+    }
+
+    /// Removed from an organization that now requires two-factor auth.
+    pub fn org_two_factor_removed(
+        site: &str,
+        to: &str,
+        login: &str,
+        org: &str,
+        url: &str,
+    ) -> Email {
+        simple(
+            site,
+            to,
+            login,
+            format!("[{site}] You were removed from the @{org} organization"),
+            &[
+                format!(
+                    "The @{org} organization now requires two-factor authentication, and your account doesn't have it enabled, so you were removed."
+                ),
+                format!(
+                    "Enable two-factor authentication and ask an owner of @{org} to invite you again: your previous access is reinstated when you rejoin."
+                ),
+            ],
+            Some((url, "Enable two-factor authentication")),
+            &format!(
+                "You received this email because you were a member or collaborator of @{org}."
+            ),
+        )
+    }
 }
 
 #[cfg(test)]

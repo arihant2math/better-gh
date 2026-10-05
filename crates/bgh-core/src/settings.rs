@@ -376,6 +376,9 @@ pub struct AuthProviderSettings {
     pub password_login_admin_exempt: bool,
     pub oidc: Vec<OidcProvider>,
     pub ldap: LdapSettings,
+    /// Every user must enable two-factor authentication: signed-in browser
+    /// sessions without it are sent to set it up (P36; tokens unaffected).
+    pub require_2fa: bool,
 }
 
 impl Default for AuthProviderSettings {
@@ -385,6 +388,7 @@ impl Default for AuthProviderSettings {
             password_login_admin_exempt: false,
             oidc: Vec::new(),
             ldap: LdapSettings::default(),
+            require_2fa: false,
         }
     }
 }
@@ -1049,6 +1053,7 @@ pub fn public_info(state: &AppState, s: &SiteSettings) -> Value {
         "password_login": s.auth_providers.password_login,
         "password_login_admin_exempt": s.auth_providers.password_login_admin_exempt,
         "ldap": s.auth_providers.ldap.enabled,
+        "require_2fa": s.auth_providers.require_2fa,
         "private_mode": s.privacy.private_mode,
         "repository_visibilities": {
             "allowed": s.privacy.allowed_visibilities,

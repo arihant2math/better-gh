@@ -80,6 +80,10 @@ pub struct Loaders {
     pub users_by_email: DataLoader<crate::model::git::UserByEmailLoader>,
     pub repo_extra: DataLoader<RepoExtraLoader>,
     pub pinned: DataLoader<PinnedLoader>,
+    pub issue_types: DataLoader<crate::model::issue_type::IssueTypeLoader>,
+    pub issue_deps: DataLoader<crate::model::issue_type::DependencySummaryLoader>,
+    pub minimized: DataLoader<crate::model::moderation::MinimizedLoader>,
+    pub content_edits: DataLoader<crate::model::moderation::ContentEditsLoader>,
 }
 
 impl Loaders {
@@ -127,6 +131,22 @@ impl Loaders {
             ),
             repo_extra: DataLoader::new(RepoExtraLoader { state: s(), viewer }, tokio::spawn),
             pinned: DataLoader::new(PinnedLoader(s()), tokio::spawn),
+            issue_types: DataLoader::new(
+                crate::model::issue_type::IssueTypeLoader(s()),
+                tokio::spawn,
+            ),
+            issue_deps: DataLoader::new(
+                crate::model::issue_type::DependencySummaryLoader(s()),
+                tokio::spawn,
+            ),
+            minimized: DataLoader::new(
+                crate::model::moderation::MinimizedLoader(s()),
+                tokio::spawn,
+            ),
+            content_edits: DataLoader::new(
+                crate::model::moderation::ContentEditsLoader(s()),
+                tokio::spawn,
+            ),
         }
     }
 }

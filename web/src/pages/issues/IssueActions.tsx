@@ -1,16 +1,18 @@
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { useCommands } from '../../app/commands';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { Link, navigate } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Issue, Repo } from '../../sync/models';
+import { canAdmin, deleteIssue } from '../../sync/moderation';
 import { lockIssue, removeSubIssue, setPinned, transferIssue, unlockIssue, type LockReason } from '../../sync/mutations';
 import { canPush, canTriage, pinnedIssues, reposForOwner } from '../../sync/selectors';
 import { StateIcon } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
-import { ArrowSwitchIcon, IssueTrackedByIcon, LockIcon, PinIcon, PinSlashIcon, RepoIcon, UnlockIcon, XIcon } from '../../ui/icons';
+import { ArrowSwitchIcon, IssueTrackedByIcon, LockIcon, PinIcon, PinSlashIcon, RepoIcon, TrashIcon, UnlockIcon, XIcon } from '../../ui/icons';
 import { Field, Select } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
 import styles from './IssueView.module.css';
@@ -25,9 +27,18 @@ const LOCK_REASONS: { value: LockReason | ''; label: string }[] = [
 
 /** Parent issue + lock / pin / transfer actions in the issue sidebar. */
 export const IssueActions = observer(function IssueActions({ issue, repo }: { issue: Issue; repo: Repo }) {
-  const [dialog, setDialog] = useState<null | 'lock' | 'transfer'>(null);
+  const [dialog, setDialog] = useState<null | 'lock' | 'transfer' | 'delete'>(null);
   const triage = canTriage(repo.id);
   const push = canPush(repo.id);
+  const admin = canAdmin(repo.id) && !issue.isPr;
+  const removeIssue = () => {
+    const { done } = deleteIssue(issue);
+    navigate(`/${repo.owner}/${repo.name}/issues`, { replace: true });
+    done.then(
+      () => toast({ kind: 'success', title: `Deleted #${issue.number}` }),
+      () => undefined,
+    );
+  };
   const confirmed = issue.id > 0;
   const parent = issue.parentId != null ? store().get('issue', issue.parentId) : undefined;
   const parentRepo = parent ? store().get('repo', parent.repoId) : undefined;
@@ -51,9 +62,10 @@ export const IssueActions = observer(function IssueActions({ issue, repo }: { is
           ...(triage ? [{ id: 'issue.lock', title: issue.locked ? 'Unlock conversation' : 'Lock conversation…', group: 'Issue', icon: issue.locked ? UnlockIcon : LockIcon, run: toggleLock }] : []),
           ...(push ? [{ id: 'issue.pin', title: issue.pinned ? 'Unpin issue' : 'Pin issue', group: 'Issue', icon: issue.pinned ? PinSlashIcon : PinIcon, run: togglePin }] : []),
           ...(push ? [{ id: 'issue.transfer', title: 'Transfer issue…', group: 'Issue', icon: ArrowSwitchIcon, run: () => setDialog('transfer') }] : []),
+          ...(admin ? [{ id: 'issue.delete', title: 'Delete issue…', group: 'Issue', icon: TrashIcon, run: () => setDialog('delete') }] : []),
         ]
       : [],
-    [confirmed, triage, push, issue.locked, issue.pinned, pinFull],
+    [confirmed, triage, push, admin, issue.locked, issue.pinned, pinFull],
   );
   useShortcuts('Issue', {
     'shift+l': { handler: () => (triage && confirmed ? toggleLock() : false), description: 'Lock / unlock conversation', group: 'Issue' },
@@ -102,11 +114,22 @@ export const IssueActions = observer(function IssueActions({ issue, repo }: { is
                 Transfer issue
               </button>
             )}
+            {admin && (
+              <button type="button" className={`${styles.sideAction} ${styles.sideActionDanger}`} onClick={() => setDialog('delete')}>
+                <TrashIcon size={16} />
+                Delete issue
+              </button>
+            )}
           </div>
         </section>
       )}
       <LockDialog open={dialog === 'lock'} onClose={() => setDialog(null)} issue={issue} />
       <TransferDialog open={dialog === 'transfer'} onClose={() => setDialog(null)} issue={issue} repo={repo} />
+      <ConfirmDialog open={dialog === 'delete'} onClose={() => setDialog(null)} onConfirm={removeIssue} title="Delete issue?" confirmLabel="Delete this issue">
+        <p className={styles.dialogText}>
+          <strong>#{issue.number}</strong> and its comments will be permanently deleted. This can’t be undone; the number won’t be reused.
+        </p>
+      </ConfirmDialog>
     </>
   );
 });

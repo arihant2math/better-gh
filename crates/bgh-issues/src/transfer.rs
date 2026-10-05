@@ -149,6 +149,16 @@ pub async fn transfer(
     .bind(new_repo)
     .fetch_all(&mut *tx)
     .await?;
+    // Edit history of the body and comments moves along.
+    sqlx::query(
+        "UPDATE user_content_edits SET repo_id = $2
+          WHERE (target_type = 'issue' AND target_id = $1)
+             OR (target_type = 'comment' AND target_id IN (SELECT id FROM comments WHERE issue_id = $1))",
+    )
+    .bind(issue.id)
+    .bind(new_repo)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("UPDATE issue_events SET repo_id = $2 WHERE issue_id = $1")
         .bind(issue.id)
         .bind(new_repo)

@@ -1,0 +1,67 @@
+/* P41: issue type chip and the Relationships sidebar section. */
+
+.typeChip {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+.depHeading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+.depList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.depRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+.depLink {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.depLink:hover .depTitle {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.depTitle {
+  font-weight: var(--fw-medium);
+}
+
+.blockedTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--danger);
+}

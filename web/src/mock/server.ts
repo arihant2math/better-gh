@@ -418,7 +418,7 @@ export class MockServer implements Transport {
       if (pw === 'wrong') return { status: 422, body: { message: 'Incorrect username or password.' } };
       if (pw === 'throttle') return { status: 429, body: { message: 'Too many failed login attempts. Please try again later.' } };
       if (pw === '2fa' && ctx.body.otp !== '123456')
-        return { status: 401, body: { message: 'Two-factor authentication required.', twoFactorRequired: true, twoFactorToken: 'mock-2fa-token' } };
+        return { status: 401, body: { message: 'Two-factor authentication required.', twoFactorRequired: true, twoFactorToken: 'mock-2fa-token', twoFactorMethods: ['totp', 'recovery_code'] } };
       this.signedIn = true;
       this.scheduleSave();
       return { status: 200, body: this.boot() };
@@ -571,7 +571,11 @@ export class MockServer implements Transport {
       const r = issueOr404(ctx);
       if (isResp(r)) return r;
       const [repo, pr] = r;
-      return { status: 200, body: this.commits(repo, `pr${pr.id}`, pr.commits ?? 1, Date.parse(pr.createdAt), pr.authorId).reverse() };
+      const list = (this.commits(repo, `pr${pr.id}`, pr.commits ?? 1, Date.parse(pr.createdAt), pr.authorId) as { sha: string; parents?: { sha: string }[] }[]).reverse();
+      // The newest commit is the PR head; each commit's parent is the previous one.
+      if (pr.headSha && list.length) list[list.length - 1]!.sha = pr.headSha;
+      list.forEach((c, i) => (c.parents = i > 0 ? [{ sha: list[i - 1]!.sha }] : []));
+      return { status: 200, body: list };
     });
 
     // ---------------- issue mutations

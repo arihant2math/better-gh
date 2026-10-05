@@ -10,6 +10,7 @@ publish.workspace = true
 bgh-core.workspace = true
 axum.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -27,13 +28,15 @@ flate2.workspace = true
 crc32fast.workspace = true
 reqwest.workspace = true
 url.workspace = true
+uuid.workspace = true
+webauthn-rs.workspace = true
+webauthn-rs-proto.workspace = true
 ldap3.workspace = true
 thiserror.workspace = true
 rustls.workspace = true
 rustls-pki-types.workspace = true
 ldap3_proto = { workspace = true, optional = true }
 futures.workspace = true
-tokio-util.workspace = true
 
 [features]
 # In-process fake LDAP server (`ldap::fake`) for tests of dependent crates.
@@ -52,3 +55,6 @@ serde_json.workspace = true
 axum.workspace = true
 url.workspace = true
 tempfile.workspace = true
+webauthn-rs.workspace = true
+webauthn-authenticator-rs.workspace = true
+webauthn-rs-proto.workspace = true

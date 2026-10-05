@@ -396,9 +396,10 @@ struct ReactionSyncRow {
 /// `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`: every row the pull request
 /// page needs beyond partial sync (review comments incl. the viewer's
 /// pending ones, reviews incl. the viewer's pending one, reactions on the
-/// comments, check suites/runs and commit statuses of the head, referenced
-/// users), read in one `REPEATABLE READ` snapshot whose `lastSyncId` is
-/// taken first, so applying deltas `> lastSyncId` afterwards is safe.
+/// comments, check suites/runs and commit statuses of the head, the
+/// viewer's viewed files, referenced users), read in one `REPEATABLE READ`
+/// snapshot whose `lastSyncId` is taken first, so applying deltas
+/// `> lastSyncId` afterwards is safe.
 pub async fn pull_sync(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -477,6 +478,11 @@ pub async fn pull_sync(
     let runs = load_rows(&mut tx, opts, Model::CheckRun, Filter::Ids(&run_ids)).await?;
     let status_rows =
         load_rows(&mut tx, opts, Model::CommitStatus, Filter::Ids(&status_ids)).await?;
+    // The viewer's "Viewed" files (private rows: only with a viewer).
+    let viewed_rows = match viewer {
+        Some(_) => load_rows(&mut tx, opts, Model::ViewedFile, Filter::Issues(&pull_ids)).await?,
+        None => Vec::new(),
+    };
 
     let mut user_ids = BTreeSet::new();
     for (model, rows) in [
@@ -506,6 +512,7 @@ pub async fn pull_sync(
             "checkSuite": suites,
             "checkRun": runs,
             "commitStatus": status_rows,
+            "viewedFile": viewed_rows,
             "user": users,
         }
     })))
@@ -633,6 +640,9 @@ pub const FILE_PATCH_MAX: usize = 5 * 1024 * 1024;
 pub struct PatchQuery {
     pub path: Option<String>,
     pub w: Option<String>,
+    /// Commit range (P38, see [`crate::ranges`]); default: the PR diff.
+    pub base_sha: Option<String>,
+    pub head_sha: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -647,7 +657,8 @@ pub struct FilePatch {
 }
 
 /// `GET /_bgh/repos/{o}/{r}/pulls/{n}/patch?path=…&w=1`: one file of the
-/// PR diff (merge base → head), optionally ignoring whitespace.
+/// PR diff (merge base → head, or `base_sha`/`head_sha`), optionally
+/// ignoring whitespace.
 pub async fn file_patch(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -660,16 +671,16 @@ pub async fn file_patch(
         .filter(|p| !p.is_empty())
         .ok_or_else(|| ApiError::invalid_field(FieldError::missing_field("PullRequest", "path")))?;
     let ignore_ws = matches!(q.w.as_deref(), Some("1" | "true"));
-    let base = pull
-        .pr
-        .merge_base_sha
-        .clone()
-        .unwrap_or_else(|| pull.pr.base_sha.clone());
+    let range = crate::ranges::RangeQuery {
+        base_sha: q.base_sha,
+        head_sha: q.head_sha,
+    };
+    let (base, head) = crate::ranges::resolve_range(&state, &pull, &range).await?;
     let file = bgh_git::patch::diff_file(
         &git::store(&state),
         pull.pr.repo_id,
         &base,
-        &pull.pr.head_sha,
+        &head,
         &path,
         ignore_ws,
         FILE_PATCH_MAX,
