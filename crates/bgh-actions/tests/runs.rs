@@ -1066,3 +1066,64 @@ jobs:
     settle(&app).await;
     assert_eq!(runs(&app, &alice, "alice/demo").await.len(), before + 3);
 }
+
+#[tokio::test]
+async fn events_carry_webhook_payloads() {
+    let (app, alice, wc) = setup().await;
+    let mut rx = app.state.events.subscribe();
+    wc.commit(
+        &[(
+            ".github/workflows/w.yml",
+            "name: W\non: push\njobs:\n  a:\n    runs-on: x\n    steps: [{run: a}]\n",
+        )],
+        "w",
+    )
+    .await;
+    wc.push("main").await;
+    settle(&app).await;
+    let runner = FakeRunner::register(&app, &alice, "alice/demo", &["x"]).await;
+    let spec = runner.acquire(&app).await.unwrap();
+    runner
+        .complete(&app, spec["job_id"].as_i64().unwrap(), "success", json!({}))
+        .await;
+
+    let mut run_actions = vec![];
+    let mut check_runs = vec![];
+    let mut suites = vec![];
+    while let Ok(ev) = rx.try_recv() {
+        match &*ev {
+            bgh_core::events::Event::WorkflowRunUpdated {
+                action,
+                workflow_run,
+                workflow,
+                ..
+            } => {
+                assert_eq!(workflow_run["id"], spec["run_id"]);
+                assert_eq!(workflow_run["path"], ".github/workflows/w.yml");
+                assert_eq!(workflow_run["repository"]["full_name"], "alice/demo");
+                assert_eq!(workflow.as_ref().unwrap()["name"], "W");
+                run_actions.push((action.clone(), workflow_run["status"].clone()));
+            }
+            bgh_core::events::Event::CheckRunUpdated { action, .. } => {
+                check_runs.push(action.clone())
+            }
+            bgh_core::events::Event::CheckSuiteUpdated {
+                action, actor_id, ..
+            } => {
+                assert_eq!(*actor_id, Some(alice.id));
+                suites.push(action.clone());
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        run_actions,
+        [
+            ("requested".to_string(), json!("queued")),
+            ("in_progress".to_string(), json!("in_progress")),
+            ("completed".to_string(), json!("completed")),
+        ]
+    );
+    assert_eq!(check_runs, ["created", "completed"]);
+    assert_eq!(suites, ["completed"]);
+}

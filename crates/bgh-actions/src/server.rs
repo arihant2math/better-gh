@@ -408,6 +408,9 @@ pub async fn finish_job_row(
             .await?;
     }
     checks::complete_run(tx, row.check_run_id, conclusion, summary, annotations).await?;
+    if let Some(ev) = checks::check_run_event(row.repo_id, row.check_run_id, "completed", None) {
+        tx.emit(ev);
+    }
     engine::sync_job(tx, &job, SyncAction::Update).await?;
     tx.emit(Event::WorkflowJobUpdated {
         repo_id: job.repo_id,

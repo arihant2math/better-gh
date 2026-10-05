@@ -115,7 +115,16 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   job-token branch in `perms::effective`.
 * `bgh_core::registry::{Service, Registry::service, spawn_services}`;
   `bgh-server` `main.rs` spawns services (the test harness does not).
-* `Event::WorkflowRunUpdated`, `Event::WorkflowJobUpdated` (for webhooks).
+* `Event::WorkflowRunUpdated` carries the GitHub REST JSON of the run
+  (`workflow_run`) and workflow (`workflow`), rendered by
+  `engine::run_event` with the same builder as `GET /actions/runs/{id}`
+  (actions: `requested`, `in_progress`, `completed`), so bgh-notify
+  delivers `workflow_run` webhooks. `Event::WorkflowJobUpdated` (ids +
+  action) is emitted on queued/in_progress/completed; bgh-notify does not
+  deliver `workflow_job` webhooks yet. Actions check runs/suites emit
+  `CheckRunUpdated` (`created`, `completed`) and `CheckSuiteUpdated`
+  (`completed`, actor = triggering user) for `check_run`/`check_suite`
+  webhooks and `ci_activity` notifications.
 * `NodeType::{Workflow, WorkflowRun, Artifact, Environment}`.
 * Workspace deps: serde_yaml, indexmap, zip, crypto_box, chacha20poly1305,
   reqwest. Note: bgh-actions enables serde_json `preserve_order`, which

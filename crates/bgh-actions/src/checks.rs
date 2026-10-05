@@ -162,3 +162,33 @@ pub fn output_json(summary: Option<&str>, annotations: &[Annotation]) -> Value {
         "annotations": anns,
     })
 }
+
+/// `check_run` webhook event for an actions check run.
+pub fn check_run_event(
+    repo_id: i64,
+    check_run_id: Option<i64>,
+    action: &str,
+    actor_id: Option<i64>,
+) -> Option<bgh_core::events::Event> {
+    check_run_id.map(|id| bgh_core::events::Event::CheckRunUpdated {
+        repo_id,
+        check_run_id: id,
+        action: action.to_string(),
+        actor_id,
+    })
+}
+
+/// `check_suite` webhook event (also drives `ci_activity` notifications).
+pub fn check_suite_event(
+    repo_id: i64,
+    check_suite_id: Option<i64>,
+    action: &str,
+    actor_id: Option<i64>,
+) -> Option<bgh_core::events::Event> {
+    check_suite_id.map(|id| bgh_core::events::Event::CheckSuiteUpdated {
+        repo_id,
+        check_suite_id: id,
+        action: action.to_string(),
+        actor_id,
+    })
+}

@@ -11,7 +11,6 @@ use bgh_core::models::db;
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::perms::RepoAccess;
 use bgh_core::time::{Timestamp, ts};
-use bgh_core::views;
 use serde_json::{Value, json};
 
 use crate::models::{
@@ -47,18 +46,36 @@ pub async fn runs_json(state: &AppState, a: &RepoAccess, runs: &[RunRow]) -> Api
     if runs.is_empty() {
         return Ok(vec![]);
     }
-    let users = views::users_by_id(
-        state,
-        runs.iter()
-            .flat_map(|r| [r.actor_id, r.triggering_actor_id]),
-    )
-    .await?;
+    let mut conn = state.db.acquire().await?;
+    runs_json_conn(state, &mut conn, a, runs).await
+}
+
+/// [`runs_json`] on a given connection (e.g. inside the transaction that
+/// changed the run, for event payloads).
+pub async fn runs_json_conn(
+    state: &AppState,
+    conn: &mut sqlx::PgConnection,
+    a: &RepoAccess,
+    runs: &[RunRow],
+) -> ApiResult<Vec<Value>> {
+    let mut user_ids: Vec<i64> = runs
+        .iter()
+        .flat_map(|r| [r.actor_id, r.triggering_actor_id])
+        .flatten()
+        .collect();
+    user_ids.sort_unstable();
+    user_ids.dedup();
+    let users: HashMap<i64, db::User> = db::User::find_many(&mut *conn, &user_ids)
+        .await?
+        .into_iter()
+        .map(|u| (u.id, u))
+        .collect();
     let wf_ids: Vec<i64> = runs.iter().map(|r| r.workflow_id).collect();
     let paths: HashMap<i64, String> = sqlx::query_as::<_, (i64, String)>(
         "SELECT id, path FROM actions_workflows WHERE id = ANY($1)",
     )
     .bind(&wf_ids)
-    .fetch_all(&state.db)
+    .fetch_all(&mut *conn)
     .await?
     .into_iter()
     .collect();
@@ -78,9 +95,14 @@ pub async fn runs_json(state: &AppState, a: &RepoAccess, runs: &[RunRow]) -> Api
             db::Repository::COLUMNS
         ))
         .bind(&head_ids)
-        .fetch_all(&state.db)
+        .fetch_all(&mut *conn)
         .await?;
-        let owners = views::users_by_id(state, rows.iter().map(|r| Some(r.owner_id))).await?;
+        let owner_ids: Vec<i64> = rows.iter().map(|r| r.owner_id).collect();
+        let owners: HashMap<i64, db::User> = db::User::find_many(&mut *conn, &owner_ids)
+            .await?
+            .into_iter()
+            .map(|u| (u.id, u))
+            .collect();
         for r in rows {
             if let Some(o) = owners.get(&r.owner_id) {
                 head_repos.insert(
@@ -153,7 +175,7 @@ pub async fn runs_json(state: &AppState, a: &RepoAccess, runs: &[RunRow]) -> Api
                FROM issues i JOIN pull_requests p ON p.issue_id = i.id WHERE i.id = ANY($1)",
         )
         .bind(&pr_ids)
-        .fetch_all(&state.db)
+        .fetch_all(&mut *conn)
         .await?;
         let api = repo_api(state, a);
         let repo_ref = json!({"id": a.repo.id, "url": api, "name": a.repo.name});
