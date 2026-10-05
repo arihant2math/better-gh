@@ -118,3 +118,65 @@ pub async fn notify(state: &AppState, records: &[SyncRecord]) {
         tracing::warn!(?err, "publishing sync records to redis");
     }
 }
+
+// ----- scope providers (bootstrap extension point) -------------------------
+
+/// Rows a [`ScopeProvider`] contributes to a bootstrap snapshot of one scope.
+#[derive(Debug, Default, Clone)]
+pub struct ScopeRows {
+    /// `(model name, compact rows)`; several entries per model are merged.
+    pub models: Vec<(&'static str, Vec<Value>)>,
+    /// Users referenced by the rows (the bootstrap includes them in `user`).
+    pub user_ids: Vec<i64>,
+}
+
+/// Loads a provider's rows for `scope` (`org:{id}` / `user:{id}` /
+/// `repo:{id}`) as seen by `viewer`, inside the bootstrap's
+/// `REPEATABLE READ` transaction. Return empty rows for scopes it doesn't own.
+pub type ScopeLoadFn = for<'c> fn(
+    &'c mut PgConnection,
+    &'c str,
+    Option<i64>,
+) -> futures::future::BoxFuture<'c, Result<ScopeRows, sqlx::Error>>;
+
+/// A crate that owns synced models outside `bgh-sync` (e.g. bgh-projects)
+/// registers one of these from its `register()` via
+/// [`crate::Registry::scope_provider`]; `bgh-sync` calls [`load_provided`]
+/// for every scope it bootstraps.
+#[derive(Clone, Copy)]
+pub struct ScopeProvider {
+    pub name: &'static str,
+    /// Model names this provider emits (for docs / schema checks).
+    pub models: &'static [&'static str],
+    pub load: ScopeLoadFn,
+}
+
+static PROVIDERS: std::sync::RwLock<Vec<ScopeProvider>> = std::sync::RwLock::new(Vec::new());
+
+/// Register a provider (idempotent per `name`).
+pub fn register_scope_provider(provider: ScopeProvider) {
+    let mut list = PROVIDERS.write().unwrap_or_else(|e| e.into_inner());
+    if !list.iter().any(|p| p.name == provider.name) {
+        list.push(provider);
+    }
+}
+
+/// All registered providers.
+pub fn scope_providers() -> Vec<ScopeProvider> {
+    PROVIDERS.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Run every registered provider for `scope` and merge their rows.
+pub async fn load_provided(
+    conn: &mut PgConnection,
+    scope: &str,
+    viewer: Option<i64>,
+) -> Result<ScopeRows, sqlx::Error> {
+    let mut out = ScopeRows::default();
+    for provider in scope_providers() {
+        let rows = (provider.load)(&mut *conn, scope, viewer).await?;
+        out.models.extend(rows.models);
+        out.user_ids.extend(rows.user_ids);
+    }
+    Ok(out)
+}

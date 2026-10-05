@@ -517,3 +517,114 @@ server must HTML-escape source text; the client inserts the lines as HTML.
 All POST/PATCH/PUT/DELETE requests from the web client carry
 `X-CSRF-Token: <boot.csrf>`; the server rejects cookie-authenticated
 mutations without it (`403`). Token-authenticated API clients don't need it.
+
+---
+
+## 11. Extension models: Projects (bgh-projects)
+
+Added by package B11 as a separate section so the core protocol above stays
+untouched. Rows live in the **owner's** scope: `org:{ownerId}` for
+organization projects, `user:{ownerId}` for user projects. They are part of
+the bootstrap of those scopes (provided to `bgh-sync` through the
+`bgh_core::sync::ScopeProvider` hook, see `bgh_core::sync::load_provided`):
+owners/org members/site admins get every project of the owner, other viewers
+only `public` ones. Deltas use the same rules as every other model. No lazy
+fields. Deleting a `project` also deletes its fields, views, items and
+workflows locally (the server records those deletes as well).
+
+| model | scope | in bootstrap |
+|-------|-------|--------------|
+| `project`, `projectField`, `projectView`, `projectItem`, `projectWorkflow` | `org:{ownerId}` / `user:{ownerId}` | yes |
+
+```ts
+interface Project {
+  id: ID;
+  ownerId: ID;                // user or org id
+  number: number;             // per owner
+  title: string;
+  shortDescription: string | null;
+  readme: string | null;      // markdown
+  public: boolean;
+  closed: boolean;
+  closedAt: Timestamp | null;
+  creatorId: ID | null;
+  linkedRepoIds: ID[];
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+type ProjectFieldType = 'title' | 'assignees' | 'status' | 'labels' | 'repository' | 'milestone'
+                      | 'text' | 'number' | 'date' | 'single_select' | 'iteration';
+type OptionColor = 'GRAY' | 'BLUE' | 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'PINK' | 'PURPLE';
+
+interface ProjectField {
+  id: ID;
+  projectId: ID;
+  name: string;
+  dataType: ProjectFieldType; // title..milestone are built-ins backed by the issue
+  position: number;
+  options: { id: string; name: string; color: OptionColor; description: string }[] | null; // single_select, status
+  iterations: {
+    startDate: string;        // "YYYY-MM-DD"
+    duration: number;         // days, default for new iterations
+    iterations: { id: string; title: string; startDate: string; duration: number }[]; // gaps = breaks
+  } | null;                   // iteration
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+interface ProjectView {
+  id: ID;
+  projectId: ID;
+  number: number;
+  name: string;
+  layout: 'table' | 'board' | 'roadmap';
+  position: number;
+  filter: string;             // query string, e.g. 'is:open label:bug status:"In Progress"'
+  groupByFieldId: ID | null;
+  columnFieldId: ID | null;   // board columns (status / single_select / iteration)
+  dateFieldId: ID | null;     // roadmap (date / iteration)
+  sortBy: { fieldId: ID; direction: 'asc' | 'desc' }[];
+  visibleFieldIds: ID[];      // ordered: table column order
+  hiddenColumnIds: string[];  // board option/iteration ids
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+interface ProjectItem {
+  id: ID;
+  projectId: ID;
+  contentType: 'Issue' | 'PullRequest' | 'DraftIssue';
+  issueId: ID | null;         // issue/PR id (repo scope); null for drafts
+  title: string | null;       // drafts only
+  body: string | null;        // drafts only
+  assigneeIds: ID[];          // drafts only (issues use issue.assigneeIds)
+  archived: boolean;
+  position: string;           // fractional index (base-62, bytewise order)
+  viewPositions: Record<string, string>; // per-view override, keyed by view id
+  values: Record<string, string | number>; // custom field values keyed by field id:
+                              // text → string, number → number, date → "YYYY-MM-DD",
+                              // single_select/status → option id, iteration → iteration id
+  creatorId: ID | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+interface ProjectWorkflow {
+  id: ID;
+  projectId: ID;
+  kind: 'item_added' | 'item_reopened' | 'item_closed' | 'pr_merged' | 'auto_add' | 'auto_archive';
+  enabled: boolean;
+  config: { statusOptionId?: string; repoIds?: ID[]; filter?: string };
+  updatedAt: Timestamp;
+}
+```
+
+An item may reference an issue in a repository whose scope the client has
+not synced (or cannot read); clients fetch
+`GET /_bgh/projects/{id}` / `GET /_bgh/owners/{owner}/projects/{number}`,
+which returns the project's rows plus compact `issue`/`repo`/`label`/
+`milestone`/`user` rows for readable repositories. Mutations go through the
+private endpoints listed in `docs/packages/projects-wiki.md` and follow §7
+(they accept `X-Client-Tx`).
+
