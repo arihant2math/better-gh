@@ -64,6 +64,10 @@ pub struct CreatePullRequestInput {
     pub body: Option<String>,
     pub maintainer_can_modify: Option<bool>,
     pub draft: Option<bool>,
+    /// Projects to add the pull request to (bgh extension; GitHub only
+    /// takes it on `createIssue`).
+    #[graphql(name = "projectV2Ids")]
+    pub project_v2_ids: Option<Vec<ID>>,
     pub client_mutation_id: Option<String>,
 }
 
@@ -465,6 +469,9 @@ impl PullMutations {
         let id = v["id"]
             .as_i64()
             .ok_or_else(|| not_found("pull request not created"))?;
+        if let Some(projects) = &input.project_v2_ids {
+            super::projects::add_to_projects(ctx, id, projects).await?;
+        }
         Ok(CreatePullRequestPayload {
             pull_request: Some(pr(ctx, id).await?),
             client_mutation_id: input.client_mutation_id,
