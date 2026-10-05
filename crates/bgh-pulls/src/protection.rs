@@ -122,9 +122,9 @@ pub struct SourceRules {
     pub checks: Option<CheckRules>,
     pub conversation_resolution: bool,
     pub linear_history: bool,
-    /// Stored, not enforced yet (P25). `merge_queue` (P39) and
-    /// `required_deployments` (P20) plug in next to it in
-    /// [`evaluate_source`].
+    /// Every PR commit must have a verified signature (P25).
+    /// `merge_queue` (P39) and `required_deployments` (P20) plug in next to
+    /// it in [`evaluate_source`].
     pub required_signatures: bool,
 }
 
@@ -570,6 +570,33 @@ struct Facts {
     outcomes: CheckOutcomes,
     behind: bool,
     unresolved: i64,
+    /// PR commits without a verified signature (only computed when a
+    /// source requires signatures).
+    unverified_commits: usize,
+}
+
+/// Most commits checked for `required_signatures`; longer PRs count as
+/// unverified.
+const MAX_SIGNED_COMMITS: usize = 10_000;
+
+/// PR commits (`base..head`) whose signature does not verify.
+async fn unverified_commits(state: &AppState, pull: &Pull) -> ApiResult<usize> {
+    let store = git::store(state);
+    let shas = bgh_git::merge::rev_list(
+        &store,
+        pull.pr.repo_id,
+        Some(&pull.pr.base_sha),
+        &pull.pr.head_sha,
+        MAX_SIGNED_COMMITS + 1,
+    )
+    .await?;
+    if shas.len() > MAX_SIGNED_COMMITS {
+        return Ok(shas.len());
+    }
+    let commits = store.cli(pull.pr.repo_id)?.commits(&shas).await?;
+    Ok(bgh_repos::signatures::unverified(state, &commits)
+        .await?
+        .len())
 }
 
 pub async fn evaluate(
@@ -661,6 +688,12 @@ pub async fn evaluate(
         0
     };
 
+    let unverified_commits = if any(&|s| s.required_signatures) {
+        unverified_commits(state, pull).await?
+    } else {
+        0
+    };
+
     let facts = Facts {
         approvers,
         changes_requested,
@@ -669,6 +702,7 @@ pub async fn evaluate(
         outcomes,
         behind,
         unresolved,
+        unverified_commits,
     };
     let mut ev = Evaluation {
         behind: facts.behind,
@@ -773,8 +807,11 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
             false,
         );
     }
-    // P25 (required_signatures), P39 (merge_queue) and P20
-    // (required_deployments) add their checks here.
+    if s.required_signatures && f.unverified_commits > 0 {
+        push("Commits must have verified signatures.".into(), false);
+    }
+    // P39 (merge_queue) and P20 (required_deployments) add their checks
+    // here.
 }
 
 /// `mergeable_state` from the pieces (GitHub precedence).

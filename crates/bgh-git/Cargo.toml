@@ -27,6 +27,12 @@ sha2.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+libc.workspace = true
+pgp.workspace = true
+ssh-key.workspace = true
+rsa.workspace = true
+rand_core06.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

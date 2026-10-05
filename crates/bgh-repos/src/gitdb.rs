@@ -441,7 +441,8 @@ async fn get_commit(
     let commit = crate::store(&state)
         .read(access.repo.id, move |r| r.commit(&s))
         .await?;
-    let json = git_commit(&RepoRef::new(&state.urls, &access), &commit);
+    let mut json = git_commit(&RepoRef::new(&state.urls, &access), &commit);
+    json.verification = crate::signatures::verify_commit(&state, &commit).await?;
     Ok(media::immutable(
         Json(json).into_response(),
         access.repo.is_private(),
@@ -541,8 +542,10 @@ async fn create_commit(
     }
     let git = store.cli(access.repo.id)?;
     let sha = match body.signature.as_deref().filter(|s| !s.trim().is_empty()) {
+        // Like GitHub, git database commits are not signed by web-flow.
         None => {
-            git.commit_tree(&tree, &parents, &message, &author, &committer)
+            git.without_signing()
+                .commit_tree(&tree, &parents, &message, &author, &committer)
                 .await?
         }
         Some(sig) => {
@@ -558,7 +561,8 @@ async fn create_commit(
         }
     };
     let commit = git.commit(&sha).await?;
-    let json = git_commit(&RepoRef::new(&state.urls, &access), &commit);
+    let mut json = git_commit(&RepoRef::new(&state.urls, &access), &commit);
+    json.verification = crate::signatures::verify_commit(&state, &commit).await?;
     Ok(created_at(&json.url.clone(), json))
 }
 
@@ -866,7 +870,8 @@ async fn get_tag(
     let tag = crate::store(&state)
         .read(access.repo.id, move |r| r.tag(&s))
         .await?;
-    let json = git_tag(&RepoRef::new(&state.urls, &access), &tag);
+    let mut json = git_tag(&RepoRef::new(&state.urls, &access), &tag);
+    json.verification = crate::signatures::verify_tag(&state, &tag).await?;
     Ok(media::immutable(
         Json(json).into_response(),
         access.repo.is_private(),
@@ -934,7 +939,8 @@ async fn create_tag(
         .write_tag(&name, &message, &object, &kind, &tagger)
         .await?;
     let tag = git.tag(&sha).await?;
-    let json = git_tag(&RepoRef::new(&state.urls, &access), &tag);
+    let mut json = git_tag(&RepoRef::new(&state.urls, &access), &tag);
+    json.verification = crate::signatures::verify_tag(&state, &tag).await?;
     Ok(created_at(&json.url.clone(), json))
 }
 

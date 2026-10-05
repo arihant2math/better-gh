@@ -78,6 +78,12 @@ pub async fn render_commits(
 ) -> ApiResult<Vec<CommitJson>> {
     let users = users_by_email(state, commit_emails(commits)).await?;
     let mut out: Vec<CommitJson> = commits.iter().map(|c| commit_json(r, c, &users)).collect();
+    let mut verifications = crate::signatures::verify_commits(state, commits).await?;
+    for c in &mut out {
+        if let Some(v) = verifications.remove(&c.sha) {
+            c.commit.verification = v;
+        }
+    }
     let shas: Vec<&str> = commits.iter().map(|c| c.sha.as_str()).collect();
     let counts: HashMap<String, i64> = sqlx::query_as(
         "SELECT commit_id, count(*) FROM commit_comments
@@ -431,9 +437,14 @@ async fn compare(
     let by_sha: HashMap<&str, &Commit> = objs.iter().map(|c| (c.sha.as_str(), c)).collect();
     let r = RepoRef::new(&state.urls, &access);
     let users = users_by_email(&state, commit_emails(&objs)).await?;
+    let verifications = crate::signatures::verify_commits(&state, &objs).await?;
     let render = |sha: &str| -> ApiResult<CommitJson> {
         let c = by_sha.get(sha).ok_or(ApiError::NotFound)?;
-        Ok(commit_json(&r, c, &users))
+        let mut json = commit_json(&r, c, &users);
+        if let Some(v) = verifications.get(sha) {
+            json.commit.verification = v.clone();
+        }
+        Ok(json)
     };
     let files = cached_diff(&state, &git, Some(&data.merge_base), &head_sha).await?;
     let (files, _) = diff_entries(&r, &head_sha, &files);

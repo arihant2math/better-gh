@@ -10,7 +10,10 @@
 //!   history) and check required statuses in the database before accepting
 //!   the pack;
 //! * API writes (refs, contents, merges) verify `Needs` directly
-//!   ([`verify_needs`]).
+//!   ([`verify_needs`]);
+//! * `required_signatures` (classic and ruleset) is checked on the
+//!   quarantined commits through the hook's [`ObjectCheck`] callback
+//!   ([`signature_check`]), and on API ref updates by [`verify_needs`].
 //!
 //! Semantics follow GitHub: admins bypass classic rules unless
 //! `enforce_admins`, except "allow force pushes" and "allow deletions",
@@ -20,7 +23,7 @@
 use bgh_core::events::RefUpdate;
 use bgh_core::perms::{Permission, RepoAccess};
 use bgh_core::prelude::*;
-use bgh_git::smart_http::PushPolicy;
+use bgh_git::smart_http::{HookVerdict, ObjectCheck, PushPolicy, QuarantineEnv};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
@@ -361,12 +364,18 @@ pub struct Needs {
     pub linear: bool,
     /// Status check contexts that must have succeeded on the new commit.
     pub status_contexts: Vec<String>,
+    /// New commits must have verified signatures (classic rule).
+    pub signatures: bool,
+    /// ... required by a ruleset (GH013 wording instead of GH006).
+    pub signatures_ruleset: bool,
 }
 
 impl Needs {
     fn merge(&mut self, o: Needs) {
         self.fast_forward |= o.fast_forward;
         self.linear |= o.linear;
+        self.signatures |= o.signatures;
+        self.signatures_ruleset |= o.signatures_ruleset;
         self.status_contexts.extend(o.status_contexts);
         self.status_contexts.sort();
         self.status_contexts.dedup();
@@ -411,6 +420,7 @@ fn check_classic(p: &ProtectionRow, actor: &Actor, u: &RefUpdate) -> Result<Need
     }
     needs.linear = p.required_linear_history;
     needs.status_contexts = p.required_contexts();
+    needs.signatures = p.required_signatures;
     Ok(needs)
 }
 
@@ -442,6 +452,7 @@ fn check_ruleset(r: &RulesetRow, actor: &Actor, u: &RefUpdate) -> Result<Needs, 
     }
     needs.fast_forward = r.rule("non_fast_forward").is_some();
     needs.linear = r.rule("required_linear_history").is_some();
+    needs.signatures_ruleset = r.rule("required_signatures").is_some();
     if let Some(rule) = r.rule("required_status_checks") {
         for c in rule["parameters"]["required_status_checks"]
             .as_array()
@@ -469,6 +480,10 @@ pub fn check_update(rules: &RepoRules, actor: &Actor, u: &RefUpdate) -> Result<N
     }
     if u.is_create() || u.is_delete() {
         needs.fast_forward = false;
+    }
+    if u.is_delete() {
+        needs.signatures = false;
+        needs.signatures_ruleset = false;
     }
     Ok(needs)
 }
@@ -521,8 +536,15 @@ pub async fn authorize_push(
     updates: &[RefUpdate],
 ) -> Result<PushPolicy, String> {
     let mut policy = PushPolicy::default();
+    let mut signed = Vec::new();
     for u in updates {
         let needs = check_update(rules, actor, u)?;
+        if needs.signatures || needs.signatures_ruleset {
+            signed.push(SignedRef {
+                update: u.clone(),
+                ruleset: needs.signatures_ruleset,
+            });
+        }
         if !needs.status_contexts.is_empty() {
             let missing =
                 missing_status_checks(state, rules.repo_id, &u.new, &needs.status_contexts)
@@ -539,7 +561,129 @@ pub async fn authorize_push(
             policy.linear_history.push(u.refname.clone());
         }
     }
+    if !signed.is_empty() {
+        policy.object_check = Some(signature_check(
+            state.clone(),
+            rules.repo_id,
+            signed,
+            policy.object_check.take(),
+        ));
+    }
     Ok(policy)
+}
+
+/// A pushed ref update whose new commits must be signed.
+#[derive(Debug, Clone)]
+pub struct SignedRef {
+    pub update: RefUpdate,
+    /// Required by a ruleset (GH013) rather than classic protection (GH006).
+    pub ruleset: bool,
+}
+
+/// Most commits verified per ref update; a longer push is rejected.
+const MAX_SIGNED_COMMITS: usize = 10_000;
+
+/// Message of the `required_signatures` rule (GitHub's wording).
+pub const SIGNATURES_REQUIRED: &str = "Commits must have verified signatures.";
+
+/// Commits introduced by `u` without a verified signature (`envs`: the
+/// quarantined objects of a push). `Err(())` when there are too many to
+/// check.
+async fn unverified_pushed(
+    state: &AppState,
+    git: &bgh_git::GitCli,
+    u: &RefUpdate,
+    envs: &[(&str, &str)],
+) -> ApiResult<Result<Vec<String>, ()>> {
+    let commits = git
+        .pushed_commits(&u.old, &u.new, envs, MAX_SIGNED_COMMITS + 1)
+        .await?;
+    if commits.len() > MAX_SIGNED_COMMITS {
+        return Ok(Err(()));
+    }
+    Ok(Ok(crate::signatures::unverified(state, &commits).await?))
+}
+
+/// The hook callback enforcing `required_signatures` on `refs`, run after
+/// `inner` (another object check of the same push) accepts.
+pub fn signature_check(
+    state: AppState,
+    repo_id: i64,
+    refs: Vec<SignedRef>,
+    inner: Option<ObjectCheck>,
+) -> ObjectCheck {
+    ObjectCheck::new(move |env: QuarantineEnv| {
+        let (state, refs, inner) = (state.clone(), refs.clone(), inner.clone());
+        async move {
+            let mut verdict = match inner {
+                Some(check) => (check.0)(env.clone()).await,
+                None => HookVerdict {
+                    accept: true,
+                    lines: vec![],
+                },
+            };
+            if !verdict.accept {
+                return verdict;
+            }
+            match signature_violations(&state, repo_id, &refs, &env).await {
+                Ok(lines) if lines.is_empty() => {}
+                Ok(lines) => {
+                    verdict.accept = false;
+                    verdict.lines.extend(lines);
+                }
+                Err(err) => {
+                    tracing::error!(?err, "required_signatures check failed");
+                    verdict.accept = false;
+                    verdict
+                        .lines
+                        .push("error: internal error verifying commit signatures".into());
+                }
+            }
+            verdict
+        }
+    })
+}
+
+/// GitHub's rejection report for every ref with unverified commits.
+async fn signature_violations(
+    state: &AppState,
+    repo_id: i64,
+    refs: &[SignedRef],
+    env: &QuarantineEnv,
+) -> ApiResult<Vec<String>> {
+    let git = crate::store(state).cli(repo_id)?;
+    let envs = env.envs();
+    let mut lines = Vec::new();
+    for r in refs {
+        let refname = &r.update.refname;
+        let bad = match unverified_pushed(state, &git, &r.update, &envs).await? {
+            Ok(bad) if bad.is_empty() => continue,
+            Ok(bad) => bad,
+            Err(()) => vec![format!("more than {MAX_SIGNED_COMMITS} commits")],
+        };
+        if r.ruleset {
+            lines.push(format!(
+                "error: GH013: Repository rule violations found for {refname}."
+            ));
+            lines.push(format!("- {SIGNATURES_REQUIRED}"));
+            lines.push(format!(
+                "  Found {} violation{}:",
+                bad.len(),
+                if bad.len() == 1 { "" } else { "s" }
+            ));
+            lines.extend(bad.iter().map(|sha| format!("  {sha}")));
+        } else {
+            lines.push(format!(
+                "error: GH006: Protected branch update failed for {refname}."
+            ));
+            lines.push(format!("error: {SIGNATURES_REQUIRED}"));
+            lines.extend(
+                bad.iter()
+                    .map(|sha| format!("error: unverified commit {sha}")),
+            );
+        }
+    }
+    Ok(lines)
 }
 
 /// Verify [`Needs`] for an API-side ref update using the repository's
@@ -576,6 +720,11 @@ pub async fn verify_needs(
                 "This branch must not contain merge commits.",
             ));
         }
+    }
+    if (needs.signatures || needs.signatures_ruleset)
+        && !matches!(unverified_pushed(state, git, u, &[]).await?, Ok(bad) if bad.is_empty())
+    {
+        return Err(ApiError::unprocessable(SIGNATURES_REQUIRED));
     }
     let missing = missing_status_checks(state, repo_id, &u.new, &needs.status_contexts).await?;
     if !missing.is_empty() {

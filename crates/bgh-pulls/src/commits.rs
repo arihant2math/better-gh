@@ -21,14 +21,7 @@ pub struct ShaUrl {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Verification {
-    pub verified: bool,
-    pub reason: String,
-    pub signature: Option<String>,
-    pub payload: Option<String>,
-    pub verified_at: Option<Timestamp>,
-}
+pub use bgh_repos::gitjson::Verification;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CommitDetail {
@@ -147,17 +140,7 @@ pub fn render(
             },
             url: urls.api(&format!("/repos/{owner}/{repo}/git/commits/{}", c.sha)),
             comment_count: 0,
-            verification: Verification {
-                verified: false,
-                reason: if c.signature.is_some() {
-                    "unknown_key".into()
-                } else {
-                    "unsigned".into()
-                },
-                signature: c.signature.clone(),
-                payload: None,
-                verified_at: None,
-            },
+            verification: Verification::for_signature(c.signature.as_deref()),
         },
         url: urls.commit(owner, repo, &c.sha),
         html_url: urls.commit_html(owner, repo, &c.sha),
@@ -190,8 +173,15 @@ pub async fn render_many(
             .flat_map(|c| [c.author.email.clone(), c.committer.email.clone()]),
     )
     .await?;
+    let mut verifications = bgh_repos::signatures::verify_commits(state, commits).await?;
     Ok(commits
         .iter()
-        .map(|c| render(state, owner, repo, c, &users))
+        .map(|c| {
+            let mut json = render(state, owner, repo, c, &users);
+            if let Some(v) = verifications.remove(&c.sha) {
+                json.commit.verification = v;
+            }
+            json
+        })
         .collect())
 }

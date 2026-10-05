@@ -28,6 +28,7 @@ pub mod ratelimit;
 pub mod registry;
 pub mod secretbox;
 pub mod settings;
+pub mod signatures;
 pub mod ssrf;
 pub mod state;
 pub mod sync;

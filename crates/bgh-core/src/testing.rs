@@ -260,6 +260,7 @@ pub const ALL_SCOPES: &[&str] = &[
     "admin:org_hook",
     "admin:public_key",
     "admin:gpg_key",
+    "admin:ssh_signing_key",
     "notifications",
     "gist",
     "write:packages",

@@ -38,6 +38,7 @@ pub mod refs;
 pub mod repos;
 pub mod rulesets;
 pub mod settings;
+pub mod signatures;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
@@ -107,6 +108,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(lfs::web_router())
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
+        .route("/web-flow.gpg", get(signatures::web_flow_gpg))
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;

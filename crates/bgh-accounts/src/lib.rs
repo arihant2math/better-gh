@@ -86,6 +86,18 @@ pub fn router() -> Router<AppState> {
             get(keys::get_gpg).delete(keys::delete_gpg),
         )
         .route("/users/{username}/gpg_keys", get(keys::list_user_gpg))
+        .route(
+            "/user/ssh_signing_keys",
+            get(keys::list_signing).post(keys::create_signing),
+        )
+        .route(
+            "/user/ssh_signing_keys/{ssh_signing_key_id}",
+            get(keys::get_signing).delete(keys::delete_signing),
+        )
+        .route(
+            "/users/{username}/ssh_signing_keys",
+            get(keys::list_user_signing),
+        )
         // OAuth app token API
         .route(
             "/applications/{client_id}/token",

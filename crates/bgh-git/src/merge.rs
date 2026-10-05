@@ -220,7 +220,13 @@ pub async fn commit_tree(
         Some(message.as_bytes()),
     )
     .await?;
-    Ok(stdout_line(&out))
+    crate::signing::sign_commit(
+        &store.git_bin,
+        &dir,
+        store.signer.as_deref(),
+        stdout_line(&out),
+    )
+    .await
 }
 
 /// Commits reachable from `head` but not from `base`, oldest first

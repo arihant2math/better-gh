@@ -964,7 +964,10 @@ async fn put_file(
     };
     let body = FileCommit {
         content: Some(ctx.entry(TreeEntryKind::Blob, &path, &blob, data.len() as u64)),
-        commit: git_commit(&r, &commit),
+        commit: crate::gitjson::GitCommit {
+            verification: crate::signatures::verify_commit(&state, &commit).await?,
+            ..git_commit(&r, &commit)
+        },
     };
     let status = if matches!(existing, Existing::Missing) {
         StatusCode::CREATED
@@ -1038,7 +1041,10 @@ async fn delete_file(
     let r = RepoRef::new(&state.urls, &access);
     Ok(Json(FileCommit {
         content: None,
-        commit: git_commit(&r, &commit),
+        commit: crate::gitjson::GitCommit {
+            verification: crate::signatures::verify_commit(&state, &commit).await?,
+            ..git_commit(&r, &commit)
+        },
     })
     .into_response())
 }

@@ -415,8 +415,27 @@ impl Commit {
             sha: self.c.tree.clone(),
         }
     }
-    pub async fn signature(&self) -> Option<GitSignature> {
-        None
+    pub async fn signature(&self, ctx: &Context<'_>) -> GResult<Option<GitSignature>> {
+        let Some(sig) = self.c.signature.clone() else {
+            return Ok(None);
+        };
+        let l = ctx.data_unchecked::<Loaders>();
+        let v = one(&l.signatures, SigKey(self.c.clone())).await?;
+        let reason = v.as_ref().map_or("unknown_key", |v| v.reason.as_str());
+        Ok(Some(GitSignature {
+            email: self.c.committer.email.clone(),
+            is_valid: v.as_ref().is_some_and(|v| v.verified),
+            payload: self.c.payload.clone(),
+            signature: sig.clone(),
+            state: GitSignatureState::from_reason(reason),
+            was_signed_by_git_hub: v.as_ref().is_some_and(|v| v.verified)
+                && reason == "valid"
+                && bgh_git::signing::PgpSignature::parse(&sig).is_some_and(|p| {
+                    bgh_git::storage::web_flow_signer(&gql(ctx).state.config)
+                        .is_some_and(|k| p.issuers.contains(&k.key_id))
+                }),
+            verified_at: v.and_then(|v| v.verified_at).map(|t| dt(t.0)),
+        }))
     }
     pub async fn status(&self, ctx: &Context<'_>) -> GResult<Option<Status>> {
         let r = rollup(ctx, self.repo.rid(), &self.c.sha).await?;
@@ -447,10 +466,92 @@ pub async fn rollup(ctx: &Context<'_>, repo_id: i64, sha: &str) -> GResult<Arc<R
         .unwrap_or_default())
 }
 
+/// A commit signature (GitHub's `GitSignature` fields; the concrete
+/// `GpgSignature`/`SshSignature` types are not distinguished).
 #[derive(SimpleObject, Clone)]
 pub struct GitSignature {
+    pub email: String,
     pub is_valid: bool,
+    pub payload: String,
     pub signature: String,
+    pub state: GitSignatureState,
+    pub was_signed_by_git_hub: bool,
+    pub verified_at: Option<DateTime>,
+}
+
+/// GitHub's `GitSignatureState` (from REST `verification.reason`).
+#[derive(async_graphql::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum GitSignatureState {
+    Valid,
+    Invalid,
+    MalformedSig,
+    UnknownKey,
+    BadEmail,
+    UnverifiedEmail,
+    NoUser,
+    UnknownSigType,
+    Unsigned,
+    GpgverifyUnavailable,
+    GpgverifyError,
+    NotSigningKey,
+    ExpiredKey,
+}
+
+impl GitSignatureState {
+    fn from_reason(reason: &str) -> Self {
+        match reason {
+            "valid" => Self::Valid,
+            "invalid" => Self::Invalid,
+            "malformed_signature" => Self::MalformedSig,
+            "bad_email" => Self::BadEmail,
+            "unverified_email" => Self::UnverifiedEmail,
+            "no_user" => Self::NoUser,
+            "unknown_signature_type" => Self::UnknownSigType,
+            "unsigned" => Self::Unsigned,
+            "gpgverify_unavailable" => Self::GpgverifyUnavailable,
+            "gpgverify_error" => Self::GpgverifyError,
+            "not_signing_key" => Self::NotSigningKey,
+            "expired_key" => Self::ExpiredKey,
+            _ => Self::UnknownKey,
+        }
+    }
+}
+
+/// A commit keyed by SHA (for [`SignatureLoader`]).
+#[derive(Clone)]
+pub struct SigKey(pub Arc<bgh_git::Commit>);
+
+impl PartialEq for SigKey {
+    fn eq(&self, o: &Self) -> bool {
+        self.0.sha == o.0.sha
+    }
+}
+
+impl Eq for SigKey {}
+
+impl std::hash::Hash for SigKey {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        self.0.sha.hash(h)
+    }
+}
+
+/// Signature verifications of commits, one batch per request tick.
+pub struct SignatureLoader(pub AppState);
+
+impl Loader<SigKey> for SignatureLoader {
+    type Value = bgh_repos::gitjson::Verification;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[SigKey]) -> LResult<SigKey, Self::Value> {
+        let commits: Vec<bgh_git::Commit> = keys.iter().map(|k| (*k.0).clone()).collect();
+        let mut found = bgh_repos::signatures::verify_commits(&self.0, &commits)
+            .await
+            .map_err(Arc::new)?;
+        Ok(keys
+            .iter()
+            .filter_map(|k| Some((k.clone(), found.remove(&k.0.sha)?)))
+            .collect())
+    }
 }
 
 /// Represents an actor in a Git commit (ie. an author or committer).

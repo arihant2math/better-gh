@@ -80,6 +80,10 @@ fn implied(granted: &str, wanted: &str) -> bool {
         "write:repo_hook" => wanted == "read:repo_hook",
         "admin:gpg_key" => matches!(wanted, "write:gpg_key" | "read:gpg_key"),
         "write:gpg_key" => wanted == "read:gpg_key",
+        "admin:ssh_signing_key" => {
+            matches!(wanted, "write:ssh_signing_key" | "read:ssh_signing_key")
+        }
+        "write:ssh_signing_key" => wanted == "read:ssh_signing_key",
         "user" => matches!(wanted, "read:user" | "user:email" | "user:follow"),
         "write:packages" => wanted == "read:packages",
         "project" => wanted == "read:project",

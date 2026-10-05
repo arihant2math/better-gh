@@ -27,6 +27,7 @@ pub mod ops;
 pub mod patch;
 pub mod pktline;
 pub mod read;
+pub mod signing;
 pub mod smart_http;
 pub mod storage;
 pub mod stream;

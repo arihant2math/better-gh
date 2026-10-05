@@ -25,5 +25,6 @@ mod protection;
 mod push_hardening;
 mod push_rules;
 mod settings;
+mod signatures;
 mod social;
 mod ssh;

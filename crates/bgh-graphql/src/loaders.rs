@@ -78,6 +78,7 @@ pub struct Loaders {
     pub commits: DataLoader<crate::model::git::CommitLoader>,
     pub git_empty: DataLoader<crate::model::git::EmptyLoader>,
     pub users_by_email: DataLoader<crate::model::git::UserByEmailLoader>,
+    pub signatures: DataLoader<crate::model::git::SignatureLoader>,
     pub repo_extra: DataLoader<RepoExtraLoader>,
     pub pinned: DataLoader<PinnedLoader>,
 }
@@ -125,6 +126,7 @@ impl Loaders {
                 crate::model::git::UserByEmailLoader(s()),
                 tokio::spawn,
             ),
+            signatures: DataLoader::new(crate::model::git::SignatureLoader(s()), tokio::spawn),
             repo_extra: DataLoader::new(RepoExtraLoader { state: s(), viewer }, tokio::spawn),
             pinned: DataLoader::new(PinnedLoader(s()), tokio::spawn),
         }

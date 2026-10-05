@@ -46,6 +46,9 @@ pub const KNOWN_SCOPES: &[&str] = &[
     "admin:gpg_key",
     "write:gpg_key",
     "read:gpg_key",
+    "admin:ssh_signing_key",
+    "write:ssh_signing_key",
+    "read:ssh_signing_key",
     "workflow",
     "site_admin",
 ];
