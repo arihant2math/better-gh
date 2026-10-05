@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use bgh_core::audit;
 use bgh_core::auth;
 use bgh_core::crypto;
+use bgh_core::mail;
 use bgh_core::prelude::*;
 use bgh_core::time::ts;
 use rand::Rng;
@@ -247,16 +248,7 @@ pub async fn enable_totp(
     if let Some(email) = util::primary_email(&mut *tx, auth.user.id).await? {
         util::queue_mail(
             &mut tx,
-            &email,
-            &format!(
-                "[{}] Two-factor authentication enabled",
-                state.config.site_name
-            ),
-            format!(
-                "Hi @{},\n\nTwo-factor authentication was enabled on your account. \
-                 Keep your recovery codes somewhere safe.\n",
-                auth.user.login
-            ),
+            mail::templates::two_factor_enabled(&state.config.site_name, &email, &auth.user.login),
         )
         .await?;
     }

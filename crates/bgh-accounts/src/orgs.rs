@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use bgh_core::audit;
 use bgh_core::error::unique_violation;
 use bgh_core::events::Event;
+use bgh_core::mail;
 use bgh_core::models::api::{OrganizationFull, OrganizationSimple, SimpleUser};
 use bgh_core::perms;
 use bgh_core::prelude::*;
@@ -190,37 +191,18 @@ pub async fn create_org(
         json!({ "login": org.login, "admin": admin.login }),
     )
     .await?;
-    let scope = sync::org_scope(org.id);
-    tx.sync(
-        &scope,
-        "org",
-        org.id,
-        SyncAction::Insert,
-        &util::org_sync_json(&state.urls, &org, None),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Org, org.id, SyncAction::Insert)
+        .await?;
     let membership_id: i64 =
         sqlx::query_scalar("SELECT id FROM org_members WHERE org_id = $1 AND user_id = $2")
             .bind(org.id)
             .bind(admin.id)
             .fetch_one(&mut *tx)
             .await?;
-    tx.sync(
-        &scope,
-        "membership",
-        membership_id,
-        SyncAction::Insert,
-        &util::membership_sync_json(membership_id, org.id, admin.id, "admin"),
-    )
-    .await?;
-    tx.sync(
-        &scope,
-        "user",
-        admin.id,
-        SyncAction::Update,
-        &util::user_sync_json(&state.urls, admin),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Membership, membership_id, SyncAction::Insert)
+        .await?;
+    // The member's `user` row, now also in the org scope.
+    tx.sync_user(admin.id).await?;
     tx.emit(Event::OrganizationChanged {
         org_id: org.id,
         login: org.login.clone(),
@@ -490,14 +472,8 @@ pub async fn update_org(
     .bind(body.web_commit_signoff_required)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &access.scope(),
-        "org",
-        org.id,
-        SyncAction::Update,
-        &util::org_sync_json(&state.urls, &org, settings.description.as_deref()),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Org, org.id, SyncAction::Update)
+        .await?;
     audit::log(
         &mut *tx,
         Some(&actor),
@@ -853,14 +829,8 @@ pub async fn remove_member(
         .execute(&mut *tx)
         .await?;
     let scope = sync::org_scope(org.id);
-    tx.sync(
-        &scope,
-        "membership",
-        membership_id,
-        SyncAction::Delete,
-        &json!({ "id": membership_id }),
-    )
-    .await?;
+    tx.sync_delete(&scope, SyncModel::Membership, membership_id)
+        .await?;
     for team_id in &team_ids {
         teams::sync_team(&mut tx, *team_id, SyncAction::Update).await?;
         tx.emit(Event::TeamMemberRemoved {
@@ -1034,14 +1004,8 @@ pub async fn set_membership(
                 .bind(&role)
                 .execute(&mut *tx)
                 .await?;
-            tx.sync(
-                &access.scope(),
-                "membership",
-                id,
-                SyncAction::Update,
-                &util::membership_sync_json(id, access.org.id, user.id, &role),
-            )
-            .await?;
+            tx.sync_model(SyncModel::Membership, id, SyncAction::Update)
+                .await?;
             audit::log(
                 &mut *tx,
                 Some(&auth.user),
@@ -1258,7 +1222,6 @@ pub async fn accept_membership(
         })?;
     let role = invitation_member_role(&inv.role);
     add_member(
-        &state,
         &mut tx,
         &access.org,
         &auth.user,
@@ -1284,7 +1247,6 @@ pub async fn accept_membership(
 
 /// Insert an org membership (plus team memberships) inside `tx`.
 pub async fn add_member(
-    state: &AppState,
     tx: &mut Tx,
     org: &db::User,
     user: &db::User,
@@ -1301,23 +1263,10 @@ pub async fn add_member(
     .bind(role)
     .fetch_one(&mut **tx)
     .await?;
-    let scope = sync::org_scope(org.id);
-    tx.sync(
-        &scope,
-        "membership",
-        id,
-        SyncAction::Insert,
-        &util::membership_sync_json(id, org.id, user.id, role),
-    )
-    .await?;
-    tx.sync(
-        &scope,
-        "user",
-        user.id,
-        SyncAction::Update,
-        &util::user_sync_json(&state.urls, user),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Membership, id, SyncAction::Insert)
+        .await?;
+    // The member's `user` row, now also in the org scope.
+    tx.sync_user(user.id).await?;
     let added: Vec<i64> = sqlx::query_scalar(
         "INSERT INTO team_members (team_id, user_id)
          SELECT t.id, $2 FROM teams t WHERE t.id = ANY($1) AND t.org_id = $3
@@ -1420,22 +1369,22 @@ pub async fn create_invitation(
         Invitee::Email(e) => Some(e.to_string()),
     };
     if let Some(to) = to {
+        let greeting = match &invitee {
+            Invitee::User(u) => u.login.clone(),
+            Invitee::Email(e) => e.to_string(),
+        };
         let link = state
             .urls
             .html(&format!("/orgs/{}/invitation", access.org.login));
         util::queue_mail(
             tx,
-            &to,
-            &format!(
-                "[{}] @{} has invited you to join the @{} organization",
-                state.config.site_name, inviter.login, access.org.login
-            ),
-            format!(
-                "@{inviter} has invited you to join the @{org} organization on {site}.\n\n\
-                 View the invitation: {link}\n",
-                inviter = inviter.login,
-                org = access.org.login,
-                site = state.config.site_name,
+            mail::templates::org_invitation(
+                &state.config.site_name,
+                &to,
+                &greeting,
+                &inviter.login,
+                &access.org.login,
+                &link,
             ),
         )
         .await?;

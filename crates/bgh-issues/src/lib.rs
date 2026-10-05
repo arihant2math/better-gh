@@ -140,9 +140,8 @@ pub fn web_router() -> Router<AppState> {
         )
 }
 
-/// Event listeners: default labels for new repositories, and commit
-/// references / closing keywords from pushes.
+/// Event listeners: commit references / closing keywords from pushes.
+/// (Default labels are created with the repository, `bgh_core::labels`.)
 pub fn register(reg: &mut Registry) {
-    reg.on_event("issues.default_labels", labels::on_event);
     reg.on_event("issues.commit_references", refs::on_event);
 }

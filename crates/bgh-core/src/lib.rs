@@ -11,6 +11,7 @@ pub mod error;
 pub mod events;
 pub mod extract;
 pub mod jobs;
+pub mod labels;
 pub mod mail;
 pub mod markdown;
 pub mod models;

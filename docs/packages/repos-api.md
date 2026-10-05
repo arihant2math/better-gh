@@ -33,6 +33,8 @@ Stars / watching (`stars.rs`, `watching.rs`)
 
 Collaborators (`collaborators.rs`)
 * `GET /repos/{o}/{r}/collaborators` (`affiliation`, `permission`), `GET|PUT|DELETE .../collaborators/{u}`, `GET .../collaborators/{u}/permission`
+* Grant changes (add, permission change, accept invitation, removal) re-sync the user's `viewerRepo` (`D` when they lost read access) and emit `Event::AccessChanged` (bgh-sync rechecks their sockets); there is no `collaborator` sync model.
+* New repositories (create, generate from template; not forks) get GitHub's default labels in the creating transaction (`bgh_core::labels::create_defaults`).
 * `GET /repos/{o}/{r}/invitations`, `PATCH|DELETE .../invitations/{id}`, `GET /user/repository_invitations`, `PATCH|DELETE /user/repository_invitations/{id}`
 
 Contents (`contents.rs`)

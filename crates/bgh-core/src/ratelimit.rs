@@ -1,151 +1,289 @@
-//! REST API rate limiting (fixed hourly window in Redis), configured by the
-//! `rate_limits` site setting. Disabled by default, like GHES; when disabled
-//! the middleware does nothing and `GET /rate_limit` answers 404.
+//! GitHub-compatible API rate limits (Redis fixed windows) and throttling
+//! counters.
 //!
-//! Authenticated callers are limited per user, anonymous callers per client
-//! IP (`X-Forwarded-For`, else a shared bucket). Responses carry GitHub's
-//! `X-RateLimit-{Limit,Remaining,Used,Reset,Resource}` headers; exceeding
-//! the limit yields 403 "API rate limit exceeded".
+//! * Budgets per resource: `core` (REST, per hour), `search` (`/search/*`,
+//!   per minute) and `graphql` (`/api/graphql`, per hour); authenticated
+//!   callers are counted per user, anonymous callers per client IP
+//!   ([`auth::client_ip`]). Limits come from the `rate_limits` site setting
+//!   ([`settings::RateLimitSettings`]), whose defaults are the
+//!   `BGH_RATE_LIMIT*` environment variables.
+//! * Every API response carries GitHub's
+//!   `X-RateLimit-{Limit,Remaining,Reset,Used,Resource}` headers.
+//!   `GET /rate_limit` always answers in GitHub's shape and is not counted.
+//! * Enforcement is a switch (`rate_limits.enabled`, off by default like
+//!   GHES): when on, a caller over budget gets 403 "API rate limit exceeded
+//!   for …" with `Retry-After`. Redis failures fail open (no headers).
+//! * [`hit`] / [`count`] / [`clear`]: counters for throttling sensitive
+//!   actions (failed logins, 2FA attempts, password reset mails).
 //!
-//! [`hit`] / [`count`] / [`clear`]: counters for throttling sensitive
-//! actions (failed logins, 2FA attempts, password reset mails).
+//! Mounted by bgh-server: [`middleware`] on the nested `/api/v3` router and
+//! [`root_middleware`] at the root for the API paths outside it
+//! (`/api/graphql`, `/api/v3/`).
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use redis::AsyncCommands;
 use serde::Serialize;
+use serde_json::{Map, Value, json};
 
 use crate::auth::{self, AuthContext};
 use crate::error::ApiError;
-use crate::settings;
+use crate::settings::{self, RateLimitSettings};
 use crate::state::AppState;
 
-const WINDOW_SECS: i64 = 3600;
+/// A rate-limited resource (separate budgets).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resource {
+    Core,
+    Search,
+    Graphql,
+}
 
-/// One `resources.*` entry of `GET /rate_limit`.
+impl Resource {
+    pub const ALL: [Resource; 3] = [Resource::Core, Resource::Search, Resource::Graphql];
+
+    /// The resource a request path counts against.
+    pub fn for_path(path: &str) -> Self {
+        if path == "/api/graphql" {
+            Self::Graphql
+        } else if path.contains("/search/") {
+            Self::Search
+        } else {
+            Self::Core
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Core => "core",
+            Self::Search => "search",
+            Self::Graphql => "graphql",
+        }
+    }
+
+    fn window_secs(self) -> i64 {
+        match self {
+            Self::Search => 60,
+            Self::Core | Self::Graphql => 3600,
+        }
+    }
+
+    /// The limit for an (un)authenticated caller under `s`.
+    pub fn limit(self, s: &RateLimitSettings, authenticated: bool) -> i64 {
+        match (self, authenticated) {
+            (Self::Core, true) => s.authenticated_per_hour,
+            (Self::Core | Self::Graphql, false) => s.unauthenticated_per_hour,
+            (Self::Search, true) => s.search_authenticated_per_minute,
+            (Self::Search, false) => s.search_unauthenticated_per_minute,
+            (Self::Graphql, true) => s.graphql_per_hour,
+        }
+    }
+}
+
+/// One budget's state (a `resources.*` entry of `GET /rate_limit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Quota {
     pub limit: i64,
+    /// Requests counted in the window, capped at `limit` (like GitHub).
     pub used: i64,
     pub remaining: i64,
+    /// Unix seconds when the window resets.
     pub reset: i64,
+    #[serde(skip)]
+    pub resource: Resource,
+    /// Uncapped count (including rejected requests).
+    #[serde(skip)]
+    pub count: i64,
 }
 
-fn bucket(ctx: Option<&AuthContext>, ip: &str) -> String {
+impl Quota {
+    fn new(resource: Resource, limit: i64, count: i64, reset: i64) -> Self {
+        Self {
+            limit,
+            used: count.min(limit),
+            remaining: (limit - count).max(0),
+            reset,
+            resource,
+            count,
+        }
+    }
+
+    pub fn exceeded(&self) -> bool {
+        self.count > self.limit
+    }
+
+    /// Insert the `X-RateLimit-*` headers.
+    pub fn apply(&self, h: &mut HeaderMap) {
+        for (k, v) in [
+            ("x-ratelimit-limit", self.limit),
+            ("x-ratelimit-remaining", self.remaining),
+            ("x-ratelimit-reset", self.reset),
+            ("x-ratelimit-used", self.used),
+        ] {
+            h.insert(k, HeaderValue::from(v));
+        }
+        h.insert(
+            "x-ratelimit-resource",
+            HeaderValue::from_static(self.resource.name()),
+        );
+    }
+}
+
+/// Rate-limit identity: the user, or the client IP.
+fn caller_key(ctx: Option<&AuthContext>, ip: &str) -> String {
     match ctx {
         Some(c) => format!("u:{}", c.user.id),
         None => format!("ip:{ip}"),
     }
 }
 
-fn window() -> (i64, i64) {
+/// `(window start, reset)` of the current window.
+fn window(resource: Resource) -> (i64, i64) {
     let now = Utc::now().timestamp();
-    let w = now / WINDOW_SECS;
-    (w, (w + 1) * WINDOW_SECS)
+    let w = resource.window_secs();
+    let start = now - now.rem_euclid(w);
+    (start, start + w)
 }
 
-/// Count one request (when `consume`) and return the caller's quota, or
-/// `None` when rate limiting is disabled. `ip` is the client IP
-/// ([`auth::client_ip`]), used to bucket anonymous callers.
+fn bucket_key(state: &AppState, resource: Resource, caller: &str, start: i64) -> String {
+    state.redis_key(&format!("ratelimit:{}:{caller}:{start}", resource.name()))
+}
+
+/// The caller's quota for `resource`, counting one request when `consume`.
+/// `ip` is the client IP ([`auth::client_ip`]), used for anonymous callers.
 pub async fn quota(
     state: &AppState,
+    limits: &RateLimitSettings,
+    resource: Resource,
     ctx: Option<&AuthContext>,
     ip: &str,
     consume: bool,
-) -> Result<Option<Quota>, ApiError> {
-    let s = settings::load(state).await?;
-    if !s.rate_limits.enabled {
-        return Ok(None);
-    }
-    let limit = if ctx.is_some() {
-        s.rate_limits.authenticated_per_hour
-    } else {
-        s.rate_limits.unauthenticated_per_hour
-    };
-    let (w, reset) = window();
-    let key = state.redis_key(&format!("ratelimit:{}:{w}", bucket(ctx, ip)));
+) -> redis::RedisResult<Quota> {
+    let limit = resource.limit(limits, ctx.is_some());
+    let (start, reset) = window(resource);
+    let key = bucket_key(state, resource, &caller_key(ctx, ip), start);
     let mut redis = state.redis.clone();
     let used: i64 = if consume {
         let (n,): (i64,) = redis::pipe()
             .atomic()
             .incr(&key, 1)
-            .expire(&key, WINDOW_SECS)
+            .expire(&key, resource.window_secs() + 60)
             .ignore()
             .query_async(&mut redis)
             .await?;
         n
     } else {
-        redis::cmd("GET")
-            .arg(&key)
-            .query_async::<Option<i64>>(&mut redis)
-            .await?
-            .unwrap_or(0)
+        redis.get::<_, Option<i64>>(&key).await?.unwrap_or(0)
     };
-    Ok(Some(Quota {
-        limit,
-        used,
-        remaining: (limit - used).max(0),
-        reset,
-    }))
+    Ok(Quota::new(resource, limit, used, reset))
 }
 
-fn set_headers(h: &mut HeaderMap, q: &Quota) {
-    for (k, v) in [
-        ("x-ratelimit-limit", q.limit),
-        ("x-ratelimit-remaining", q.remaining),
-        ("x-ratelimit-used", q.used),
-        ("x-ratelimit-reset", q.reset),
+/// Body of `GET /rate_limit` (GitHub's shape: `resources.{core, search,
+/// graphql, …}` and the deprecated `rate` = core). Nothing is counted.
+pub async fn status(
+    state: &AppState,
+    ctx: Option<&AuthContext>,
+    ip: &str,
+) -> Result<Value, ApiError> {
+    let s = settings::load(state).await?;
+    let mut resources = Map::new();
+    for r in Resource::ALL {
+        let q = quota(state, &s.rate_limits, r, ctx, ip, false).await?;
+        resources.insert(r.name().into(), serde_json::to_value(q)?);
+    }
+    // `/search/code` shares the search budget here.
+    resources.insert("code_search".into(), resources["search"].clone());
+    // Resources GitHub reports that have no separate budget here: their
+    // budget is never used.
+    let reset = Utc::now().timestamp() + 3600;
+    for (name, limit) in [
+        ("integration_manifest", 5000),
+        ("source_import", 100),
+        ("code_scanning_upload", 1000),
+        ("actions_runner_registration", 10000),
+        ("scim", 15000),
+        ("dependency_snapshots", 100),
+        ("audit_log", 1750),
     ] {
-        h.insert(k, HeaderValue::from(v));
+        resources.insert(
+            name.into(),
+            json!({"limit": limit, "used": 0, "remaining": limit, "reset": reset}),
+        );
     }
-    h.insert("x-ratelimit-resource", HeaderValue::from_static("core"));
+    let rate = resources["core"].clone();
+    Ok(json!({ "resources": resources, "rate": rate }))
 }
 
-/// Middleware for `/api/v3`. `GET /rate_limit` is not counted (like GitHub).
-pub async fn rate_limit_middleware(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    match settings::load(&state).await {
-        Ok(s) if s.rate_limits.enabled => {}
-        _ => return next.run(req).await,
-    }
-    if req.uri().path().ends_with("/rate_limit") {
-        return next.run(req).await;
-    }
-    // Bad credentials: let the handler render the 401.
-    let Ok(ctx) = auth::resolve_request(&state, &mut req).await else {
-        return next.run(req).await;
+fn exceeded_response(q: &Quota, ctx: Option<&AuthContext>, ip: &str) -> Response {
+    let message = match ctx {
+        Some(c) => format!("API rate limit exceeded for user ID {}.", c.user.id),
+        None => format!(
+            "API rate limit exceeded for {ip}. (But here's the good news: Authenticated \
+             requests get a higher rate limit. Check out the documentation for more details.)"
+        ),
     };
+    let mut resp = ApiError::forbidden(message).into_response();
+    q.apply(resp.headers_mut());
+    let retry = (q.reset - Utc::now().timestamp()).max(1);
+    resp.headers_mut()
+        .insert(header::RETRY_AFTER, HeaderValue::from(retry));
+    resp
+}
+
+/// Count the request against its resource, enforce the limit when enabled
+/// and add the `X-RateLimit-*` headers.
+async fn limit(state: AppState, mut req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    // Resolve the caller once (cached for the handler). Bad credentials are
+    // counted as anonymous here; the handler reports the 401.
+    let ctx = auth::resolve_request(&state, &mut req).await.ok().flatten();
     let ip = auth::client_ip(&state.config, req.headers(), req.extensions());
-    let q = match quota(&state, ctx.as_ref(), &ip, true).await {
-        Ok(Some(q)) => q,
-        Ok(None) => return next.run(req).await,
+    let resource = Resource::for_path(&path);
+    let not_counted = path.ends_with("/rate_limit");
+    let q = match settings::load(&state).await {
+        Ok(s) => quota(
+            &state,
+            &s.rate_limits,
+            resource,
+            ctx.as_ref(),
+            &ip,
+            !not_counted,
+        )
+        .await
+        .map(|q| (q, s.rate_limits.enabled))
+        .map_err(|e| tracing::warn!(err = ?e, "rate limiter unavailable; allowing request")),
         Err(err) => {
-            // Never fail requests because Redis hiccuped.
-            tracing::warn!(?err, "rate limit check failed");
-            return next.run(req).await;
+            tracing::warn!(?err, "loading rate limit settings");
+            Err(())
         }
     };
-    if q.used > q.limit {
-        let message = match &ctx {
-            Some(c) => format!("API rate limit exceeded for user ID {}.", c.user.id),
-            None => format!(
-                "API rate limit exceeded for {}. (But here's the good news: Authenticated requests get a higher rate limit.)",
-                ip
-            ),
-        };
-        let mut resp = ApiError::Status(StatusCode::FORBIDDEN, message).into_response();
-        set_headers(resp.headers_mut(), &q);
-        return resp;
+    let Ok((q, enforce)) = q else {
+        return next.run(req).await;
+    };
+    if enforce && !not_counted && q.exceeded() {
+        return exceeded_response(&q, ctx.as_ref(), &ip);
     }
     let mut resp = next.run(req).await;
-    set_headers(resp.headers_mut(), &q);
+    q.apply(resp.headers_mut());
     resp
+}
+
+/// Middleware for the nested REST API router (`/api/v3/...`).
+pub async fn middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    limit(state, req, next).await
+}
+
+/// Root-level middleware for API endpoints mounted outside the nested
+/// `/api/v3` router: `/api/graphql` and the API root `/api/v3/`. Other
+/// paths pass through untouched.
+pub async fn root_middleware(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    match req.uri().path() {
+        "/api/graphql" | "/api/v3/" => limit(state, req, next).await,
+        _ => next.run(req).await,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -185,4 +323,30 @@ pub async fn count(state: &AppState, key: &str) -> u64 {
 pub async fn clear(state: &AppState, key: &str) {
     let mut redis = state.redis.clone();
     let _: Result<(), _> = redis.del(state.redis_key(&format!("throttle:{key}"))).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resources_and_headers() {
+        assert_eq!(
+            Resource::for_path("/api/v3/search/issues"),
+            Resource::Search
+        );
+        assert_eq!(Resource::for_path("/api/v3/user"), Resource::Core);
+        assert_eq!(Resource::for_path("/api/graphql"), Resource::Graphql);
+        assert_eq!(Resource::for_path("/repos/o/graphql"), Resource::Core);
+        let s = RateLimitSettings::default();
+        assert_eq!(Resource::Search.limit(&s, false), 10);
+        assert_eq!(Resource::Graphql.limit(&s, true), 5000);
+        let q = Quota::new(Resource::Core, 60, 61, 0);
+        assert!(q.exceeded());
+        assert_eq!(q.remaining, 0);
+        let mut h = HeaderMap::new();
+        q.apply(&mut h);
+        assert_eq!(h["x-ratelimit-used"], "60");
+        assert_eq!(h["x-ratelimit-resource"], "core");
+    }
 }

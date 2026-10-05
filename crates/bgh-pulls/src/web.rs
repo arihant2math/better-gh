@@ -125,14 +125,8 @@ pub async fn set_resolved(
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &access.scope(),
-        "reviewComment",
-        row.id,
-        SyncAction::Update,
-        &comments::sync_json(&row),
-    )
-    .await?;
+    tx.sync_model(SyncModel::ReviewComment, row.id, SyncAction::Update)
+        .await?;
     tx.enqueue(&Refresh {
         pull_id: pull.id(),
         codeowners: false,

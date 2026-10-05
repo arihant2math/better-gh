@@ -1,18 +1,19 @@
 //! Generic OpenID Connect single sign-on (authorization code + PKCE).
 //!
-//! Providers are configured in `site_settings` under the key `auth.oidc`
-//! (a JSON object or array of objects, editable by site admins), falling
-//! back to environment variables for a single provider:
+//! Providers come from one accessor, [`providers`]: the `auth_providers.oidc`
+//! site setting (`bgh_core::settings::OidcProvider`, edited by site admins),
+//! whose default is the single provider configured by `BGH_OIDC_*`
+//! (`bgh_core::Config::oidc`; a stored `oidc` list replaces it):
 //!
-//! | field | env | default |
+//! | setting field | env | default |
 //! |-------|-----|---------|
-//! | `id` | `BGH_OIDC_ID` | `oidc` |
-//! | `name` | `BGH_OIDC_NAME` | `Single sign-on` |
+//! | `name` (URL id) | `BGH_OIDC_ID` | `oidc` |
+//! | `display_name` | `BGH_OIDC_NAME` | `Single sign-on` |
 //! | `issuer` | `BGH_OIDC_ISSUER` | (required) |
 //! | `client_id` | `BGH_OIDC_CLIENT_ID` | (required) |
 //! | `client_secret` | `BGH_OIDC_CLIENT_SECRET` | |
-//! | `scopes` | `BGH_OIDC_SCOPES` | `openid profile email` |
-//! | `auto_create` | `BGH_OIDC_AUTO_CREATE` | `true` |
+//! | `scopes` | `BGH_OIDC_SCOPES` (space separated) | `openid profile email` |
+//! | `auto_create_users` | `BGH_OIDC_AUTO_CREATE` | `true` |
 //! | `login_claim` | `BGH_OIDC_LOGIN_CLAIM` | `preferred_username` |
 //! | `allowed_domains` | `BGH_OIDC_ALLOWED_DOMAINS` (comma separated) | any |
 //!
@@ -37,6 +38,7 @@ use bgh_core::audit;
 use bgh_core::auth;
 use bgh_core::crypto;
 use bgh_core::prelude::*;
+use bgh_core::settings;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -49,89 +51,64 @@ use crate::{users, validate};
 const STATE_TTL_SECS: u64 = 600;
 const DISCOVERY_TTL_SECS: u64 = 3600;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A provider as the login flow uses it (resolved from the settings).
+#[derive(Debug, Clone)]
 pub struct OidcProvider {
-    #[serde(default = "default_id")]
     pub id: String,
-    #[serde(default = "default_name")]
     pub name: String,
     pub issuer: String,
     pub client_id: String,
-    #[serde(default)]
     pub client_secret: Option<String>,
-    #[serde(default = "default_scopes")]
+    /// Space-separated scopes.
     pub scopes: String,
-    #[serde(default = "yes")]
     pub auto_create: bool,
-    #[serde(default = "default_login_claim")]
     pub login_claim: String,
-    #[serde(default)]
+    /// Lower-case domains; empty = any.
     pub allowed_domains: Vec<String>,
 }
 
-fn default_id() -> String {
-    "oidc".into()
-}
-fn default_name() -> String {
-    "Single sign-on".into()
-}
-fn default_scopes() -> String {
-    "openid profile email".into()
-}
-fn default_login_claim() -> String {
-    "preferred_username".into()
-}
-fn yes() -> bool {
-    true
-}
-
-fn from_env() -> Option<OidcProvider> {
-    let get = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
-    Some(OidcProvider {
-        id: get("BGH_OIDC_ID").unwrap_or_else(default_id),
-        name: get("BGH_OIDC_NAME").unwrap_or_else(default_name),
-        issuer: get("BGH_OIDC_ISSUER")?,
-        client_id: get("BGH_OIDC_CLIENT_ID")?,
-        client_secret: get("BGH_OIDC_CLIENT_SECRET"),
-        scopes: get("BGH_OIDC_SCOPES").unwrap_or_else(default_scopes),
-        auto_create: get("BGH_OIDC_AUTO_CREATE")
-            .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "no" | "off")),
-        login_claim: get("BGH_OIDC_LOGIN_CLAIM").unwrap_or_else(default_login_claim),
-        allowed_domains: get("BGH_OIDC_ALLOWED_DOMAINS")
-            .map(|v| {
-                v.split(',')
-                    .map(|d| d.trim().to_lowercase())
-                    .filter(|d| !d.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default(),
-    })
-}
-
-/// Configured providers (site settings first, then the environment).
-pub async fn providers(state: &AppState) -> ApiResult<Vec<OidcProvider>> {
-    let v: Option<Value> =
-        sqlx::query_scalar("SELECT value FROM site_settings WHERE key = 'auth.oidc'")
-            .fetch_optional(&state.db)
-            .await?;
-    if let Some(v) = v {
-        let list = match v {
-            Value::Array(items) => items,
-            Value::Null => vec![],
-            other => vec![other],
-        };
-        return Ok(list
-            .into_iter()
-            .filter_map(|p| match serde_json::from_value::<OidcProvider>(p) {
-                Ok(p) => Some(p),
-                Err(err) => {
-                    tracing::warn!(%err, "ignoring invalid auth.oidc provider");
-                    None
-                }
-            })
-            .collect());
+impl From<&settings::OidcProvider> for OidcProvider {
+    fn from(p: &settings::OidcProvider) -> Self {
+        Self {
+            id: p.name.clone(),
+            name: p
+                .display_name
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| p.name.clone()),
+            issuer: p.issuer.clone(),
+            client_id: p.client_id.clone(),
+            client_secret: p.client_secret.clone().filter(|s| !s.is_empty()),
+            scopes: if p.scopes.is_empty() {
+                "openid profile email".into()
+            } else {
+                p.scopes.join(" ")
+            },
+            auto_create: p.auto_create_users,
+            login_claim: p
+                .login_claim
+                .clone()
+                .filter(|c| !c.is_empty())
+                .unwrap_or_else(|| "preferred_username".into()),
+            allowed_domains: p
+                .allowed_domains
+                .iter()
+                .map(|d| d.trim().to_lowercase())
+                .filter(|d| !d.is_empty())
+                .collect(),
+        }
     }
-    Ok(from_env().into_iter().collect())
+}
+
+/// Configured providers: the effective `auth_providers.oidc` site setting
+/// (environment defaults overridden by what site admins stored).
+pub async fn providers(state: &AppState) -> ApiResult<Vec<OidcProvider>> {
+    let s = settings::load(state).await?;
+    Ok(s.auth_providers
+        .oidc
+        .iter()
+        .map(OidcProvider::from)
+        .collect())
 }
 
 async fn provider(state: &AppState, id: &str) -> ApiResult<OidcProvider> {

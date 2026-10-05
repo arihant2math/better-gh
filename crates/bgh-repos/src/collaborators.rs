@@ -24,7 +24,6 @@ use bgh_core::models::api::{MinimalRepository, RepoPermissions, SimpleUser};
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::perms;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_core::views;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -338,7 +337,6 @@ async fn add(
     }
     let repo_id = access.repo.id;
     let target = audit_target(&access.repo, &access.owner);
-    let sync_data = json!({ "user_id": user.id, "permission": role.as_str() });
 
     let mut tx = Tx::begin(&state).await?;
     let existing: Option<String> = sqlx::query_scalar(
@@ -358,14 +356,6 @@ async fn add(
             .bind(role.as_str())
             .execute(&mut *tx)
             .await?;
-            tx.sync(
-                &access.scope(),
-                "collaborator",
-                user.id,
-                SyncAction::Update,
-                &sync_data,
-            )
-            .await?;
             audit::log(
                 &mut *tx,
                 Some(&auth.user),
@@ -374,6 +364,7 @@ async fn add(
                 json!({ "user": user.login, "old_permission": old, "permission": role.as_str() }),
             )
             .await?;
+            access_changed(&mut tx, repo_id, user.id).await?;
         }
         tx.commit().await?;
         return Ok(StatusCode::NO_CONTENT.into_response());
@@ -395,14 +386,6 @@ async fn add(
             .bind(user.id)
             .execute(&mut *tx)
             .await?;
-        tx.sync(
-            &access.scope(),
-            "collaborator",
-            user.id,
-            SyncAction::Insert,
-            &sync_data,
-        )
-        .await?;
         audit::log(
             &mut *tx,
             Some(&auth.user),
@@ -417,6 +400,7 @@ async fn add(
             actor_id: auth.user.id,
             permission: role.as_str().to_string(),
         });
+        access_changed(&mut tx, repo_id, user.id).await?;
         tx.commit().await?;
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
@@ -449,6 +433,18 @@ async fn add(
     Ok((StatusCode::CREATED, Json(inv)).into_response())
 }
 
+/// A direct grant of `user_id` on `repo_id` changed: re-sync their
+/// `viewerRepo` row (a delete when they lost read access) and let bgh-sync
+/// recheck their live sockets.
+async fn access_changed(tx: &mut Tx, repo_id: i64, user_id: i64) -> ApiResult<()> {
+    tx.emit(Event::AccessChanged {
+        repo_id: Some(repo_id),
+        org_id: None,
+        user_id: Some(user_id),
+    });
+    tx.sync_viewer_repo(user_id, repo_id).await
+}
+
 /// `DELETE /repos/{owner}/{repo}/collaborators/{username}`: admins, or a
 /// collaborator removing themself. Also cancels a pending invitation.
 async fn remove(
@@ -476,14 +472,6 @@ async fn remove(
         .execute(&mut *tx)
         .await?;
     if let Some(old) = removed {
-        tx.sync(
-            &access.scope(),
-            "collaborator",
-            user.id,
-            SyncAction::Delete,
-            &json!({ "user_id": user.id }),
-        )
-        .await?;
         audit::log(
             &mut *tx,
             Some(&auth.user),
@@ -492,6 +480,7 @@ async fn remove(
             json!({ "user": user.login, "permission": old }),
         )
         .await?;
+        access_changed(&mut tx, repo_id, user.id).await?;
     }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -755,14 +744,7 @@ async fn accept_invitation(
     .bind(&inv.permission)
     .execute(&mut *tx)
     .await?;
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "collaborator",
-        auth.user.id,
-        SyncAction::Insert,
-        &json!({ "user_id": auth.user.id, "permission": inv.permission }),
-    )
-    .await?;
+
     audit::log(
         &mut *tx,
         Some(&auth.user),
@@ -777,6 +759,7 @@ async fn accept_invitation(
         actor_id: auth.user.id,
         permission: inv.permission.clone(),
     });
+    access_changed(&mut tx, repo.id, auth.user.id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

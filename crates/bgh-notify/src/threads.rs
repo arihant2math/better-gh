@@ -4,7 +4,7 @@
 //! * `GET/PATCH/DELETE /notifications/threads/{id}`
 //!
 //! Every change to a thread is recorded as a `notification` sync action in
-//! the owner's `user:{id}` scope (client shape: [`client_json`]); marking a
+//! the owner's `user:{id}` scope (shape: `bgh_core::sync::shapes`); marking a
 //! thread done deletes it from the client store.
 
 use std::collections::HashMap;
@@ -18,7 +18,6 @@ use bgh_core::time::ts;
 use bgh_core::views;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 /// `notifications` row.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -47,45 +46,25 @@ impl NotificationRow {
         latest_comment_type, last_actor_id, created_at, updated_at";
 }
 
-/// Compact client shape (`Notification` in docs/SYNC_PROTOCOL.md).
-pub fn client_json(n: &NotificationRow) -> Value {
-    json!({
-        "id": n.id,
-        "repoId": n.repo_id,
-        "subjectType": n.subject_type,
-        "subjectId": n.subject_id,
-        "title": n.subject_title,
-        "reason": n.reason,
-        "unread": n.unread,
-        "updatedAt": Timestamp::from(n.updated_at),
-        "lastReadAt": ts(n.last_read_at),
-    })
-}
-
 /// Record the current state of `rows` in their owners' sync scopes
-/// (`done` rows are deletions from the client's point of view).
+/// (`done` rows are deletions from the client's point of view). Shapes come
+/// from `bgh_core::sync::shapes` (`notification`).
 pub async fn sync_rows(tx: &mut Tx, rows: &[NotificationRow], inserted: &[bool]) -> ApiResult<()> {
+    let (mut new, mut changed) = (Vec::new(), Vec::new());
     for (i, n) in rows.iter().enumerate() {
-        let scope = sync::user_scope(n.user_id);
         if n.done {
-            tx.sync(
-                &scope,
-                "notification",
-                n.id,
-                SyncAction::Delete,
-                &json!({ "id": n.id }),
-            )
-            .await?;
-        } else {
-            let action = if inserted.get(i).copied().unwrap_or(false) {
-                SyncAction::Insert
-            } else {
-                SyncAction::Update
-            };
-            tx.sync(&scope, "notification", n.id, action, &client_json(n))
+            tx.sync_delete(&sync::user_scope(n.user_id), SyncModel::Notification, n.id)
                 .await?;
+        } else if inserted.get(i).copied().unwrap_or(false) {
+            new.push(n.id);
+        } else {
+            changed.push(n.id);
         }
     }
+    tx.sync_models(SyncModel::Notification, &new, SyncAction::Insert)
+        .await?;
+    tx.sync_models(SyncModel::Notification, &changed, SyncAction::Update)
+        .await?;
     Ok(())
 }
 

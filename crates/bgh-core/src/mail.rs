@@ -1,29 +1,23 @@
-//! Outgoing email.
+//! Outgoing email: one message type, one job, one transport selection.
 //!
 //! ```ignore
-//! bgh_core::mail::send(&state, &Message::new("ada@example.com", "Subject", "Body")).await?;
+//! let email = mail::templates::verify_email(site, to, login, &url, 72);
+//! tx.enqueue(&mail::SendEmail::new(email)).await?;   // or mail::enqueue(db, email)
 //! ```
 //!
-//! Transport is chosen by config: with `BGH_SMTP_URL` set, mail goes out
-//! over SMTP (lettre, rustls); otherwise it is logged and written to
-//! `{data_dir}/mail/{unix_millis}-{n}.eml` (dev mode; tests read these files
-//! through [`outbox`]). Prefer sending from a background job so request
-//! latency doesn't depend on the mail server (bgh-accounts has
-//! `accounts.send_mail`).
-//!
-//! Second path (bgh-notify): a rich [`Email`] type, the durable send queue
-//! and the account-email templates.
-//!
-//! Any crate sends mail by enqueueing a [`SendEmail`] job in its
-//! transaction (`tx.enqueue(&SendEmail::new(email))` or [`enqueue`]); the
-//! handler (registered by bgh-notify) delivers it through SMTP (`BGH_SMTP_URL`)
-//! or, without SMTP, the dev transport that logs the message and writes it
-//! to `{data_dir}/mail/{n}.eml`. Delivery is retried by the job queue.
-//!
-//! Templates return an [`Email`] with both a plain-text and an HTML body.
-//! Notification emails are rendered by bgh-notify; account emails
-//! (verification, password reset, invitations) live in [`templates`] so
-//! bgh-accounts can use them without depending on bgh-notify.
+//! * [`Email`]: recipient, subject, plain-text + optional HTML body, extra
+//!   headers (threading, `List-Unsubscribe`, ...).
+//! * [`SendEmail`] job (`mail.send`, handler [`send_job`], registered by
+//!   bgh-server): every crate queues mail in its transaction, so it is sent
+//!   only if the transaction commits and request latency never depends on
+//!   the mail server. Delivery is retried by the job queue.
+//! * Transport ([`deliver`]), chosen per message: the admin `smtp` site
+//!   setting when enabled → `BGH_SMTP_URL` → the dev transport, which logs
+//!   the message and writes it to `{data_dir}/mail/` (`.eml` plus the
+//!   structured `.json`; tests read them with [`outbox`] / [`outbox_raw`]).
+//! * [`templates`]: account emails (verification, password reset and
+//!   change, 2FA, invitations); notification emails are rendered by
+//!   bgh-notify.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -31,123 +25,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use anyhow::Context;
-use lettre::message::header::ContentType;
+use lettre::message::header::{ContentType, HeaderName, HeaderValue};
+use lettre::message::{Mailbox, MultiPart, SinglePart};
+use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
 use crate::config::Config;
 use crate::jobs::{self, JobPayload};
+use crate::settings::{self, SmtpSettings};
 use crate::state::AppState;
-
-/// A plain-text email.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Message {
-    pub to: String,
-    pub subject: String,
-    pub text: String,
-}
-
-impl Message {
-    pub fn new(to: impl Into<String>, subject: impl Into<String>, text: impl Into<String>) -> Self {
-        Self {
-            to: to.into(),
-            subject: subject.into(),
-            text: text.into(),
-        }
-    }
-}
-
-type Smtp = AsyncSmtpTransport<Tokio1Executor>;
-
-/// SMTP transports (connection pools) keyed by URL.
-fn smtp_transport(url: &str) -> anyhow::Result<Smtp> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Smtp>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(Default::default);
-    let mut map = cache.lock().expect("smtp cache poisoned");
-    if let Some(t) = map.get(url) {
-        return Ok(t.clone());
-    }
-    let t = Smtp::from_url(url).context("invalid BGH_SMTP_URL")?.build();
-    map.insert(url.to_string(), t.clone());
-    Ok(t)
-}
-
-fn outbox_dir(config: &Config) -> PathBuf {
-    config.data_dir.join("mail")
-}
-
-/// Send `msg` with the configured transport.
-pub async fn send(state: &AppState, msg: &Message) -> anyhow::Result<()> {
-    send_with(&state.config, msg).await
-}
-
-/// Like [`send`] with an explicit config.
-pub async fn send_with(config: &Config, msg: &Message) -> anyhow::Result<()> {
-    let email = lettre::Message::builder()
-        .from(
-            config
-                .mail_from()
-                .parse()
-                .context("invalid BGH_MAIL_FROM")?,
-        )
-        .to(msg.to.parse().context("invalid recipient")?)
-        .subject(&msg.subject)
-        .header(ContentType::TEXT_PLAIN)
-        .body(msg.text.clone())
-        .context("building email")?;
-    match &config.smtp_url {
-        Some(url) => {
-            smtp_transport(url)?
-                .send(email)
-                .await
-                .context("sending email over SMTP")?;
-        }
-        None => {
-            static SEQ: AtomicU64 = AtomicU64::new(0);
-            tracing::info!(to = %msg.to, subject = %msg.subject, "mail (no BGH_SMTP_URL; written to outbox)");
-            let dir = outbox_dir(config);
-            tokio::fs::create_dir_all(&dir).await?;
-            let millis = chrono::Utc::now().timestamp_millis();
-            let n = SEQ.fetch_add(1, Ordering::Relaxed);
-            let path = dir.join(format!("{millis:013}-{n:06}.eml"));
-            tokio::fs::write(&path, email.formatted()).await?;
-            // Also keep the structured message for tooling and tests.
-            tokio::fs::write(path.with_extension("json"), serde_json::to_vec(msg)?).await?;
-        }
-    }
-    Ok(())
-}
-
-/// Messages written to the dev outbox (oldest first). Empty with SMTP.
-pub async fn outbox(config: &Config) -> Vec<Message> {
-    let dir = outbox_dir(config);
-    let mut entries = match tokio::fs::read_dir(&dir).await {
-        Ok(e) => e,
-        Err(_) => return vec![],
-    };
-    let mut files = Vec::new();
-    while let Ok(Some(e)) = entries.next_entry().await {
-        let p = e.path();
-        if p.extension().is_some_and(|x| x == "json") {
-            files.push(p);
-        }
-    }
-    files.sort();
-    let mut out = Vec::new();
-    for f in files {
-        if let Ok(bytes) = tokio::fs::read(&f).await
-            && let Ok(m) = serde_json::from_slice(&bytes)
-        {
-            out.push(m);
-        }
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Rich emails delivered through the `mail.send` job (bgh-notify)
-// ---------------------------------------------------------------------------
 
 /// A rendered email message.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -179,7 +67,7 @@ impl Email {
     }
 }
 
-/// Job: deliver one email (kind `mail.send`, handled by bgh-notify).
+/// Job: deliver one email (kind `mail.send`, handler [`send_job`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendEmail {
     pub email: Email,
@@ -199,6 +87,242 @@ impl JobPayload for SendEmail {
 /// Queue `email` for delivery (after the surrounding transaction commits).
 pub async fn enqueue(db: impl PgExecutor<'_>, email: Email) -> Result<i64, sqlx::Error> {
     jobs::enqueue_job(db, &SendEmail::new(email)).await
+}
+
+/// `mail.send` job handler.
+pub async fn send_job(state: AppState, job: SendEmail) -> anyhow::Result<()> {
+    deliver(&state, &job.email).await
+}
+
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+
+type Smtp = AsyncSmtpTransport<Tokio1Executor>;
+
+/// Where a message goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Transport {
+    /// The admin `smtp` site setting.
+    Settings(SmtpSettings),
+    /// `BGH_SMTP_URL`.
+    Url(String),
+    /// Log + `{data_dir}/mail/`.
+    Dev,
+}
+
+impl Transport {
+    /// The transport for `smtp` (the effective site setting) and `config`.
+    pub fn select(smtp: &SmtpSettings, config: &Config) -> Self {
+        if smtp.enabled && !smtp.host.is_empty() {
+            Self::Settings(smtp.clone())
+        } else if let Some(url) = &config.smtp_url {
+            Self::Url(url.clone())
+        } else {
+            Self::Dev
+        }
+    }
+
+    /// `From:` address: the setting's `from` with [`Self::Settings`],
+    /// otherwise `BGH_MAIL_FROM` (default `{site} <noreply@{host}>`).
+    pub fn from_address(&self, config: &Config) -> String {
+        match self {
+            Self::Settings(s) if !s.from.trim().is_empty() => s.from.clone(),
+            _ => config.mail_from(),
+        }
+    }
+
+    /// Pooled SMTP client (cached per configuration); `None` for `Dev`.
+    fn smtp(&self) -> anyhow::Result<Option<Smtp>> {
+        static POOLS: OnceLock<Mutex<HashMap<String, Smtp>>> = OnceLock::new();
+        let key = match self {
+            Self::Dev => return Ok(None),
+            Self::Url(url) => format!("url:{url}"),
+            Self::Settings(s) => format!(
+                "settings:{}",
+                serde_json::to_string(s).context("smtp settings")?
+            ),
+        };
+        let pools = POOLS.get_or_init(Default::default);
+        let mut pools = pools.lock().expect("smtp pool lock");
+        if let Some(t) = pools.get(&key) {
+            return Ok(Some(t.clone()));
+        }
+        let t = match self {
+            Self::Url(url) => Smtp::from_url(url).context("invalid BGH_SMTP_URL")?.build(),
+            Self::Settings(s) => {
+                let mut b = match s.tls.as_str() {
+                    "tls" => Smtp::relay(&s.host).context("smtp relay")?,
+                    "starttls" => Smtp::starttls_relay(&s.host).context("smtp relay")?,
+                    _ => Smtp::builder_dangerous(&s.host),
+                };
+                b = b.port(s.port);
+                if let Some(user) = s.username.as_ref().filter(|u| !u.is_empty()) {
+                    b = b.credentials(Credentials::new(
+                        user.clone(),
+                        s.password.clone().unwrap_or_default(),
+                    ));
+                }
+                b.build()
+            }
+            Self::Dev => unreachable!(),
+        };
+        pools.insert(key, t.clone());
+        Ok(Some(t))
+    }
+}
+
+/// Send `email` now with the selected [`Transport`] (prefer queueing a
+/// [`SendEmail`] job).
+pub async fn deliver(state: &AppState, email: &Email) -> anyhow::Result<()> {
+    let smtp = match settings::load(state).await {
+        Ok(s) => s.smtp.clone(),
+        Err(err) => anyhow::bail!("loading smtp settings: {err:?}"),
+    };
+    deliver_with(
+        &state.config,
+        &Transport::select(&smtp, &state.config),
+        email,
+    )
+    .await
+}
+
+/// [`deliver`] through an explicit transport.
+pub async fn deliver_with(
+    config: &Config,
+    transport: &Transport,
+    email: &Email,
+) -> anyhow::Result<()> {
+    let msg = build_message(&transport.from_address(config), email)?;
+    match transport.smtp()? {
+        Some(smtp) => {
+            smtp.send(msg)
+                .await
+                .with_context(|| format!("sending mail to {}", email.to))?;
+        }
+        None => {
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            let dir = outbox_dir(config);
+            tokio::fs::create_dir_all(&dir).await?;
+            let millis = chrono::Utc::now().timestamp_millis();
+            let n = SEQ.fetch_add(1, Ordering::Relaxed);
+            let path = dir.join(format!("{millis:013}-{n:06}.eml"));
+            tokio::fs::write(&path, msg.formatted()).await?;
+            tokio::fs::write(path.with_extension("json"), serde_json::to_vec(email)?).await?;
+            tracing::info!(
+                to = %email.to,
+                subject = %email.subject,
+                file = %path.display(),
+                "mail (dev transport; configure SMTP to send)"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Build the MIME message (multipart/alternative when there is HTML).
+pub fn build_message(from: &str, email: &Email) -> anyhow::Result<lettre::Message> {
+    let mut from: Mailbox = from
+        .parse()
+        .with_context(|| format!("invalid sender address {from:?}"))?;
+    if let Some(name) = &email.from_name {
+        from.name = Some(name.clone());
+    }
+    let to = Mailbox::new(
+        email.to_name.clone(),
+        email
+            .to
+            .parse()
+            .with_context(|| format!("invalid recipient {:?}", email.to))?,
+    );
+    let mut b = lettre::Message::builder()
+        .from(from)
+        .to(to)
+        .subject(email.subject.clone());
+    if let Some(reply_to) = &email.reply_to {
+        b = b.reply_to(reply_to.parse().context("invalid reply-to")?);
+    }
+    let mut message_id = None;
+    for (name, value) in &email.headers {
+        match name.to_ascii_lowercase().as_str() {
+            "message-id" => message_id = Some(value.clone()),
+            "in-reply-to" => b = b.in_reply_to(value.clone()),
+            "references" => b = b.references(value.clone()),
+            _ => {
+                let name = HeaderName::new_from_ascii(name.clone())
+                    .map_err(|e| anyhow::anyhow!("invalid header name {name:?}: {e}"))?;
+                b = b.raw_header(HeaderValue::new(name, value.clone()));
+            }
+        }
+    }
+    b = b.message_id(message_id);
+    let msg = match &email.html {
+        Some(html) => b.multipart(
+            MultiPart::alternative()
+                .singlepart(
+                    SinglePart::builder()
+                        .header(ContentType::TEXT_PLAIN)
+                        .body(email.text.clone()),
+                )
+                .singlepart(
+                    SinglePart::builder()
+                        .header(ContentType::TEXT_HTML)
+                        .body(html.clone()),
+                ),
+        )?,
+        None => b.header(ContentType::TEXT_PLAIN).body(email.text.clone())?,
+    };
+    Ok(msg)
+}
+
+// ---------------------------------------------------------------------------
+// Dev outbox (tests, local development)
+// ---------------------------------------------------------------------------
+
+fn outbox_dir(config: &Config) -> PathBuf {
+    config.data_dir.join("mail")
+}
+
+async fn outbox_files(config: &Config, ext: &str) -> Vec<PathBuf> {
+    let mut entries = match tokio::fs::read_dir(outbox_dir(config)).await {
+        Ok(e) => e,
+        Err(_) => return vec![],
+    };
+    let mut files = Vec::new();
+    while let Ok(Some(e)) = entries.next_entry().await {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == ext) {
+            files.push(p);
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Messages delivered by the dev transport, oldest first (empty with SMTP).
+/// Run `app.drain_jobs()` first in tests.
+pub async fn outbox(config: &Config) -> Vec<Email> {
+    let mut out = Vec::new();
+    for f in outbox_files(config, "json").await {
+        if let Ok(bytes) = tokio::fs::read(&f).await
+            && let Ok(m) = serde_json::from_slice(&bytes)
+        {
+            out.push(m);
+        }
+    }
+    out
+}
+
+/// The raw RFC 5322 messages of the dev transport (headers, MIME parts),
+/// oldest first.
+pub async fn outbox_raw(config: &Config) -> Vec<String> {
+    let mut out = Vec::new();
+    for f in outbox_files(config, "eml").await {
+        if let Ok(s) = tokio::fs::read_to_string(&f).await {
+            out.push(s);
+        }
+    }
+    out
 }
 
 /// Escape text for HTML element content and attribute values.
@@ -282,22 +406,42 @@ pub mod templates {
     }
 
     /// Email address verification.
-    pub fn verify_email(site: &str, to: &str, login: &str, url: &str) -> Email {
+    pub fn verify_email(site: &str, to: &str, login: &str, url: &str, valid_hours: i64) -> Email {
         simple(
             site,
             to,
             login,
             format!("[{site}] Please verify your email address"),
-            &[format!(
-                "Please verify {to} as an email address for your {site} account."
-            )],
+            &[
+                format!("Please verify {to} as an email address for your {site} account."),
+                format!(
+                    "The link expires in {}. If you didn't add this address, you can ignore this email.",
+                    duration(valid_hours * 60)
+                ),
+            ],
             Some((url, "Verify email address")),
             &format!("You received this email because this address was added to a {site} account."),
         )
     }
 
-    /// Password reset link.
-    pub fn password_reset(site: &str, to: &str, login: &str, url: &str, valid_hours: u32) -> Email {
+    /// `90` → "90 minutes", `60` → "1 hour", `4320` → "72 hours".
+    fn duration(minutes: i64) -> String {
+        let plural = |n: i64, unit: &str| format!("{n} {unit}{}", if n == 1 { "" } else { "s" });
+        if minutes % 60 == 0 {
+            plural(minutes / 60, "hour")
+        } else {
+            plural(minutes, "minute")
+        }
+    }
+
+    /// Password reset link, valid for `valid_minutes`.
+    pub fn password_reset(
+        site: &str,
+        to: &str,
+        login: &str,
+        url: &str,
+        valid_minutes: i64,
+    ) -> Email {
         simple(
             site,
             to,
@@ -306,7 +450,8 @@ pub mod templates {
             &[
                 format!("We heard that you lost your {site} password. Sorry about that!"),
                 format!(
-                    "You can use the following link to reset your password. It expires in {valid_hours} hours."
+                    "You can use the following link to reset your password. It expires in {}.",
+                    duration(valid_minutes)
                 ),
                 "If you didn't request a password reset, you can ignore this email.".to_string(),
             ],
@@ -314,6 +459,21 @@ pub mod templates {
             &format!(
                 "You received this email because a password reset was requested for your {site} account."
             ),
+        )
+    }
+
+    /// Two-factor authentication enabled notice.
+    pub fn two_factor_enabled(site: &str, to: &str, login: &str) -> Email {
+        simple(
+            site,
+            to,
+            login,
+            format!("[{site}] Two-factor authentication enabled"),
+            &[format!(
+                "Two-factor authentication was enabled on your {site} account. Keep your recovery codes somewhere safe."
+            )],
+            None,
+            &format!("You received this security notice for your {site} account."),
         )
     }
 
@@ -382,34 +542,87 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn writes_outbox_without_smtp() {
+    async fn dev_transport_writes_the_outbox() {
         let dir = std::env::temp_dir().join(format!("bgh-mail-{}", std::process::id()));
         let config = Config {
             data_dir: dir.clone(),
             ..Config::default()
         };
-        send_with(&config, &Message::new("ada@example.com", "Hi", "Hello"))
+        let email = templates::password_changed("BGH", "ada@example.com", "ada");
+        deliver_with(&config, &Transport::Dev, &email)
             .await
             .unwrap();
         let out = outbox(&config).await;
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].subject, "Hi");
+        assert_eq!(out, vec![email]);
+        let raw = outbox_raw(&config).await;
+        assert_eq!(raw.len(), 1);
+        assert!(raw[0].contains("To: ada@example.com"));
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
+    fn transport_selection() {
+        let mut config = Config::default();
+        let mut smtp = SmtpSettings::default();
+        assert_eq!(Transport::select(&smtp, &config), Transport::Dev);
+        config.smtp_url = Some("smtp://localhost:25".into());
+        assert_eq!(
+            Transport::select(&smtp, &config),
+            Transport::Url("smtp://localhost:25".into())
+        );
+        assert_eq!(
+            Transport::select(&smtp, &config).from_address(&config),
+            "Better GitHub <noreply@localhost>"
+        );
+        smtp.enabled = true;
+        smtp.host = "mail.example.com".into();
+        smtp.from = "Forge <forge@example.com>".into();
+        let t = Transport::select(&smtp, &config);
+        assert!(matches!(t, Transport::Settings(_)));
+        assert_eq!(t.from_address(&config), "Forge <forge@example.com>");
+    }
+
+    #[test]
+    fn builds_multipart_with_headers() {
+        let email = Email {
+            to: "bob@example.com".into(),
+            to_name: Some("Bob".into()),
+            from_name: Some("alice".into()),
+            subject: "[o/r] Hello (Issue #1)".into(),
+            text: "plain".into(),
+            html: Some("<p>html</p>".into()),
+            headers: vec![
+                ("Message-ID".into(), "<o/r/issues/1@localhost>".into()),
+                ("In-Reply-To".into(), "<o/r/issues/1@localhost>".into()),
+                ("List-Unsubscribe".into(), "<http://x/u>".into()),
+            ],
+            ..Default::default()
+        };
+        let from = Config::default().mail_from();
+        let raw = String::from_utf8(build_message(&from, &email).unwrap().formatted()).unwrap();
+        assert!(raw.contains("From: alice <noreply@localhost>"), "{raw}");
+        assert!(raw.contains("To: Bob <bob@example.com>"));
+        assert!(raw.contains("Message-ID: <o/r/issues/1@localhost>"));
+        assert!(raw.contains("List-Unsubscribe: <http://x/u>"));
+        assert!(raw.contains("multipart/alternative"));
+        assert!(raw.contains("<p>html</p>"));
+    }
+
+    #[test]
     fn templates_render_text_and_html() {
-        let e = templates::password_reset("BGH", "a@x.io", "alice", "http://h/reset?t=<x>", 3);
+        let e = templates::password_reset("BGH", "a@x.io", "alice", "http://h/reset?t=<x>", 60);
         assert_eq!(e.to, "a@x.io");
         assert!(e.subject.contains("reset your password"));
         assert!(e.text.contains("http://h/reset?t=<x>"));
+        assert!(e.text.contains("expires in 1 hour."));
         let html = e.html.unwrap();
         assert!(html.contains("http://h/reset?t=&lt;x&gt;"));
         assert!(!html.contains("<x>"));
         let job = SendEmail::new(templates::verify_email(
-            "BGH", "a@x.io", "alice", "http://v",
+            "BGH", "a@x.io", "alice", "http://v", 72,
         ));
         let v = serde_json::to_value(&job).unwrap();
         assert_eq!(v["email"]["to"], "a@x.io");
+        assert!(job.email.text.contains("expires in 72 hours"));
     }
 }

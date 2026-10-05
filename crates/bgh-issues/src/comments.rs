@@ -7,7 +7,6 @@ use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::issues::{self, parse_since};
 use crate::json::{self, BodyFormat, RepoInfo};
@@ -199,7 +198,7 @@ pub async fn create(
         .bind(issue.id)
         .execute(&mut *tx)
         .await?;
-    service::sync_comment(&mut tx, &state, &info, &c, SyncAction::Insert).await?;
+    service::sync_comment(&mut tx, c.id, SyncAction::Insert).await?;
     service::subscribe(&mut tx, &issue, auth.user.id, "comment").await?;
     refs::process(
         &mut tx,
@@ -266,7 +265,7 @@ pub async fn update(
     .bind(text)
     .fetch_one(&mut *tx)
     .await?;
-    service::sync_comment(&mut tx, &state, &info, &c, SyncAction::Update).await?;
+    service::sync_comment(&mut tx, c.id, SyncAction::Update).await?;
     refs::process(
         &mut tx,
         &state,
@@ -313,16 +312,9 @@ pub async fn delete(
         .bind(c.issue_id)
         .execute(&mut *tx)
         .await?;
-    tx.sync(
-        &sync::repo_scope(c.repo_id),
-        "comment",
-        c.id,
-        SyncAction::Delete,
-        &json!({ "id": c.id }),
-    )
-    .await?;
-    let issue = service::issue_by_id(&mut *tx, c.issue_id).await?;
-    service::sync_issue_row(&mut tx, &issue, SyncAction::Update).await?;
+    tx.sync_delete(&sync::repo_scope(c.repo_id), SyncModel::Comment, c.id)
+        .await?;
+    tx.sync_issue(c.issue_id, SyncAction::Update, false).await?;
     tx.emit(Event::IssueCommentDeleted {
         repo_id: c.repo_id,
         issue_id: c.issue_id,
