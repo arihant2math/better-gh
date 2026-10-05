@@ -28,6 +28,7 @@ pub mod polling;
 pub mod privacy;
 pub mod ratelimit;
 pub mod registry;
+pub mod secret_scanning;
 pub mod secretbox;
 pub mod settings;
 pub mod ssrf;

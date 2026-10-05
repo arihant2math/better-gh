@@ -671,6 +671,7 @@ dependencies = [
  "hex",
  "http",
  "http-body-util",
+ "libc",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -882,6 +883,7 @@ dependencies = [
  "base64 0.22.1",
  "bgh-core",
  "bgh-git",
+ "bgh-security",
  "bgh-server",
  "bgh-wiki",
  "bytes",
@@ -929,6 +931,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bgh-security"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bgh-core",
+ "bgh-git",
+ "bgh-notify",
+ "bgh-server",
+ "chrono",
+ "futures",
+ "hex",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "bgh-server"
 version = "0.1.0"
 dependencies = [
@@ -950,6 +976,7 @@ dependencies = [
  "bgh-releases",
  "bgh-repos",
  "bgh-search",
+ "bgh-security",
  "bgh-sync",
  "bgh-uploads",
  "bgh-wiki",

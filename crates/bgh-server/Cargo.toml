@@ -41,6 +41,7 @@ bgh-wiki.workspace = true
 bgh-import.workspace = true
 bgh-packages.workspace = true
 bgh-uploads.workspace = true
+bgh-security.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

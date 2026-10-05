@@ -871,6 +871,22 @@ pub enum Event {
         client_payload: serde_json::Value,
         branch: String,
     },
+    /// A secret scanning alert changed (P65, `bgh-security`). `action`:
+    /// `created` | `resolved` | `reopened`. Webhook `secret_scanning_alert`.
+    SecretScanningAlert {
+        repo_id: i64,
+        alert_id: i64,
+        action: String,
+        #[serde(default)]
+        actor_id: Option<i64>,
+    },
+    /// A secret scanning alert got a new location (webhook
+    /// `secret_scanning_alert_location` `created`).
+    SecretScanningAlertLocationCreated {
+        repo_id: i64,
+        alert_id: i64,
+        location_id: i64,
+    },
 }
 
 impl Event {
@@ -1005,6 +1021,10 @@ impl Event {
             Self::WikiPagesUpdated { .. } => "wiki_pages_updated",
             Self::RepositoryDispatch { .. } => "repository_dispatch",
             Self::CheckRunActionRequested { .. } => "check_run_action_requested",
+            Self::SecretScanningAlert { .. } => "secret_scanning_alert",
+            Self::SecretScanningAlertLocationCreated { .. } => {
+                "secret_scanning_alert_location_created"
+            }
         }
     }
 
@@ -1115,7 +1135,9 @@ impl Event {
             | Self::CheckRunActionRequested { repo_id, .. }
             | Self::DeploymentCreated { repo_id, .. }
             | Self::DeploymentStatusCreated { repo_id, .. }
-            | Self::CommitCommentCreated { repo_id, .. } => Some(*repo_id),
+            | Self::CommitCommentCreated { repo_id, .. }
+            | Self::SecretScanningAlert { repo_id, .. }
+            | Self::SecretScanningAlertLocationCreated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -1157,7 +1179,9 @@ impl Event {
             | Self::WorkflowRunUpdated { actor_id, .. }
             | Self::CommitStatusCreated { actor_id, .. }
             | Self::DeploymentCreated { actor_id, .. }
-            | Self::DeploymentStatusCreated { actor_id, .. } => *actor_id,
+            | Self::DeploymentStatusCreated { actor_id, .. }
+            | Self::SecretScanningAlert { actor_id, .. } => *actor_id,
+            Self::SecretScanningAlertLocationCreated { .. } => None,
             Self::CheckSuiteCompleted { .. }
             | Self::AccessChanged { .. }
             | Self::WorkflowJobUpdated { .. } => None,

@@ -247,6 +247,13 @@ pub async fn receive_pack(
         Some(Actor::load(&state, &access, &pusher.user).await?)
     };
     let workflow_denied = crate::workflow_scope::denial(&state, &pusher).await?;
+    let secrets = bgh_security::push::prepare(
+        &state,
+        &access.repo,
+        &access.owner.login,
+        Some(pusher.user.id),
+    )
+    .await?;
 
     let outcome = smart_http::receive_pack_with_policy(
         &crate::store(&state),
@@ -264,6 +271,10 @@ pub async fn receive_pack(
                     }
                 };
                 policy.workflow_denied = workflow_denied;
+                policy.object_check = bgh_security::push::combine(
+                    policy.object_check.take(),
+                    secrets.as_ref().map(|s| s.object_check(&updates)),
+                );
                 Ok(policy.with_limits(limits))
             }
         },

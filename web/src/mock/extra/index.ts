@@ -19,6 +19,7 @@ import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
 import { installRepoNavMocks } from './repoNav';
 import { installRulesetMocks } from './rulesets';
+import { installSecretScanningMocks } from './secretScanning';
 import { installUploadMocks } from './uploads';
 import { installUserMocks } from './user';
 
@@ -39,4 +40,5 @@ export function installExtraMocks(server: MockServer): void {
   installPackageMocks(server);
   installInsightsMocks(server);
   installAppsMocks(server);
+  installSecretScanningMocks(server);
 }
