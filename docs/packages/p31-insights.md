@@ -1,3 +1,6 @@
+Integration: ready
+P31 Insights: /stats/*, traffic, community profile, activity log and Insights UI; full gate green after merging the integration branch.
+
 # P31 — Repository Insights: stats, traffic, community profile, Insights UI — status
 
 **Done.** Branch `bgh/p31-insights`. Migration `4300_insights.sql` (range
