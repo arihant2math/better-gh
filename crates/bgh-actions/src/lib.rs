@@ -7,6 +7,7 @@ pub mod expr;
 pub mod logs;
 pub mod models;
 pub mod protocol;
+pub mod runner;
 pub mod workflow;
 
 use axum::Router;
