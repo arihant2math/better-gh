@@ -1,9 +1,8 @@
 import { useParams } from '../../router';
 import { EmptyState } from '../../ui/EmptyState';
-import { BookIcon, GearIcon, GraphIcon, PlayIcon, ShieldIcon, type Icon } from '../../ui/icons';
+import { BookIcon, GearIcon, GraphIcon, ShieldIcon, type Icon } from '../../ui/icons';
 
 const TABS: Record<string, { title: string; icon: Icon; text: string }> = {
-  actions: { title: 'Actions', icon: PlayIcon, text: 'Workflow runs, logs and artifacts will appear here.' },
   security: { title: 'Security', icon: ShieldIcon, text: 'Security advisories, policies and alerts.' },
   pulse: { title: 'Insights', icon: GraphIcon, text: 'Contributors, traffic, commit activity and code frequency.' },
   settings: { title: 'Settings', icon: GearIcon, text: 'General settings, collaborators, branches, webhooks and deploy keys.' },
