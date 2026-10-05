@@ -9,12 +9,14 @@
 //! media types), [`cache`] (Redis cache for SHA-keyed data), [`refs`]
 //! (API ref writes with branch protection), [`protection`] (rules engine).
 
+pub mod activity;
 pub mod autolinks;
 pub mod branches;
 pub mod browse;
 pub mod cache;
 pub mod collaborators;
 pub mod commits;
+pub mod community;
 pub mod contents;
 pub mod create;
 pub mod download;
@@ -24,6 +26,7 @@ pub mod gitdb;
 pub mod gitjson;
 pub mod identity;
 pub mod import;
+pub mod insights;
 pub mod jobs;
 pub mod json;
 pub mod keys;
@@ -40,6 +43,7 @@ pub mod settings;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
+pub mod traffic;
 pub mod watching;
 pub mod workflow_scope;
 
@@ -73,6 +77,10 @@ pub fn router() -> Router<AppState> {
         )
         .merge(settings::routes())
         .merge(stats::routes())
+        .merge(insights::routes())
+        .merge(traffic::routes())
+        .merge(community::routes())
+        .merge(activity::routes())
         .merge(forks::routes())
         .merge(stars::routes())
         .merge(watching::routes())
@@ -105,6 +113,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(lfs::web_router())
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
+        .merge(traffic::web_routes())
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;
@@ -113,6 +122,8 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
     reg.job(stats::compute_languages);
+    reg.job(insights::compute_stats);
+    reg.service("repos.traffic_prune", traffic::prune_service);
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
     reg.job(maintenance::pack_refs);

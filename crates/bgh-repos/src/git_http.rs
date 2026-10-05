@@ -203,9 +203,19 @@ pub async fn upload_pack(
     if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
         return bgh_wiki::git::upload_pack(&state, &owner, &repo, req).await;
     }
-    let (parts, body) = req.into_parts();
-    let (access, _) =
+    let (mut parts, body) = req.into_parts();
+    let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::UploadPack).await?;
+    // Traffic: count clones (P31).
+    let ip = auth::client_ip(&state.config, &parts.headers, &parts.extensions);
+    let visitor = crate::traffic::visitor(&state, auth.as_ref().map(|a| a.user.id), &ip);
+    let body = crate::traffic::observe_http_clone(
+        &state,
+        access.repo.id,
+        visitor,
+        &mut parts.headers,
+        body,
+    );
     Ok(
         smart_http::upload_pack(&crate::store(&state), access.repo.id, &parts.headers, body)
             .await?,
