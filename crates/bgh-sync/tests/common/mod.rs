@@ -11,7 +11,44 @@ pub async fn repo_id(app: &TestApp, user: &TestUser, name: &str, private: bool) 
     } else {
         app.create_repo(user, name).await
     };
-    v["id"].as_i64().unwrap()
+    let id = v["id"].as_i64().unwrap();
+    drop_default_labels(app, id).await;
+    id
+}
+
+/// bgh-issues creates GitHub's default labels for new repositories from an
+/// event listener (no request tx, racing the test's own writes). These tests
+/// assert exact delta streams, so wait for those labels and remove them and
+/// their sync actions. No-op when bgh-issues isn't part of the build.
+pub async fn drop_default_labels(app: &TestApp, repo: i64) {
+    let issues_crate: bool = sqlx::query_scalar("SELECT to_regclass('pinned_issues') IS NOT NULL")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    if !issues_crate {
+        return;
+    }
+    for _ in 0..200 {
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM labels WHERE repo_id = $1 AND is_default")
+                .bind(repo)
+                .fetch_one(&app.state.db)
+                .await
+                .unwrap();
+        if n >= 9 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    exec(
+        app,
+        &format!(
+            "DELETE FROM sync_actions WHERE model = 'label' AND model_id IN
+                 (SELECT id FROM labels WHERE repo_id = {repo} AND is_default);
+             DELETE FROM labels WHERE repo_id = {repo} AND is_default;"
+        ),
+    )
+    .await;
 }
 
 pub async fn org_repo(
@@ -28,7 +65,9 @@ pub async fn org_repo(
             serde_json::json!({"name": name, "private": private}),
         )
         .await;
-    v["id"].as_i64().unwrap()
+    let id = v["id"].as_i64().unwrap();
+    drop_default_labels(app, id).await;
+    id
 }
 
 pub async fn exec(app: &TestApp, sql: &str) {

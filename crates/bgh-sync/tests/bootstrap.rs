@@ -52,7 +52,8 @@ async fn bootstrap_shapes_of_every_model() {
         ),
     )
     .await;
-    let bug = label(&app, repo, "bug", "d73a4a").await;
+    // Not a default label name: bgh-issues creates those for new repos.
+    let bug = label(&app, repo, "kind: bug", "d73a4a").await;
     let ms = milestone(&app, repo, 1, "v1").await;
     let i1 = issue(&app, repo, 1, bob.id, "First").await;
     exec(
@@ -183,7 +184,7 @@ async fn bootstrap_shapes_of_every_model() {
     );
     assert_eq!(
         *find(&body, "label", bug),
-        json!({"id": bug, "repoId": repo, "name": "bug", "color": "d73a4a", "description": null})
+        json!({"id": bug, "repoId": repo, "name": "kind: bug", "color": "d73a4a", "description": null})
     );
     assert_eq!(
         *find(&body, "milestone", ms),
@@ -196,7 +197,8 @@ async fn bootstrap_shapes_of_every_model() {
         json!({"id": i1, "repoId": repo, "number": 1, "title": "First", "state": "closed",
                "stateReason": "completed", "authorId": bob.id, "assigneeIds": [ada.id],
                "labelIds": [bug], "milestoneId": ms, "comments": 0, "locked": false,
-               "reactions": {"+1": 2, "heart": 1},
+               "activeLockReason": null, "reactions": {"+1": 2, "heart": 1},
+               "parentId": null, "subIssueIds": [], "pinned": false,
                "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-02T03:04:05Z",
                "closedAt": "2024-01-03T00:00:00Z", "isPr": false})
     );
@@ -535,7 +537,7 @@ async fn tx_helpers_record_bootstrap_shapes() {
     let ada = app.create_user("ada").await;
     let repo = repo_id(&app, &ada, "api", false).await;
     let i = issue(&app, repo, 1, ada.id, "Shape").await;
-    let l = label(&app, repo, "bug", "ff0000").await;
+    let l = label(&app, repo, "kind: bug", "ff0000").await;
 
     let mut tx = Tx::begin(&app.state).await.unwrap();
     assert!(tx.sync_issue(i, SyncAction::Update, true).await.unwrap());
@@ -604,9 +606,11 @@ async fn tx_helpers_record_bootstrap_shapes() {
         ),
         (rs.clone(), "milestone".into(), 77, "D".into(), Value::Null),
     ];
-    // viewerRepo of the creator was also recorded by bgh-repos on create.
+    // viewerRepo of the creator was also recorded by bgh-repos on create, and
+    // bgh-issues' default labels may be recorded concurrently.
     let recorded: Vec<_> = recorded
         .into_iter()
+        .filter(|r| !(r.1 == "label" && r.2 != l))
         .skip_while(|r| r.1 == "viewerRepo")
         .collect();
     assert_eq!(recorded, want);
