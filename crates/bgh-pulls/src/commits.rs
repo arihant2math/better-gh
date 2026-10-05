@@ -74,19 +74,23 @@ pub async fn users_by_email(
     }
     #[derive(sqlx::FromRow)]
     struct Row {
-        email: String,
+        // Not `email`: `users.email` (nullable public email) is in User::COLUMNS.
+        matched_email: String,
         #[sqlx(flatten)]
         user: db::User,
     }
     let rows: Vec<Row> = sqlx::query_as(&format!(
-        "SELECT lower(e.email) AS email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
+        "SELECT lower(e.email) AS matched_email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
           WHERE lower(e.email) = ANY($1) AND e.verified",
         db::prefixed("u", db::User::COLUMNS)
     ))
     .bind(&emails)
     .fetch_all(&state.db)
     .await?;
-    let mut map: HashMap<String, db::User> = rows.into_iter().map(|r| (r.email, r.user)).collect();
+    let mut map: HashMap<String, db::User> = rows
+        .into_iter()
+        .map(|r| (r.matched_email, r.user))
+        .collect();
     // noreply addresses: {id}+{login}@users.noreply.{host}
     let suffix = format!("@users.noreply.{}", state.config.hostname());
     let mut ids = Vec::new();

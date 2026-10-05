@@ -77,8 +77,8 @@ type Row =
   | { k: 'loading'; f: number }
   | { k: 'unavailable'; f: number }
   | { k: 'hunk'; f: number; hunk: DiffHunk }
-  | { k: 'line'; f: number; line: DiffLine }
-  | { k: 'pair'; f: number; left: DiffLine | null; right: DiffLine | null }
+  | { k: 'line'; f: number; h: number; line: DiffLine }
+  | { k: 'pair'; f: number; h: number; left: DiffLine | null; right: DiffLine | null }
   | { k: 'end'; f: number }
   | { k: 'more' };
 
@@ -118,16 +118,16 @@ export function buildRows(files: readonly DiffFileEntry[], mode: 'unified' | 'sp
           if (anchors.delete(a)) out.push({ k: 'extra', f, anchor: a });
         }
       };
-      for (const hunk of file.hunks) {
+      file.hunks.forEach((hunk, h) => {
         out.push({ k: 'hunk', f, hunk });
         if (mode === 'unified') {
           for (const line of hunk.lines) {
-            out.push({ k: 'line', f, line });
+            out.push({ k: 'line', f, h, line });
             if (anchors.size) flush(lineAnchors(line));
           }
         } else {
           for (const { left, right } of splitHunk(hunk)) {
-            out.push({ k: 'pair', f, left: left?.line ?? null, right: right?.line ?? null });
+            out.push({ k: 'pair', f, h, left: left?.line ?? null, right: right?.line ?? null });
             if (anchors.size) {
               const keys: string[] = [];
               const ln = numOn(left?.line, 'LEFT');
@@ -138,7 +138,7 @@ export function buildRows(files: readonly DiffFileEntry[], mode: 'unified' | 'sp
             }
           }
         }
-      }
+      });
     }
     // Anchors not on a visible line (e.g. outside the hunks) go last.
     for (const a of anchors) out.push({ k: 'extra', f, anchor: a });
@@ -174,6 +174,8 @@ function inSel(sel: LineSelection | null | undefined, path: string, side: Side, 
 
 interface Drag {
   path: string;
+  /** Ranges can't span hunks (GitHub rejects them). */
+  hunk: number;
   side: Side;
   from: number;
   to: number;
@@ -310,7 +312,7 @@ export function DiffView(props: DiffViewProps) {
     keyboard,
   );
 
-  const startDrag = (path: string, side: Side, no: number, e: React.MouseEvent) => {
+  const startDrag = (path: string, hunk: number, side: Side, no: number, e: React.MouseEvent) => {
     if (!annotations?.onSelect) return;
     e.preventDefault();
     const sel = annotations.selection;
@@ -318,11 +320,11 @@ export function DiffView(props: DiffViewProps) {
       annotations.onSelect({ path, side, start: Math.min(sel.start, no), end: Math.max(sel.end, no) });
       return;
     }
-    setDrag({ path, side, from: no, to: no });
+    setDrag({ path, hunk, side, from: no, to: no });
   };
-  const enterDrag = (path: string, side: Side, no: number | undefined) => {
+  const enterDrag = (path: string, hunk: number, side: Side, no: number | undefined) => {
     const d = dragRef.current;
-    if (d && no != null && d.path === path && d.side === side && d.to !== no) setDrag({ ...d, to: no });
+    if (d && no != null && d.path === path && d.hunk === hunk && d.side === side && d.to !== no) setDrag({ ...d, to: no });
   };
   const liveSel: LineSelection | null | undefined = drag
     ? { path: drag.path, side: drag.side, start: Math.min(drag.from, drag.to), end: Math.max(drag.from, drag.to) }
@@ -412,10 +414,10 @@ export function DiffView(props: DiffViewProps) {
                   selected={selected}
                   active={active}
                   commentable={commentable && !!t}
-                  onDown={t ? (e) => startDrag(file.path, t.side, t.no, e) : undefined}
+                  onDown={t ? (e) => startDrag(file.path, r.h, t.side, t.no, e) : undefined}
                   onEnter={() => {
                     const d = dragRef.current;
-                    if (d) enterDrag(file.path, d.side, numOn(l, d.side));
+                    if (d) enterDrag(file.path, r.h, d.side, numOn(l, d.side));
                   }}
                   onClick={() => setCursor(i)}
                 />
@@ -434,9 +436,9 @@ export function DiffView(props: DiffViewProps) {
                   commentable={commentable}
                   onDown={(side, e) => {
                     const no = side === 'LEFT' ? ln : rn;
-                    if (no != null) startDrag(file.path, side, no, e);
+                    if (no != null) startDrag(file.path, r.h, side, no, e);
                   }}
-                  onEnter={(side) => enterDrag(file.path, side, side === 'LEFT' ? ln : rn)}
+                  onEnter={(side) => enterDrag(file.path, r.h, side, side === 'LEFT' ? ln : rn)}
                   onClick={() => setCursor(i)}
                 />
               );

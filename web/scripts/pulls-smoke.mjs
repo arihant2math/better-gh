@@ -77,9 +77,16 @@ await page.waitForSelector('[role=row]', { timeout: 15000 });
 await shot('files');
 const addRows = page.locator('[role=row][class*=add]');
 check((await addRows.count()) > 0, 'diff has added lines');
-await addRows.nth(0).locator('span').nth(1).hover();
+// Two adjacent added lines (a range can't span hunks).
+const pairAt = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('[role=row]')];
+  return rows.findIndex((r, i) => /add/.test(r.className) && rows[i + 1] && /add/.test(rows[i + 1].className));
+});
+check(pairAt >= 0, 'found two adjacent added lines');
+const allRows = page.locator('[role=row]');
+await allRows.nth(pairAt).locator('span').nth(1).hover();
 await page.mouse.down();
-await addRows.nth(1).locator('span').nth(1).hover();
+await allRows.nth(pairAt + 1).locator('span').nth(1).hover();
 await page.mouse.up();
 await page.waitForSelector('text=Comment on lines', { timeout: 3000 }).catch(() => undefined);
 check(await page.isVisible('text=Comment on lines'), 'drag selects a multi-line range');

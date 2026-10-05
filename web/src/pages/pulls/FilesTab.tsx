@@ -17,7 +17,6 @@ import { Button, IconButton } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, ColumnsIcon, CommentIcon, FilterIcon, RowsIcon } from '../../ui/icons';
 import { Input } from '../../ui/Input';
-import { toast } from '../../ui/Toast';
 import { MarkdownEditor } from '../issues/Timeline';
 import { ReviewButton } from './ReviewButton';
 import styles from './Review.module.css';
@@ -201,7 +200,13 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
       commitId: pr.headSha,
     };
     const res = asReview ? addPendingComment(pr, loc, draft.trim()) : addReviewComment(pr, loc, draft.trim());
-    res.done.catch(() => toast({ kind: 'error', title: 'Comment failed', description: 'Your comment was restored in the editor.' }));
+    const sel = selection;
+    const text = draft;
+    // The queue rolls back and toasts the server's message; give the text back.
+    res.done.catch(() => {
+      setSelection((cur) => cur ?? sel);
+      setDraft((cur) => cur || text);
+    });
     setSelection(null);
     setDraft('');
   };
