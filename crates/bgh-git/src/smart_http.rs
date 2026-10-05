@@ -276,7 +276,15 @@ pub async fn read_push_commands<R: AsyncRead + Unpin + ?Sized>(
 }
 
 /// Build a report-status response rejecting every update with `reason`.
+///
+/// A multi-line `reason` reports its first line per ref and sends the
+/// remaining lines verbatim on the progress channel (e.g. GitHub's GH013
+/// rule violation report); a one-line reason is sent as `error: <reason>`.
 pub fn rejection_report(cmds: &PushCommands, reason: &str) -> Bytes {
+    let (reason, detail) = match reason.split_once('\n') {
+        Some((first, rest)) => (first, Some(rest)),
+        None => (reason, None),
+    };
     let reason: String = reason.replace(['\n', '\r'], " ");
     let mut inner = BytesMut::new();
     pktline::put(&mut inner, b"unpack ok\n");
@@ -295,7 +303,14 @@ pub fn rejection_report(cmds: &PushCommands, reason: &str) -> Bytes {
         };
     }
     let mut out = BytesMut::new();
-    pktline::put_sideband(&mut out, 2, format!("error: {reason}\n").as_bytes());
+    match detail {
+        Some(detail) => {
+            for line in detail.lines() {
+                pktline::put_sideband(&mut out, 2, format!("{line}\n").as_bytes());
+            }
+        }
+        None => pktline::put_sideband(&mut out, 2, format!("error: {reason}\n").as_bytes()),
+    }
     if cmds.capabilities.report_status {
         pktline::put_sideband(&mut out, 1, &inner);
     }
@@ -327,7 +342,74 @@ pub struct PushPolicy {
     pub linear_history: Vec<String>,
     /// Site-wide limits (size, quota, fsck) applied to every push.
     pub limits: PushLimits,
+    /// Server-side check over the quarantined objects (ruleset push and
+    /// metadata rules), called back from the `pre-receive` hook.
+    pub object_check: Option<ObjectCheck>,
 }
+
+/// Object directories of a push in quarantine, as seen by the
+/// `pre-receive` hook. Pass [`QuarantineEnv::envs`] to git to read the
+/// pushed objects (plus everything the repository already has).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QuarantineEnv {
+    pub object_directory: String,
+    pub alternate_object_directories: String,
+}
+
+impl QuarantineEnv {
+    pub fn envs(&self) -> Vec<(&'static str, &str)> {
+        let mut v = Vec::new();
+        if !self.object_directory.is_empty() {
+            v.push(("GIT_OBJECT_DIRECTORY", self.object_directory.as_str()));
+        }
+        if !self.alternate_object_directories.is_empty() {
+            v.push((
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                self.alternate_object_directories.as_str(),
+            ));
+        }
+        v
+    }
+}
+
+/// Answer of an [`ObjectCheck`]: `lines` are printed to the client (as
+/// `remote:` lines); `accept: false` rejects the whole push.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HookVerdict {
+    pub accept: bool,
+    pub lines: Vec<String>,
+}
+
+type ObjectCheckFn =
+    dyn Fn(QuarantineEnv) -> futures::future::BoxFuture<'static, HookVerdict> + Send + Sync;
+
+/// Callback run (once per push) while the pushed objects are quarantined.
+#[derive(Clone)]
+pub struct ObjectCheck(pub std::sync::Arc<ObjectCheckFn>);
+
+impl ObjectCheck {
+    pub fn new<F, Fut>(f: F) -> Self
+    where
+        F: Fn(QuarantineEnv) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HookVerdict> + Send + 'static,
+    {
+        Self(std::sync::Arc::new(move |env| Box::pin(f(env))))
+    }
+}
+
+impl std::fmt::Debug for ObjectCheck {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ObjectCheck")
+    }
+}
+
+impl PartialEq for ObjectCheck {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ObjectCheck {}
 
 /// Limits of [`PushPolicy`] that don't depend on the ref (site settings
 /// `git.*` and storage quotas, filled in by the caller).
@@ -355,6 +437,7 @@ impl PushPolicy {
             && self.limits.max_blob_bytes.is_none()
             && self.limits.warn_blob_bytes.is_none()
             && self.limits.quota_remaining_kb.is_none()
+            && self.object_check.is_none()
     }
 
     /// The same policy with `limits`.
@@ -391,6 +474,9 @@ pub const HIDDEN_REF_REASON: &str = "deny updating a hidden ref";
 /// * `BGH_MAX_BLOB` / `BGH_WARN_BLOB`: blob size limits in bytes over the
 ///   newly pushed objects (`rev-list --objects` + `cat-file
 ///   --batch-check`), with GitHub's GH001 wording.
+/// * `BGH_CHECK_DIR`: directory with the `req` / `resp` FIFOs of an
+///   [`ObjectCheck`]: the hook writes its object directories to `req` and
+///   reads the verdict (exit code line, then messages) from `resp`.
 /// * `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`: space separated refs.
 pub const PRE_RECEIVE_HOOK: &str = r#"#!/bin/sh
 # Installed by Better GitHub: push checks needing the pushed objects.
@@ -433,6 +519,12 @@ if [ -n "$BGH_MAX_BLOB$BGH_WARN_BLOB" ] && [ -n "$news" ]; then
   rc=$?
   [ -n "$report" ] && echo "$report" >&2
   [ $rc -eq 0 ] || exit 1
+fi
+if [ -n "$BGH_CHECK_DIR" ]; then
+  printf '%s\n%s\nend\n' "$GIT_OBJECT_DIRECTORY" "$GIT_ALTERNATE_OBJECT_DIRECTORIES" > "$BGH_CHECK_DIR/req"
+  verdict=$(cat "$BGH_CHECK_DIR/resp")
+  printf '%s\n' "$verdict" | sed '1d' >&2
+  [ "$(printf '%s\n' "$verdict" | head -n 1)" = "0" ] || exit 1
 fi
 while read old new ref; do
   [ -z "$ref" ] && continue
@@ -624,6 +716,20 @@ where
     if let Some(max) = limits.max_input_bytes {
         c.arg("-c").arg(format!("receive.maxInputSize={max}"));
     }
+    let mut check_task = None;
+    let mut _check_dir = None;
+    if let Some(check) = policy.object_check.clone() {
+        let dir = tempfile::Builder::new().prefix("bgh-check-").tempdir()?;
+        let (req, resp) = (dir.path().join("req"), dir.path().join("resp"));
+        mkfifo(&req)?;
+        mkfifo(&resp)?;
+        let rx = tokio::net::unix::pipe::OpenOptions::new()
+            .read_write(true)
+            .open_receiver(&req)?;
+        c.env("BGH_CHECK_DIR", dir.path());
+        check_task = Some(tokio::spawn(serve_object_check(check, rx, resp)));
+        _check_dir = Some(dir);
+    }
     if !policy.is_empty() {
         let hooks = ensure_hooks(store).await?;
         let opt = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
@@ -684,6 +790,9 @@ where
     let status = child.wait().await?;
     // git has read everything it needs; don't wait for the client to close.
     writer.abort();
+    if let Some(t) = check_task {
+        t.abort();
+    }
     let out = out_task.await.unwrap_or_default();
     let err = err_task.await.unwrap_or_default();
     if !status.success() {
@@ -720,6 +829,77 @@ where
         requested: cmds.updates,
         rejected: None,
     })
+}
+
+fn mkfifo(path: &std::path::Path) -> GitResult<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| GitError::Object(e.to_string()))?;
+    // SAFETY: `c` is a valid NUL-terminated path.
+    if unsafe { libc::mkfifo(c.as_ptr(), 0o600) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+/// Answer the `pre-receive` hook's request on the [`ObjectCheck`] FIFOs:
+/// read its object directories from `rx`, run the check, write the verdict
+/// to `resp` (which the hook opens for reading after its request).
+async fn serve_object_check(
+    check: ObjectCheck,
+    mut rx: tokio::net::unix::pipe::Receiver,
+    resp: std::path::PathBuf,
+) {
+    use futures::FutureExt;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match rx.read(&mut chunk).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+        if buf.ends_with(b"\nend\n") || buf.len() > 1 << 20 {
+            break;
+        }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines = text.lines();
+    let env = QuarantineEnv {
+        object_directory: lines.next().unwrap_or_default().to_string(),
+        alternate_object_directories: lines.next().unwrap_or_default().to_string(),
+    };
+    let verdict = std::panic::AssertUnwindSafe((check.0)(env))
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|_| HookVerdict {
+            accept: false,
+            lines: vec!["error: internal error evaluating repository rules".into()],
+        });
+    let mut out = format!("{}\n", if verdict.accept { 0 } else { 1 });
+    for l in &verdict.lines {
+        out.push_str(&l.replace(['\r', '\n'], " "));
+        out.push('\n');
+    }
+    // The hook opens `resp` right after writing its request.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut tx = loop {
+        match tokio::net::unix::pipe::OpenOptions::new().open_sender(&resp) {
+            Ok(tx) => break tx,
+            Err(e)
+                if e.raw_os_error() == Some(libc::ENXIO)
+                    && std::time::Instant::now() < deadline =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "pre-receive: cannot answer the rules check");
+                return;
+            }
+        }
+    };
+    if let Err(e) = tx.write_all(out.as_bytes()).await {
+        tracing::warn!(error = %e, "pre-receive: writing the rules verdict failed");
+    }
 }
 
 /// Raw ref advertisement of `git <service> --advertise-refs` (no smart-HTTP

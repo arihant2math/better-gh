@@ -211,7 +211,7 @@ pub async fn receive_pack(
     bgh_core::settings::check_push_quota(&state, &access.repo).await?;
     let limits = push_limits(&state, &access.repo).await?;
     let rules = RepoRules::load(&state.db, &access.repo).await?;
-    let actor = if rules.is_empty() {
+    let actor = if rules.is_unruled() {
         None
     } else {
         Some(Actor::load(&state, &access, &pusher.user).await?)
