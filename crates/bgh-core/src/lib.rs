@@ -11,6 +11,7 @@ pub mod error;
 pub mod events;
 pub mod extract;
 pub mod jobs;
+pub mod mail;
 pub mod markdown;
 pub mod models;
 pub mod node_id;

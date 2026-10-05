@@ -184,6 +184,80 @@ pub async fn repo_permissions(
     Ok(out)
 }
 
+/// Raw permission of each of `user_ids` on one `repo` (token scopes not
+/// applied), in one query: the "who may see this" check used when fanning
+/// out notifications and emails. Ids of unknown users get the public floor.
+pub async fn users_repo_permissions(
+    db: impl PgExecutor<'_>,
+    repo: &db::Repository,
+    user_ids: &[i64],
+) -> Result<HashMap<i64, Permission>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        user_id: i64,
+        site_admin: bool,
+        collab: Option<String>,
+        org_role: Option<String>,
+        org_base: Option<String>,
+        team_perms: Option<Vec<String>>,
+    }
+    let mut out: HashMap<i64, Permission> =
+        user_ids.iter().map(|&u| (u, public_floor(repo))).collect();
+    if user_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows: Vec<Row> = sqlx::query_as(
+        r#"
+        WITH RECURSIVE ut AS (
+            SELECT tm.user_id, t.id, t.parent_id
+              FROM team_members tm JOIN teams t ON t.id = tm.team_id
+             WHERE tm.user_id = ANY($1) AND t.org_id = $3
+            UNION
+            SELECT ut.user_id, p.id, p.parent_id
+              FROM teams p JOIN ut ON p.id = ut.parent_id
+        )
+        SELECT u.id AS user_id, u.site_admin,
+               (SELECT permission FROM collaborators c
+                 WHERE c.repo_id = $2 AND c.user_id = u.id) AS collab,
+               (SELECT role FROM org_members m
+                 WHERE m.org_id = $3 AND m.user_id = u.id) AS org_role,
+               (SELECT default_repository_permission FROM org_settings s
+                 WHERE s.org_id = $3) AS org_base,
+               (SELECT array_agg(tr.permission) FROM team_repos tr
+                 WHERE tr.repo_id = $2
+                   AND tr.team_id IN (SELECT ut.id FROM ut WHERE ut.user_id = u.id)) AS team_perms
+          FROM users u
+         WHERE u.id = ANY($1)
+        "#,
+    )
+    .bind(user_ids)
+    .bind(repo.id)
+    .bind(repo.owner_id)
+    .fetch_all(db)
+    .await?;
+    for row in rows {
+        let best = out.entry(row.user_id).or_insert(Permission::None);
+        let mut raise = |p: Option<Permission>| {
+            if let Some(p) = p {
+                *best = (*best).max(p);
+            }
+        };
+        if row.site_admin || row.user_id == repo.owner_id {
+            raise(Some(Permission::Admin));
+        }
+        raise(row.collab.as_deref().and_then(Permission::parse));
+        match row.org_role.as_deref() {
+            Some("admin") => raise(Some(Permission::Admin)),
+            Some(_) => raise(row.org_base.as_deref().and_then(Permission::parse)),
+            None => {}
+        }
+        for p in row.team_perms.unwrap_or_default() {
+            raise(Permission::parse(&p));
+        }
+    }
+    Ok(out)
+}
+
 /// Apply token scopes to a raw permission:
 /// * private repos need the `repo` scope, otherwise the token sees nothing;
 /// * writes to public repos need `repo` or `public_repo`, otherwise Read.

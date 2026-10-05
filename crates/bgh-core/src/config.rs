@@ -48,6 +48,19 @@ pub struct Config {
     pub max_blob_size: u64,
     /// `BGH_SITE_NAME` (default `Better GitHub`).
     pub site_name: String,
+    /// `BGH_SMTP_URL` (default unset). SMTP relay for outgoing mail, e.g.
+    /// `smtps://user:pass@smtp.example.com:465` or
+    /// `smtp://smtp.example.com:587?tls=required`. Unset: mail is logged and
+    /// written to `{data_dir}/mail/` (dev transport).
+    pub smtp_url: Option<String>,
+    /// `BGH_MAIL_FROM` (default `Better GitHub <noreply@{hostname}>`).
+    pub mail_from: String,
+    /// `BGH_WEBHOOK_ALLOWED_HOSTS` (comma separated, default empty): hosts,
+    /// IPs or CIDR ranges webhooks may target even though they resolve to
+    /// private/loopback addresses. `*` allows everything.
+    pub webhook_allowed_hosts: Vec<String>,
+    /// `BGH_WEBHOOK_TIMEOUT_SECS` (default 10): per-delivery HTTP timeout.
+    pub webhook_timeout_secs: u64,
 }
 
 impl Default for Config {
@@ -69,6 +82,10 @@ impl Default for Config {
             git_bin: "git".into(),
             max_blob_size: 10 * 1024 * 1024,
             site_name: "Better GitHub".into(),
+            smtp_url: None,
+            mail_from: "Better GitHub <noreply@localhost>".into(),
+            webhook_allowed_hosts: Vec::new(),
+            webhook_timeout_secs: 10,
         }
     }
 }
@@ -144,6 +161,35 @@ impl Config {
                 d.max_blob_size,
             )?,
             site_name: parse("BGH_SITE_NAME")?.unwrap_or(d.site_name),
+            smtp_url: parse("BGH_SMTP_URL")?,
+            mail_from: match parse("BGH_MAIL_FROM")? {
+                Some(from) => from,
+                None => {
+                    let base = parse("BGH_BASE_URL")?.unwrap_or_else(|| "localhost".into());
+                    let host = base
+                        .split_once("://")
+                        .map(|(_, r)| r)
+                        .unwrap_or(&base)
+                        .split(['/', ':'])
+                        .next()
+                        .unwrap_or("localhost")
+                        .to_string();
+                    format!("Better GitHub <noreply@{host}>")
+                }
+            },
+            webhook_allowed_hosts: parse("BGH_WEBHOOK_ALLOWED_HOSTS")?
+                .map(|v| {
+                    v.split(',')
+                        .map(|h| h.trim().to_string())
+                        .filter(|h| !h.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            webhook_timeout_secs: typed(
+                "BGH_WEBHOOK_TIMEOUT_SECS",
+                parse("BGH_WEBHOOK_TIMEOUT_SECS")?,
+                d.webhook_timeout_secs,
+            )?,
         })
     }
 

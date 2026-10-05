@@ -157,6 +157,273 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    // ----- added by bgh-notify (webhooks + notifications consume these) ----
+    /// An assignee was added to an issue or pull request (`issue_id` is the
+    /// issue id of the PR for pulls).
+    IssueAssigned {
+        repo_id: i64,
+        issue_id: i64,
+        assignee_id: i64,
+        actor_id: i64,
+    },
+    IssueUnassigned {
+        repo_id: i64,
+        issue_id: i64,
+        assignee_id: i64,
+        actor_id: i64,
+    },
+    /// A label was added to an issue or pull request.
+    IssueLabeled {
+        repo_id: i64,
+        issue_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    IssueUnlabeled {
+        repo_id: i64,
+        issue_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    IssueMilestoned {
+        repo_id: i64,
+        issue_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    IssueDemilestoned {
+        repo_id: i64,
+        issue_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    IssueLocked {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    IssueUnlocked {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    /// The issue row is gone; `issue` is its GitHub REST JSON at deletion.
+    IssueDeleted {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+        issue: serde_json::Value,
+    },
+    PullRequestEdited {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+        /// GitHub-style `changes` object (`{"title": {"from": "..."}}`).
+        changes: serde_json::Value,
+    },
+    PullRequestReadyForReview {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    PullRequestConvertedToDraft {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    /// Exactly one of `reviewer_id` / `team_id` is set.
+    PullRequestReviewRequested {
+        repo_id: i64,
+        pull_id: i64,
+        reviewer_id: Option<i64>,
+        team_id: Option<i64>,
+        actor_id: i64,
+    },
+    PullRequestReviewRequestRemoved {
+        repo_id: i64,
+        pull_id: i64,
+        reviewer_id: Option<i64>,
+        team_id: Option<i64>,
+        actor_id: i64,
+    },
+    PullRequestReviewDismissed {
+        repo_id: i64,
+        pull_id: i64,
+        review_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewCommentCreated {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewCommentEdited {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewCommentDeleted {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    /// Repository renamed; `old_name` is the previous name.
+    RepositoryRenamed {
+        repo_id: i64,
+        actor_id: i64,
+        old_name: String,
+    },
+    RepositoryArchived {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    RepositoryUnarchived {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// Visibility changed to public.
+    RepositoryPublicized {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// Visibility changed to private.
+    RepositoryPrivatized {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// `repo_id` is the source repository, `fork_id` the new fork.
+    RepositoryForked {
+        repo_id: i64,
+        fork_id: i64,
+        actor_id: i64,
+    },
+    StarCreated {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    StarDeleted {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// A collaborator was added (`member` webhook, action `added`).
+    CollaboratorAdded {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+        /// Role name (`read` .. `admin`).
+        permission: String,
+    },
+    CollaboratorEdited {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+        /// Previous role name.
+        old_permission: String,
+        permission: String,
+    },
+    CollaboratorRemoved {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
+    LabelCreated {
+        repo_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    LabelEdited {
+        repo_id: i64,
+        label_id: i64,
+        actor_id: i64,
+        changes: serde_json::Value,
+    },
+    /// The label row is gone; `label` is its GitHub REST JSON at deletion.
+    LabelDeleted {
+        repo_id: i64,
+        label_id: i64,
+        actor_id: i64,
+        label: serde_json::Value,
+    },
+    MilestoneCreated {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneEdited {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+        changes: serde_json::Value,
+    },
+    MilestoneClosed {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneOpened {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneDeleted {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+        milestone: serde_json::Value,
+    },
+    ReleaseCreated {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+    },
+    ReleaseEdited {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+        changes: serde_json::Value,
+    },
+    ReleaseDeleted {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+        release: serde_json::Value,
+    },
+    /// A commit status was created (`commit_statuses` row).
+    CommitStatusCreated {
+        repo_id: i64,
+        status_id: i64,
+        actor_id: Option<i64>,
+    },
+    /// `action`: `created` | `completed` | `rerequested` | `requested_action`.
+    CheckRunUpdated {
+        repo_id: i64,
+        check_run_id: i64,
+        action: String,
+        actor_id: Option<i64>,
+    },
+    /// `action`: `requested` | `rerequested` | `completed`. On `completed`
+    /// the actor (usually the pusher) gets a `ci_activity` notification.
+    CheckSuiteUpdated {
+        repo_id: i64,
+        check_suite_id: i64,
+        action: String,
+        actor_id: Option<i64>,
+    },
+    /// Actions workflow run lifecycle. `action`: `requested` |
+    /// `in_progress` | `completed`; `workflow_run` is the GitHub REST JSON
+    /// of the run (built by bgh-actions).
+    WorkflowRunUpdated {
+        repo_id: i64,
+        run_id: i64,
+        action: String,
+        actor_id: Option<i64>,
+        workflow_run: serde_json::Value,
+        /// GitHub REST JSON of the workflow (`workflow` key), if available.
+        workflow: Option<serde_json::Value>,
+    },
 }
 
 impl Event {
@@ -182,6 +449,50 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::IssueAssigned { .. } => "issue_assigned",
+            Self::IssueUnassigned { .. } => "issue_unassigned",
+            Self::IssueLabeled { .. } => "issue_labeled",
+            Self::IssueUnlabeled { .. } => "issue_unlabeled",
+            Self::IssueMilestoned { .. } => "issue_milestoned",
+            Self::IssueDemilestoned { .. } => "issue_demilestoned",
+            Self::IssueLocked { .. } => "issue_locked",
+            Self::IssueUnlocked { .. } => "issue_unlocked",
+            Self::IssueDeleted { .. } => "issue_deleted",
+            Self::PullRequestEdited { .. } => "pull_request_edited",
+            Self::PullRequestReadyForReview { .. } => "pull_request_ready_for_review",
+            Self::PullRequestConvertedToDraft { .. } => "pull_request_converted_to_draft",
+            Self::PullRequestReviewRequested { .. } => "pull_request_review_requested",
+            Self::PullRequestReviewRequestRemoved { .. } => "pull_request_review_request_removed",
+            Self::PullRequestReviewDismissed { .. } => "pull_request_review_dismissed",
+            Self::PullRequestReviewCommentCreated { .. } => "pull_request_review_comment_created",
+            Self::PullRequestReviewCommentEdited { .. } => "pull_request_review_comment_edited",
+            Self::PullRequestReviewCommentDeleted { .. } => "pull_request_review_comment_deleted",
+            Self::RepositoryRenamed { .. } => "repository_renamed",
+            Self::RepositoryArchived { .. } => "repository_archived",
+            Self::RepositoryUnarchived { .. } => "repository_unarchived",
+            Self::RepositoryPublicized { .. } => "repository_publicized",
+            Self::RepositoryPrivatized { .. } => "repository_privatized",
+            Self::RepositoryForked { .. } => "repository_forked",
+            Self::StarCreated { .. } => "star_created",
+            Self::StarDeleted { .. } => "star_deleted",
+            Self::CollaboratorAdded { .. } => "collaborator_added",
+            Self::CollaboratorEdited { .. } => "collaborator_edited",
+            Self::CollaboratorRemoved { .. } => "collaborator_removed",
+            Self::LabelCreated { .. } => "label_created",
+            Self::LabelEdited { .. } => "label_edited",
+            Self::LabelDeleted { .. } => "label_deleted",
+            Self::MilestoneCreated { .. } => "milestone_created",
+            Self::MilestoneEdited { .. } => "milestone_edited",
+            Self::MilestoneClosed { .. } => "milestone_closed",
+            Self::MilestoneOpened { .. } => "milestone_opened",
+            Self::MilestoneDeleted { .. } => "milestone_deleted",
+            Self::ReleaseCreated { .. } => "release_created",
+            Self::ReleaseEdited { .. } => "release_edited",
+            Self::ReleaseDeleted { .. } => "release_deleted",
+            Self::CommitStatusCreated { .. } => "commit_status_created",
+            Self::CheckRunUpdated { .. } => "check_run_updated",
+            Self::CheckSuiteUpdated { .. } => "check_suite_updated",
+            Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
         }
     }
 
@@ -205,7 +516,51 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
-            | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
+            | Self::ReleasePublished { repo_id, .. }
+            | Self::IssueAssigned { repo_id, .. }
+            | Self::IssueUnassigned { repo_id, .. }
+            | Self::IssueLabeled { repo_id, .. }
+            | Self::IssueUnlabeled { repo_id, .. }
+            | Self::IssueMilestoned { repo_id, .. }
+            | Self::IssueDemilestoned { repo_id, .. }
+            | Self::IssueLocked { repo_id, .. }
+            | Self::IssueUnlocked { repo_id, .. }
+            | Self::IssueDeleted { repo_id, .. }
+            | Self::PullRequestEdited { repo_id, .. }
+            | Self::PullRequestReadyForReview { repo_id, .. }
+            | Self::PullRequestConvertedToDraft { repo_id, .. }
+            | Self::PullRequestReviewRequested { repo_id, .. }
+            | Self::PullRequestReviewRequestRemoved { repo_id, .. }
+            | Self::PullRequestReviewDismissed { repo_id, .. }
+            | Self::PullRequestReviewCommentCreated { repo_id, .. }
+            | Self::PullRequestReviewCommentEdited { repo_id, .. }
+            | Self::PullRequestReviewCommentDeleted { repo_id, .. }
+            | Self::RepositoryRenamed { repo_id, .. }
+            | Self::RepositoryArchived { repo_id, .. }
+            | Self::RepositoryUnarchived { repo_id, .. }
+            | Self::RepositoryPublicized { repo_id, .. }
+            | Self::RepositoryPrivatized { repo_id, .. }
+            | Self::RepositoryForked { repo_id, .. }
+            | Self::StarCreated { repo_id, .. }
+            | Self::StarDeleted { repo_id, .. }
+            | Self::CollaboratorAdded { repo_id, .. }
+            | Self::CollaboratorEdited { repo_id, .. }
+            | Self::CollaboratorRemoved { repo_id, .. }
+            | Self::LabelCreated { repo_id, .. }
+            | Self::LabelEdited { repo_id, .. }
+            | Self::LabelDeleted { repo_id, .. }
+            | Self::MilestoneCreated { repo_id, .. }
+            | Self::MilestoneEdited { repo_id, .. }
+            | Self::MilestoneClosed { repo_id, .. }
+            | Self::MilestoneOpened { repo_id, .. }
+            | Self::MilestoneDeleted { repo_id, .. }
+            | Self::ReleaseCreated { repo_id, .. }
+            | Self::ReleaseEdited { repo_id, .. }
+            | Self::ReleaseDeleted { repo_id, .. }
+            | Self::CommitStatusCreated { repo_id, .. }
+            | Self::CheckRunUpdated { repo_id, .. }
+            | Self::CheckSuiteUpdated { repo_id, .. }
+            | Self::WorkflowRunUpdated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
         }
     }
@@ -214,7 +569,11 @@ impl Event {
     pub fn actor_id(&self) -> Option<i64> {
         match self {
             Self::Push(p) => p.pusher_id,
-            Self::PullRequestSynchronized { actor_id, .. } => *actor_id,
+            Self::PullRequestSynchronized { actor_id, .. }
+            | Self::CommitStatusCreated { actor_id, .. }
+            | Self::CheckRunUpdated { actor_id, .. }
+            | Self::CheckSuiteUpdated { actor_id, .. }
+            | Self::WorkflowRunUpdated { actor_id, .. } => *actor_id,
             Self::RepositoryCreated { actor_id, .. }
             | Self::RepositoryDeleted { actor_id, .. }
             | Self::RepositoryUpdated { actor_id, .. }
@@ -231,7 +590,47 @@ impl Event {
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
-            | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            | Self::OrgMemberAdded { actor_id, .. }
+            | Self::IssueAssigned { actor_id, .. }
+            | Self::IssueUnassigned { actor_id, .. }
+            | Self::IssueLabeled { actor_id, .. }
+            | Self::IssueUnlabeled { actor_id, .. }
+            | Self::IssueMilestoned { actor_id, .. }
+            | Self::IssueDemilestoned { actor_id, .. }
+            | Self::IssueLocked { actor_id, .. }
+            | Self::IssueUnlocked { actor_id, .. }
+            | Self::IssueDeleted { actor_id, .. }
+            | Self::PullRequestEdited { actor_id, .. }
+            | Self::PullRequestReadyForReview { actor_id, .. }
+            | Self::PullRequestConvertedToDraft { actor_id, .. }
+            | Self::PullRequestReviewRequested { actor_id, .. }
+            | Self::PullRequestReviewRequestRemoved { actor_id, .. }
+            | Self::PullRequestReviewDismissed { actor_id, .. }
+            | Self::PullRequestReviewCommentCreated { actor_id, .. }
+            | Self::PullRequestReviewCommentEdited { actor_id, .. }
+            | Self::PullRequestReviewCommentDeleted { actor_id, .. }
+            | Self::RepositoryRenamed { actor_id, .. }
+            | Self::RepositoryArchived { actor_id, .. }
+            | Self::RepositoryUnarchived { actor_id, .. }
+            | Self::RepositoryPublicized { actor_id, .. }
+            | Self::RepositoryPrivatized { actor_id, .. }
+            | Self::RepositoryForked { actor_id, .. }
+            | Self::StarCreated { actor_id, .. }
+            | Self::StarDeleted { actor_id, .. }
+            | Self::CollaboratorAdded { actor_id, .. }
+            | Self::CollaboratorEdited { actor_id, .. }
+            | Self::CollaboratorRemoved { actor_id, .. }
+            | Self::LabelCreated { actor_id, .. }
+            | Self::LabelEdited { actor_id, .. }
+            | Self::LabelDeleted { actor_id, .. }
+            | Self::MilestoneCreated { actor_id, .. }
+            | Self::MilestoneEdited { actor_id, .. }
+            | Self::MilestoneClosed { actor_id, .. }
+            | Self::MilestoneOpened { actor_id, .. }
+            | Self::MilestoneDeleted { actor_id, .. }
+            | Self::ReleaseCreated { actor_id, .. }
+            | Self::ReleaseEdited { actor_id, .. }
+            | Self::ReleaseDeleted { actor_id, .. } => Some(*actor_id),
         }
     }
 }
