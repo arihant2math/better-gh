@@ -4,13 +4,49 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
+import { prefetchProfile } from '../api/profile';
 import { browseKeys, getBlob, getIssueTemplates, getTree, isSha, listPullCommits, listPullFiles } from '../api/endpoints';
-import { defineRoutes, type Params } from '../router';
+import type { ComponentType } from 'react';
+import { defineRoutes, type Params, type RouteDef } from '../router';
 import { hasSync, sync } from '../sync';
-import { issueByNumber, repoByName } from '../sync/selectors';
+import { issueByNumber, orgByLogin, repoByName } from '../sync/selectors';
 import { preloadMarkdown } from '../ui/Markdown';
 
+/** GitHub login shape (alphanumerics and single inner hyphens). */
+const VALID_LOGIN = /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/;
 const RepoLayout = () => import('../pages/repo/RepoLayout');
+const SettingsLayout = () => import('../pages/settings/SettingsLayout');
+
+/** `/settings/<id>` → section chunk (nav lives in SettingsLayout). */
+const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ default: ComponentType }> }> = {
+  profile: { title: 'Public profile', load: () => import('../pages/settings/sections/ProfileSettings') },
+  account: { title: 'Account', load: () => import('../pages/settings/sections/AccountSettings') },
+  appearance: { title: 'Appearance', load: () => import('../pages/settings/sections/AppearanceSettings') },
+  notifications: { title: 'Notifications', load: () => import('../pages/settings/sections/NotificationSettings') },
+  emails: { title: 'Emails', load: () => import('../pages/settings/sections/EmailSettings') },
+  security: { title: 'Password and authentication', load: () => import('../pages/settings/sections/SecuritySettings') },
+  sessions: { title: 'Sessions', load: () => import('../pages/settings/sections/SessionSettings') },
+  keys: { title: 'SSH and GPG keys', load: () => import('../pages/settings/sections/KeySettings') },
+  blocked: { title: 'Blocked users', load: () => import('../pages/settings/sections/BlockedSettings') },
+  applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
+  developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
+  tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
+  local: { title: 'Local data & sync', load: () => import('../pages/settings/sections/LocalDataSettings') },
+};
+
+function settingsRoutes() {
+  const out: RouteDef[] = [
+    { path: '/settings', layout: SettingsLayout, load: SETTINGS_SECTIONS.profile!.load, title: () => 'Settings' },
+  ];
+  for (const [id, s] of Object.entries(SETTINGS_SECTIONS)) {
+    // `/*` covers sub-pages such as /settings/developers/new or /settings/tokens/new.
+    out.push({ path: `/settings/${id}`, layout: SettingsLayout, load: s.load, title: () => `${s.title} · Settings` });
+    out.push({ path: `/settings/${id}/*`, layout: SettingsLayout, load: s.load, title: () => `${s.title} · Settings` });
+  }
+  return out;
+}
+
+const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 const ProjectsListPage = () => import('../pages/projects/ProjectsListPage');
 const ProjectPage = () => import('../pages/projects/ProjectPage');
 const WikiPage = () => import('../pages/wiki/WikiPage');
@@ -76,8 +112,18 @@ export function registerRoutes(): void {
     { path: '/notifications', load: () => import('../pages/notifications/NotificationsPage'), title: () => 'Inbox' },
     { path: '/issues', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'My issues' },
     { path: '/pulls', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'Reviews' },
-    { path: '/settings', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
-    { path: '/settings/:section', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
+    ...settingsRoutes(),
+    { path: '/new', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
+    { path: '/new/import', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
+    { path: '/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
+    { path: '/account/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
+    {
+      path: '/:owner',
+      load: () => import('../pages/profile/ProfilePage'),
+      // Skip paths that can't be accounts (bare pages like /password_reset, /login).
+      prefetch: (p) => VALID_LOGIN.test(p.owner!) && prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
+      title: (p) => p.owner!,
+    },
     // Projects (owner level). Before `/:owner/...` patterns.
     { path: '/orgs/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
     { path: '/users/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
@@ -85,7 +131,6 @@ export function registerRoutes(): void {
     { path: '/orgs/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
-    { path: '/:owner', load: () => import('../pages/profile/ProfilePage'), title: (p) => p.owner! },
     {
       path: '/:owner/:repo',
       layout: RepoLayout,
@@ -151,6 +196,8 @@ export function registerRoutes(): void {
       prefetch: prefetchPull,
       title: (p) => `PR #${p.number} · ${p.owner}/${p.repo}`,
     },
+    { path: '/:owner/:repo/settings', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/*', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/projects',
       layout: RepoLayout,

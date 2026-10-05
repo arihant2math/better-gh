@@ -92,7 +92,38 @@ class Session {
     this.adopt(boot);
   }
 
-  private adopt(boot: BootData) {
+  /**
+   * Second factor of a pending login that did not start on the login page
+   * (SSO redirect to /login/two-factor): the legacy session endpoint sets
+   * the cookie but answers with the user, so boot data is fetched after.
+   */
+  async completeTwoFactor(twoFactorToken: string, code: string): Promise<void> {
+    await api.post('/_bgh/session/two_factor', { two_factor_token: twoFactorToken, code });
+    await this.refreshBoot();
+  }
+
+  /** Re-read boot data (after a cookie changed out of band) and adopt it. */
+  async refreshBoot(): Promise<BootData> {
+    const boot = await api.get<BootData>('/_bgh/boot');
+    if (boot.user?.id !== this.user?.id || boot.csrf !== getBoot().csrf) {
+      if (this.user && boot.user?.id !== this.user.id) this.teardown();
+      this.adopt(boot);
+    }
+    return boot;
+  }
+
+  /** Use fresh boot data (sign-in responses): updates CSRF + user and starts sync. */
+  /** Patch the signed-in user's display fields (after profile / avatar edits). */
+  updateUser(patch: Partial<Pick<BootUser, 'name' | 'avatarUrl' | 'login'>>): void {
+    if (!this.user) return;
+    this.user = { ...this.user, ...patch };
+    setBoot({ ...getBoot(), user: this.user });
+  }
+
+  adopt(boot: BootData) {
+    // The SW's cached shell embeds the previous boot data (e.g. `user: null`
+    // from the login page); drop it so the next reload renders this session.
+    dropShellCache();
     setBoot(boot);
     runInAction(() => {
       this.user = boot.user;
@@ -110,7 +141,7 @@ class Session {
     }
     this.teardown();
     if (user) await IdbPersistence.destroy(dbName(user.id)).catch(() => undefined);
-    navigator.serviceWorker?.controller?.postMessage({ type: 'logout' });
+    dropShellCache();
     navigate('/login');
   }
 
@@ -118,6 +149,7 @@ class Session {
   expired(): void {
     if (!this.user) return;
     this.teardown();
+    dropShellCache();
     toast({ title: 'Your session expired', description: 'Sign in again to continue.' });
     navigate(`/login?return_to=${encodeURIComponent(location.pathname)}`);
   }
@@ -137,3 +169,16 @@ class Session {
 }
 
 export const session = new Session();
+
+/**
+ * Ask the service worker to forget its cached app shell: the shell embeds
+ * boot data (user, CSRF token), which is wrong once the session changes
+ * without a navigation (sign-in, sign-out, expiry).
+ */
+export function dropShellCache(): void {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'logout' });
+  } catch {
+    /* no service worker */
+  }
+}

@@ -4,7 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { registerRoutes } from './app/routes';
-import { session } from './app/session';
+import { dropShellCache, session } from './app/session';
 import { bootIsStale, getBoot, isMockMode, setBoot, type BootData } from './boot';
 import { shortcuts } from './shortcuts/manager';
 
@@ -16,10 +16,11 @@ async function main() {
     // The mock backend is its own chunk and never loads in normal use.
     const { installMock } = await import('./mock/index');
     await installMock();
-  } else if (bootIsStale()) {
-    // Shell came from the SW cache or the dev server: refresh boot data in the
-    // background. Only block when we have nothing at all (dev server).
-    const refresh = fetch('/_bgh/boot', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+  } else if (bootIsStale() || navigator.serviceWorker?.controller) {
+    // Shell may have come from the SW cache (stale boot data, possibly another
+    // session) or the dev server: refresh boot data in the background. Only
+    // block when we have nothing at all (dev server).
+    const refresh = fetch('/_bgh/boot', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? (r.json() as Promise<BootData>) : null))
       .catch(() => null);
     if (!getBoot().csrf) {
@@ -30,7 +31,11 @@ async function main() {
         if (!b) return;
         const before = getBoot().user?.id;
         setBoot(b);
-        if (b.user?.id !== before) location.reload();
+        if (b.user?.id !== before) {
+          // The cached shell belongs to another session: drop it and reload from the network.
+          dropShellCache();
+          setTimeout(() => location.reload(), 50);
+        }
       });
     }
   }

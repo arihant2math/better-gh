@@ -9,6 +9,9 @@ const BACKEND = process.env.BGH_BACKEND ?? 'http://localhost:3000';
 const proxy: Record<string, ProxyOptions> = {
   '/api': { target: BACKEND, changeOrigin: false },
   '/_bgh': { target: BACKEND, changeOrigin: false, ws: true },
+  '/avatars': { target: BACKEND, changeOrigin: false },
+  // OAuth endpoints used by API clients (the consent / device pages are SPA routes).
+  '^/login/(oauth/access_token|device/code)$': { target: BACKEND, changeOrigin: false },
   // git smart HTTP + raw/archive downloads: /{owner}/{repo}.git/..., /{owner}/{repo}/info/refs, ...
   '^/[^/]+/[^/]+\\.git(/.*)?$': { target: BACKEND },
   '^/[^/]+/[^/]+/(info/refs|git-upload-pack|git-receive-pack)$': { target: BACKEND },

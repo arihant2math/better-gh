@@ -65,6 +65,14 @@ impl WebFiles {
         }
     }
 
+    /// Whether a built web client (`index.html`) is available.
+    pub fn has_shell(&self) -> bool {
+        match &self.embedded {
+            Some(files) => files.contains("index.html"),
+            None => self.dir.join("index.html").is_file(),
+        }
+    }
+
     /// Whether `path` should get the app shell (no file of that name).
     fn is_shell(&self, path: &str) -> bool {
         if path.starts_with("/assets/") {
@@ -172,4 +180,33 @@ impl WebFiles {
             .insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
         resp
     }
+}
+
+/// Pages that have a server-rendered fallback in a domain crate but are
+/// owned by the web client when it is built: browsers (`Accept: text/html`)
+/// get the app shell, which talks to the matching `/_bgh` JSON endpoints.
+/// Other clients (and form POSTs) still reach the crate's handler.
+const SPA_PAGES: &[&str] = &["/login/device", "/login/oauth/authorize"];
+
+pub(crate) async fn spa_pages(
+    axum::extract::State((web, state)): axum::extract::State<(WebFiles, AppState)>,
+    req: Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let wants_html = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("text/html"));
+    if matches!(*req.method(), Method::GET | Method::HEAD)
+        && wants_html
+        && SPA_PAGES.contains(&req.uri().path().trim_end_matches('/'))
+        && web.has_shell()
+    {
+        let head = req.method() == Method::HEAD;
+        if let Some(resp) = web.shell(&state, req.headers(), head).await {
+            return resp;
+        }
+    }
+    next.run(req).await
 }

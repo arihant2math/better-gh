@@ -102,4 +102,15 @@ async fn serves_web_client_with_spa_fallback() {
 
     let res = app.post("/some/page").send().await;
     res.assert_status(404);
+
+    // Device activation and OAuth consent are web-client pages for browsers;
+    // other clients still get the server-rendered fallback (a login redirect
+    // here, signed out).
+    for path in ["/login/device", "/login/oauth/authorize?client_id=x"] {
+        let res = app.get(path).header("accept", "text/html").send().await;
+        res.assert_status(200);
+        assert!(res.text().contains("id=app"), "{path}");
+        let res = app.get(path).send().await;
+        assert!(!res.text().contains("id=app"), "{path}");
+    }
 }

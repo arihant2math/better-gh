@@ -1,0 +1,413 @@
+/* Shared styles for the developer-settings sections (keys, tokens, OAuth apps, applications, notifications). */
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.formCard textarea {
+  min-height: 120px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.keyIcon {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  flex-shrink: 0;
+  color: var(--fg-subtle);
+}
+
+.keyType {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+
+.metaLines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.metaInline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.emailList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.emailItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.help {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.help code,
+.code {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* ---------------------------------------------------------------- one-time secret */
+
+.secretBox {
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--open-subtle);
+}
+
+.secretWarn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+
+.secretWarn svg {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.secretValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secretValue code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.highlightRow {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+
+/* ---------------------------------------------------------------- scopes tree */
+
+.scopes {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.scopeGroup + .scopeGroup {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.scopeRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 220px) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+}
+
+.scopeGroup > .scopeRow:first-child {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.scopeChild .scopeLabel {
+  padding-left: 24px;
+}
+
+.scopeGroup > .scopeChild:last-child {
+  padding-bottom: 9px;
+}
+
+.scopeLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.scopeLabel input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.scopeParent {
+  font-weight: var(--fw-semibold);
+}
+
+.scopeDesc {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.scopeTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.scopeTag {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.expiryRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.expiryRow select {
+  width: auto;
+}
+
+.expiryNote {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+/* ---------------------------------------------------------------- apps */
+
+.appAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.appHeader {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.kvLabel {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.kvValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.titleLink {
+  color: var(--fg);
+}
+
+.titleLink:hover {
+  color: var(--accent-fg);
+}
+
+/* ---------------------------------------------------------------- notifications */
+
+.matrix {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.matrix th,
+.matrix td {
+  padding: 8px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.matrix thead th {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.matrix tbody tr + tr td,
+.matrix tbody tr + tr th {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.matrix .groupRow th {
+  padding-top: 12px;
+  padding-bottom: 4px;
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.matrix .channel {
+  width: 84px;
+  text-align: center;
+}
+
+.matrix input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.matrix input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
+.reasonName {
+  font-weight: var(--fw-medium);
+}
+
+.reasonDesc {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.emailSelect {
+  max-width: 360px;
+}
+
+.appRowLi + .appRowLi {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.appRowLink {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  color: var(--fg);
+}
+
+.appRowLink:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.appRowLi:first-child .appRowLink {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.appRowLi:last-child .appRowLink {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.appRowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.permList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.perm {
+  padding: 1px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}

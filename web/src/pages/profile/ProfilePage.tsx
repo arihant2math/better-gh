@@ -1,147 +1,74 @@
 import { observer } from 'mobx-react-lite';
+import { invalidate, useResource } from '../../api/cache';
+import { getAccount, profileKeys } from '../../api/profile';
 import { NotFound } from '../../app/NotFound';
-import { Link, navigate, setQuery, useQuery, useParams } from '../../router';
-import { store } from '../../sync';
-import type { Repo } from '../../sync/models';
-import { orgByLogin, reposForOwner, userByLogin } from '../../sync/selectors';
-import { Avatar, Tag } from '../../ui/Badge';
-import { EmptyState } from '../../ui/EmptyState';
-import { LockIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon, TableIcon } from '../../ui/icons';
-import { RelativeTime } from '../../ui/RelativeTime';
-import { Tabs } from '../../ui/Tabs';
+import { useReducer } from 'react';
+import { useParams } from '../../router';
+import { orgByLogin, userByLogin } from '../../sync/selectors';
+import { Button } from '../../ui/Button';
+import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { OrgProfile } from './OrgProfile';
 import styles from './ProfilePage.module.css';
+import { UserProfile } from './UserProfile';
 
-const LANG_COLORS: Record<string, string> = { Rust: '#dea584', TypeScript: '#3178c6', Go: '#00add8', Python: '#3572a5', Shell: '#89e051' };
-
-const RepoCard = observer(function RepoCard({ repo }: { repo: Repo }) {
-  return (
-    <Link to={`/${repo.owner}/${repo.name}`} className={styles.repoCard}>
-      <div className={styles.repoTitle}>
-        {repo.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
-        <span>{repo.name}</span>
-        <Tag>{repo.private ? 'Private' : 'Public'}</Tag>
-      </div>
-      <p className={styles.repoDesc}>{repo.description ?? 'No description'}</p>
-      <div className={styles.repoMeta}>
-        {repo.language && (
-          <span className={styles.lang}>
-            <span className={styles.langDot} style={{ background: LANG_COLORS[repo.language] ?? 'var(--fg-subtle)' }} />
-            {repo.language}
-          </span>
-        )}
-        <span>
-          <StarIcon size={14} /> {repo.stars}
-        </span>
-        {repo.pushedAt && (
-          <span>
-            Updated <RelativeTime date={repo.pushedAt} />
-          </span>
-        )}
-      </div>
-    </Link>
-  );
-});
-
-/** User or organization profile (both from the local store). */
+/**
+ * `/:owner` — user or organization profile. Decides the kind from the store
+ * when the account is synced (instant), else from `GET /users/{owner}`.
+ */
 export default observer(function ProfilePage() {
   const { owner } = useParams<{ owner: string }>();
-  const tab = useQuery().get('tab') ?? 'repositories';
   const org = orgByLogin(owner);
   const user = org ? undefined : userByLogin(owner);
-  const s = store();
-  if (!org && !user) return <NotFound what="account" />;
+  const known = !!org || !!user;
+  const [, retry] = useReducer((x: number) => x + 1, 0);
+  // Unknown to the store: ask the server what it is (shared with UserProfile's header).
+  const account = useResource(known ? null : profileKeys.account(owner), () => getAccount(owner));
 
-  const ownerId = (org ?? user)!.id;
-  const repos = reposForOwner(ownerId);
-  const members = org ? s.byIndex('membership', 'orgId', org.id) : [];
-  const teams = org ? s.byIndex('team', 'orgId', org.id) : [];
-  const userOrgs = user ? s.byIndex('membership', 'userId', user.id).map((m) => s.get('org', m.orgId)).filter((o) => o !== undefined) : [];
-
+  if (org) return <OrgProfile key={org.login} login={org.login} synced={org} />;
+  if (user) return <UserProfile key={user.login} login={user.login} synced={user} />;
+  const a = account.data;
+  if (a?.type === 'Organization') return <OrgProfile key={a.login} login={a.login} synced={undefined} />;
+  if (a) return <UserProfile key={a.login} login={a.login} synced={undefined} />;
+  if (account.error) {
+    if ((account.error as { status?: number }).status === 404) return <NotFound what="account" />;
+    return (
+      <div className={styles.page}>
+        <EmptyState
+          title="Couldn’t load this profile"
+          action={
+            <Button
+              onClick={() => {
+                invalidate(profileKeys.account(owner));
+                retry();
+              }}
+            >
+              Retry
+            </Button>
+          }
+        >
+          {errorText(account.error)}
+        </EmptyState>
+      </div>
+    );
+  }
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <Avatar user={org ?? user!} size={72} square={!!org} />
-        <div>
-          <h1 className={styles.name}>{(org ?? user)!.name ?? owner}</h1>
-          <div className={styles.login}>
-            {org ? <OrganizationIcon size={14} /> : null} {(org ?? user)!.login}
-          </div>
-          {org?.description && <p className={styles.bio}>{org.description}</p>}
-          {userOrgs.length > 0 && (
-            <div className={styles.orgs}>
-              {userOrgs.map((o) => (
-                <Link key={o.id} to={`/${o.login}`} title={o.login}>
-                  <Avatar user={o} size={24} square />
-                </Link>
-              ))}
-            </div>
-          )}
+    <div className={styles.page} aria-busy="true" aria-label="Loading profile">
+      <div className={styles.userLayout}>
+        <div className={styles.sidebar}>
+          <Skeleton width={240} height={240} style={{ borderRadius: '50%' }} />
+          <Skeleton width="60%" height={24} />
+          <Skeleton width="40%" />
         </div>
-      </header>
-      {user && (
-        <div className={styles.tabs}>
-          <Tabs
-            value="repositories"
-            onChange={(t) => t === 'projects' && navigate(`/users/${user.login}/projects`)}
-            items={[
-              { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.length },
-              { id: 'projects', label: 'Projects', icon: TableIcon },
-            ]}
-          />
+        <div className={styles.skelStack}>
+          <Skeleton height={36} />
+          <Skeleton height={120} />
+          <Skeleton height={120} />
         </div>
-      )}
-      {org && (
-        <div className={styles.tabs}>
-          <Tabs
-            value={tab}
-            onChange={(t) => (t === 'projects' ? navigate(`/orgs/${org.login}/projects`) : setQuery({ tab: t === 'repositories' ? null : t }))}
-            items={[
-              { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.length },
-              { id: 'projects', label: 'Projects', icon: TableIcon },
-              { id: 'people', label: 'People', icon: PeopleIcon, count: members.length },
-              { id: 'teams', label: 'Teams', icon: PeopleIcon, count: teams.length },
-            ]}
-          />
-        </div>
-      )}
-      {tab === 'people' && org ? (
-        <div className={styles.people}>
-          {members.map((m) => {
-            const u = s.get('user', m.userId);
-            return (
-              <Link key={m.id} to={`/${u?.login}`} className={styles.person}>
-                <Avatar user={u} size={36} />
-                <span>
-                  <strong>{u?.name ?? u?.login}</strong>
-                  <span className={styles.personLogin}>
-                    {u?.login} · {m.role}
-                  </span>
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      ) : tab === 'teams' && org ? (
-        <div className={styles.people}>
-          {teams.map((t) => (
-            <div key={t.id} className={styles.person}>
-              <PeopleIcon size={20} />
-              <span>
-                <strong>{t.name}</strong>
-                <span className={styles.personLogin}>{t.memberIds.length} members</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : repos.length === 0 ? (
-        <EmptyState icon={RepoIcon} title="No repositories" />
-      ) : (
-        <div className={styles.grid}>
-          {repos.map((r) => (
-            <RepoCard key={r.id} repo={r} />
-          ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 });
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : 'Something went wrong.';
+}

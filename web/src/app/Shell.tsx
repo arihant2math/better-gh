@@ -10,6 +10,7 @@ import {
   InboxIcon,
   IssueOpenedIcon,
   MoonIcon,
+  PersonIcon,
   PlusIcon,
   SidebarCollapseIcon,
   SignOutIcon,
@@ -30,6 +31,22 @@ function repoPath(suffix: string, fallback: string): string {
   const r = currentRepo();
   return r ? `/${r.owner}/${r.name}${suffix}` : fallback;
 }
+
+/** Settings sections reachable from the command palette: [id, title, keywords]. */
+const SETTINGS_COMMANDS: [string, string, string][] = [
+  ['profile', 'Public profile', 'name bio avatar'],
+  ['account', 'Account', 'username delete'],
+  ['appearance', 'Appearance', 'theme density dark light compact'],
+  ['notifications', 'Notifications', 'email web'],
+  ['emails', 'Emails', 'email address verify primary'],
+  ['security', 'Password and authentication', 'password 2fa two-factor totp recovery'],
+  ['sessions', 'Sessions', 'devices sign out'],
+  ['keys', 'SSH and GPG keys', 'ssh gpg key'],
+  ['blocked', 'Blocked users', 'block'],
+  ['applications', 'Applications', 'oauth authorized'],
+  ['developers', 'OAuth apps', 'developer oauth client'],
+  ['tokens', 'Personal access tokens', 'pat token api'],
+];
 
 function GlobalShortcuts() {
   useShortcuts('Global', {
@@ -78,6 +95,17 @@ function GlobalShortcuts() {
         { id: 'ui.theme', title: 'Toggle dark mode', group: 'Preferences', icon: MoonIcon, keywords: 'theme light dark', run: () => theme.toggle() },
         { id: 'ui.sidebar', title: 'Toggle sidebar', group: 'Preferences', icon: SidebarCollapseIcon, shortcut: 'mod+\\', run: () => ui.toggleSidebar() },
         { id: 'ui.help', title: 'Show keyboard shortcuts', group: 'Help', shortcut: '?', run: () => ui.setHelp(true) },
+        { id: 'repo.new', title: 'Create new repository', group: 'Create', icon: PlusIcon, keywords: 'new repo', run: () => navigate('/new') },
+        { id: 'org.new', title: 'Create new organization', group: 'Create', icon: PlusIcon, keywords: 'new org', run: () => navigate('/organizations/new') },
+        { id: 'nav.profile', title: 'Go to your profile', group: 'Navigation', icon: PersonIcon, run: () => session.user && navigate(`/${session.user.login}`) },
+        ...SETTINGS_COMMANDS.map(([id, title, keywords]) => ({
+          id: `settings.${id}`,
+          title: `Settings: ${title}`,
+          group: 'Settings',
+          icon: GearIcon,
+          keywords,
+          run: () => navigate(`/settings/${id}`),
+        })),
         { id: 'auth.logout', title: 'Sign out', group: 'Account', icon: SignOutIcon, run: () => void session.logout() },
       ]),
     [],

@@ -35,7 +35,7 @@ const ETAG_CACHE_MAX = 300;
 /**
  * Fetch-based client for `/api/v3` (GitHub REST) and `/_bgh` (private).
  * - sends CSRF + X-Client-Tx headers;
- * - reuses ETags for GETs (`If-None-Match` → 304 → cached body);
+ * - reuses ETags for GETs (`If-None-Match` → 304 → cached body), bypassing the browser HTTP cache;
  * - throws `ApiError` with GitHub's `message` on non-2xx.
  */
 export class ApiClient {
@@ -61,7 +61,10 @@ export class ApiClient {
     const cached = method === 'GET' ? this.etags.get(cacheKey) : undefined;
     if (cached) headers['If-None-Match'] = cached.etag;
 
-    const res = await transport().fetch(path, { method, headers, body, signal: opts.signal });
+    // `no-store`: the server sends `Cache-Control: private, max-age=60` (like
+    // GitHub), and the browser cache would otherwise serve stale lists right
+    // after a write to a sibling URL; revalidation is done here via ETags.
+    const res = await transport().fetch(path, { method, headers, body, signal: opts.signal, cache: 'no-store' });
 
     if (res.status === 304 && cached) {
       // Refresh LRU position.

@@ -110,6 +110,7 @@ pub fn app(state: AppState) -> Router {
 
     let web_files = WebFiles::new(state.config.web_dir.clone());
     let shell_state = state.clone();
+    let spa_files = web_files.clone();
 
     // Don't spend CPU compressing git packs (already compressed) or tiny bodies.
     let compress_when = DefaultPredicate::new()
@@ -135,6 +136,10 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bgh_core::ratelimit::root_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            (spa_files, state.clone()),
+            web::spa_pages,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
