@@ -54,6 +54,65 @@ export interface AppDetail extends Integration {
   public: boolean;
   bot: SimpleUser;
   keys: AppKey[];
+  /** `json` or `form` (P46). */
+  webhook_content_type: 'json' | 'form';
+  webhook_insecure_ssl: boolean;
+  client_secrets: ClientSecret[];
+}
+
+/** An app's client secret (OAuth for user-to-server tokens). */
+export interface ClientSecret {
+  id: number;
+  last_eight: string;
+  created_at: string;
+  last_used_at: string | null;
+  /** Only in the create response. */
+  client_secret?: string;
+}
+
+/** GitHub's `hook-delivery-item`. */
+export interface HookDeliveryItem {
+  id: number;
+  guid: string;
+  delivered_at: string;
+  redelivery: boolean;
+  duration: number;
+  status: string;
+  status_code: number;
+  event: string;
+  action: string | null;
+  installation_id: number | null;
+  repository_id: number | null;
+}
+
+/** GitHub's `hook-delivery`. */
+export interface HookDelivery extends HookDeliveryItem {
+  url: string;
+  request: { headers: Record<string, string>; payload: unknown };
+  response: { headers: Record<string, string>; payload: string | null };
+}
+
+export interface AppHookStatus {
+  config: { content_type: string; insecure_ssl: string; url: string; secret?: string };
+  active: boolean;
+  last_response: { code: number | null; status: string; message: string | null };
+}
+
+/** A posted app manifest awaiting confirmation. */
+export interface ManifestInfo {
+  owner: SimpleUser;
+  can_create: boolean;
+  name: string | null;
+  description: string | null;
+  url: string | null;
+  redirect_url: string | null;
+  webhook_url: string | null;
+  callback_urls: string[];
+  setup_url: string | null;
+  public: boolean;
+  permissions: PermissionMap;
+  events: string[];
+  app_slug: string | null;
 }
 
 export interface AppInput {
@@ -71,6 +130,8 @@ export interface AppInput {
   permissions?: PermissionMap;
   events?: string[];
   public?: boolean;
+  webhook_content_type?: 'json' | 'form';
+  webhook_insecure_ssl?: boolean;
 }
 
 /** GitHub's `installation`. */
@@ -129,6 +190,17 @@ export const updateApp = (slug: string, body: AppInput) => api.patch<AppDetail>(
 export const deleteApp = (slug: string) => api.delete<null>(`/_bgh/apps/${enc(slug)}`);
 export const createKey = (slug: string) => api.post<AppKey>(`/_bgh/apps/${enc(slug)}/keys`);
 export const deleteKey = (slug: string, id: number) => api.delete<null>(`/_bgh/apps/${enc(slug)}/keys/${id}`);
+
+export const createClientSecret = (slug: string) => api.post<ClientSecret>(`/_bgh/apps/${enc(slug)}/client_secrets`);
+export const deleteClientSecret = (slug: string, id: number) => api.delete<null>(`/_bgh/apps/${enc(slug)}/client_secrets/${id}`);
+export const getAppHook = (slug: string) => api.get<AppHookStatus>(`/_bgh/apps/${enc(slug)}/hook`);
+export const listHookDeliveries = (slug: string, status?: 'success' | 'failure') =>
+  api.get<HookDeliveryItem[]>(`/_bgh/apps/${enc(slug)}/hook/deliveries?per_page=50${status ? `&status=${status}` : ''}`);
+export const getHookDelivery = (slug: string, id: number) => api.get<HookDelivery>(`/_bgh/apps/${enc(slug)}/hook/deliveries/${id}`);
+export const redeliverHook = (slug: string, id: number) => api.post<Record<string, never>>(`/_bgh/apps/${enc(slug)}/hook/deliveries/${id}/attempts`);
+export const getManifest = (token: string) => api.get<ManifestInfo>(`/_bgh/app-manifests/${enc(token)}`);
+export const createFromManifest = (token: string, name?: string) =>
+  api.post<{ redirect_url: string; app_slug: string }>(`/_bgh/app-manifests/${enc(token)}`, name ? { name } : {});
 
 export const getInstallInfo = (slug: string) => api.get<InstallInfo>(`/_bgh/apps/${enc(slug)}/install`);
 export const installApp = (slug: string, body: InstallInput) => api.post<InstallationDetail>(`/_bgh/apps/${enc(slug)}/installations`, body);

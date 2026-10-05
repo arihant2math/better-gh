@@ -510,6 +510,35 @@ pub async fn issue_token(
     Ok((id, token))
 }
 
+/// Whether the user already granted what `req` asks for (GitHub Apps: was
+/// authorized before).
+async fn already_granted(state: &AppState, user_id: i64, req: &AuthzRequest) -> ApiResult<bool> {
+    if req.github_app {
+        return crate::apps::user_tokens::authorized(state, req.app_id, user_id).await;
+    }
+    Ok(granted_scopes(state, user_id, req.app_id)
+        .await?
+        .is_some_and(|g| req.scopes.iter().all(|s| g.contains(s))))
+}
+
+/// An OAuth-app view of a GitHub App (consent screens).
+fn github_oauth_app(g: &bgh_core::apps::AppRow) -> OauthApp {
+    OauthApp {
+        id: g.id,
+        owner_id: Some(g.owner_id),
+        name: g.name.clone(),
+        description: Some(g.description.clone()).filter(|d| !d.is_empty()),
+        homepage_url: g.homepage_url.clone(),
+        callback_url: g.callback_urls.first().cloned().unwrap_or_default(),
+        client_id: g.client_id.clone(),
+        client_secret_hash: None,
+        client_secret_last_eight: None,
+        device_flow_enabled: false,
+        created_at: g.created_at,
+        updated_at: g.updated_at,
+    }
+}
+
 async fn granted_scopes(
     state: &AppState,
     user_id: i64,
@@ -574,7 +603,7 @@ fn token_response(
     if wants_json {
         let mut map = serde_json::Map::new();
         for (k, v) in fields {
-            let value = if k == "expires_in" || k == "interval" {
+            let value = if matches!(k, "expires_in" | "interval" | "refresh_token_expires_in") {
                 v.parse::<i64>()
                     .map(Value::from)
                     .unwrap_or(Value::String(v))
@@ -661,6 +690,9 @@ pub struct AuthzRequest {
     pub state: Option<String>,
     pub code_challenge: Option<String>,
     pub code_challenge_method: Option<String>,
+    /// A GitHub App's client (user-to-server tokens, P46).
+    #[serde(default)]
+    pub github_app: bool,
 }
 
 /// Stored authorization code.
@@ -672,6 +704,8 @@ struct CodeGrant {
     redirect_uri: String,
     code_challenge: Option<String>,
     code_challenge_method: Option<String>,
+    #[serde(default)]
+    github_app: bool,
 }
 
 fn is_loopback(host: Option<&str>) -> bool {
@@ -711,11 +745,19 @@ async fn validate_authorize(
     let Some(client_id) = p.get("client_id").filter(|c| !c.is_empty()) else {
         return Ok(Err(AuthzError::Page("Missing client_id.".into())));
     };
-    let Some(app) = OauthApp::by_client_id(&state.db, client_id).await? else {
-        return Ok(Err(AuthzError::Page("Unknown application.".into())));
+    // OAuth apps, or GitHub Apps (any of their callback URLs).
+    let (app, callbacks, github_app) = match OauthApp::by_client_id(&state.db, client_id).await? {
+        Some(app) => {
+            let cb = vec![app.callback_url.clone()];
+            (app, cb, false)
+        }
+        None => match crate::apps::user_tokens::app_by_client_id(state, client_id).await? {
+            Some(g) => (github_oauth_app(&g), g.callback_urls.clone(), true),
+            None => return Ok(Err(AuthzError::Page("Unknown application.".into()))),
+        },
     };
     let redirect_uri = match p.get("redirect_uri").filter(|r| !r.is_empty()) {
-        Some(r) if redirect_allowed(&app.callback_url, r) => r.clone(),
+        Some(r) if callbacks.iter().any(|c| redirect_allowed(c, r)) => r.clone(),
         Some(_) => {
             return Ok(Err(AuthzError::Page(
                 "The redirect_uri is not associated with this application.".into(),
@@ -735,7 +777,12 @@ async fn validate_authorize(
             st.as_deref(),
         ))));
     }
-    let scopes = parse_scopes(p.get("scope").map(String::as_str).unwrap_or(""), site_admin);
+    // GitHub Apps have permissions, not scopes.
+    let scopes = if github_app {
+        Vec::new()
+    } else {
+        parse_scopes(p.get("scope").map(String::as_str).unwrap_or(""), site_admin)
+    };
     Ok(Ok((
         AuthzRequest {
             app_id: app.id,
@@ -745,6 +792,7 @@ async fn validate_authorize(
             state: st,
             code_challenge: challenge,
             code_challenge_method: method,
+            github_app,
         },
         app,
     )))
@@ -785,6 +833,7 @@ async fn approve(state: &AppState, user_id: i64, req: &AuthzRequest) -> ApiResul
             redirect_uri: req.redirect_uri.clone(),
             code_challenge: req.code_challenge.clone(),
             code_challenge_method: req.code_challenge_method.clone(),
+            github_app: req.github_app,
         },
         CODE_TTL_SECS,
     )
@@ -832,9 +881,7 @@ pub async fn authorize_page(
         return Ok(login_redirect(&original));
     };
     // Already granted these scopes: skip the consent screen.
-    if let Some(granted) = granted_scopes(&state, auth.user.id, app.id).await?
-        && req.scopes.iter().all(|s| granted.contains(s))
-    {
+    if already_granted(&state, auth.user.id, &req).await? {
         let to = approve(&state, auth.user.id, &req).await?;
         return Ok(Redirect::to(&to).into_response());
     }
@@ -927,9 +974,7 @@ pub async fn authorize_info(
             return Err(ApiError::unprocessable(msg));
         }
     };
-    let already = granted_scopes(&state, auth.user.id, app.id)
-        .await?
-        .is_some_and(|g| req.scopes.iter().all(|s| g.contains(s)));
+    let already = already_granted(&state, auth.user.id, &req).await?;
     let consent = new_consent(&state, auth.user.id, &req).await?;
     Ok(Json(AuthorizeInfo {
         app: app_public(&state, &app).await?,
@@ -999,7 +1044,13 @@ pub async fn access_token(
         p.entry("client_secret".into()).or_insert(secret);
     }
     let client_id = p.get("client_id").cloned().unwrap_or_default();
-    let Some(app) = OauthApp::by_client_id(&state.db, &client_id).await? else {
+    let oauth_app = OauthApp::by_client_id(&state.db, &client_id).await?;
+    if oauth_app.is_none()
+        && let Some(g) = crate::apps::user_tokens::app_by_client_id(&state, &client_id).await?
+    {
+        return github_app_token(&state, &headers, &g, &p).await;
+    }
+    let Some(app) = oauth_app else {
         return Ok(oauth_error(
             &headers,
             "incorrect_client_credentials",
@@ -1025,7 +1076,7 @@ pub async fn access_token(
             let code = p.get("code").cloned().unwrap_or_default();
             let grant: Option<CodeGrant> =
                 redis_take_json(&state, &redis_key(&state, "oauth_code", &code)).await?;
-            let Some(grant) = grant.filter(|g| g.app_id == app.id) else {
+            let Some(grant) = grant.filter(|g| !g.github_app && g.app_id == app.id) else {
                 return Ok(oauth_error(
                     &headers,
                     "bad_verification_code",
@@ -1071,6 +1122,106 @@ pub async fn access_token(
             "The grant type is not supported.",
         )),
     }
+}
+
+/// `POST /login/oauth/access_token` for a GitHub App: `authorization_code`
+/// and `refresh_token` grants → user-to-server token + refresh token.
+async fn github_app_token(
+    state: &AppState,
+    headers: &HeaderMap,
+    app: &bgh_core::apps::AppRow,
+    p: &HashMap<String, String>,
+) -> ApiResult<Response> {
+    use crate::apps::user_tokens;
+    if !user_tokens::check_client_secret(state, app.id, p.get("client_secret").map(String::as_str))
+        .await?
+    {
+        return Ok(oauth_error(
+            headers,
+            "incorrect_client_credentials",
+            "The client_id and/or client_secret passed are incorrect.",
+        ));
+    }
+    let grant_type = p
+        .get("grant_type")
+        .map(String::as_str)
+        .unwrap_or("authorization_code");
+    let user_id = match grant_type {
+        "authorization_code" => {
+            let code = p.get("code").cloned().unwrap_or_default();
+            let grant: Option<CodeGrant> =
+                redis_take_json(state, &redis_key(state, "oauth_code", &code)).await?;
+            let Some(grant) = grant.filter(|g| g.github_app && g.app_id == app.id) else {
+                return Ok(oauth_error(
+                    headers,
+                    "bad_verification_code",
+                    "The code passed is incorrect or expired.",
+                ));
+            };
+            if let Some(r) = p.get("redirect_uri").filter(|r| !r.is_empty())
+                && *r != grant.redirect_uri
+            {
+                return Ok(oauth_error(
+                    headers,
+                    "redirect_uri_mismatch",
+                    "The redirect_uri MUST match the registered callback URL for this application.",
+                ));
+            }
+            if let Some(ch) = &grant.code_challenge
+                && !pkce_ok(
+                    ch,
+                    grant.code_challenge_method.as_deref(),
+                    p.get("code_verifier").map(String::as_str),
+                )
+            {
+                return Ok(oauth_error(
+                    headers,
+                    "bad_verification_code",
+                    "The code_verifier does not match the code_challenge.",
+                ));
+            }
+            grant.user_id
+        }
+        "refresh_token" => {
+            let refresh = p.get("refresh_token").cloned().unwrap_or_default();
+            match user_tokens::redeem_refresh(state, app.id, &refresh).await? {
+                Some(u) => u,
+                None => {
+                    return Ok(oauth_error(
+                        headers,
+                        "bad_refresh_token",
+                        "The refresh token passed is incorrect or expired.",
+                    ));
+                }
+            }
+        }
+        _ => {
+            return Ok(oauth_error(
+                headers,
+                "unsupported_grant_type",
+                "The grant type is not supported.",
+            ));
+        }
+    };
+    let issued = user_tokens::issue(state, app, user_id).await?;
+    Ok(token_response(
+        headers,
+        StatusCode::OK,
+        vec![
+            ("access_token", issued.token),
+            (
+                "expires_in",
+                bgh_core::apps::USER_TOKEN_TTL_SECS.to_string(),
+            ),
+            ("refresh_token", issued.refresh_token),
+            (
+                "refresh_token_expires_in",
+                bgh_core::apps::REFRESH_TOKEN_TTL_SECS.to_string(),
+            ),
+            ("scope", String::new()),
+            ("token_type", "bearer".into()),
+        ],
+    ))
 }
 
 fn basic_credentials(headers: &HeaderMap) -> Option<(String, String)> {

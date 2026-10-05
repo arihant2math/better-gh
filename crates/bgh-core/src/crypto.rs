@@ -16,6 +16,12 @@ pub const OAUTH_TOKEN_PREFIX: &str = "bgho_";
 /// `ghs_`).
 pub const INSTALLATION_TOKEN_PREFIX: &str = "bghs_";
 
+/// Prefix of GitHub App user-to-server tokens (`bghu_…`, GitHub's `ghu_`).
+pub const USER_TO_SERVER_TOKEN_PREFIX: &str = "bghu_";
+
+/// Prefix of GitHub App refresh tokens (`bghr_…`, GitHub's `ghr_`).
+pub const REFRESH_TOKEN_PREFIX: &str = "bghr_";
+
 /// Prefix of fine-grained personal access tokens (`bgh_pat_…`, GitHub's
 /// `github_pat_`).
 pub const FINE_GRAINED_PAT_PREFIX: &str = "bgh_pat_";
@@ -63,6 +69,16 @@ pub fn new_oauth_token() -> String {
 /// New installation access token: `bghs_` + 40 alphanumerics.
 pub fn new_installation_token() -> String {
     format!("{INSTALLATION_TOKEN_PREFIX}{}", random_token(40))
+}
+
+/// New user-to-server token: `bghu_` + 40 alphanumerics.
+pub fn new_user_to_server_token() -> String {
+    format!("{USER_TO_SERVER_TOKEN_PREFIX}{}", random_token(40))
+}
+
+/// New refresh token: `bghr_` + 76 alphanumerics (GitHub's length).
+pub fn new_refresh_token() -> String {
+    format!("{REFRESH_TOKEN_PREFIX}{}", random_token(76))
 }
 
 /// New fine-grained personal access token: `bgh_pat_` + 60 alphanumerics.

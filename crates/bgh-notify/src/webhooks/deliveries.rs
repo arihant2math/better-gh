@@ -37,7 +37,8 @@ pub struct DeliveryRow {
 }
 
 impl DeliveryRow {
-    pub const COLUMNS: &'static str = "id, hook_id, guid, event, action, repo_id, \
+    /// App hook deliveries (P46) have no hook: `hook_id` reads 0.
+    pub const COLUMNS: &'static str = "id, coalesce(hook_id, 0) AS hook_id, guid, event, action, repo_id, \
         installation_id, redelivery, status, status_code, duration_ms, request_headers, \
         response_headers, response_body, delivered_at, created_at, url, payload_raw, \
         content_type, attempts, throttled_at";
@@ -70,7 +71,7 @@ pub struct Delivery {
     pub response: Value,
 }
 
-fn item(d: &DeliveryRow) -> DeliveryItem {
+pub(crate) fn item(d: &DeliveryRow) -> DeliveryItem {
     DeliveryItem {
         id: d.id,
         guid: d.guid.to_string(),
@@ -87,7 +88,7 @@ fn item(d: &DeliveryRow) -> DeliveryItem {
     }
 }
 
-fn detail(d: &DeliveryRow) -> Delivery {
+pub(crate) fn detail(d: &DeliveryRow) -> Delivery {
     let payload: Value = serde_json::from_str(&d.payload_raw).unwrap_or(Value::Null);
     Delivery {
         item: item(d),
@@ -112,7 +113,7 @@ pub struct ListParams {
     pub redelivery: Option<bool>,
 }
 
-fn parse_cursor(c: Option<&str>) -> ApiResult<Option<i64>> {
+pub(crate) fn parse_cursor(c: Option<&str>) -> ApiResult<Option<i64>> {
     match c.filter(|c| !c.is_empty()) {
         None => Ok(None),
         Some(c) => c

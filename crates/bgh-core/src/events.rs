@@ -872,6 +872,36 @@ pub enum Event {
         actor_id: i64,
         identifier: String,
     },
+    /// A GitHub App installation changed (P46, GitHub's `installation`
+    /// webhook, delivered only to the app's hook): `action` is `created`,
+    /// `deleted`, `suspend`, `unsuspend` or `new_permissions_accepted`.
+    /// `installation` is the installation's REST JSON when the row is gone
+    /// (`deleted`), `repositories` its repositories at that time
+    /// (`[{id, node_id, name, full_name, private}]`).
+    AppInstallationChanged {
+        installation_id: i64,
+        app_id: i64,
+        account_id: i64,
+        action: String,
+        actor_id: i64,
+        #[serde(default)]
+        installation: serde_json::Value,
+        #[serde(default)]
+        repositories: serde_json::Value,
+    },
+    /// Repositories added to / removed from a GitHub App installation
+    /// (GitHub's `installation_repositories`, app hook only).
+    AppInstallationRepositoriesChanged {
+        installation_id: i64,
+        app_id: i64,
+        account_id: i64,
+        actor_id: i64,
+        repository_selection: String,
+        #[serde(default)]
+        added: Vec<i64>,
+        #[serde(default)]
+        removed: Vec<i64>,
+    },
     /// Wiki pages written (GitHub `gollum`). `pages` is the webhook
     /// `pages` array: `[{"page_name", "title", "summary", "action":
     /// "created"|"edited"|"deleted", "sha", "html_url"}]`.
@@ -1041,6 +1071,10 @@ impl Event {
             Self::WikiPagesUpdated { .. } => "wiki_pages_updated",
             Self::RepositoryDispatch { .. } => "repository_dispatch",
             Self::CheckRunActionRequested { .. } => "check_run_action_requested",
+            Self::AppInstallationChanged { .. } => "app_installation_changed",
+            Self::AppInstallationRepositoriesChanged { .. } => {
+                "app_installation_repositories_changed"
+            }
             Self::SecretScanningAlert { .. } => "secret_scanning_alert",
             Self::SecretScanningAlertLocationCreated { .. } => {
                 "secret_scanning_alert_location_created"
@@ -1159,7 +1193,9 @@ impl Event {
             | Self::CommitCommentCreated { repo_id, .. }
             | Self::SecretScanningAlert { repo_id, .. }
             | Self::SecretScanningAlertLocationCreated { repo_id, .. } => Some(*repo_id),
-            Self::OrgMemberAdded { .. }
+            Self::AppInstallationChanged { .. }
+            | Self::AppInstallationRepositoriesChanged { .. }
+            | Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
             | Self::TeamCreated { .. }
@@ -1307,7 +1343,9 @@ impl Event {
             | Self::RepositoryRulesetChanged { actor_id, .. }
             | Self::WikiPagesUpdated { actor_id, .. }
             | Self::RepositoryDispatch { actor_id, .. }
-            | Self::CheckRunActionRequested { actor_id, .. } => Some(*actor_id),
+            | Self::CheckRunActionRequested { actor_id, .. }
+            | Self::AppInstallationChanged { actor_id, .. }
+            | Self::AppInstallationRepositoriesChanged { actor_id, .. } => Some(*actor_id),
             Self::SessionEnded { user_id, .. } => Some(*user_id),
         }
     }

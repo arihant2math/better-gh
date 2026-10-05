@@ -130,6 +130,10 @@ pub fn router() -> Router<AppState> {
         .route("/apps/{app_slug}", get(apps::rest::get_app_by_slug))
         .route("/app/installations", get(apps::rest::list_installations))
         .route(
+            "/app-manifests/{code}/conversions",
+            post(apps::manifest::convert),
+        )
+        .route(
             "/app/installations/{installation_id}",
             get(apps::rest::get_installation).delete(apps::rest::delete_installation),
         )
@@ -480,7 +484,24 @@ pub fn web_router() -> Router<AppState> {
                 .patch(apps::manage::update)
                 .delete(apps::manage::delete),
         )
+        .route("/settings/apps/new", post(apps::manifest::post_user))
+        .route(
+            "/organizations/{org}/settings/apps/new",
+            post(apps::manifest::post_org),
+        )
+        .route(
+            "/_bgh/app-manifests/{token}",
+            get(apps::manifest::info).post(apps::manifest::create),
+        )
         .route("/_bgh/apps/{slug}/keys", post(apps::manage::create_key))
+        .route(
+            "/_bgh/apps/{slug}/client_secrets",
+            post(apps::manage::create_client_secret),
+        )
+        .route(
+            "/_bgh/apps/{slug}/client_secrets/{id}",
+            delete(apps::manage::delete_client_secret),
+        )
         .route(
             "/_bgh/apps/{slug}/keys/{id}",
             delete(apps::manage::delete_key),

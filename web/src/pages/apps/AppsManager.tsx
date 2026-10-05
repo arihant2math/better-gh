@@ -1,10 +1,26 @@
 /**
  * GitHub App registrations of one account (user settings `/settings/apps`,
  * org settings `/organizations/:org/settings/apps`): list, register,
- * edit (permissions, events, webhook), private keys, delete.
+ * edit (permissions, events, webhook), private keys, client secrets,
+ * delete. The "Advanced" tab (webhook deliveries) and the manifest
+ * confirmation (`new?manifest=…`) are lazy chunks (P46).
  */
-import { useId, useState, type FormEvent } from 'react';
-import { createApp, createKey, deleteApp, deleteKey, getApp, listApps, updateApp, type Access, type AppDetail, type AppKey } from '../../api/apps';
+import { lazy, Suspense, useId, useState, type FormEvent } from 'react';
+import {
+  createApp,
+  createClientSecret,
+  createKey,
+  deleteApp,
+  deleteClientSecret,
+  deleteKey,
+  getApp,
+  listApps,
+  updateApp,
+  type Access,
+  type AppDetail,
+  type AppKey,
+  type ClientSecret,
+} from '../../api/apps';
 import { invalidate, useResource } from '../../api/cache';
 import {
   apiFieldErrors,
@@ -21,9 +37,10 @@ import {
   Pill,
   Section,
 } from '../../components/settings/kit';
-import { Link, navigate } from '../../router';
+import { Link, navigate, useQuery } from '../../router';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { TabNav } from '../../ui/Tabs';
 import { AlertIcon, AppsIcon, ArrowLeftIcon, DownloadIcon, KeyIcon, PlusIcon, TrashIcon } from '../../ui/icons';
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
@@ -55,10 +72,27 @@ export function AppIcon({ name, size = 40 }: { name: string; size?: number }) {
   );
 }
 
-/** `sub` = path segments after `base` (`[]`, `['new']`, `[slug]`). */
+const AppAdvanced = lazy(() => import('./AppAdvanced'));
+const ManifestConfirm = lazy(() => import('./ManifestConfirm'));
+
+const loading = (
+  <FormStack>
+    <Skeleton width="40%" height={24} />
+    <Skeleton width="70%" />
+  </FormStack>
+);
+
+/** `sub` = path segments after `base` (`[]`, `['new']`, `[slug]`, `[slug, 'advanced']`). */
 export function AppsManager({ owner, base, sub }: { owner: string; base: string; sub: string[] }) {
+  const manifest = useQuery().get('manifest');
+  if (sub[0] === 'new' && manifest)
+    return (
+      <Suspense fallback={loading}>
+        <ManifestConfirm token={manifest} base={base} />
+      </Suspense>
+    );
   if (sub[0] === 'new') return <NewApp owner={owner} base={base} />;
-  if (sub[0]) return <AppPageDetail key={sub[0]} slug={sub[0]} owner={owner} base={base} />;
+  if (sub[0]) return <AppPageDetail key={sub[0]} slug={sub[0]} owner={owner} base={base} tab={sub[1] === 'advanced' ? 'advanced' : 'general'} />;
   return <AppList owner={owner} base={base} />;
 }
 
@@ -335,7 +369,7 @@ function NewApp({ owner, base }: { owner: string; base: string }) {
 
 // ------------------------------------------------------------------ detail
 
-function AppPageDetail({ slug, owner, base }: { slug: string; owner: string; base: string }) {
+function AppPageDetail({ slug, owner, base, tab }: { slug: string; owner: string; base: string; tab: 'general' | 'advanced' }) {
   const res = useResource(appKey(slug), () => getApp(slug));
   const [local, setLocal] = useState<AppDetail | undefined>(undefined);
   const app = local ?? res.data;
@@ -402,100 +436,124 @@ function AppPageDetail({ slug, owner, base }: { slug: string; owner: string; bas
           </Button>
         }
       />
-      <Section title="About">
-        <div className={styles.kv}>
-          <span>App ID</span>
-          <span>
-            <code data-testid="app-id">{app.id}</code>
-            <CopyButton value={String(app.id)} />
-          </span>
-          <span>Client ID</span>
-          <span>
-            <code>{app.client_id}</code>
-            <CopyButton value={app.client_id} />
-          </span>
-          <span>Bot account</span>
-          <span>
-            <Link to={`/${app.bot.login}`}>{app.bot.login}</Link>
-          </span>
-          <span>Public page</span>
-          <span>
-            <Link to={`/apps/${app.slug}`}>{app.html_url}</Link>
-          </span>
-          <span>Installations</span>
-          <span>{app.installations_count ?? 0}</span>
-        </div>
-      </Section>
-      <Section
-        title="Private keys"
-        description="Sign JWTs with a private key to authenticate as the app (iss = App ID, RS256, at most 10 minutes). The key is downloaded once and never stored here."
-        actions={
-          <Button size="sm" leadingIcon={KeyIcon} loading={keyBusy} onClick={() => void generate()}>
-            Generate a private key
-          </Button>
-        }
-      >
-        {newKey?.pem && (
-          <div className={styles.pemBox} role="status" aria-label="New private key">
-            <div className={styles.pemWarn}>
-              <AlertIcon size={16} /> Your private key was downloaded. Store it safely: it can’t be shown again.
+      <TabNav
+        aria-label="GitHub App settings"
+        current={tab}
+        className={styles.tabs}
+        items={[
+          { id: 'general', label: 'General', href: `${base}/${app.slug}` },
+          { id: 'advanced', label: 'Advanced', href: `${base}/${app.slug}/advanced` },
+        ]}
+      />
+      {tab === 'advanced' ? (
+        <Suspense fallback={loading}>
+          <AppAdvanced
+            app={app}
+            onUpdated={(a) => {
+              invalidate(appKey(a.slug));
+              setLocal(a);
+            }}
+          />
+        </Suspense>
+      ) : (
+        <>
+          <Section title="About">
+            <div className={styles.kv}>
+              <span>App ID</span>
+              <span>
+                <code data-testid="app-id">{app.id}</code>
+                <CopyButton value={String(app.id)} />
+              </span>
+              <span>Client ID</span>
+              <span>
+                <code>{app.client_id}</code>
+                <CopyButton value={app.client_id} />
+              </span>
+              <span>Bot account</span>
+              <span>
+                <Link to={`/${app.bot.login}`}>{app.bot.login}</Link>
+              </span>
+              <span>Public page</span>
+              <span>
+                <Link to={`/apps/${app.slug}`}>{app.html_url}</Link>
+              </span>
+              <span>Installations</span>
+              <span>{app.installations_count ?? 0}</span>
             </div>
-            <ButtonRow>
-              <Button size="sm" leadingIcon={DownloadIcon} onClick={() => downloadText(`${app.slug}.private-key.pem`, newKey.pem!)}>
-                Download again
+          </Section>
+          <Section
+            title="Private keys"
+            description="Sign JWTs with a private key to authenticate as the app (iss = App ID, RS256, at most 10 minutes). The key is downloaded once and never stored here."
+            actions={
+              <Button size="sm" leadingIcon={KeyIcon} loading={keyBusy} onClick={() => void generate()}>
+                Generate a private key
               </Button>
-              <CopyButton value={newKey.pem} label="Copy PEM" />
-            </ButtonRow>
-          </div>
-        )}
-        <ItemList aria-label="Private keys" empty="No private keys. Generate one to authenticate as this app.">
-          {app.keys.map((k) => (
-            <ItemRow
-              key={k.id}
-              icon={KeyIcon}
-              title={<code className={styles.fingerprint}>{k.fingerprint}</code>}
-              meta={
-                <>
-                  Added {new Date(k.created_at).toLocaleDateString()} {newKey?.id === k.id && <Pill tone="success">New</Pill>}
-                </>
-              }
-              actions={
-                <Button size="sm" variant="danger" aria-label={`Delete key ${k.fingerprint}`} onClick={() => setConfirmKey(k)}>
-                  Delete
-                </Button>
-              }
+            }
+          >
+            {newKey?.pem && (
+              <div className={styles.pemBox} role="status" aria-label="New private key">
+                <div className={styles.pemWarn}>
+                  <AlertIcon size={16} /> Your private key was downloaded. Store it safely: it can’t be shown again.
+                </div>
+                <ButtonRow>
+                  <Button size="sm" leadingIcon={DownloadIcon} onClick={() => downloadText(`${app.slug}.private-key.pem`, newKey.pem!)}>
+                    Download again
+                  </Button>
+                  <CopyButton value={newKey.pem} label="Copy PEM" />
+                </ButtonRow>
+              </div>
+            )}
+            <ItemList aria-label="Private keys" empty="No private keys. Generate one to authenticate as this app.">
+              {app.keys.map((k) => (
+                <ItemRow
+                  key={k.id}
+                  icon={KeyIcon}
+                  title={<code className={styles.fingerprint}>{k.fingerprint}</code>}
+                  meta={
+                    <>
+                      Added {new Date(k.created_at).toLocaleDateString()} {newKey?.id === k.id && <Pill tone="success">New</Pill>}
+                    </>
+                  }
+                  actions={
+                    <Button size="sm" variant="danger" aria-label={`Delete key ${k.fingerprint}`} onClick={() => setConfirmKey(k)}>
+                      Delete
+                    </Button>
+                  }
+                />
+              ))}
+            </ItemList>
+          </Section>
+          <ClientSecrets app={app} onChanged={() => void refresh()} />
+          <Section title="General">
+            <AppForm
+              key={app.updated_at}
+              editing
+              secretSet={app.webhook_secret_set}
+              initial={fromApp(app)}
+              submitLabel="Save changes"
+              onSubmit={async (v) => {
+                const updated = await updateApp(app.slug, toInput(v, fromApp(app)));
+                invalidate(listKey(owner));
+                invalidate(appKey(app.slug));
+                setLocal(updated);
+                toast({ kind: 'success', title: 'GitHub App updated' });
+                if (updated.slug !== app.slug) navigate(`${base}/${updated.slug}`);
+              }}
             />
-          ))}
-        </ItemList>
-      </Section>
-      <Section title="General">
-        <AppForm
-          key={app.updated_at}
-          editing
-          secretSet={app.webhook_secret_set}
-          initial={fromApp(app)}
-          submitLabel="Save changes"
-          onSubmit={async (v) => {
-            const updated = await updateApp(app.slug, toInput(v, fromApp(app)));
-            invalidate(listKey(owner));
-            invalidate(appKey(app.slug));
-            setLocal(updated);
-            toast({ kind: 'success', title: 'GitHub App updated' });
-            if (updated.slug !== app.slug) navigate(`${base}/${updated.slug}`);
-          }}
-        />
-      </Section>
-      <Section danger title="Danger zone">
-        <div className={styles.dangerRow}>
-          <div>
-            <strong>Delete this GitHub App</strong>
-            <p className={styles.hint}>It is uninstalled everywhere and its tokens stop working. Content made by its bot is shown as a ghost.</p>
-          </div>
-          <Button variant="danger" leadingIcon={TrashIcon} onClick={() => setConfirmDelete(true)}>
-            Delete GitHub App
-          </Button>
-        </div>
-      </Section>
+          </Section>
+          <Section danger title="Danger zone">
+            <div className={styles.dangerRow}>
+              <div>
+                <strong>Delete this GitHub App</strong>
+                <p className={styles.hint}>It is uninstalled everywhere and its tokens stop working. Content made by its bot is shown as a ghost.</p>
+              </div>
+              <Button variant="danger" leadingIcon={TrashIcon} onClick={() => setConfirmDelete(true)}>
+                Delete GitHub App
+              </Button>
+            </div>
+          </Section>
+        </>
+      )}
       <ConfirmDialog
         open={!!confirmKey}
         onClose={() => setConfirmKey(null)}
@@ -527,5 +585,85 @@ function AppPageDetail({ slug, owner, base }: { slug: string; owner: string; bas
         </Banner>
       </ConfirmDialog>
     </>
+  );
+}
+
+/** Client secrets: OAuth credentials for user-to-server tokens (P46). */
+function ClientSecrets({ app, onChanged }: { app: AppDetail; onChanged: () => void }) {
+  const [fresh, setFresh] = useState<ClientSecret | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<ClientSecret | null>(null);
+  const generate = async () => {
+    setBusy(true);
+    try {
+      setFresh(await createClientSecret(app.slug));
+      onChanged();
+    } catch (e) {
+      toast({ kind: 'error', title: apiFieldErrors(e).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section
+      title="Client secrets"
+      description={
+        <>
+          Exchange OAuth codes for user-to-server tokens at <code>/login/oauth/access_token</code> with the client ID and a secret.
+        </>
+      }
+      actions={
+        <Button size="sm" leadingIcon={KeyIcon} loading={busy} onClick={() => void generate()}>
+          Generate a new client secret
+        </Button>
+      }
+    >
+      {fresh?.client_secret && (
+        <div className={styles.pemBox} role="status" aria-label="New client secret">
+          <div className={styles.pemWarn}>
+            <AlertIcon size={16} /> Copy your new client secret now: it can’t be shown again.
+          </div>
+          <ButtonRow>
+            <code className={styles.fingerprint} data-testid="client-secret">
+              {fresh.client_secret}
+            </code>
+            <CopyButton value={fresh.client_secret} />
+          </ButtonRow>
+        </div>
+      )}
+      <ItemList aria-label="Client secrets" empty="No client secrets. Generate one to use the app's OAuth flow.">
+        {(app.client_secrets ?? []).map((c) => (
+          <ItemRow
+            key={c.id}
+            icon={KeyIcon}
+            title={<code className={styles.fingerprint}>*****{c.last_eight}</code>}
+            meta={
+              <>
+                Added {new Date(c.created_at).toLocaleDateString()} · {c.last_used_at ? `Last used ${new Date(c.last_used_at).toLocaleDateString()}` : 'Never used'}
+              </>
+            }
+            actions={
+              <Button size="sm" variant="danger" aria-label={`Delete client secret ending ${c.last_eight}`} onClick={() => setConfirm(c)}>
+                Delete
+              </Button>
+            }
+          />
+        ))}
+      </ItemList>
+      <ConfirmDialog
+        open={!!confirm}
+        onClose={() => setConfirm(null)}
+        title="Delete client secret?"
+        confirmLabel="Delete secret"
+        onConfirm={async () => {
+          await deleteClientSecret(app.slug, confirm!.id);
+          if (fresh?.id === confirm!.id) setFresh(null);
+          onChanged();
+          toast({ kind: 'success', title: 'Client secret deleted' });
+        }}
+      >
+        <p>Token exchanges using this secret stop working immediately.</p>
+      </ConfirmDialog>
+    </Section>
   );
 }

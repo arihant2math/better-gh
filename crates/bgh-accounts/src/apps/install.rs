@@ -13,8 +13,9 @@
 //! `PUT|DELETE /user/installations/{id}/repositories/{repository_id}`,
 //! `GET /orgs/{org}/installations`.
 //!
-//! Installation webhooks (`installation`, `installation_repositories`)
-//! and the permission-upgrade notification are P46.
+//! Every change emits `Event::AppInstallationChanged` /
+//! `Event::AppInstallationRepositoriesChanged`, delivered to the app's hook
+//! as `installation` / `installation_repositories` (bgh-notify, P46).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -226,6 +227,19 @@ async fn check_repo_ids(state: &AppState, account_id: i64, ids: &[i64]) -> ApiRe
     Ok(ids)
 }
 
+/// `installation` event for a live installation.
+fn installation_event(inst: &InstallationRow, action: &str, actor_id: i64) -> Event {
+    Event::AppInstallationChanged {
+        installation_id: inst.id,
+        app_id: inst.app_id,
+        account_id: inst.account_id,
+        action: action.to_string(),
+        actor_id,
+        installation: serde_json::Value::Null,
+        repositories: serde_json::Value::Null,
+    }
+}
+
 fn parse_selection(s: Option<&str>, default: &str) -> ApiResult<String> {
     match s.unwrap_or(default) {
         v @ ("all" | "selected") => Ok(v.to_string()),
@@ -320,6 +334,7 @@ pub async fn install(
         }),
     )
     .await?;
+    tx.emit(installation_event(&inst, "created", auth.user.id));
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -392,12 +407,54 @@ async fn set_repositories(
     inst: &InstallationRow,
     selection: &str,
     repo_ids: &[i64],
+    actor_id: i64,
 ) -> ApiResult<()> {
     let previous: Vec<i64> =
         sqlx::query_scalar("SELECT repo_id FROM app_installation_repos WHERE installation_id = $1")
             .bind(inst.id)
             .fetch_all(&mut **tx)
             .await?;
+    // Effective repository sets before and after, for
+    // `installation_repositories`.
+    let owned: Vec<i64> = if inst.all_repositories() || selection == "all" {
+        sqlx::query_scalar("SELECT id FROM repositories WHERE owner_id = $1")
+            .bind(inst.account_id)
+            .fetch_all(&mut **tx)
+            .await?
+    } else {
+        Vec::new()
+    };
+    let before: Vec<i64> = if inst.all_repositories() {
+        owned.clone()
+    } else {
+        previous.clone()
+    };
+    let after: Vec<i64> = if selection == "all" {
+        owned
+    } else {
+        repo_ids.to_vec()
+    };
+    let added: Vec<i64> = after
+        .iter()
+        .filter(|r| !before.contains(r))
+        .copied()
+        .collect();
+    let removed: Vec<i64> = before
+        .iter()
+        .filter(|r| !after.contains(r))
+        .copied()
+        .collect();
+    if !added.is_empty() || !removed.is_empty() {
+        tx.emit(Event::AppInstallationRepositoriesChanged {
+            installation_id: inst.id,
+            app_id: inst.app_id,
+            account_id: inst.account_id,
+            actor_id,
+            repository_selection: selection.to_string(),
+            added,
+            removed,
+        });
+    }
     sqlx::query(
         "UPDATE app_installations SET repository_selection = $2, updated_at = now() WHERE id = $1",
     )
@@ -451,7 +508,7 @@ pub async fn update_installation(
         Vec::new()
     };
     let mut tx = Tx::begin(&state).await?;
-    set_repositories(&mut tx, &inst, &selection, &repo_ids).await?;
+    set_repositories(&mut tx, &inst, &selection, &repo_ids, auth.user.id).await?;
     audit::log(
         &mut *tx,
         Some(&auth.user),
@@ -475,7 +532,28 @@ pub async fn uninstall(
     inst: &InstallationRow,
     account: &db::User,
 ) -> ApiResult<()> {
+    // The row is gone when the event is delivered: snapshot it.
+    let snapshot = serde_json::to_value(
+        installations_json(state, std::slice::from_ref(inst))
+            .await?
+            .pop()
+            .ok_or(ApiError::NotFound)?,
+    )?;
+    let (repos, _) = installation_repos(state, inst, i64::MAX, 0).await?;
+    let repositories: Vec<serde_json::Value> = repos
+        .iter()
+        .map(|r| {
+            json!({
+                "id": r.id,
+                "node_id": bgh_core::node_id::encode(bgh_core::node_id::NodeType::Repository, r.id),
+                "name": r.name,
+                "full_name": format!("{}/{}", account.login, r.name),
+                "private": r.is_private(),
+            })
+        })
+        .collect();
     let mut tx = Tx::begin(state).await?;
+    super::strip_user_tokens(&mut tx, inst.id).await?;
     sqlx::query("DELETE FROM app_installations WHERE id = $1")
         .bind(inst.id)
         .execute(&mut *tx)
@@ -488,6 +566,15 @@ pub async fn uninstall(
         json!({ "installation_id": inst.id, "app_id": inst.app_id }),
     )
     .await?;
+    tx.emit(Event::AppInstallationChanged {
+        installation_id: inst.id,
+        app_id: inst.app_id,
+        account_id: inst.account_id,
+        action: "deleted".into(),
+        actor_id: actor.id,
+        installation: snapshot,
+        repositories: json!(repositories),
+    });
     tx.commit().await?;
     Ok(())
 }
@@ -516,6 +603,14 @@ pub async fn set_suspended(
     .await?;
     if suspend {
         revoke_tokens(&mut tx, inst.id).await?;
+    }
+    // Only real transitions are announced.
+    if suspend != inst.suspended_at.is_some() {
+        tx.emit(installation_event(
+            inst,
+            if suspend { "suspend" } else { "unsuspend" },
+            actor.id,
+        ));
     }
     audit::log(
         &mut *tx,
@@ -570,9 +665,7 @@ pub async fn unsuspend(
 }
 
 /// `POST /_bgh/installations/{id}/accept_permissions`: accept the app's
-/// current permissions and events.
-// TODO(P46): notify account admins of permission upgrades and deliver
-// `installation.new_permissions_accepted`.
+/// current permissions and events (`installation.new_permissions_accepted`).
 pub async fn accept_permissions(
     State(state): State<AppState>,
     auth: RequireUser,
@@ -599,6 +692,11 @@ pub async fn accept_permissions(
         json!({ "installation_id": inst.id, "permissions": app.permissions.0 }),
     )
     .await?;
+    tx.emit(installation_event(
+        &inst,
+        "new_permissions_accepted",
+        auth.user.id,
+    ));
     tx.commit().await?;
     let inst = installation_by_id(&state.db, id).await?;
     Ok(Json(detail(&state, &inst, Some("update")).await?))
@@ -639,13 +737,17 @@ pub async fn user_installations(
     p: Pagination,
 ) -> ApiResult<Response> {
     require_user_token(&auth)?;
+    // A user-to-server token sees its own app's installations only.
     const FILTER: &str = "(i.account_id = $1 OR i.account_id IN
-        (SELECT org_id FROM org_members WHERE user_id = $1))";
+        (SELECT org_id FROM org_members WHERE user_id = $1))
+        AND ($2::bigint IS NULL OR i.app_id = $2)";
+    let app_id = bgh_core::apps::user_to_server_app_id(&auth);
     let rows: Vec<InstallationRow> = sqlx::query_as(&format!(
-        "SELECT {} FROM app_installations i WHERE {FILTER} ORDER BY i.id LIMIT $2 OFFSET $3",
+        "SELECT {} FROM app_installations i WHERE {FILTER} ORDER BY i.id LIMIT $3 OFFSET $4",
         db::prefixed("i", InstallationRow::COLUMNS)
     ))
     .bind(auth.user.id)
+    .bind(app_id)
     .bind(p.limit())
     .bind(p.offset())
     .fetch_all(&state.db)
@@ -654,6 +756,7 @@ pub async fn user_installations(
         "SELECT count(*) FROM app_installations i WHERE {FILTER}"
     ))
     .bind(auth.user.id)
+    .bind(app_id)
     .fetch_one(&state.db)
     .await?;
     let installations = installations_json(&state, &rows).await?;
@@ -686,7 +789,8 @@ async fn user_installation(
         || bgh_core::perms::org_role(&state.db, account.id, auth.user.id)
             .await?
             .is_some();
-    if !member {
+    let other_app = bgh_core::apps::user_to_server_app_id(auth).is_some_and(|a| a != inst.app_id);
+    if !member || other_app {
         return Err(ApiError::NotFound);
     }
     Ok((inst, account))
@@ -763,7 +867,7 @@ async fn change_user_installation_repo(
         ));
     }
     let mut tx = Tx::begin(state).await?;
-    if add {
+    let changed = if add {
         sqlx::query(
             "INSERT INTO app_installation_repos (installation_id, repo_id) VALUES ($1, $2)
              ON CONFLICT DO NOTHING",
@@ -771,17 +875,21 @@ async fn change_user_installation_repo(
         .bind(inst.id)
         .bind(repo.id)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected()
+            > 0
     } else {
-        sqlx::query(
+        let n = sqlx::query(
             "DELETE FROM app_installation_repos WHERE installation_id = $1 AND repo_id = $2",
         )
         .bind(inst.id)
         .bind(repo.id)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
         revoke_repo(&mut tx, inst.id, repo.id).await?;
-    }
+        n > 0
+    };
     sqlx::query("UPDATE app_installations SET updated_at = now() WHERE id = $1")
         .bind(inst.id)
         .execute(&mut *tx)
@@ -798,6 +906,17 @@ async fn change_user_installation_repo(
         json!({ "installation_id": inst.id, "repository_ids": [repo.id] }),
     )
     .await?;
+    if changed {
+        tx.emit(Event::AppInstallationRepositoriesChanged {
+            installation_id: inst.id,
+            app_id: inst.app_id,
+            account_id: inst.account_id,
+            actor_id: auth.user.id,
+            repository_selection: inst.repository_selection.clone(),
+            added: if add { vec![repo.id] } else { Vec::new() },
+            removed: if add { Vec::new() } else { vec![repo.id] },
+        });
+    }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -435,10 +435,14 @@ pub async fn check_outcomes(
     .bind(sha)
     .fetch_all(db)
     .await?;
-    let runs: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT DISTINCT ON (r.name, s.app_slug) r.name, s.app_slug, r.status, r.conclusion
+    // (name, app_slug, app_id, status, conclusion)
+    type RunOutcome = (String, String, Option<i64>, String, Option<String>);
+    let runs: Vec<RunOutcome> = sqlx::query_as(
+        "SELECT DISTINCT ON (r.name, s.app_slug, s.app_id) r.name, s.app_slug, s.app_id,
+                r.status, r.conclusion
            FROM check_runs r JOIN check_suites s ON s.id = r.check_suite_id
-          WHERE r.repo_id = $1 AND r.head_sha = $2 ORDER BY r.name, s.app_slug, r.id DESC",
+          WHERE r.repo_id = $1 AND r.head_sha = $2
+          ORDER BY r.name, s.app_slug, s.app_id, r.id DESC",
     )
     .bind(repo_id)
     .bind(sha)
@@ -453,7 +457,7 @@ pub async fn check_outcomes(
         };
         out.statuses.insert(ctx, o);
     }
-    for (name, slug, status, conclusion) in runs {
+    for (name, slug, app_id, status, conclusion) in runs {
         let o = if status != "completed" {
             CheckOutcome::Pending
         } else {
@@ -465,7 +469,7 @@ pub async fn check_outcomes(
         out.runs
             .entry(name)
             .or_default()
-            .push((crate::checks::app_id_for_slug(&slug), o));
+            .push((crate::checks::suite_app_id(&slug, app_id), o));
     }
     Ok(out)
 }

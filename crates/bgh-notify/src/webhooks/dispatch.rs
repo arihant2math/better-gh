@@ -10,6 +10,9 @@
 //! Domain events are delivered at least once, so deliveries created for an
 //! outbox event carry `(event_id, event_seq)` under a unique index per hook:
 //! a redelivered event creates no second delivery.
+//!
+//! GitHub Apps installed where the event happens get it too (P46, see
+//! [`super::apps`]).
 
 use std::sync::Arc;
 
@@ -182,13 +185,21 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
     if let Event::GlobalHookPing { hook_id, actor_id } = event {
         return ping_global(state, *hook_id, *actor_id).await;
     }
+    // Installation lifecycle: the app's own hook only.
+    if matches!(
+        event,
+        Event::AppInstallationChanged { .. } | Event::AppInstallationRepositoriesChanged { .. }
+    ) {
+        return super::apps::dispatch_lifecycle(state, event).await;
+    }
     let names = payloads::event_names(event);
     if names.is_empty() {
         return Ok(0);
     }
     let (repo_ids, org_ids) = scopes(state, event).await?;
     let hooks = candidate_hooks(state, &repo_ids, &org_ids, &names).await?;
-    if hooks.is_empty() {
+    let apps = super::apps::candidates(state, &repo_ids, &org_ids, &names).await?;
+    if hooks.is_empty() && apps.is_empty() {
         return Ok(0);
     }
     let deliveries = payloads::for_event(state, event)
@@ -228,6 +239,8 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
                 n += 1;
             }
         }
+        // GitHub Apps installed on the repository / organization.
+        n += super::apps::queue_for(&mut tx, &apps, d, key).await?;
     }
     tx.commit().await?;
     Ok(n)

@@ -141,7 +141,10 @@ impl AuthContext {
     /// Value for the `X-OAuth-Scopes` response header (none for GitHub App
     /// credentials, whose scopes are internal).
     pub fn scopes_header(&self) -> Option<String> {
-        if crate::apps::is_integration(self) || crate::pat::is_fine_grained(self) {
+        if crate::apps::is_integration(self)
+            || crate::apps::user_to_server_app_id(self).is_some()
+            || crate::pat::is_fine_grained(self)
+        {
             return None;
         }
         self.scopes.as_ref().map(|s| {
@@ -356,6 +359,7 @@ async fn basic_auth(
     if secret.starts_with(crypto::PAT_PREFIX)
         || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX)
         || secret.starts_with(crypto::INSTALLATION_TOKEN_PREFIX)
+        || secret.starts_with(crypto::USER_TO_SERVER_TOKEN_PREFIX)
         || secret.starts_with(crypto::FINE_GRAINED_PAT_PREFIX)
     {
         // Like GitHub, the username is ignored for token auth.
@@ -1009,6 +1013,9 @@ fn csrf_exempt(path: &str, method: &axum::http::Method) -> bool {
     // `POST /_bgh/session` (login) is exempt; `DELETE` (logout) is not.
     (path == "/_bgh/session" && method == axum::http::Method::POST)
         || CSRF_EXEMPT.iter().any(|p| path.starts_with(p))
+        // GitHub App manifest form (posted from the app's site): it only
+        // stores the manifest; creation needs a CSRF-checked confirmation.
+        || (method == axum::http::Method::POST && path.ends_with("/settings/apps/new"))
 }
 
 /// Middleware: cookie-authenticated mutating requests (no `Authorization`

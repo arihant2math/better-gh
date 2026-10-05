@@ -198,9 +198,13 @@ pub(crate) async fn spa_pages(
         .get(header::ACCEPT)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|a| a.contains("text/html"));
+    let path = req.uri().path().trim_end_matches('/');
+    // POST-only backend routes whose GET is a web client page (GitHub App
+    // manifest form: `[/organizations/{org}]/settings/apps/new`, P46).
+    let post_only = path.ends_with("/settings/apps/new");
     if matches!(*req.method(), Method::GET | Method::HEAD)
-        && wants_html
-        && SPA_PAGES.contains(&req.uri().path().trim_end_matches('/'))
+        && (wants_html || post_only)
+        && (SPA_PAGES.contains(&path) || post_only)
         && web.has_shell()
     {
         let head = req.method() == Method::HEAD;

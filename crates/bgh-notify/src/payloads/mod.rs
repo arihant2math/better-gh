@@ -10,6 +10,7 @@
 //! Every builder tolerates rows deleted between commit and dispatch: they
 //! return `Ok(None)` / an empty vec instead of failing.
 
+pub mod apps;
 mod checks;
 mod commit_comments;
 mod common;
@@ -91,6 +92,8 @@ const ZEN: &[&str] = &[
 pub fn event_names(event: &Event) -> Vec<&'static str> {
     use Event as E;
     match event {
+        E::AppInstallationChanged { .. } => vec!["installation"],
+        E::AppInstallationRepositoriesChanged { .. } => vec!["installation_repositories"],
         E::Push(p) => {
             let relevant =
                 |u: &&bgh_core::events::RefUpdate| u.branch().is_some() || u.tag().is_some();
@@ -348,6 +351,42 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             actor_id,
             data,
         } => return organization_changed(state, *org_id, login, action, *actor_id, data).await,
+        E::AppInstallationChanged {
+            installation_id,
+            action,
+            actor_id,
+            installation,
+            repositories,
+            ..
+        } => {
+            return apps::installation(
+                state,
+                *installation_id,
+                action,
+                *actor_id,
+                installation,
+                repositories,
+            )
+            .await;
+        }
+        E::AppInstallationRepositoriesChanged {
+            installation_id,
+            actor_id,
+            repository_selection,
+            added,
+            removed,
+            ..
+        } => {
+            return apps::installation_repositories(
+                state,
+                *installation_id,
+                *actor_id,
+                repository_selection,
+                added,
+                removed,
+            )
+            .await;
+        }
         E::TeamCreated {
             org_id,
             team_id,

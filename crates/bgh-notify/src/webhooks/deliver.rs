@@ -39,6 +39,8 @@ impl JobPayload for DeliverWebhook {
 struct Pending {
     id: i64,
     hook_id: i64,
+    /// Set for GitHub App hook deliveries (P46); `hook_id` is then 0.
+    app_id: Option<i64>,
     guid: uuid::Uuid,
     event: String,
     status: String,
@@ -114,6 +116,7 @@ pub async fn deliver_meta(state: AppState, job: DeliverMeta) -> anyhow::Result<(
         // No delivery row: `record` updates nothing.
         id: 0,
         hook_id: job.hook_id,
+        app_id: None,
         guid: job.guid,
         event: "meta".into(),
         status: "pending".into(),
@@ -137,18 +140,33 @@ pub async fn deliver_meta(state: AppState, job: DeliverMeta) -> anyhow::Result<(
 
 /// Job handler.
 pub async fn deliver_webhook(state: AppState, job: DeliverWebhook) -> anyhow::Result<()> {
-    let row: Option<Pending> = sqlx::query_as(
-        "SELECT d.id, d.hook_id, d.guid, d.event, d.status, d.payload_raw,
-                h.repo_id AS hook_repo_id, h.org_id AS hook_org_id, h.url, h.content_type,
-                h.secret, h.insecure_ssl, h.active
-           FROM webhook_deliveries d JOIN webhooks h ON h.id = d.hook_id
-          WHERE d.id = $1",
+    // Repository / organization / global hooks, or a GitHub App's hook
+    // (whose secret is sealed).
+    let row: Option<(Pending, Option<Vec<u8>>)> = sqlx::query_as::<_, PendingRow>(
+        "SELECT d.id, coalesce(d.hook_id, 0) AS hook_id, d.app_id, d.guid, d.event, d.status,
+                d.payload_raw, h.repo_id AS hook_repo_id, h.org_id AS hook_org_id,
+                coalesce(h.url, a.webhook_url, '') AS url,
+                coalesce(h.content_type, a.webhook_content_type) AS content_type,
+                h.secret, a.webhook_secret AS app_secret,
+                coalesce(h.insecure_ssl, a.webhook_insecure_ssl) AS insecure_ssl,
+                coalesce(h.active, a.webhook_active AND coalesce(a.webhook_url, '') <> '')
+                  AS active
+           FROM webhook_deliveries d
+           LEFT JOIN webhooks h ON h.id = d.hook_id
+           LEFT JOIN github_apps a ON a.id = d.app_id
+          WHERE d.id = $1 AND (h.id IS NOT NULL OR a.id IS NOT NULL)",
     )
     .bind(job.delivery_id)
     .fetch_optional(&state.db)
-    .await?;
+    .await?
+    .map(|r| (r.pending, r.app_secret));
     // Hook deleted, or already delivered (idempotent retries).
-    let Some(d) = row else { return Ok(()) };
+    let Some((mut d, app_secret)) = row else {
+        return Ok(());
+    };
+    if let Some(sealed) = app_secret {
+        d.secret = bgh_core::secretbox::open(&state, &sealed).ok();
+    }
     if d.status == "OK" || (!d.active && d.event != "ping") {
         return Ok(());
     }
@@ -158,20 +176,30 @@ pub async fn deliver_webhook(state: AppState, job: DeliverWebhook) -> anyhow::Re
     }
 }
 
+#[derive(sqlx::FromRow)]
+struct PendingRow {
+    #[sqlx(flatten)]
+    pending: Pending,
+    app_secret: Option<Vec<u8>>,
+}
+
 async fn attempt(state: &AppState, d: &Pending) -> anyhow::Result<Outcome> {
     let (body, mime) = encode_body(&d.content_type, &d.payload_raw);
-    let (target_id, target_type) = match (d.hook_repo_id, d.hook_org_id) {
-        (Some(r), _) => (r, "repository"),
-        (None, Some(o)) => (o, "organization"),
+    let (target_id, target_type) = match (d.hook_repo_id, d.hook_org_id, d.app_id) {
+        (_, _, Some(a)) => (a, "integration"),
+        (Some(r), _, _) => (r, "repository"),
+        (None, Some(o), _) => (o, "organization"),
         _ => (0, "integration"),
     };
+    // An app's hook is identified by its app id.
+    let hook_id = d.app_id.unwrap_or(d.hook_id);
     let mut headers: BTreeMap<String, String> = BTreeMap::new();
     headers.insert("Accept".into(), "*/*".into());
     headers.insert("Content-Type".into(), mime.into());
     headers.insert("User-Agent".into(), USER_AGENT.into());
     headers.insert("X-GitHub-Delivery".into(), d.guid.to_string());
     headers.insert("X-GitHub-Event".into(), d.event.clone());
-    headers.insert("X-GitHub-Hook-ID".into(), d.hook_id.to_string());
+    headers.insert("X-GitHub-Hook-ID".into(), hook_id.to_string());
     headers.insert(
         "X-GitHub-Hook-Installation-Target-ID".into(),
         target_id.to_string(),
@@ -314,11 +342,19 @@ async fn record(
         "status": if ok { "active" } else if code.is_none() { "misconfigured" } else { "failed" },
         "message": status,
     });
-    sqlx::query("UPDATE webhooks SET last_response = $2 WHERE id = $1")
-        .bind(d.hook_id)
-        .bind(last)
-        .execute(&mut *tx)
-        .await?;
+    if let Some(app_id) = d.app_id {
+        sqlx::query("UPDATE github_apps SET webhook_last_response = $2 WHERE id = $1")
+            .bind(app_id)
+            .bind(last)
+            .execute(&mut *tx)
+            .await?;
+    } else {
+        sqlx::query("UPDATE webhooks SET last_response = $2 WHERE id = $1")
+            .bind(d.hook_id)
+            .bind(last)
+            .execute(&mut *tx)
+            .await?;
+    }
     tx.commit().await?;
     Ok(())
 }

@@ -1,6 +1,8 @@
 /**
- * Mock backend for GitHub Apps (P17): registrations (`/_bgh/apps…`), keys,
- * the install flow and installation settings (`/_bgh/installations…`).
+ * Mock backend for GitHub Apps (P17, P46): registrations (`/_bgh/apps…`),
+ * keys, client secrets, the app hook's deliveries, manifests
+ * (`/_bgh/app-manifests/…`, token `demo` is seeded), the install flow and
+ * installation settings (`/_bgh/installations…`).
  * Same shapes and status codes as bgh-accounts `apps/`. State is in memory.
  */
 import type { MockServer } from '../server';
@@ -27,8 +29,27 @@ interface AppRow {
   client_id: string;
   botId: number;
   keys: { id: number; fingerprint: string; created_at: string }[];
+  webhook_content_type: 'json' | 'form';
+  webhook_insecure_ssl: boolean;
+  secrets: { id: number; last_eight: string; created_at: string; last_used_at: string | null }[];
+  deliveries: Delivery[];
   created_at: string;
   updated_at: string;
+}
+
+interface Delivery {
+  id: number;
+  guid: string;
+  delivered_at: string;
+  redelivery: boolean;
+  duration: number;
+  status: string;
+  status_code: number;
+  event: string;
+  action: string | null;
+  installation_id: number | null;
+  repository_id: number | null;
+  payload: unknown;
 }
 
 interface InstRow {
@@ -100,6 +121,45 @@ export function installAppsMocks(server: MockServer): void {
     public: a.public,
     bot: { id: a.botId, login: `${a.slug}[bot]`, avatar_url: '', type: 'Bot' },
     keys: a.keys,
+    webhook_content_type: a.webhook_content_type,
+    webhook_insecure_ssl: a.webhook_insecure_ssl,
+    client_secrets: a.secrets,
+  });
+  const hex = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
+  /** Record a delivery to the app's hook (always succeeds in the mock). */
+  const deliver = (a: AppRow, event: string, action: string | null, installationId: number | null, payload: unknown, redelivery = false) => {
+    if (!a.webhook_active || !a.webhook_url) return;
+    a.deliveries.unshift({
+      id: nid(),
+      guid: crypto.randomUUID(),
+      delivered_at: server.now(),
+      redelivery,
+      duration: 0.12,
+      status: 'OK',
+      status_code: 200,
+      event,
+      action,
+      installation_id: installationId,
+      repository_id: null,
+      payload,
+    });
+  };
+  // Posted manifests by token; `ownerId` 0 is the viewer (resolved on read).
+  const manifests = new Map<string, { ownerId: number; manifest: Record<string, unknown>; appSlug: string | null }>();
+  manifests.set('demo', {
+    ownerId: 0,
+    manifest: {
+      name: 'Demo Manifest App',
+      url: 'https://example.com',
+      description: 'Registered from an app manifest',
+      hook_attributes: { url: 'https://example.com/hook' },
+      redirect_url: 'https://example.com/redirect',
+      callback_urls: ['https://example.com/callback'],
+      public: false,
+      default_permissions: { issues: 'write', checks: 'write' },
+      default_events: ['issues'],
+    },
+    appSlug: null,
   });
   const installation = (i: InstRow) => {
     const app = S().apps.find((a) => a.id === i.appId)!;
@@ -185,6 +245,10 @@ export function installAppsMocks(server: MockServer): void {
       client_id: `Iv23${Math.random().toString(16).slice(2, 12)}`,
       botId: nid(),
       keys: [],
+      webhook_content_type: 'json',
+      webhook_insecure_ssl: false,
+      secrets: [],
+      deliveries: [],
       created_at: now,
       updated_at: now,
     };
@@ -205,7 +269,20 @@ export function installAppsMocks(server: MockServer): void {
       a.name = b.name.trim();
       a.slug = slugify(a.name);
     }
-    for (const k of ['description', 'homepage_url', 'callback_urls', 'setup_url', 'setup_on_update', 'webhook_active', 'webhook_url', 'permissions', 'events', 'public'] as const)
+    for (const k of [
+      'description',
+      'homepage_url',
+      'callback_urls',
+      'setup_url',
+      'setup_on_update',
+      'webhook_active',
+      'webhook_url',
+      'permissions',
+      'events',
+      'public',
+      'webhook_content_type',
+      'webhook_insecure_ssl',
+    ] as const)
       if (k in b) (a as unknown as Record<string, unknown>)[k] = b[k];
     if ('webhook_secret' in b) a.webhook_secret_set = !!b.webhook_secret;
     a.updated_at = server.now();
@@ -234,6 +311,141 @@ export function installAppsMocks(server: MockServer): void {
     if (!a || !a.keys.some((k) => k.id === id)) return notFound();
     a.keys = a.keys.filter((k) => k.id !== id);
     return noContent();
+  });
+
+  R('POST', '/_bgh/apps/:slug/client_secrets', (c) => {
+    const a = adminApp(param(c, 1));
+    if (!a) return notFound();
+    const secret = hex(20);
+    const row = { id: nid(), last_eight: secret.slice(-8), created_at: server.now(), last_used_at: null };
+    a.secrets.push(row);
+    return ok({ ...row, client_secret: secret }, 201);
+  });
+  R('DELETE', '/_bgh/apps/:slug/client_secrets/:id', (c) => {
+    const a = adminApp(param(c, 1));
+    const id = Number(param(c, 2));
+    if (!a || !a.secrets.some((x) => x.id === id)) return notFound();
+    a.secrets = a.secrets.filter((x) => x.id !== id);
+    return noContent();
+  });
+  R('GET', '/_bgh/apps/:slug/hook', (c) => {
+    const a = adminApp(param(c, 1));
+    if (!a) return notFound();
+    const last = a.deliveries[0];
+    return ok({
+      config: { content_type: a.webhook_content_type, insecure_ssl: a.webhook_insecure_ssl ? '1' : '0', url: a.webhook_url ?? '', ...(a.webhook_secret_set ? { secret: '********' } : {}) },
+      active: a.webhook_active,
+      last_response: last ? { code: last.status_code, status: 'active', message: 'OK' } : { code: null, status: 'unused', message: null },
+    });
+  });
+  const item = ({ payload: _payload, ...d }: Delivery) => d;
+  R('GET', '/_bgh/apps/:slug/hook/deliveries', (c) => {
+    const a = adminApp(param(c, 1));
+    if (!a) return notFound();
+    const status = c.url.searchParams.get('status');
+    return ok(a.deliveries.filter((d) => !status || (status === 'success') === (d.status === 'OK')).map(item));
+  });
+  const findDelivery = (c: Ctx) => {
+    const a = adminApp(param(c, 1));
+    const d = a?.deliveries.find((x) => x.id === Number(param(c, 2)));
+    return a && d ? { a, d } : null;
+  };
+  R('GET', '/_bgh/apps/:slug/hook/deliveries/:id', (c) => {
+    const f = findDelivery(c);
+    if (!f) return notFound();
+    const { a, d } = f;
+    return ok({
+      ...item(d),
+      url: a.webhook_url,
+      request: {
+        headers: {
+          Accept: '*/*',
+          'Content-Type': a.webhook_content_type === 'form' ? 'application/x-www-form-urlencoded' : 'application/json',
+          'User-Agent': 'GitHub-Hookshot/bgh-mock',
+          'X-GitHub-Delivery': d.guid,
+          'X-GitHub-Event': d.event,
+          'X-GitHub-Hook-ID': String(a.id),
+          'X-GitHub-Hook-Installation-Target-Type': 'integration',
+        },
+        payload: d.payload,
+      },
+      response: { headers: { 'content-type': 'text/plain' }, payload: 'ok' },
+    });
+  });
+  R('POST', '/_bgh/apps/:slug/hook/deliveries/:id/attempts', (c) => {
+    const f = findDelivery(c);
+    if (!f) return notFound();
+    deliver(f.a, f.d.event, f.d.action, f.d.installation_id, f.d.payload, true);
+    return ok({}, 202);
+  });
+  const manifest = (c: Ctx) => {
+    const m = manifests.get(param(c, 1));
+    if (m && !m.ownerId) m.ownerId = server.viewer.id;
+    return m;
+  };
+  R('GET', '/_bgh/app-manifests/:token', (c) => {
+    const m = manifest(c);
+    if (!m) return notFound();
+    const x = m.manifest;
+    const hook = (x.hook_attributes ?? {}) as { url?: string };
+    return ok({
+      owner: accountById(m.ownerId),
+      can_create: administers(m.ownerId),
+      name: x.name ?? null,
+      description: x.description ?? null,
+      url: x.url ?? null,
+      redirect_url: x.redirect_url ?? null,
+      webhook_url: hook.url ?? null,
+      callback_urls: (x.callback_urls as string[] | undefined) ?? [],
+      setup_url: x.setup_url ?? null,
+      public: !!x.public,
+      permissions: x.default_permissions ?? {},
+      events: x.default_events ?? [],
+      app_slug: m.appSlug,
+    });
+  });
+  R('POST', '/_bgh/app-manifests/:token', (c) => {
+    const m = manifest(c);
+    if (!m || !administers(m.ownerId)) return notFound();
+    if (m.appSlug) return invalid('An app was already created from this manifest.');
+    const x = m.manifest;
+    const name = String(c.body.name ?? x.name ?? '').trim();
+    const err = validate({ name, homepage_url: x.url }, true);
+    if (err) return err;
+    const now = server.now();
+    const hook = (x.hook_attributes ?? {}) as { url?: string };
+    const a: AppRow = {
+      id: nid(),
+      ownerId: m.ownerId,
+      slug: slugify(name),
+      name,
+      description: String(x.description ?? ''),
+      homepage_url: String(x.url),
+      callback_urls: (x.callback_urls as string[] | undefined) ?? [],
+      setup_url: (x.setup_url as string | undefined) ?? null,
+      setup_on_update: false,
+      webhook_active: !!hook.url,
+      webhook_url: hook.url ?? null,
+      webhook_secret_set: !!hook.url,
+      permissions: (x.default_permissions as Perms | undefined) ?? {},
+      events: (x.default_events as string[] | undefined) ?? [],
+      public: !!x.public,
+      client_id: `Iv23${hex(5)}`,
+      botId: nid(),
+      keys: [{ id: nid(), fingerprint: `SHA256:${hex(16)}`, created_at: now }],
+      webhook_content_type: 'json',
+      webhook_insecure_ssl: false,
+      secrets: [{ id: nid(), last_eight: hex(4), created_at: now, last_used_at: null }],
+      deliveries: [],
+      created_at: now,
+      updated_at: now,
+    };
+    S().apps.push(a);
+    m.appSlug = a.slug;
+    const owner = accountById(m.ownerId)!;
+    const settings = owner.type === 'Organization' ? `/organizations/${owner.login}/settings/apps/${a.slug}` : `/settings/apps/${a.slug}`;
+    const origin = typeof location === 'undefined' ? '' : location.origin;
+    return ok({ redirect_url: x.redirect_url ? `${String(x.redirect_url)}?code=${hex(20)}` : `${origin}${settings}`, app_slug: a.slug }, 201);
   });
 
   R('GET', '/_bgh/apps/:slug/install', (c) => {
@@ -273,6 +485,7 @@ export function installAppsMocks(server: MockServer): void {
       updated_at: now,
     };
     S().insts.push(i);
+    deliver(a, 'installation', 'created', i.id, { action: 'created', installation: installation(i), sender: accountById(server.viewer.id) });
     return ok(instDetail(i, 'install'), 201);
   });
   R('GET', '/_bgh/installations', (c) => {

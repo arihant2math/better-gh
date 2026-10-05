@@ -303,6 +303,10 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
     if let Some(cap) = crate::apps::effective_cap(auth, repo) {
         return cap;
     }
+    // GitHub App user-to-server tokens: the user, limited to the app.
+    if let Some(cap) = crate::apps::user_to_server_cap(auth, repo, raw) {
+        return cap;
+    }
     // Fine-grained personal access tokens: their repositories and
     // permissions, within the user's own role.
     if let Some(cap) = crate::pat::effective_cap(auth, repo) {

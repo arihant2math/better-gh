@@ -296,20 +296,20 @@ async fn expected_check_source_must_match() {
     let app = &f.app;
     let bob = app.create_user("bob").await;
     add_collaborator(app, f.repo_id, &bob, "write").await;
-    // `ci` must come from Actions (app id 1).
+    // `ci` must come from Actions (app id 15368).
     protect(
         app,
         f.repo_id,
         "main",
         &[(
             "required_status_checks",
-            json!({"strict": false, "contexts": ["ci"], "checks": [{"context": "ci", "app_id": 1}]}),
+            json!({"strict": false, "contexts": ["ci"], "checks": [{"context": "ci", "app_id": 15368}]}),
         )],
     )
     .await;
     open_pr(app, &f.alice, "alice/demo", "feature", "main").await;
     settle(app).await;
-    // A status and an API check run (app 2) named `ci` don't count.
+    // A status and a check run by a user (no app) named `ci` don't count.
     app.post(&format!("/api/v3/repos/alice/demo/statuses/{}", f.feature))
         .auth(&bob)
         .json(&json!({"state": "success", "context": "ci"}))
@@ -323,7 +323,7 @@ async fn expected_check_source_must_match() {
         .send()
         .await;
     run.assert_status(201);
-    assert_eq!(run.json()["app"]["id"], 2);
+    assert_eq!(run.json()["app"], Value::Null);
     settle(app).await;
     let res = app
         .put("/api/v3/repos/alice/demo/pulls/1/merge")
@@ -582,6 +582,159 @@ async fn bypass_pull_request_allowances_skip_review_requirements() {
         .await
         .assert_status(201);
     app.put("/api/v3/repos/acme/demo/pulls/1/merge")
+        .auth(&bob)
+        .send()
+        .await
+        .assert_status(200);
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+/// P46: check runs created with an installation token belong to the real
+/// app (name, id, per-app suite) and satisfy checks requiring its id.
+#[tokio::test]
+async fn installation_token_checks_use_the_real_app() {
+    let f = fixture().await;
+    let app = &f.app;
+    let bob = app.create_user("bob").await;
+    add_collaborator(app, f.repo_id, &bob, "write").await;
+    let cookie = app.session_cookie(&f.alice).await;
+    let res = app
+        .post("/_bgh/apps")
+        .cookie(&cookie)
+        .json(&json!({
+            "name": "Lint Bot",
+            "homepage_url": "https://example.com",
+            "permissions": {"checks": "write", "pull_requests": "read"},
+            "events": [],
+        }))
+        .send()
+        .await;
+    res.assert_status(201);
+    let app_id = res.json()["id"].as_i64().unwrap();
+    let pem = app
+        .post("/_bgh/apps/lint-bot/keys")
+        .cookie(&cookie)
+        .send()
+        .await
+        .json()["pem"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let inst = app
+        .post("/_bgh/apps/lint-bot/installations")
+        .cookie(&cookie)
+        .json(&json!({"repository_selection": "all"}))
+        .send()
+        .await
+        .json()["installation"]["id"]
+        .as_i64()
+        .unwrap();
+    let jwt = bgh_core::apps::sign_jwt(&pem, &json!(app_id), now() - 30, now() + 540).unwrap();
+    let res = app
+        .post(&format!("/api/v3/app/installations/{inst}/access_tokens"))
+        .header("authorization", &format!("Bearer {jwt}"))
+        .send()
+        .await;
+    res.assert_status(201);
+    let token = res.json()["token"].as_str().unwrap().to_string();
+
+    // `lint` must come from Lint Bot.
+    protect(
+        app,
+        f.repo_id,
+        "main",
+        &[(
+            "required_status_checks",
+            json!({"strict": false, "contexts": ["lint"], "checks": [{"context": "lint", "app_id": app_id}]}),
+        )],
+    )
+    .await;
+    open_pr(app, &f.alice, "alice/demo", "feature", "main").await;
+    settle(app).await;
+    // A user's run named `lint` doesn't count.
+    app.post("/api/v3/repos/alice/demo/check-runs")
+        .auth(&f.alice)
+        .json(&json!({"name": "lint", "head_sha": f.feature, "conclusion": "success"}))
+        .send()
+        .await
+        .assert_status(201);
+    settle(app).await;
+    app.put("/api/v3/repos/alice/demo/pulls/1/merge")
+        .auth(&bob)
+        .send()
+        .await
+        .assert_status(405);
+
+    let res = app
+        .post("/api/v3/repos/alice/demo/check-runs")
+        .token(&token)
+        .json(&json!({"name": "lint", "head_sha": f.feature, "status": "in_progress"}))
+        .send()
+        .await;
+    res.assert_status(201);
+    let run = res.json();
+    assert_eq!(run["app"]["id"], app_id);
+    assert_eq!(run["app"]["slug"], "lint-bot");
+    assert_eq!(run["app"]["name"], "Lint Bot");
+    assert_eq!(run["app"]["owner"]["login"], "alice");
+    assert_eq!(run["app"]["permissions"]["checks"], "write");
+    let run_id = run["id"].as_i64().unwrap();
+    let suite_id = run["check_suite"]["id"].as_i64().unwrap();
+    // One suite per app: a second run joins it; the user's run has its own.
+    let res = app
+        .post("/api/v3/repos/alice/demo/check-runs")
+        .token(&token)
+        .json(&json!({"name": "format", "head_sha": f.feature, "conclusion": "success"}))
+        .send()
+        .await;
+    assert_eq!(res.json()["check_suite"]["id"], suite_id);
+    let suites = app
+        .get(&format!(
+            "/api/v3/repos/alice/demo/commits/{}/check-suites",
+            f.feature
+        ))
+        .auth(&f.alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(suites["total_count"], 2);
+    let filtered = app
+        .get(&format!(
+            "/api/v3/repos/alice/demo/commits/{}/check-suites?app_id={app_id}",
+            f.feature
+        ))
+        .auth(&f.alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(filtered["total_count"], 1);
+    assert_eq!(filtered["check_suites"][0]["app"]["slug"], "lint-bot");
+    let runs = app
+        .get(&format!(
+            "/api/v3/repos/alice/demo/commits/{}/check-runs?app_id={app_id}",
+            f.feature
+        ))
+        .auth(&f.alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(runs["total_count"], 2);
+
+    // Still in progress: blocked; completing it satisfies the requirement.
+    app.patch(&format!("/api/v3/repos/alice/demo/check-runs/{run_id}"))
+        .token(&token)
+        .json(&json!({"conclusion": "success"}))
+        .send()
+        .await
+        .assert_status(200);
+    settle(app).await;
+    app.put("/api/v3/repos/alice/demo/pulls/1/merge")
         .auth(&bob)
         .send()
         .await

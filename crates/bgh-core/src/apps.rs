@@ -53,6 +53,15 @@ pub const INSTALLATION_SCOPE_PREFIX: &str = "app:installation:";
 pub const OWNER_SCOPE_PREFIX: &str = "app:owner:";
 /// Scope of an installation token covering one repository: `app:repo:{id}`.
 pub const REPO_SCOPE_PREFIX: &str = "app:repo:";
+/// Scope naming the app of a user-to-server token (`bghu_…`):
+/// `app:user:{app_id}`. Such tokens also carry the repositories of the
+/// app's installations the user can reach ([`OWNER_SCOPE_PREFIX`],
+/// [`REPO_SCOPE_PREFIX`]) and the app's permission map.
+pub const USER_SCOPE_PREFIX: &str = "app:user:";
+/// Lifetime of user-to-server tokens (GitHub: 8 hours).
+pub const USER_TOKEN_TTL_SECS: i64 = 8 * 3600;
+/// Lifetime of refresh tokens (GitHub: 6 months).
+pub const REFRESH_TOKEN_TTL_SECS: i64 = 15_897_600;
 
 /// Scope prefix of a token's permission map entries
 /// (`actions:permission:contents:read`).
@@ -84,6 +93,11 @@ pub fn installation_id(auth: &AuthContext) -> Option<i64> {
     scope_id(auth, INSTALLATION_SCOPE_PREFIX)
 }
 
+/// App id when `auth` is a user-to-server token (acts as the user).
+pub fn user_to_server_app_id(auth: &AuthContext) -> Option<i64> {
+    scope_id(auth, USER_SCOPE_PREFIX)
+}
+
 /// Whether `auth` is a GitHub App credential (JWT or installation token).
 pub fn is_integration(auth: &AuthContext) -> bool {
     jwt_app_id(auth).is_some() || installation_id(auth).is_some()
@@ -99,7 +113,7 @@ fn scope_id(auth: &AuthContext, prefix: &str) -> Option<i64> {
 /// Whether an installation token covers `repo` (`None` for other
 /// credentials).
 pub fn token_covers(auth: &AuthContext, repo: &db::Repository) -> Option<bool> {
-    installation_id(auth)?;
+    installation_id(auth).or_else(|| user_to_server_app_id(auth))?;
     let scopes = auth.scopes.as_deref().unwrap_or_default();
     let owner = format!("{OWNER_SCOPE_PREFIX}{}", repo.owner_id);
     let one = format!("{REPO_SCOPE_PREFIX}{}", repo.id);
@@ -153,6 +167,7 @@ pub fn repo_scopes(account_id: i64, all: bool, repo_ids: &[i64]) -> Vec<String> 
 /// `token_permissions` (administration endpoints stay closed). Other
 /// repositories are seen like an anonymous caller would.
 pub fn effective_cap(auth: &AuthContext, repo: &db::Repository) -> Option<Permission> {
+    installation_id(auth)?;
     let covers = token_covers(auth, repo)?;
     if !covers {
         return Some(if repo.is_private() {
@@ -168,6 +183,32 @@ pub fn effective_cap(auth: &AuthContext, repo: &db::Repository) -> Option<Permis
             Permission::Read
         },
     )
+}
+
+/// Repository role of a user-to-server token on `repo` (`None` for other
+/// credentials): the user's own role `raw`, capped like an installation
+/// token on the repositories the app is installed on; elsewhere the user
+/// sees what an anonymous caller would.
+pub fn user_to_server_cap(
+    auth: &AuthContext,
+    repo: &db::Repository,
+    raw: Permission,
+) -> Option<Permission> {
+    user_to_server_app_id(auth)?;
+    let floor = if repo.is_private() {
+        Permission::None
+    } else {
+        Permission::Read
+    };
+    if !token_covers(auth, repo)? {
+        return Some(raw.min(floor));
+    }
+    let cap = if permission_scopes(auth).iter().any(|(_, a)| *a == "write") {
+        Permission::Write
+    } else {
+        Permission::Read
+    };
+    Some(raw.min(cap))
 }
 
 /// `(category, access)` pairs of a token's permission scopes
@@ -190,7 +231,7 @@ pub fn check_git(auth: Option<&AuthContext>, repo: &db::Repository, write: bool)
     if jwt_app_id(auth).is_some() {
         return Err(ApiError::forbidden(NOT_ACCESSIBLE));
     }
-    if installation_id(auth).is_none() {
+    if installation_id(auth).is_none() && user_to_server_app_id(auth).is_none() {
         return Ok(());
     }
     let contents = permission_scopes(auth)
@@ -238,12 +279,16 @@ pub struct AppRow {
     pub client_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// `json` or `form` (P46).
+    pub webhook_content_type: String,
+    pub webhook_insecure_ssl: bool,
 }
 
 impl AppRow {
     pub const COLUMNS: &'static str = "id, owner_id, bot_user_id, slug, name, description, \
         homepage_url, callback_urls, setup_url, setup_on_update, webhook_active, webhook_url, \
-        webhook_secret, permissions, events, public, client_id, created_at, updated_at";
+        webhook_secret, permissions, events, public, client_id, created_at, updated_at, \
+        webhook_content_type, webhook_insecure_ssl";
 }
 
 /// `app_installations` row.
