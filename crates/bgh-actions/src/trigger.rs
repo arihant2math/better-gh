@@ -157,8 +157,67 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
         ),
         _ => return Ok(()),
     };
+    if !may_have_workflows(&state, repo_id, &kind).await? {
+        return Ok(());
+    }
     bgh_core::jobs::enqueue_job(&state.db, &Trigger { repo_id, kind }).await?;
     Ok(())
+}
+
+/// Cheap pre-check so repositories without workflows never get trigger
+/// jobs: known workflow rows, or a `.github/workflows` tree at a pushed /
+/// PR head commit.
+async fn may_have_workflows(
+    state: &AppState,
+    repo_id: i64,
+    kind: &TriggerKind,
+) -> anyhow::Result<bool> {
+    let known: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM actions_workflows WHERE repo_id = $1 AND state <> 'deleted')",
+    )
+    .bind(repo_id)
+    .fetch_one(&state.db)
+    .await?;
+    if known {
+        return Ok(true);
+    }
+    let (repo, shas): (i64, Vec<String>) = match kind {
+        TriggerKind::Push { updates, .. } => (
+            repo_id,
+            updates
+                .iter()
+                .filter(|u| !u.is_delete())
+                .map(|u| u.new.clone())
+                .collect(),
+        ),
+        TriggerKind::PullRequest { pull_id, .. } => {
+            let row: Option<(Option<i64>, String)> = sqlx::query_as(
+                "SELECT head_repo_id, head_sha FROM pull_requests WHERE issue_id = $1",
+            )
+            .bind(pull_id)
+            .fetch_optional(&state.db)
+            .await?;
+            match row {
+                Some((head_repo, sha)) => (head_repo.unwrap_or(repo_id), vec![sha]),
+                None => return Ok(false),
+            }
+        }
+        _ => return Ok(false),
+    };
+    if shas.is_empty() {
+        return Ok(false);
+    }
+    Ok(store(state)
+        .read(repo, move |r| {
+            Ok(shas.iter().any(|sha| {
+                matches!(
+                    r.lookup_path(sha, WORKFLOWS_DIR),
+                    Ok(PathLookup::Tree { .. })
+                )
+            }))
+        })
+        .await
+        .unwrap_or(false))
 }
 
 fn pr(pull_id: i64, action: &str, actor_id: Option<i64>, before: Option<String>) -> TriggerKind {
