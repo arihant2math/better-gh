@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P35 Markdown rendering parity: client renderer matches comrak (alerts, footnotes, anchors, refs, autolinks, gemoji, math), lazy math/Mermaid/highlighting, task toggling, camo image proxy.
 
 # P35 Markdown rendering parity (client and server) — status

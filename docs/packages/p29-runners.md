@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P29 runners: OS/arch, runner groups (org + site), site runners, JIT configs, admin runner UI.
 
 # P29 — Runners
