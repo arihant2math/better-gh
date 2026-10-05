@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError } from '../../api/client';
+import { UploadStatus, useAttachments } from '../../components/editor/useAttachments';
 import { createWikiPage, deleteWikiPage, updateWikiPage, wikiSlug, type WikiPage } from '../../api/wiki';
 import { navigate, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -41,6 +42,8 @@ function Editor({ owner, repo, page }: { owner: string; repo: string; page?: Wik
   const [error, setError] = useState<string | null>(null);
   const base = `/${owner}/${repo}/wiki`;
   const dirty = !page || title !== page.title || body !== page.raw;
+  const textarea = useRef<HTMLTextAreaElement | null>(null);
+  const attachments = useAttachments({ textarea, value: body, onChange: setBody, repo: `${owner}/${repo}` });
 
   const save = async () => {
     if (!title.trim() || busy) return;
@@ -89,10 +92,26 @@ function Editor({ owner, repo, page }: { owner: string; repo: string; page?: Wik
             { id: 'preview', label: 'Preview' },
           ]}
         />
-        <span className={styles.muted}>Markdown · link pages with [[Page Name]] or [[Text|Page Name]]</span>
+        <span className={styles.muted}>Markdown · link pages with [[Page Name]] or [[Text|Page Name]] · paste or drop files to attach</span>
+        {attachments.button}
       </div>
       <div className={styles.editorPanes} data-tab={tab}>
-        <Textarea className={styles.textarea} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Page content" autoFocus={!!page} rows={22} />
+        <div>
+          <Textarea
+            ref={textarea}
+            className={styles.textarea}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onPaste={attachments.onPaste}
+            onDrop={attachments.onDrop}
+            onDragOver={attachments.onDragOver}
+            onDragLeave={attachments.onDragLeave}
+            aria-label="Page content"
+            autoFocus={!!page}
+            rows={22}
+          />
+          <UploadStatus a={attachments} className={styles.muted} />
+        </div>
         <div className={styles.preview} aria-label="Preview">
           <Markdown source={previewWikiLinks(body, base)} repo={`${owner}/${repo}`} />
         </div>

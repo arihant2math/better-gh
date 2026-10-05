@@ -16,6 +16,7 @@ import {
   type RestRelease,
 } from '../../api/code';
 import { RefPicker, useRefs } from '../../components/code/RefPicker';
+import { UploadStatus, useAttachments } from '../../components/editor/useAttachments';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { repoByName } from '../../sync/selectors';
@@ -151,6 +152,8 @@ const Editor = observer(function Editor({
   const [prerelease, setPrerelease] = useState(initial?.prerelease ?? false);
   const [makeLatest, setMakeLatest] = useState(initial ? wasLatest : true);
   const [tab, setTab] = useState<'write' | 'preview'>('write');
+  const notesRef = useRef<HTMLTextAreaElement | null>(null);
+  const notesAttachments = useAttachments({ textarea: notesRef, value: body, onChange: setBody, repo: `${owner}/${repo}` });
   const [assets, setAssets] = useState<RestAsset[]>(initial?.assets ?? []);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [errors, setErrors] = useState<Errors>({});
@@ -448,16 +451,31 @@ const Editor = observer(function Editor({
             value={tab}
             onChange={(t) => setTab(t as 'write' | 'preview')}
           />
-          <span className={styles.muted}>Markdown is supported</span>
+          <span className={styles.muted}>Markdown is supported · paste or drop files to attach</span>
+          {tab === 'write' && notesAttachments.button}
         </div>
         {tab === 'write' ? (
-          <Textarea
-            className={styles.textarea}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Describe this release"
-            aria-label="Release notes"
-          />
+          <>
+            <Textarea
+              ref={notesRef}
+              className={styles.textarea}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              onPaste={notesAttachments.onPaste}
+              onDrop={(e) => {
+                e.stopPropagation();
+                notesAttachments.onDrop(e);
+              }}
+              onDragOver={(e) => {
+                e.stopPropagation();
+                notesAttachments.onDragOver(e);
+              }}
+              onDragLeave={notesAttachments.onDragLeave}
+              placeholder="Describe this release"
+              aria-label="Release notes"
+            />
+            <UploadStatus a={notesAttachments} className={styles.muted} />
+          </>
         ) : (
           <div className={styles.preview}>
             <Markdown source={body} repo={`${owner}/${repo}`} />
