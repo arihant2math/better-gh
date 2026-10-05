@@ -139,8 +139,8 @@ export const TopBar = observer(function TopBar() {
             disabled: !repo,
             onSelect: () => repo && ui.openNewIssue(repo.id),
           },
-          { id: 'repo', label: 'New repository', disabled: true },
-          { id: 'org', label: 'New organization', disabled: true },
+          { id: 'repo', label: 'New repository', onSelect: () => navigate('/new') },
+          { id: 'org', label: 'New organization', onSelect: () => navigate('/organizations/new') },
         ]}
       />
       <IconButton icon={theme.resolved === 'dark' ? SunIcon : MoonIcon} label="Toggle theme" onClick={() => theme.toggle()} />
