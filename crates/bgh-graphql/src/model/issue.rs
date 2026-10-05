@@ -404,20 +404,14 @@ impl IssueOnly {
         before: Option<String>,
         #[graphql(default)] include_closed_prs: bool,
     ) -> GResult<PullRequestConnection> {
-        let _ = include_closed_prs;
-        // Open pull requests of the same repository whose body closes this issue.
-        let g = gql(ctx);
-        let candidates: Vec<db::Issue> = sqlx::query_as(&format!(
-            "SELECT {} FROM issues WHERE repo_id = $1 AND is_pull_request
-                AND body ~* ('(close[sd]?|fix(e[sd])?|resolve[sd]?):?\\s+#' || $2::text || '\\M')
-              ORDER BY number",
-            db::Issue::COLUMNS
-        ))
-        .bind(self.i.repo_id)
-        .bind(self.i.number.to_string())
-        .fetch_all(&g.state.db)
-        .await
-        .gql()?;
+        let l = ctx.data_unchecked::<Loaders>();
+        let candidates: Vec<db::Issue> = one(&l.closed_by_pulls, self.i.id)
+            .await?
+            .map(|v| v.to_vec())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|p| include_closed_prs || p.state == "open")
+            .collect();
         let items = super::pull::from_issues(ctx, candidates).await?;
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }

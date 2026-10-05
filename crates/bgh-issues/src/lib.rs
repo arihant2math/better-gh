@@ -11,6 +11,7 @@ pub mod events;
 pub mod issues;
 pub mod json;
 pub mod labels;
+pub mod links;
 pub mod milestones;
 pub mod pins;
 pub mod reactions;
@@ -139,6 +140,14 @@ pub fn web_router() -> Router<AppState> {
             put(pins::pin).delete(pins::unpin),
         )
         .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/links",
+            get(links::list).post(links::create),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/links/{linked_id}",
+            delete(links::delete),
+        )
+        .route(
             "/_bgh/repos/{owner}/{repo}/issues/{issue_number}/viewer-reactions",
             get(reactions::viewer_reactions),
         )
@@ -152,8 +161,11 @@ pub fn web_router() -> Router<AppState> {
         )
 }
 
-/// Event listeners: commit references / closing keywords from pushes.
-/// (Default labels are created with the repository, `bgh_core::labels`.)
+/// Event listeners: commit references / closing keywords from pushes, and
+/// issue ↔ pull request links (closing keywords in PR bodies, closing
+/// linked issues on merge). (Default labels are created with the
+/// repository, `bgh_core::labels`.)
 pub fn register(reg: &mut Registry) {
     reg.on_event("issues.commit_references", refs::on_event);
+    reg.on_event("issues.pr_links", links::on_event);
 }

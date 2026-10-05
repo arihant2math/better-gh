@@ -395,6 +395,22 @@ pub enum Event {
         sub_issue_id: i64,
         actor_id: i64,
     },
+    /// An issue was linked to a pull request that closes it (closing
+    /// keyword in the PR body or a manual link). `repo_id` / `issue_id`
+    /// are the issue's; `pull_id` is the issue id of the pull request.
+    IssueConnected {
+        repo_id: i64,
+        issue_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    /// The link of [`Event::IssueConnected`] was removed.
+    IssueDisconnected {
+        repo_id: i64,
+        issue_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
     LabelCreated {
         repo_id: i64,
         label_id: i64,
@@ -760,6 +776,8 @@ impl Event {
             Self::IssueReferenced { .. } => "issue_referenced",
             Self::SubIssueAdded { .. } => "sub_issue_added",
             Self::SubIssueRemoved { .. } => "sub_issue_removed",
+            Self::IssueConnected { .. } => "issue_connected",
+            Self::IssueDisconnected { .. } => "issue_disconnected",
             Self::LabelCreated { .. } => "label_created",
             Self::LabelEdited { .. } => "label_edited",
             Self::LabelDeleted { .. } => "label_deleted",
@@ -847,6 +865,8 @@ impl Event {
             | Self::IssueReferenced { repo_id, .. }
             | Self::SubIssueAdded { repo_id, .. }
             | Self::SubIssueRemoved { repo_id, .. }
+            | Self::IssueConnected { repo_id, .. }
+            | Self::IssueDisconnected { repo_id, .. }
             | Self::LabelCreated { repo_id, .. }
             | Self::LabelEdited { repo_id, .. }
             | Self::LabelDeleted { repo_id, .. }
@@ -983,6 +1003,8 @@ impl Event {
             | Self::IssueCrossReferenced { actor_id, .. }
             | Self::SubIssueAdded { actor_id, .. }
             | Self::SubIssueRemoved { actor_id, .. }
+            | Self::IssueConnected { actor_id, .. }
+            | Self::IssueDisconnected { actor_id, .. }
             | Self::LabelCreated { actor_id, .. }
             | Self::LabelEdited { actor_id, .. }
             | Self::LabelDeleted { actor_id, .. }
