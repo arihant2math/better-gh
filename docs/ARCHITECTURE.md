@@ -55,7 +55,8 @@ crates/
   bgh-admin/               site administration, audit log
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
   bgh-graphql/             GitHub GraphQL v4 subset (for `gh` CLI, etc.)
-  bgh-actions/             CI: workflow parsing, runner orchestration
+  bgh-actions/             CI: workflow parsing, runner orchestration,
+                           deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
   bgh-server/              binary `bgh`: composes routers, serves web/dist

@@ -8,6 +8,7 @@ pub mod bots;
 pub mod config;
 pub mod crypto;
 pub mod db;
+pub mod deployments;
 pub mod error;
 pub mod events;
 pub mod extract;

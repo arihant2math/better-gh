@@ -17,6 +17,7 @@ import { IssueSidebar } from '../issues/IssueSidebar';
 import styles from '../issues/IssueView.module.css';
 import { Timeline } from '../issues/Timeline';
 import { PullChecksIcon } from './ChecksIcon';
+import { DeploymentsBanner } from './DeploymentsBanner';
 import { MergeBox } from './MergeBox';
 import pr from './PullDetail.module.css';
 import { ReviewThreadView } from './ReviewThread';
@@ -130,7 +131,12 @@ const Conversation = observer(function Conversation({ issue, base }: { issue: Is
   };
   return (
     <div className={styles.columns}>
-      <Timeline issue={issue} repoFullName={full} footer={<MergeBox issue={issue} base={base} />} renderReview={renderReview} />
+      <Timeline issue={issue} repoFullName={full} footer={
+          <>
+            <DeploymentsBanner issue={issue} />
+            <MergeBox issue={issue} base={base} />
+          </>
+        } renderReview={renderReview} />
       <IssueSidebar issue={issue} repo={repo} extra={<Reviewers issue={issue} />} />
     </div>
   );
