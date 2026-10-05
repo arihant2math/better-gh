@@ -55,6 +55,19 @@ async fn issue_search_qualifiers_and_shape() {
     )
     .await;
     comment(&app, docs, &bob, "I can help with the onboarding guide").await;
+    let milestone: i64 = sqlx::query_scalar(
+        "INSERT INTO milestones (repo_id, number, title) VALUES ($1, 1, 'v1.0') RETURNING id",
+    )
+    .bind(demo)
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE issues SET milestone_id = $1 WHERE id = $2")
+        .bind(milestone)
+        .bind(docs)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
     assign(&app, crash, &alice).await;
     let _ = (pr, tool);
 
@@ -204,6 +217,15 @@ async fn issue_search_qualifiers_and_shape() {
         vec!["Improve docs"]
     );
     assert_eq!(search("reason:completed").await, vec!["Improve docs"]);
+    assert_eq!(search("milestone:v1.0").await, vec!["Improve docs"]);
+    assert_eq!(
+        search("milestone:\"V1.0\" is:closed").await,
+        vec!["Improve docs"]
+    );
+    assert_eq!(
+        search("no:milestone repo:alice/demo").await,
+        vec!["Crash when parsing files", "Fix parser crash"]
+    );
     assert_eq!(
         search("tooling OR docs").await,
         vec!["Improve docs", "Tooling idea"]
@@ -328,12 +350,10 @@ async fn issue_search_respects_permissions_and_validates() {
     assert_eq!(res.json()["errors"][0]["field"], "q");
     assert_eq!(res.json()["errors"][0]["code"], "missing");
     // Beyond the first 1000 results.
-    app.get(&format!(
-        "/api/v3/search/issues?q=launch&per_page=100&page=11"
-    ))
-    .send()
-    .await
-    .assert_status(422);
+    app.get("/api/v3/search/issues?q=launch&per_page=100&page=11")
+        .send()
+        .await
+        .assert_status(422);
     // Bad qualifier values.
     app.get(&format!(
         "/api/v3/search/issues?q={}",

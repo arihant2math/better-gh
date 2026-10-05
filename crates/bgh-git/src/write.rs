@@ -150,12 +150,15 @@ pub async fn commit_changes(
                     .await?;
                 }
                 FileChange::Delete { path } => {
+                    // `--force-remove` needs a work tree; mode 0 via
+                    // `--index-info` removes the entry in a bare repository.
+                    let info = format!("0 {ZERO_SHA}\t{path}\n");
                     cmd::run(
                         bin,
                         Some(&dir),
-                        &["update-index", "--force-remove", "--", path],
+                        &["update-index", "--index-info"],
                         &idx_env,
-                        None,
+                        Some(info.as_bytes()),
                     )
                     .await?;
                 }

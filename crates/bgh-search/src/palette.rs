@@ -9,9 +9,12 @@ use bgh_core::perms;
 use bgh_core::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, QueryBuilder};
 
 use crate::query::{like_escape, tsquery_words};
+
+/// Matches below which a query counts as rare (see the plan choice below).
+const RARE_MATCHES: i64 = 500;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct PaletteParams {
@@ -111,27 +114,74 @@ pub async fn search(
         if tsq.is_none() && number.is_none() {
             return Ok::<_, sqlx::Error>(vec![]);
         }
-        sqlx::query_as::<_, IssueHit>(
+        // Plan choice: walking `issues_updated_idx` finds the newest matches
+        // instantly for common terms but scans everything for rare ones,
+        // where a GIN bitmap + sort is cheap. A bounded GIN probe decides.
+        let rare = match &tsq {
+            Some(t) => {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT count(*) FROM (SELECT 1 FROM issues
+                      WHERE search @@ to_tsquery('english', $1) LIMIT $2) x",
+                )
+                .bind(t)
+                .bind(RARE_MATCHES)
+                .fetch_one(&state.db)
+                .await?
+                    < RARE_MATCHES
+            }
+            None => true,
+        };
+        let order = if rare {
+            "i.updated_at + interval '0 s'"
+        } else {
+            "i.updated_at"
+        };
+        let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT i.id, o.login || '/' || r.name AS repo, i.number, i.title, i.state,
                     i.is_pull_request AS pull_request, i.updated_at
                FROM issues i
                JOIN repositories r ON r.id = i.repo_id
                JOIN users o ON o.id = r.owner_id
-              WHERE ($1 OR r.visibility = 'public' OR r.id = ANY($2))
-                AND ($3::bigint IS NULL OR i.repo_id = $3)
-                AND (($4::text IS NOT NULL AND i.search @@ to_tsquery('english', $4))
-                     OR ($5::bigint IS NOT NULL AND $3::bigint IS NOT NULL AND i.number = $5))
-              ORDER BY ($5::bigint IS NOT NULL AND i.number = $5) DESC, i.updated_at DESC, i.id DESC
-              LIMIT $6",
-        )
-        .bind(all)
-        .bind(&private_ids)
-        .bind(scope_repo)
-        .bind(&tsq)
-        .bind(number)
-        .bind(limit)
-        .fetch_all(&state.db)
-        .await
+              WHERE ",
+        );
+        if all {
+            qb.push("TRUE");
+        } else {
+            qb.push("(r.visibility = 'public' OR r.id = ANY(")
+                .push_bind(private_ids.clone())
+                .push("))");
+        }
+        if let Some(repo_id) = scope_repo {
+            qb.push(" AND i.repo_id = ").push_bind(repo_id);
+        }
+        let by_number = number.filter(|_| scope_repo.is_some());
+        qb.push(" AND (");
+        match (&tsq, by_number) {
+            (Some(t), Some(n)) => {
+                qb.push("i.search @@ to_tsquery('english', ")
+                    .push_bind(t.clone())
+                    .push(") OR i.number = ")
+                    .push_bind(n);
+            }
+            (Some(t), None) => {
+                qb.push("i.search @@ to_tsquery('english', ")
+                    .push_bind(t.clone())
+                    .push(")");
+            }
+            (None, Some(n)) => {
+                qb.push("i.number = ").push_bind(n);
+            }
+            (None, None) => {
+                qb.push("FALSE");
+            }
+        }
+        qb.push(") ORDER BY ");
+        if let Some(n) = by_number {
+            qb.push("(i.number = ").push_bind(n).push(") DESC, ");
+        }
+        qb.push(format!("{order} DESC, i.id DESC LIMIT "))
+            .push_bind(limit);
+        qb.build_query_as::<IssueHit>().fetch_all(&state.db).await
     };
     let like = format!("%{}%", like_escape(&lower));
     let prefix = format!("{}%", like_escape(&lower));
