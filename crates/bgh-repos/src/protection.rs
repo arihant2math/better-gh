@@ -448,6 +448,23 @@ impl Actor {
     }
 }
 
+/// The GitHub App acting through `auth` (app JWT or installation token),
+/// matched by `Integration` bypass actors.
+pub async fn integration_of(state: &AppState, auth: &AuthContext) -> ApiResult<Option<i64>> {
+    if let Some(app) = bgh_core::apps::jwt_app_id(auth) {
+        return Ok(Some(app));
+    }
+    let Some(installation) = bgh_core::apps::installation_id(auth) else {
+        return Ok(None);
+    };
+    Ok(
+        sqlx::query_scalar("SELECT app_id FROM app_installations WHERE id = $1")
+            .bind(installation)
+            .fetch_optional(&state.db)
+            .await?,
+    )
+}
+
 /// Checks an allowed update still needs (objects / statuses).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Needs {

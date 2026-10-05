@@ -42,7 +42,8 @@ self-integrated into `claude/sleepy-cray-9jj0t3`.
   `repository_ids`; `repository_property` is stored but never matches
   (custom properties are deferred).
 * Bypass actors: `DeployKey` (actor_id null), `Integration` (app id;
-  matches once P17 gives actors an integration id), plus the existing
+  matched for pushes with a P17 app JWT or installation token via
+  `protection::integration_of`, tested in `bgh-accounts` `apps::ruleset_integration_bypass`), plus the existing
   `RepositoryRole`, `OrganizationAdmin`, `Team`, `User`; modes `always`,
   `pull_request`, `exempt` (treated like always).
 

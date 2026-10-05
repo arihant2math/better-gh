@@ -234,7 +234,9 @@ pub async fn receive_pack(
     let actor = if rules.is_unruled() {
         None
     } else {
-        Some(Actor::load(&state, &access, &pusher.user).await?)
+        let mut actor = Actor::load(&state, &access, &pusher.user).await?;
+        actor.integration_id = protection::integration_of(&state, &pusher).await?;
+        Some(actor)
     };
     let workflow_denied = crate::workflow_scope::denial(&state, &pusher).await?;
 
