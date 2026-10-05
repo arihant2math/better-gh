@@ -505,6 +505,15 @@ pub struct Signer {
     pub avatar_url: String,
 }
 
+#[derive(sqlx::FromRow)]
+struct SignerRow {
+    sha: String,
+    signer_key: Option<String>,
+    user_id: Option<i64>,
+    login: Option<String>,
+    avatar_url: Option<String>,
+}
+
 /// One commit's signature, compact (web badges).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SignatureInfo {
@@ -566,27 +575,17 @@ pub async fn commit_signatures(
         .collect();
     let verified = verify_commits(&state, &signed).await?;
     let ids: Vec<&str> = signed.iter().map(|c| c.sha.as_str()).collect();
-    let details: HashMap<String, (Option<String>, Option<i64>, Option<String>, Option<String>)> =
-        sqlx::query_as::<
-            _,
-            (
-                String,
-                Option<String>,
-                Option<i64>,
-                Option<String>,
-                Option<String>,
-            ),
-        >(
-            "SELECT v.sha, v.signer_key, u.id, u.login, u.avatar_url
-               FROM signature_verifications v LEFT JOIN users u ON u.id = v.signer_id
-              WHERE v.sha = ANY($1)",
-        )
-        .bind(&ids)
-        .fetch_all(&state.db)
-        .await?
-        .into_iter()
-        .map(|(sha, key, id, login, avatar)| (sha, (key, id, login, avatar)))
-        .collect();
+    let details: HashMap<String, SignerRow> = sqlx::query_as::<_, SignerRow>(
+        "SELECT v.sha, v.signer_key, u.id AS user_id, u.login, u.avatar_url
+           FROM signature_verifications v LEFT JOIN users u ON u.id = v.signer_id
+          WHERE v.sha = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|r| (r.sha.clone(), r))
+    .collect();
     let web_flow = bgh_git::storage::web_flow_signer(&state.config).map(|k| k.key_id.clone());
     let mut out = std::collections::BTreeMap::new();
     for c in &signed {
@@ -594,14 +593,13 @@ pub async fn commit_signatures(
             continue;
         };
         let (key_id, signer) = match details.get(&c.sha) {
-            Some((key, Some(id), Some(login), avatar)) => (
-                key.clone(),
-                Some(Signer {
-                    login: login.clone(),
-                    avatar_url: state.urls.avatar(*id, avatar.as_deref()),
+            Some(r) => (
+                r.signer_key.clone(),
+                r.user_id.zip(r.login.clone()).map(|(id, login)| Signer {
+                    login,
+                    avatar_url: state.urls.avatar(id, r.avatar_url.as_deref()),
                 }),
             ),
-            Some((key, ..)) => (key.clone(), None),
             None => (None, None),
         };
         let key_type = match signing::format_of(c.signature.as_deref().unwrap_or_default()) {

@@ -423,6 +423,14 @@ impl crate::GitCli {
     }
 }
 
+/// The raw unsigned commit `raw` with a `gpgsig` header by `key`.
+pub(crate) fn signed_commit(key: &WebFlowKey, raw: &[u8]) -> crate::GitResult<Vec<u8>> {
+    let signature = key
+        .sign(raw)
+        .map_err(|e| crate::GitError::Object(format!("signing commit: {e}")))?;
+    Ok(add_commit_signature(raw, &signature))
+}
+
 /// Sign the (unsigned) commit `sha` in the repository at `dir` with `key`:
 /// writes the signed commit object and returns its SHA. Without a key the
 /// commit is returned unchanged.
@@ -436,10 +444,7 @@ pub(crate) async fn sign_commit(
         return Ok(sha);
     };
     let raw = crate::cmd::run(bin, Some(dir), &["cat-file", "commit", &sha], &[], None).await?;
-    let signature = key
-        .sign(&raw)
-        .map_err(|e| crate::GitError::Object(format!("signing commit: {e}")))?;
-    let signed = add_commit_signature(&raw, &signature);
+    let signed = signed_commit(key, &raw)?;
     let out = crate::cmd::run(
         bin,
         Some(dir),

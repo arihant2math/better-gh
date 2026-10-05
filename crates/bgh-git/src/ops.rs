@@ -739,7 +739,20 @@ impl GitCli {
             args.push(p);
         }
         let sha = trimmed(self.run(&args, &env_ref, Some(message.as_bytes())).await?);
-        crate::signing::sign_commit(&self.bin, &self.dir, self.signer.as_deref(), sha).await
+        let Some(key) = self.signer.clone() else {
+            return Ok(sha);
+        };
+        // Through `self.run`: alternates (e.g. a template's objects) apply.
+        let raw = self.run(&["cat-file", "commit", &sha], &[], None).await?;
+        let signed = crate::signing::signed_commit(&key, &raw)?;
+        Ok(trimmed(
+            self.run(
+                &["hash-object", "-t", "commit", "-w", "--stdin"],
+                &[],
+                Some(&signed),
+            )
+            .await?,
+        ))
     }
 
     /// Create an annotated tag object; returns its SHA.

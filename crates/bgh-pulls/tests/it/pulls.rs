@@ -506,7 +506,9 @@ async fn files_and_commits() {
         app.url(&format!("/api/v3/repos/alice/demo/commits/{c2}"))
     );
     assert!(commits[1]["author"].is_null());
-    assert_eq!(commits[1]["commit"]["verification"]["verified"], false);
+    // Server-made commits are signed by web-flow (P25).
+    assert_eq!(commits[1]["commit"]["verification"]["verified"], true);
+    assert_eq!(commits[1]["commit"]["verification"]["reason"], "valid");
 
     // Commit emails map to users through verified `user_emails`, also for
     // users without a public profile email (`users.email` NULL).
