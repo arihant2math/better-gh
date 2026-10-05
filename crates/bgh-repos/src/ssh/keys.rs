@@ -44,6 +44,14 @@ pub fn fingerprint(key: &PublicKey) -> String {
     key.fingerprint(HashAlg::Sha256).to_string()
 }
 
+/// Fingerprint of an OpenSSH public key line (`ssh-ed25519 AAAA... comment`),
+/// or `None` if it doesn't parse.
+pub fn fingerprint_openssh(line: &str) -> Option<String> {
+    PublicKey::from_openssh(line.trim())
+        .ok()
+        .map(|k| fingerprint(&k))
+}
+
 /// A deploy key authorized for one repository.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DeployKey {

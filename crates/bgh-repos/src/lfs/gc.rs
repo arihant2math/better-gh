@@ -28,7 +28,13 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     if let Event::RepositoryDeleted { repo_id, .. } = &*event {
         let dir = crate::download::archive::cache_dir(&state);
         bgh_git::archive::purge_repo(&dir, *repo_id).await?;
-        bgh_core::jobs::enqueue_job(&state.db, &LfsGc {}).await?;
+        // Only scan when this server stores LFS objects at all.
+        if tokio::fs::try_exists(&super::object_store(&state).root)
+            .await
+            .unwrap_or(false)
+        {
+            bgh_core::jobs::enqueue_job(&state.db, &LfsGc {}).await?;
+        }
     }
     Ok(())
 }
