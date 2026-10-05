@@ -12,6 +12,7 @@
 
 mod checks;
 mod common;
+mod deployments;
 mod issues;
 mod org;
 mod packages;
@@ -32,6 +33,7 @@ pub use common::{
     RepoCtx, association, author_associations, commit_node_id, organization, reactions, repository,
     sender, user_json, user_or_ghost, user_or_null,
 };
+pub use deployments::{deployment, deployment_status};
 pub use issues::{
     comment_json, deleted_comment_json, issue, issue_comment, issue_json, issue_row, label,
     label_json, milestone, milestone_json,
@@ -192,6 +194,8 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::WorkflowRunUpdated { .. } => vec!["workflow_run"],
         E::WorkflowJobUpdated { .. } => vec!["workflow_job"],
         E::OrgMemberAdded { .. } => vec!["organization"],
+        E::DeploymentCreated { .. } => vec!["deployment"],
+        E::DeploymentStatusCreated { .. } => vec!["deployment_status"],
         // Site-level events: delivered to global (site admin) hooks only.
         E::UserAccountChanged { .. } => vec!["user"],
         E::OrganizationChanged { .. } => vec!["organization"],
@@ -721,6 +725,42 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             vec![("release", release.clone())],
         )]),
 
+        // ----- deployments ---------------------------------------------------------
+        E::DeploymentCreated { deployment_id, .. } => {
+            let Some(d) = deployment(state, &ctx, *deployment_id).await? else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "deployment",
+                Some("created"),
+                vec![
+                    ("deployment", d),
+                    ("workflow", Value::Null),
+                    ("workflow_run", Value::Null),
+                ],
+            )])
+        }
+        E::DeploymentStatusCreated {
+            deployment_id,
+            status_id,
+            ..
+        } => {
+            let Some((s, d)) = deployment_status(state, &ctx, *deployment_id, *status_id).await?
+            else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "deployment_status",
+                Some("created"),
+                vec![
+                    ("check_run", Value::Null),
+                    ("deployment", d),
+                    ("deployment_status", s),
+                    ("workflow", Value::Null),
+                    ("workflow_run", Value::Null),
+                ],
+            )])
+        }
         // ----- packages -------------------------------------------------------
         E::PackagePublished {
             package_id,

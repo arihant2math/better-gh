@@ -297,6 +297,9 @@ pub struct Requirements {
     pub linear_history: bool,
     pub allowed_merge_methods: Vec<&'static str>,
     pub can_bypass: bool,
+    /// Latest deployment of the head commit per environment ("This branch
+    /// was successfully deployed").
+    pub deployments: Vec<bgh_core::deployments::EnvironmentDeployment>,
 }
 
 pub async fn requirements(
@@ -355,6 +358,12 @@ pub async fn requirements(
         linear_history: rules.linear_history,
         allowed_merge_methods: methods,
         can_bypass,
+        deployments: bgh_core::deployments::latest_for_sha(
+            &state.db,
+            access.repo.id,
+            &pull.pr.head_sha,
+        )
+        .await?,
     }))
 }
 
