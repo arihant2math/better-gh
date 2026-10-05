@@ -49,3 +49,39 @@ describe('GitHub App mocks', () => {
     expect((await call(s, 'GET', '/_bgh/apps/my-bot')).status).toBe(404);
   });
 });
+
+describe('GitHub App mocks (P46)', () => {
+  it('client secrets, hook deliveries and manifests', async () => {
+    const s = new MockServer(null, {});
+    await call(s, 'POST', '/_bgh/apps', { name: 'Hooked', homepage_url: 'https://x.test', webhook_url: 'https://x.test/hook', webhook_active: true });
+    const secret = await call(s, 'POST', '/_bgh/apps/hooked/client_secrets');
+    expect(secret.status).toBe(201);
+    expect(secret.body!.client_secret).toHaveLength(40);
+    const detail = await call(s, 'GET', '/_bgh/apps/hooked');
+    expect(detail.body!.client_secrets[0].client_secret).toBeUndefined();
+    expect(detail.body!.webhook_content_type).toBe('json');
+    expect((await call(s, 'PATCH', '/_bgh/apps/hooked', { webhook_content_type: 'form' })).body!.webhook_content_type).toBe('form');
+
+    const info = await call(s, 'GET', '/_bgh/apps/hooked/install');
+    await call(s, 'POST', '/_bgh/apps/hooked/installations', { account: info.body!.accounts[0].account.login, repository_selection: 'all' });
+    const items = (await call(s, 'GET', '/_bgh/apps/hooked/hook/deliveries')).body as unknown as { id: number; event: string }[];
+    expect(items).toHaveLength(1);
+    expect(items[0]!.event).toBe('installation');
+    const one = await call(s, 'GET', `/_bgh/apps/hooked/hook/deliveries/${items[0]!.id}`);
+    expect(one.body!.request.headers['X-GitHub-Event']).toBe('installation');
+    expect((await call(s, 'POST', `/_bgh/apps/hooked/hook/deliveries/${items[0]!.id}/attempts`)).status).toBe(202);
+    expect(((await call(s, 'GET', '/_bgh/apps/hooked/hook/deliveries')).body as unknown as unknown[]).length).toBe(2);
+    expect((await call(s, 'GET', '/_bgh/apps/hooked/hook')).body!.last_response.status).toBe('active');
+    expect((await call(s, 'DELETE', `/_bgh/apps/hooked/client_secrets/${secret.body!.id}`)).status).toBe(204);
+
+    const m = await call(s, 'GET', '/_bgh/app-manifests/demo');
+    expect(m.body!.name).toBe('Demo Manifest App');
+    expect(m.body!.can_create).toBe(true);
+    const created = await call(s, 'POST', '/_bgh/app-manifests/demo', { name: 'From Manifest' });
+    expect(created.status).toBe(201);
+    expect(created.body!.app_slug).toBe('from-manifest');
+    expect(created.body!.redirect_url).toMatch(/^https:\/\/example\.com\/redirect\?code=/);
+    expect((await call(s, 'POST', '/_bgh/app-manifests/demo', {})).status).toBe(422);
+    expect((await call(s, 'GET', '/_bgh/app-manifests/nope')).status).toBe(404);
+  });
+});

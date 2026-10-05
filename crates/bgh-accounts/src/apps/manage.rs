@@ -246,6 +246,9 @@ pub struct AppBody {
     pub permissions: Option<BTreeMap<String, String>>,
     pub events: Option<Vec<String>>,
     pub public: Option<bool>,
+    /// `json` or `form` (P46).
+    pub webhook_content_type: Option<String>,
+    pub webhook_insecure_ssl: Option<bool>,
 }
 
 fn valid_url(u: &str) -> bool {
@@ -288,6 +291,13 @@ pub(crate) fn validate(body: &AppBody, creating: bool) -> ApiResult<()> {
         {
             errors.push(FieldError::invalid(RESOURCE, field));
         }
+    }
+    if body
+        .webhook_content_type
+        .as_deref()
+        .is_some_and(|c| c != "json" && c != "form")
+    {
+        errors.push(FieldError::invalid(RESOURCE, "webhook_content_type"));
     }
     if let Some(events) = &body.events
         && let Some(bad) = events.iter().find(|e| !EVENTS.contains(&e.as_str()))
@@ -485,7 +495,9 @@ pub async fn update(
             webhook_url = CASE WHEN $11 THEN $12 ELSE webhook_url END,
             webhook_secret = CASE WHEN $13 THEN $14 ELSE webhook_secret END,
             permissions = coalesce($15, permissions), events = coalesce($16, events),
-            public = coalesce($17, public), updated_at = now()
+            public = coalesce($17, public),
+            webhook_content_type = coalesce($18, webhook_content_type),
+            webhook_insecure_ssl = coalesce($19, webhook_insecure_ssl), updated_at = now()
          WHERE id = $1 RETURNING {}",
         AppRow::COLUMNS
     ))
@@ -506,6 +518,8 @@ pub async fn update(
     .bind(permissions.as_ref().map(sqlx::types::Json))
     .bind(&body.events)
     .bind(body.public)
+    .bind(&body.webhook_content_type)
+    .bind(body.webhook_insecure_ssl)
     .fetch_one(&mut *tx)
     .await
     .map_err(name_taken)?;

@@ -221,6 +221,8 @@ fn body_from(m: &Value, owner: &db::User, name: Option<String>) -> AppBody {
         permissions: Some(perms),
         events: Some(events),
         public: m["public"].as_bool(),
+        webhook_content_type: None,
+        webhook_insecure_ssl: None,
     }
 }
 
