@@ -1,0 +1,36 @@
+[
+  {
+    "id": 2,
+    "name": "rocket",
+    "user": {
+      "id": 13,
+      "username": "mona",
+      "name": "Mona",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/13/avatar.png",
+      "web_url": "https://gitlab.example/mona"
+    },
+    "created_at": "2024-02-11T09:00:00.000Z",
+    "updated_at": "2024-02-11T09:00:00.000Z",
+    "awardable_id": 8002,
+    "awardable_type": "MergeRequest"
+  },
+  {
+    "id": 3,
+    "name": "unicorn",
+    "user": {
+      "id": 12,
+      "username": "hubot",
+      "name": "Hubot",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/12/avatar.png",
+      "web_url": "https://gitlab.example/hubot"
+    },
+    "created_at": "2024-02-11T09:00:00.000Z",
+    "updated_at": "2024-02-11T09:00:00.000Z",
+    "awardable_id": 8002,
+    "awardable_type": "MergeRequest"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "id": 11,
+  "username": "octocat",
+  "name": "The Octocat",
+  "state": "active",
+  "locked": false,
+  "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/11/avatar.png",
+  "web_url": "https://gitlab.example/octocat",
+  "public_email": "octocat@github.com",
+  "bio": ""
+}

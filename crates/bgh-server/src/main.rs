@@ -8,8 +8,12 @@
 //! bgh admin create-token --user L [--scopes repo,read:org] [--name N] [--expires-in-days D]
 //! bgh import github --repo O/R --owner OWNER [--api-url U] [--name N] [--user-map FILE] ...
 //!                                               import a GitHub/GHES repository with its
-//!                                               issues, labels, milestones and releases
+//!                                               issues, pull requests, reviews, labels,
+//!                                               milestones, releases and wiki
 //!                                               (token in BGH_IMPORT_TOKEN)
+//! bgh import gitlab --repo GROUP/PROJECT --owner OWNER [--api-url U] ...
+//!                                               the same from GitLab (merge requests become
+//!                                               pull requests)
 //! bgh import resume --id N                      resume (or rerun) an import
 //! bgh healthcheck                               exit 0 if the local server is healthy
 //! ```
@@ -97,49 +101,70 @@ enum AdminCommand {
     },
 }
 
+/// Options shared by `bgh import github` and `bgh import gitlab`.
+#[derive(clap::Args)]
+struct ImportArgs {
+    /// Source repository `owner/name` (GitLab: `group[/subgroup]/project`).
+    #[arg(long)]
+    repo: String,
+    /// Target owner (organization or user) on this server.
+    #[arg(long)]
+    owner: String,
+    /// Target name (default: the source name).
+    #[arg(long)]
+    name: Option<String>,
+    /// Source token (read access; `repo` for private repositories, admin
+    /// for webhooks, branch protection and rulesets).
+    #[arg(long, env = "BGH_IMPORT_TOKEN", hide_env_values = true)]
+    token: Option<String>,
+    /// `public`, `private` or `internal` (default: the source's).
+    #[arg(long)]
+    visibility: Option<String>,
+    /// Login map file: `source,local` per line (GEI mannequin CSV works).
+    #[arg(long)]
+    user_map: Option<std::path::PathBuf>,
+    /// Acting site administrator (default: the first one).
+    #[arg(long = "as")]
+    actor: Option<String>,
+    /// Steps to skip, comma-separated:
+    /// git,settings,labels,milestones,issues,pulls,releases,wiki,repo_config.
+    #[arg(long, value_delimiter = ',')]
+    skip: Vec<String>,
+    /// Fetch Git LFS objects in the git step.
+    #[arg(long)]
+    include_lfs: bool,
+    /// Queue the import for the running server and exit.
+    #[arg(long)]
+    detach: bool,
+}
+
 #[derive(Subcommand)]
 enum ImportCommand {
     /// Import a GitHub.com / GHES repository: git, settings, labels,
-    /// milestones, issues (original numbers, comments, reactions, events),
-    /// releases with assets and optionally teams. Unmapped users become
-    /// mannequins. Follows the run and prints its log.
+    /// milestones, issues and pull requests (original numbers, comments,
+    /// reactions, events, reviews), releases with assets, the wiki,
+    /// webhooks (disabled), branch protection, rulesets and optionally
+    /// teams. Unmapped users become mannequins. Follows the run and prints
+    /// its log.
     Github {
-        /// Source repository `owner/name`.
-        #[arg(long)]
-        repo: String,
-        /// Target owner (organization or user) on this server.
-        #[arg(long)]
-        owner: String,
-        /// Target name (default: the source name).
-        #[arg(long)]
-        name: Option<String>,
+        #[command(flatten)]
+        args: ImportArgs,
         /// `https://api.github.com` or `https://HOST/api/v3`.
         #[arg(long, default_value = bgh_import::api::DEFAULT_API_URL)]
         api_url: String,
-        /// Source token (read access; `repo` for private repositories).
-        #[arg(long, env = "BGH_IMPORT_TOKEN", hide_env_values = true)]
-        token: Option<String>,
-        /// `public`, `private` or `internal` (default: the source's).
-        #[arg(long)]
-        visibility: Option<String>,
-        /// Login map file: `source,local` per line (GEI mannequin CSV works).
-        #[arg(long)]
-        user_map: Option<std::path::PathBuf>,
-        /// Acting site administrator (default: the first one).
-        #[arg(long = "as")]
-        actor: Option<String>,
-        /// Steps to skip, comma-separated: git,settings,labels,milestones,issues,releases.
-        #[arg(long, value_delimiter = ',')]
-        skip: Vec<String>,
         /// Also import org teams and their repository permissions.
         #[arg(long)]
         teams: bool,
-        /// Fetch Git LFS objects in the git step.
-        #[arg(long)]
-        include_lfs: bool,
-        /// Queue the import for the running server and exit.
-        #[arg(long)]
-        detach: bool,
+    },
+    /// Import a GitLab project: git, settings, labels, milestones, issues,
+    /// merge requests (as pull requests numbered after the issues) with
+    /// notes, diff discussions and approvals, and the wiki.
+    Gitlab {
+        #[command(flatten)]
+        args: ImportArgs,
+        /// `https://gitlab.com/api/v4` or `https://HOST/api/v4`.
+        #[arg(long, default_value = bgh_import::gitlab::DEFAULT_API_URL)]
+        api_url: String,
     },
     /// Resume a failed, cancelled or interrupted import, or rerun a
     /// complete one (only new source objects are imported).
@@ -321,64 +346,72 @@ async fn site_admin(
         .ok_or_else(|| anyhow::anyhow!("no such site administrator (use --as LOGIN)"))
 }
 
+/// Create an import from the CLI arguments; returns `(id, detach)`.
+async fn create_cli_import(
+    state: &AppState,
+    kind: &str,
+    args: ImportArgs,
+    api_url: String,
+    teams: bool,
+) -> anyhow::Result<(i64, bool)> {
+    let user = site_admin(state, args.actor.as_deref()).await?;
+    let user_map = match &args.user_map {
+        Some(path) => bgh_import::cli::parse_user_map(
+            &std::fs::read_to_string(path)
+                .with_context(|| format!("reading {}", path.display()))?,
+        )?,
+        None => Default::default(),
+    };
+    let skip = &args.skip;
+    let on = |step: &str| Some(!skip.iter().any(|s| s == step));
+    let auth = bgh_core::auth::AuthContext {
+        user,
+        method: bgh_core::auth::AuthMethod::Password,
+        scopes: None,
+    };
+    let row = bgh_import::api::create_import(
+        state,
+        &auth,
+        bgh_import::api::CreateBody {
+            kind: Some(kind.to_string()),
+            api_url: Some(api_url),
+            source_repo: Some(args.repo),
+            token: args.token,
+            owner: Some(args.owner),
+            name: args.name,
+            visibility: args.visibility,
+            git: on("git"),
+            settings: on("settings"),
+            labels: on("labels"),
+            milestones: on("milestones"),
+            issues: on("issues"),
+            releases: on("releases"),
+            teams: Some(teams),
+            include_lfs: Some(args.include_lfs),
+            pulls: on("pulls"),
+            wiki: on("wiki"),
+            repo_config: on("repo_config"),
+            user_map,
+        },
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("{e}: {e:?}"))?;
+    println!("import {} queued", row.id);
+    Ok((row.id, args.detach))
+}
+
 async fn import(config: Config, command: ImportCommand) -> anyhow::Result<()> {
     let state = AppState::connect(config).await?;
     bgh_core::db::migrate(&state.db).await?;
     let api = |e: bgh_core::ApiError| anyhow::anyhow!("{e}: {e:?}");
     let (id, detach) = match command {
         ImportCommand::Github {
-            repo,
-            owner,
-            name,
+            args,
             api_url,
-            token,
-            visibility,
-            user_map,
-            actor,
-            skip,
             teams,
-            include_lfs,
-            detach,
-        } => {
-            let user = site_admin(&state, actor.as_deref()).await?;
-            let user_map = match user_map {
-                Some(path) => bgh_import::cli::parse_user_map(
-                    &std::fs::read_to_string(&path)
-                        .with_context(|| format!("reading {}", path.display()))?,
-                )?,
-                None => Default::default(),
-            };
-            let on = |step: &str| Some(!skip.iter().any(|s| s == step));
-            let auth = bgh_core::auth::AuthContext {
-                user,
-                method: bgh_core::auth::AuthMethod::Password,
-                scopes: None,
-            };
-            let row = bgh_import::api::create_import(
-                &state,
-                &auth,
-                bgh_import::api::CreateBody {
-                    api_url: Some(api_url),
-                    source_repo: Some(repo),
-                    token,
-                    owner: Some(owner),
-                    name,
-                    visibility,
-                    git: on("git"),
-                    settings: on("settings"),
-                    labels: on("labels"),
-                    milestones: on("milestones"),
-                    issues: on("issues"),
-                    releases: on("releases"),
-                    teams: Some(teams),
-                    include_lfs: Some(include_lfs),
-                    user_map,
-                },
-            )
-            .await
-            .map_err(api)?;
-            println!("import {} queued", row.id);
-            (row.id, detach)
+        } => create_cli_import(&state, "github", args, api_url, teams).await?,
+        ImportCommand::Gitlab { args, api_url } => {
+            create_cli_import(&state, "gitlab", args, api_url, false).await?
         }
         ImportCommand::Resume { id, actor, detach } => {
             let user = site_admin(&state, actor.as_deref()).await?;

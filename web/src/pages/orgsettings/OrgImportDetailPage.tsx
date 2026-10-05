@@ -9,7 +9,7 @@ export default function OrgImportDetailPage() {
   return (
     <>
       <PageHeader title={`Import #${id}`} description={<Link to={orgSettingsPath(org, 'import')}>All imports</Link>} />
-      <ImportDetail id={Number(id)} />
+      <ImportDetail id={Number(id)} mannequinsPath={orgSettingsPath(org, 'mannequins')} />
     </>
   );
 }

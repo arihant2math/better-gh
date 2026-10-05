@@ -1,0 +1,11 @@
+[
+  {
+    "id": 300000001,
+    "node_id": "LA_1",
+    "url": "https://api.github.com/repos/octo-org/pulls-demo/labels/enhancement",
+    "name": "enhancement",
+    "color": "a2eeef",
+    "default": true,
+    "description": "New feature or request"
+  }
+]

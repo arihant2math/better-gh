@@ -39,8 +39,11 @@ const STEP_ICON: Record<StepState, Icon> = {
   skipped: SkipIcon,
 };
 
-/** Import status, steps, counters and the live log; polls while active. */
-export function ImportDetail({ id }: { id: number }) {
+/**
+ * Import status, steps, counters and the live log; polls while active.
+ * `mannequinsPath` links the reclaim page once mannequins were created.
+ */
+export function ImportDetail({ id, mannequinsPath }: { id: number; mannequinsPath?: string }) {
   const [imp, setImp] = useState<MetadataImport | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [log, setLog] = useState<ImportLogEntry[]>([]);
@@ -158,6 +161,12 @@ export function ImportDetail({ id }: { id: number }) {
             </div>
           ))}
         </dl>
+        {mannequinsPath && (imp.stats.mannequins ?? 0) > 0 && !isActive(imp.status) && (
+          <p className={s.muted}>
+            {imp.stats.mannequins === 1 ? 'One source user' : `${imp.stats.mannequins} source users`} had no account here and became mannequins.{' '}
+            <Link to={mannequinsPath}>Reclaim mannequins</Link> to move their contributions to real accounts.
+          </p>
+        )}
       </Panel>
 
       <div className={s.actions}>

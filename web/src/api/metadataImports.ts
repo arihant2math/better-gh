@@ -1,6 +1,7 @@
 /**
- * GitHub / GHES metadata imports (crates/bgh-import). The source token is
- * write-only: responses only say whether one is stored (`has_token`).
+ * GitHub / GHES / GitLab metadata imports (crates/bgh-import). The source
+ * token is write-only: responses only say whether one is stored
+ * (`has_token`).
  */
 import { api, encodePath } from './client';
 
@@ -13,9 +14,16 @@ export const IMPORT_STEPS: Record<string, string> = {
   labels: 'Labels',
   milestones: 'Milestones',
   issues: 'Issues',
+  pulls: 'Pull requests',
+  reviews: 'Reviews',
+  review_comments: 'Review comments',
   comments: 'Comments',
   events: 'Timeline events',
   releases: 'Releases and assets',
+  wiki: 'Wiki',
+  hooks: 'Webhooks',
+  branch_protection: 'Branch protection',
+  rulesets: 'Rulesets',
   teams: 'Teams',
   finish: 'Finishing',
 };
@@ -23,6 +31,9 @@ export const IMPORT_STEPS: Record<string, string> = {
 /** Counters in `stats`, in display order. */
 export const IMPORT_STATS: [key: string, label: string][] = [
   ['issues', 'Issues'],
+  ['pulls', 'Pull requests'],
+  ['reviews', 'Reviews'],
+  ['review_comments', 'Review comments'],
   ['comments', 'Comments'],
   ['events', 'Events'],
   ['reactions', 'Reactions'],
@@ -30,6 +41,10 @@ export const IMPORT_STATS: [key: string, label: string][] = [
   ['milestones', 'Milestones'],
   ['releases', 'Releases'],
   ['assets', 'Assets'],
+  ['wiki', 'Wiki'],
+  ['hooks', 'Webhooks'],
+  ['branch_protections', 'Protected branches'],
+  ['rulesets', 'Rulesets'],
   ['teams', 'Teams'],
   ['users_mapped', 'Users mapped'],
   ['mannequins', 'Mannequins'],
@@ -37,7 +52,7 @@ export const IMPORT_STATS: [key: string, label: string][] = [
 
 export interface MetadataImport {
   id: number;
-  kind: 'github';
+  kind: ImportKind;
   api_url: string;
   source_repo: string;
   source_url: string;
@@ -55,6 +70,9 @@ export interface MetadataImport {
     releases: boolean;
     teams: boolean;
     include_lfs: boolean;
+    pulls?: boolean;
+    wiki?: boolean;
+    repo_config?: boolean;
     user_map_entries: number;
   };
   status: MetadataImportStatus;
@@ -71,7 +89,10 @@ export interface MetadataImport {
   completed_at: string | null;
 }
 
+export type ImportKind = 'github' | 'gitlab';
+
 export interface MetadataImportInput {
+  kind?: ImportKind;
   api_url?: string;
   source_repo: string;
   token?: string;
@@ -86,6 +107,9 @@ export interface MetadataImportInput {
   releases?: boolean;
   teams?: boolean;
   include_lfs?: boolean;
+  pulls?: boolean;
+  wiki?: boolean;
+  repo_config?: boolean;
   user_map?: Record<string, string>;
 }
 
@@ -140,4 +164,20 @@ export function sourceRepoFrom(input: string): string {
   const t = input.trim().replace(/\.git$/, '').replace(/\/+$/, '');
   const m = /^(?:https?:\/\/[^/]+\/)?([^/\s]+\/[^/\s]+)$/.exec(t);
   return m ? m[1]! : t;
+}
+
+/** The GitLab API base for a host (`gitlab.example` → `https://gitlab.example/api/v4`); empty = gitlab.com. */
+export function gitlabApiUrlFor(host: string): string {
+  const t = host.trim().replace(/\/+$/, '');
+  if (!t) return 'https://gitlab.com/api/v4';
+  const withScheme = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  return /\/api\/v4$/i.test(withScheme) ? withScheme : `${withScheme}/api/v4`;
+}
+
+/** `group[/subgroup…]/project` from a path or a GitLab project / clone URL. */
+export function gitlabPathFrom(input: string): string {
+  const t = input.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+  const m = /^https?:\/\/[^/]+\/(.+)$/.exec(t);
+  // Project URLs may continue with `/-/…` (issues, merge requests, tree).
+  return (m ? m[1]! : t).split('/-/')[0]!;
 }

@@ -34,6 +34,7 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
   developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
   organizations: { title: 'Organizations', load: () => import('../pages/settings/sections/OrganizationSettings') },
+  reclaims: { title: 'Imported contributions', load: () => import('../pages/settings/sections/ReclaimSettings') },
   apps: { title: 'GitHub Apps', load: () => import('../pages/apps/UserAppsSection') },
   installations: { title: 'Installed GitHub Apps', load: () => import('../pages/apps/UserInstallationsSection') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
@@ -194,6 +195,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/jobs', layout: AdminLayout, load: () => import('../pages/admin/JobsPage'), title: () => 'Background jobs · Site admin' },
     { path: '/site-admin/mirrors', layout: AdminLayout, load: () => import('../pages/admin/MirrorsPage'), title: () => 'Mirrors · Site admin' },
     { path: '/site-admin/imports', layout: AdminLayout, load: () => import('../pages/admin/ImportsPage'), title: () => 'Imports · Site admin' },
+    { path: '/site-admin/mannequins', layout: AdminLayout, load: () => import('../pages/admin/MannequinsPage'), title: () => 'Mannequins · Site admin' },
     { path: '/site-admin/imports/:id', layout: AdminLayout, load: () => import('../pages/admin/ImportDetailPage'), title: (p) => `Import #${p.id} · Site admin` },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
@@ -215,6 +217,7 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
     { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
     { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportPage'), title: (p) => `Import · ${p.org}` },
+    { path: '/organizations/:org/settings/mannequins', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgMannequinsPage'), title: (p) => `Mannequins · ${p.org}` },
     { path: '/organizations/:org/settings/import/:id', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportDetailPage'), title: (p) => `Import #${p.id} · ${p.org}` },
     // GitHub Apps (P17): org registrations and installations, public app pages and the install flow.
     { path: '/organizations/:org/settings/apps', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `GitHub Apps · ${p.org}` },

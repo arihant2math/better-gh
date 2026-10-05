@@ -20,6 +20,7 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },
   { id: 'issue-types', label: 'Issue types', icon: IssueOpenedIcon, keys: 'g e' },
   { id: 'import', label: 'Import', icon: DownloadIcon, keys: 'g p' },
+  { id: 'mannequins', label: 'Mannequins', icon: PersonIcon, keys: 'g n' },
   { id: 'installations', label: 'GitHub Apps', icon: AppsIcon, keys: 'g i', group: 'Third-party Access' },
   { id: 'personal-access-tokens', label: 'Personal access tokens', icon: KeyIcon, keys: 'g k' },
   { id: 'apps', label: 'Developer settings', icon: CodeIcon, keys: 'g d' },
