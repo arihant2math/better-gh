@@ -215,9 +215,10 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
             <XCircleFillIcon size={20} className={req?.can_bypass ? pr.pending : pr.fail} />
             <div>
               <div className={styles.mergeRowTitle}>Merging is blocked{req?.can_bypass ? ' (you can bypass as an administrator)' : ''}</div>
-              {blockers.map((b) => (
-                <div key={b} className={styles.subtle}>
-                  {b}
+              {(req?.requirements ?? blockers.map((message) => ({ message, source: '' }))).map((b, i) => (
+                <div key={`${i}-${b.message}`} className={styles.subtle}>
+                  {b.message}
+                  {b.source ? ` (${b.source})` : ''}
                 </div>
               ))}
             </div>

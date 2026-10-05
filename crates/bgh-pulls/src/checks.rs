@@ -1121,6 +1121,12 @@ fn app_slug_for_id(id: i64) -> &'static str {
     if id == 1 { "actions" } else { API_APP }
 }
 
+/// `app.id` of a check suite's integration (see [`app_json`]); the
+/// expected source of required checks (`app_id` / `integration_id`).
+pub fn app_id_for_slug(slug: &str) -> i64 {
+    if slug == "actions" { 1 } else { 2 }
+}
+
 async fn list_runs_where(
     state: &AppState,
     access: &RepoAccess,
