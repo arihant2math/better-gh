@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (c783bac, with P23).
 
 # P25 — Commit and tag signature verification, SSH signing keys, required_signatures, web-flow signing
