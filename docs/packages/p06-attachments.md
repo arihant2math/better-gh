@@ -1,6 +1,6 @@
 # P6 attachments — status
 
-**Done.** Branch `bgh/p06-attachments`. Image, video and file uploads in
+**Done.** Branch `bgh/p06-attachments`, self-integrated (fast-forward) into `claude/sleepy-cray-9jj0t3` at `93ed214` with the full gate green. Image, video and file uploads in
 issue/PR comments, review comments, issue bodies, release notes and the
 wiki editor.
 
@@ -33,7 +33,7 @@ wiki editor.
 * **Storage:** content-addressed `{data_dir}/files/attachments/{sha[..2]}/{sha}`
   (identical uploads share a blob), spooled through `files/attachments/tmp`.
 * **Quota:** new `bgh_core::settings::check_upload_quota(state, owner_id,
-  bytes)` (additive): repos + attachments against `storage_quotas.max_total_size_mb`
+  bytes)` (additive): repos (incl. LFS, as P2 counts them) + attachments against `storage_quotas.max_total_size_mb`
   → 403 when over.
 * **Repo deletion:** rows cascade with the repository (and owner); the
   `RepositoryDeleted` listener enqueues job `uploads.gc`, which removes
