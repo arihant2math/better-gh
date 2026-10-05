@@ -7,3 +7,4 @@ mod conformance;
 mod rest;
 mod tokens;
 mod webhooks_gc;
+mod renames;

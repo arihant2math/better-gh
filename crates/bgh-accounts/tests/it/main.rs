@@ -10,6 +10,7 @@ mod auth;
 mod boot;
 mod invitations;
 mod ldap;
+mod lifecycle;
 mod oauth;
 mod orgs;
 mod root;

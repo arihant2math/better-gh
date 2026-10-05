@@ -462,3 +462,32 @@ async fn transfer_to_user_waits_for_acceptance() {
         .await
         .assert_status(422);
 }
+
+#[tokio::test]
+async fn site_admin_lists_and_restores_deleted_repositories() {
+    let app = bgh_server::test_app().await;
+    let root = app.create_admin("root").await;
+    let alice = app.create_user("alice").await;
+    app.create_repo(&alice, "lost").await;
+    let id = gitwork::repo_id(&app, &alice, "lost").await;
+    app.delete("/api/v3/repos/alice/lost")
+        .auth(&alice)
+        .send()
+        .await
+        .assert_status(204);
+    app.get("/_bgh/admin/repos/deleted")
+        .auth(&alice)
+        .send()
+        .await
+        .assert_status(403);
+    let res = app.get("/_bgh/admin/repos/deleted").auth(&root).send().await;
+    res.assert_status(200);
+    assert_eq!(res.json()[0]["full_name"], "alice/lost");
+    let res = app
+        .post(&format!("/_bgh/repos/{id}/restore"))
+        .auth(&root)
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(res.json()["full_name"], "alice/lost");
+}
