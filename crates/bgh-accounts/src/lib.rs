@@ -197,6 +197,9 @@ fn team_routes(base: &str) -> Router<AppState> {
 /// Web-client routes (absolute paths).
 pub fn web_router() -> Router<AppState> {
     Router::new()
+        // `GET /api/v3/` (trailing slash, as requested by `gh`); the nested
+        // API router only matches `/api/v3`.
+        .route("/api/v3/", get(meta::root))
         .route("/_bgh/signup", post(session::signup))
         .route(
             "/_bgh/session",

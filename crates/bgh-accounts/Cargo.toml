@@ -29,6 +29,10 @@ reqwest.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+redis.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
 tokio.workspace = true
