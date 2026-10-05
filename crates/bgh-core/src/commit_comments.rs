@@ -118,6 +118,11 @@ pub async fn render(
     for (id, content, n) in counts {
         by_comment.entry(id).or_default().push((content, n));
     }
+    let autolinks = if fmt.html || fmt.text {
+        markdown::repo_autolinks(&state.db, repo.id).await
+    } else {
+        Vec::new()
+    };
     let urls = &state.urls;
     let name = repo.name.as_str();
     Ok(rows
@@ -152,7 +157,9 @@ pub async fn render(
             if fmt.html || fmt.text {
                 let html = markdown::render(
                     &c.body,
-                    &RenderContext::new(&state.config.base_url).with_repo(owner, name),
+                    &RenderContext::new(&state.config.base_url)
+                        .with_repo(owner, name)
+                        .with_autolinks(&autolinks),
                 );
                 if fmt.text {
                     v["body_text"] = json!(html_to_text(&html));

@@ -6,6 +6,7 @@ pub mod apps;
 pub mod audit;
 pub mod auth;
 pub mod bots;
+pub mod camo;
 pub mod commit_comments;
 pub mod config;
 pub mod crypto;
