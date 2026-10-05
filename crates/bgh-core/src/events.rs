@@ -157,6 +157,15 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    /// Someone's read access may have changed (collaborator/team/membership
+    /// removed, visibility changed, transfer). bgh-sync rechecks the
+    /// affected live subscriptions and revokes lost scopes. Set whichever
+    /// ids are known; all `None` rechecks every subscription.
+    AccessChanged {
+        repo_id: Option<i64>,
+        org_id: Option<i64>,
+        user_id: Option<i64>,
+    },
 }
 
 impl Event {
@@ -182,6 +191,7 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::AccessChanged { .. } => "access_changed",
         }
     }
 
@@ -207,6 +217,7 @@ impl Event {
             | Self::PullRequestReviewSubmitted { repo_id, .. }
             | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
+            Self::AccessChanged { repo_id, .. } => *repo_id,
         }
     }
 
@@ -232,6 +243,7 @@ impl Event {
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
             | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            Self::AccessChanged { .. } => None,
         }
     }
 }

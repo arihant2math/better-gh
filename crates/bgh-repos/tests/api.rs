@@ -80,7 +80,7 @@ async fn create_and_get_repository() {
             .fetch_all(&app.state.db)
             .await
             .unwrap();
-    assert_eq!(models, vec![("repository".to_string(), "I".to_string())]);
+    assert_eq!(models, vec![("repo".to_string(), "I".to_string())]);
 }
 
 #[tokio::test]

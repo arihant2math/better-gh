@@ -44,5 +44,6 @@ pub mod prelude {
     pub use crate::registry::Registry;
     pub use crate::state::AppState;
     pub use crate::sync::SyncAction;
+    pub use crate::sync::shapes::Model as SyncModel;
     pub use crate::time::Timestamp;
 }

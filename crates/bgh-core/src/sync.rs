@@ -8,8 +8,23 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgConnection;
+use uuid::Uuid;
 
 use crate::state::AppState;
+
+pub mod context;
+pub mod shapes;
+
+pub use context::{RequestSync, client_tx};
+
+/// Key of the transaction-scoped advisory lock taken by [`record`]: writers
+/// of synced data serialize on it, so sync ids commit (become visible) in
+/// id order (docs/SYNC_PROTOCOL.md section 2).
+pub const SYNC_LOCK: i64 = 0x6267_685f_7379_6e63; // "bgh_sync"
+
+/// Version of the client model shapes ([`shapes`]); bump with
+/// docs/SYNC_PROTOCOL.md.
+pub const SCHEMA_VERSION: i64 = 1;
 
 /// Insert / Update / Delete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,8 +62,9 @@ pub fn org_scope(org_id: i64) -> String {
     format!("org:{org_id}")
 }
 
-/// A recorded sync action; also the wire format published to Redis and
-/// streamed to clients (`{"id","scope","model","mid","a","d"}`).
+/// A recorded sync action; also the wire format published to Redis
+/// (`{"id","scope","model","mid","a","d","tx"}`). bgh-sync turns it into
+/// the client `delta` message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SyncRecord {
     pub id: i64,
@@ -60,10 +76,18 @@ pub struct SyncRecord {
     pub action: SyncAction,
     #[serde(rename = "d")]
     pub data: Value,
+    /// `X-Client-Tx` of the request that caused the action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx: Option<Uuid>,
 }
 
 /// Append to `sync_actions`. Call inside the transaction that performs the
-/// change (`&mut *tx`).
+/// change (`&mut *tx`). The row carries the current request's
+/// `X-Client-Tx` ([`client_tx`]).
+///
+/// Takes the [`SYNC_LOCK`] advisory lock (held until commit), so keep the
+/// time between the first `record` and the commit short: record sync
+/// actions at the end of the transaction.
 pub async fn record(
     conn: &mut PgConnection,
     scope: &str,
@@ -72,15 +96,33 @@ pub async fn record(
     action: SyncAction,
     data: &Value,
 ) -> Result<SyncRecord, sqlx::Error> {
+    record_with_tx(conn, scope, model, model_id, action, data, client_tx()).await
+}
+
+/// [`record`] with an explicit client transaction id.
+pub async fn record_with_tx(
+    conn: &mut PgConnection,
+    scope: &str,
+    model: &str,
+    model_id: i64,
+    action: SyncAction,
+    data: &Value,
+    tx: Option<Uuid>,
+) -> Result<SyncRecord, sqlx::Error> {
+    // The lock is taken before the identity default is evaluated, so ids are
+    // allocated (and committed) in lock order.
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO sync_actions (scope, model, model_id, action, data)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        "INSERT INTO sync_actions (scope, model, model_id, action, data, tx)
+         SELECT $1, $2, $3, $4, $5, $6 FROM (SELECT pg_advisory_xact_lock($7)) l
+         RETURNING id",
     )
     .bind(scope)
     .bind(model)
     .bind(model_id)
     .bind(action.code())
     .bind(data)
+    .bind(tx)
+    .bind(SYNC_LOCK)
     .fetch_one(conn)
     .await?;
     Ok(SyncRecord {
@@ -90,6 +132,7 @@ pub async fn record(
         model_id,
         action,
         data: data.clone(),
+        tx,
     })
 }
 
@@ -103,6 +146,9 @@ pub fn channel(state: &AppState, scope: &str) -> String {
 pub async fn notify(state: &AppState, records: &[SyncRecord]) {
     if records.is_empty() {
         return;
+    }
+    if let Some(max) = records.iter().map(|r| r.id).max() {
+        context::note_committed(max);
     }
     let mut pipe = redis::pipe();
     for rec in records {

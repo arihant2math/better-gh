@@ -61,7 +61,8 @@ pub async fn full_repo(
     ))
 }
 
-/// Compact client shape recorded in `sync_actions` for model `repository`.
+/// Legacy compact shape. Sync payloads must come from
+/// `bgh_core::sync::shapes` instead: `tx.sync_model(SyncModel::Repo, id, action)`.
 pub fn repo_sync_json(repo: &db::Repository, owner_login: &str) -> Value {
     json!({
         "id": repo.id,
