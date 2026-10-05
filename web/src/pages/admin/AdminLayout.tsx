@@ -15,6 +15,7 @@ import {
   ServerIcon,
   ShieldIcon,
   StackIcon,
+  SyncIcon,
   WebhookIcon,
   type Icon,
 } from '../../ui/icons';
@@ -25,6 +26,7 @@ const NAV: { to: string; label: string; icon: Icon; keys: string; group?: string
   { to: '/site-admin/users', label: 'Users', icon: PersonIcon, keys: 'g u', group: 'Accounts' },
   { to: '/site-admin/orgs', label: 'Organizations', icon: OrganizationIcon, keys: 'g o' },
   { to: '/site-admin/repos', label: 'Repositories', icon: RepoIcon, keys: 'g r' },
+  { to: '/site-admin/mirrors', label: 'Mirrors', icon: SyncIcon, keys: 'g m' },
   { to: '/site-admin/settings', label: 'Site settings', icon: GearIcon, keys: 'g e', group: 'Instance' },
   { to: '/site-admin/audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a' },
   { to: '/site-admin/jobs', label: 'Background jobs', icon: StackIcon, keys: 'g j' },

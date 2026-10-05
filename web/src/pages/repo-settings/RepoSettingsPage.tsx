@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from '../../router';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { EmptyState } from '../../ui/EmptyState';
-import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, WebhookIcon, type Icon } from '../../ui/icons';
+import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
 import styles from './RepoSettings.module.css';
 import { ListSkeleton, type SectionProps } from './shared';
 
@@ -37,7 +37,10 @@ const NAV: { group?: string; items: NavItem[] }[] = [
   { group: 'Security', items: [section('keys', 'Deploy keys', KeyIcon, () => import('./sections/DeployKeysSettings'))] },
 ];
 
-const ALL = NAV.flatMap((g) => g.items);
+/** Shown in the nav only for pull mirrors. */
+const MIRROR = section('mirror', 'Mirror', SyncIcon, () => import('./sections/MirrorSettings'));
+
+const ALL = [...NAV.flatMap((g) => g.items), MIRROR];
 
 /**
  * `/:owner/:repo/settings[/*]`: own left nav; each section is a lazy chunk.
@@ -69,7 +72,7 @@ export default observer(function RepoSettingsPage() {
   return (
     <div className={styles.page}>
       <nav className={styles.nav} aria-label="Repository settings">
-        {NAV.map((g, i) => (
+        {(repo.mirrorUrl ? [{ group: 'Mirror', items: [MIRROR] }, ...NAV] : NAV).map((g, i) => (
           <div key={g.group ?? i} className={styles.navGroup}>
             {g.group && <div className={styles.navHeading}>{g.group}</div>}
             {g.items.map((s) => (
