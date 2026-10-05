@@ -28,7 +28,8 @@
     "mobx": "^7.0.6",
     "mobx-react-lite": "^5.1.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

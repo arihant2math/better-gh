@@ -349,8 +349,16 @@ export function putSecret(
 
 export const deleteSecret = (s: SettingsScope, name: string) => api.delete<null>(`${scopeBase(s)}/secrets/${enc(name)}`);
 
-export function listVariables(s: SettingsScope): Promise<{ total_count: number; variables: Variable[] }> {
-  return api.get(`${scopeBase(s)}/variables?per_page=30`);
+export async function listVariables(s: SettingsScope): Promise<{ total_count: number; variables: Variable[] }> {
+  const variables: Variable[] = [];
+  let total = 0;
+  for (let page = 1; page <= 20; page++) {
+    const res = await api.get<{ total_count: number; variables: Variable[] }>(`${scopeBase(s)}/variables?per_page=30&page=${page}`);
+    total = res.total_count;
+    variables.push(...res.variables);
+    if (variables.length >= total || res.variables.length < 30) break;
+  }
+  return { total_count: total, variables };
 }
 
 export function listOrgVariablesForRepo(owner: string, repo: string): Promise<{ total_count: number; variables: Variable[] }> {
