@@ -18,7 +18,7 @@ use bgh_core::perms;
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use bgh_core::views;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::json::{InvitationRow, OrgInvitation, OrgMembership};
@@ -381,12 +381,16 @@ pub async fn update_org(
         body.members_can_create_repositories,
         body.members_can_create_public_repositories,
         body.members_can_create_private_repositories,
+        body.members_can_create_internal_repositories,
     );
+    let internal = body.members_can_create_internal_repositories;
     match body.members_allowed_repository_creation_type.as_deref() {
         None => {}
-        Some("all") => create_flags = (Some(true), Some(true), Some(true)),
-        Some("private") => create_flags = (Some(true), Some(false), Some(true)),
-        Some("none") => create_flags = (Some(false), Some(false), Some(false)),
+        Some("all") => create_flags = (Some(true), Some(true), Some(true), internal.or(Some(true))),
+        Some("private") => {
+            create_flags = (Some(true), Some(false), Some(true), internal.or(Some(true)))
+        }
+        Some("none") => create_flags = (Some(false), Some(false), Some(false), Some(false)),
         Some(_) => errors.push(FieldError::invalid(
             "Organization",
             "members_allowed_repository_creation_type",
@@ -451,6 +455,7 @@ pub async fn update_org(
             members_can_create_public_repositories = coalesce($10, members_can_create_public_repositories),
             members_can_create_private_repositories = coalesce($11, members_can_create_private_repositories),
             members_can_fork_private_repositories = coalesce($12, members_can_fork_private_repositories),
+            members_can_create_internal_repositories = coalesce($15, members_can_create_internal_repositories),
             members_can_create_teams = coalesce($13, members_can_create_teams),
             web_commit_signoff_required = coalesce($14, web_commit_signoff_required)
           WHERE org_id = $1 RETURNING {}",
@@ -470,6 +475,7 @@ pub async fn update_org(
     .bind(body.members_can_fork_private_repositories)
     .bind(body.members_can_create_teams)
     .bind(body.web_commit_signoff_required)
+    .bind(create_flags.3)
     .fetch_one(&mut *tx)
     .await?;
     tx.sync_model(SyncModel::Org, org.id, SyncAction::Update)
@@ -495,9 +501,10 @@ pub struct SinceQuery {
 /// `GET /organizations?since=` → organization-simple list by id.
 pub async fn list_all(
     State(state): State<AppState>,
-    _auth: MaybeUser,
+    auth: MaybeUser,
     Query(q): Query<SinceQuery>,
 ) -> ApiResult<axum::response::Response> {
+    bgh_core::privacy::require_directory_access(&state, auth.as_ref()).await?;
     use axum::response::IntoResponse;
     let per_page = q.per_page.unwrap_or(30).clamp(1, 100);
     let rows: Vec<(i64,)> = sqlx::query_as(
@@ -812,8 +819,8 @@ pub async fn remove_member(
         return Ok(false);
     };
     if role == "admin" && admin_count(&mut tx, org.id).await? <= 1 {
-        return Err(ApiError::unprocessable(
-            "Cannot remove the last owner of the organization.",
+        return Err(ApiError::forbidden(
+            "You cannot remove the last owner of an organization.",
         ));
     }
     let team_ids: Vec<i64> = sqlx::query_scalar(
@@ -910,7 +917,7 @@ async fn pending_invitation(
 ) -> Result<Option<InvitationRow>, sqlx::Error> {
     sqlx::query_as(&format!(
         "SELECT {} FROM org_invitations i
-          WHERE i.org_id = $1 AND i.failed_at IS NULL
+          WHERE i.org_id = $1 AND i.failed_at IS NULL AND {GRANTING_ROLE}
             AND (i.invitee_id = $2 OR lower(i.email) IN
                  (SELECT lower(email) FROM user_emails WHERE user_id = $2 AND verified))
           ORDER BY i.id LIMIT 1",
@@ -922,10 +929,19 @@ async fn pending_invitation(
     .await
 }
 
-/// Role shown in memberships for an invitation role.
+/// Membership role granted by an invitation role. Only `admin` and
+/// `direct_member` invitations grant a membership (`billing_manager` is
+/// not supported and rejected when inviting; legacy rows never match
+/// [`pending_invitation`]).
 fn invitation_member_role(role: &str) -> &'static str {
-    if role == "admin" { "admin" } else { "member" }
+    match role {
+        "admin" => "admin",
+        _ => "member",
+    }
 }
+
+/// SQL predicate (on alias `i`) for invitations that grant a membership.
+const GRANTING_ROLE: &str = "i.role IN ('admin', 'direct_member')";
 
 /// `GET /orgs/{org}/memberships/{username}` → org-membership (active or
 /// pending). Visible to members (pending ones to owners and the invitee).
@@ -1104,14 +1120,14 @@ pub async fn my_memberships(
         )));
     }
     // (org_id, state, role)
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
         "SELECT org_id, state, role FROM (
              SELECT m.org_id, 'active' AS state, m.role FROM org_members m WHERE m.user_id = $1
              UNION ALL
              SELECT DISTINCT ON (i.org_id) i.org_id, 'pending',
                     CASE WHEN i.role = 'admin' THEN 'admin' ELSE 'member' END
                FROM org_invitations i
-              WHERE i.failed_at IS NULL
+              WHERE i.failed_at IS NULL AND {GRANTING_ROLE}
                 AND (i.invitee_id = $1 OR lower(i.email) IN
                      (SELECT lower(email) FROM user_emails WHERE user_id = $1 AND verified))
                 AND NOT EXISTS (SELECT 1 FROM org_members m2
@@ -1120,7 +1136,7 @@ pub async fn my_memberships(
          JOIN users o ON o.id = x.org_id
          WHERE ($2::text IS NULL OR x.state = $2)
          ORDER BY lower(o.login), x.org_id LIMIT $3 OFFSET $4",
-    )
+    ))
     .bind(auth.user.id)
     .bind(filter)
     .bind(p.limit_plus_one())
@@ -1515,12 +1531,13 @@ pub async fn invite(
     let access = OrgAccess::load(&state, Some(&auth), &org).await?;
     access.require_admin()?;
     let role = match body.role.as_deref().unwrap_or("direct_member") {
-        r @ ("admin" | "direct_member" | "billing_manager") => r.to_string(),
+        r @ ("admin" | "direct_member") => r.to_string(),
         "reinstate" => "direct_member".to_string(),
         _ => {
-            return Err(ApiError::invalid_field(FieldError::invalid(
+            return Err(ApiError::invalid_field(FieldError::custom(
                 "OrganizationInvitation",
                 "role",
+                "role must be one of: admin, direct_member, reinstate",
             )));
         }
     };
@@ -1889,4 +1906,164 @@ pub async fn unblock_user(
     let user = util::find_account(&state, &username).await?;
     social::unblock(&state, access.org.id, user.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Invitee self-service (web client, `/_bgh`)
+// ---------------------------------------------------------------------------
+
+/// The viewer's invitation to an organization, as the invitation page shows
+/// it.
+#[derive(Debug, Serialize)]
+pub struct ViewerInvitation {
+    /// `pending` | `active` (already a member)
+    pub state: &'static str,
+    pub organization: OrganizationSimple,
+    pub organization_name: Option<String>,
+    /// Membership role on acceptance: `admin` | `member`.
+    pub role: String,
+    pub invitation_id: Option<i64>,
+    pub inviter: Option<SimpleUser>,
+    pub created_at: Option<Timestamp>,
+    /// Names of the teams the invitee joins on acceptance.
+    pub teams: Vec<String>,
+}
+
+/// `GET /_bgh/orgs/{org}/invitation` → the viewer's pending invitation
+/// (or `state: active` for members); 404 without one.
+pub async fn viewer_invitation(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(org): Path<String>,
+) -> ApiResult<Json<ViewerInvitation>> {
+    let access = OrgAccess::load(&state, Some(&auth), &org).await?;
+    let organization = OrganizationSimple::new(
+        &state.urls,
+        &access.org,
+        access.settings.description.as_deref(),
+    );
+    let organization_name = access.org.name.clone();
+    if let Some(role) = &access.role {
+        return Ok(Json(ViewerInvitation {
+            state: "active",
+            organization,
+            organization_name,
+            role: role.clone(),
+            invitation_id: None,
+            inviter: None,
+            created_at: None,
+            teams: vec![],
+        }));
+    }
+    let inv = pending_invitation(&state.db, access.org.id, auth.user.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let inviter = match inv.inviter_id {
+        Some(id) => db::User::find(&state.db, id).await?,
+        None => None,
+    };
+    let teams: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM teams WHERE org_id = $1 AND id = ANY($2) ORDER BY lower(name)",
+    )
+    .bind(access.org.id)
+    .bind(&inv.team_ids)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(ViewerInvitation {
+        state: "pending",
+        organization,
+        organization_name,
+        role: invitation_member_role(&inv.role).to_string(),
+        invitation_id: Some(inv.id),
+        inviter: inviter.map(|u| SimpleUser::new(&state.urls, &u)),
+        created_at: Some(inv.created_at.into()),
+        teams,
+    }))
+}
+
+/// `DELETE /_bgh/orgs/{org}/invitation` → 204: the invitee declines every
+/// pending invitation of theirs to the organization.
+pub async fn decline_invitation(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(org): Path<String>,
+) -> ApiResult<StatusCode> {
+    let org = util::find_org(&state, &org).await?;
+    let mut tx = Tx::begin(&state).await?;
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "DELETE FROM org_invitations i WHERE i.org_id = $1 AND i.failed_at IS NULL
+           AND (i.invitee_id = $2 OR lower(i.email) IN
+                (SELECT lower(email) FROM user_emails WHERE user_id = $2 AND verified))
+         RETURNING i.id",
+    )
+    .bind(org.id)
+    .bind(auth.user.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    if ids.is_empty() {
+        return Err(ApiError::NotFound);
+    }
+    audit::log(
+        &mut *tx,
+        Some(&auth.user),
+        "org.decline_invitation",
+        audit::Target::Org(org.id),
+        json!({ "invitation_ids": ids }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// One of the viewer's organization memberships (settings page).
+#[derive(Debug, Serialize)]
+pub struct ViewerOrganization {
+    pub organization: OrganizationSimple,
+    pub organization_name: Option<String>,
+    /// `admin` | `member`
+    pub role: String,
+    /// Membership is publicized.
+    pub public: bool,
+    /// The viewer is the only owner, so they can't leave.
+    pub sole_owner: bool,
+    pub members_count: i64,
+}
+
+/// `GET /_bgh/user/organizations` → the viewer's active memberships with
+/// publicity and last-owner flags, ordered by login.
+pub async fn viewer_organizations(
+    State(state): State<AppState>,
+    auth: RequireUser,
+) -> ApiResult<Json<Vec<ViewerOrganization>>> {
+    // (org_id, role, is_public, admins, members, description)
+    let rows: Vec<(i64, String, bool, i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT m.org_id, m.role, m.is_public,
+                (SELECT count(*) FROM org_members a WHERE a.org_id = m.org_id AND a.role = 'admin'),
+                (SELECT count(*) FROM org_members c WHERE c.org_id = m.org_id),
+                s.description
+           FROM org_members m
+           JOIN users o ON o.id = m.org_id
+           LEFT JOIN org_settings s ON s.org_id = m.org_id
+          WHERE m.user_id = $1
+          ORDER BY lower(o.login)",
+    )
+    .bind(auth.user.id)
+    .fetch_all(&state.db)
+    .await?;
+    let orgs = views::users_by_id(&state, rows.iter().map(|r| Some(r.0))).await?;
+    Ok(Json(
+        rows.into_iter()
+            .filter_map(|(org_id, role, public, admins, members, description)| {
+                let org = orgs.get(&org_id)?;
+                Some(ViewerOrganization {
+                    organization: OrganizationSimple::new(&state.urls, org, description.as_deref()),
+                    organization_name: org.name.clone(),
+                    sole_owner: role == "admin" && admins <= 1,
+                    role,
+                    public,
+                    members_count: members,
+                })
+            })
+            .collect(),
+    ))
 }

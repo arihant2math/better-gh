@@ -111,6 +111,7 @@ pub async fn users_by_email(
 
 pub fn render(
     state: &AppState,
+    repo_id: i64,
     owner: &str,
     repo: &str,
     c: &Commit,
@@ -129,7 +130,7 @@ pub fn render(
     };
     CommitJson {
         sha: c.sha.clone(),
-        node_id: node_id::encode_str(NodeType::Commit, &c.sha),
+        node_id: node_id::encode_str(NodeType::Commit, &format!("{repo_id}:{}", c.sha)),
         commit: CommitDetail {
             author: actor(&c.author),
             committer: actor(&c.committer),
@@ -162,6 +163,7 @@ pub fn render(
 /// Render commits with batched author lookup.
 pub async fn render_many(
     state: &AppState,
+    repo_id: i64,
     owner: &str,
     repo: &str,
     commits: &[Commit],
@@ -177,7 +179,7 @@ pub async fn render_many(
     Ok(commits
         .iter()
         .map(|c| {
-            let mut json = render(state, owner, repo, c, &users);
+            let mut json = render(state, repo_id, owner, repo, c, &users);
             if let Some(v) = verifications.remove(&c.sha) {
                 json.commit.verification = v;
             }

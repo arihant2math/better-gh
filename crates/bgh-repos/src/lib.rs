@@ -9,6 +9,7 @@
 //! media types), [`cache`] (Redis cache for SHA-keyed data), [`refs`]
 //! (API ref writes with branch protection), [`protection`] (rules engine).
 
+pub mod activity;
 pub mod autolinks;
 pub mod branches;
 pub mod browse;
@@ -16,19 +17,23 @@ pub mod cache;
 pub mod collaborators;
 pub mod commit_comments;
 pub mod commits;
+pub mod community;
 pub mod contents;
 pub mod create;
 pub mod download;
 pub mod forks;
 pub mod git_http;
 pub mod gitdb;
+pub mod gitignore;
 pub mod gitjson;
 pub mod identity;
 pub mod import;
+pub mod insights;
 pub mod jobs;
 pub mod json;
 pub mod keys;
 pub mod lfs;
+pub mod licenses;
 pub mod maintenance;
 pub mod media;
 pub mod mirrors;
@@ -36,12 +41,14 @@ pub mod protection;
 pub mod protection_api;
 pub mod refs;
 pub mod repos;
+pub mod repositories;
 pub mod rulesets;
 pub mod settings;
 pub mod signatures;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
+pub mod traffic;
 pub mod watching;
 pub mod workflow_scope;
 
@@ -75,6 +82,10 @@ pub fn router() -> Router<AppState> {
         )
         .merge(settings::routes())
         .merge(stats::routes())
+        .merge(insights::routes())
+        .merge(traffic::routes())
+        .merge(community::routes())
+        .merge(activity::routes())
         .merge(forks::routes())
         .merge(stars::routes())
         .merge(watching::routes())
@@ -89,6 +100,9 @@ pub fn router() -> Router<AppState> {
         .merge(protection_api::routes())
         .merge(rulesets::routes())
         .merge(download::api_router())
+        .merge(licenses::routes())
+        .merge(gitignore::routes())
+        .merge(repositories::routes())
 }
 
 /// Git smart-HTTP routes (absolute paths). `{repo}` may carry `.git`.
@@ -108,6 +122,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(lfs::web_router())
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
+        .merge(traffic::web_routes())
         .route("/web-flow.gpg", get(signatures::web_flow_gpg))
         .route(
             "/_bgh/repos/{owner}/{repo}/commit-signatures",
@@ -121,6 +136,8 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
     reg.job(stats::compute_languages);
+    reg.job(insights::compute_stats);
+    reg.service("repos.traffic_prune", traffic::prune_service);
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
     reg.job(maintenance::pack_refs);
@@ -132,4 +149,6 @@ pub fn register(reg: &mut Registry) {
     reg.job(import::run_import_job);
     reg.job(mirrors::sync_job);
     reg.service("repos.mirrors", mirrors::service);
+    reg.job(licenses::detect_job);
+    reg.service("repos.license_backfill", licenses::backfill_service);
 }

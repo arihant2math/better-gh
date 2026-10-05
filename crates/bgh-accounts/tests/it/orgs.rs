@@ -288,7 +288,7 @@ async fn members_and_public_members() {
         .auth(&owner)
         .send()
         .await
-        .assert_status(422);
+        .assert_status(403);
     app.delete("/api/v3/orgs/acme/members/mem")
         .auth(&owner)
         .send()

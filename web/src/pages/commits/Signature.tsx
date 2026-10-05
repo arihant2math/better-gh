@@ -41,8 +41,8 @@ const BATCH = 100;
 
 /**
  * Signature info for `lists` of SHAs (e.g. one list per loaded page), one
- * request per list (split at 100; signed commits only; immutable per SHA
- * set). Re-renders when a batch arrives.
+ * request per list (split at 100; signed commits only; not immutable: a key
+ * upload can verify them). Re-renders when a batch arrives.
  */
 export function useSignatures(owner: string, repo: string, lists: string[][]): Record<string, CommitSignature> {
   const [, bump] = useReducer((x: number) => x + 1, 0);
@@ -53,7 +53,7 @@ export function useSignatures(owner: string, repo: string, lists: string[][]): R
   useEffect(() => {
     let alive = true;
     batches.forEach((b, i) => {
-      load(keys[i]!, () => getCommitSignatures(owner, repo, b), { immutable: true }).then(
+      load(keys[i]!, () => getCommitSignatures(owner, repo, b)).then(
         () => alive && bump(),
         () => undefined,
       );

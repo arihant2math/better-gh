@@ -301,6 +301,96 @@ async fn oidc_respects_auto_create_domains_and_two_factor() {
 }
 
 #[tokio::test]
+async fn oidc_groups_claim_syncs_mapped_teams() {
+    let app = bgh_server::test_app().await;
+    let issuer = mock_provider().await;
+    configure(&app, &issuer, json!({"groups_claim": "groups"})).await;
+    let owner = app.create_user("owner").await;
+    app.create_org("acme", &owner).await;
+    app.post("/api/v3/orgs/acme/teams")
+        .auth(&owner)
+        .json(&json!({"name": "Eng"}))
+        .send()
+        .await
+        .assert_status(201);
+    let path = "/api/v3/orgs/acme/teams/eng/team-sync/group-mappings";
+    let res = app
+        .patch(path)
+        .auth(&owner)
+        .json(
+            &json!({"groups": [{"group_id": "eng-all", "group_name": "Engineering",
+                                   "group_description": "All engineers"}]}),
+        )
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(
+        res.json(),
+        json!({"groups": [{"group_id": "eng-all", "group_name": "eng-all", "group_description": ""}]})
+    );
+    assert_eq!(
+        app.get(path).auth(&owner).send().await.json()["groups"][0]["group_id"],
+        "eng-all"
+    );
+    app.patch(path)
+        .auth(&owner)
+        .json(&json!({}))
+        .send()
+        .await
+        .assert_status(422);
+    let outsider = app.create_user("outsider").await;
+    app.get(path)
+        .auth(&outsider)
+        .send()
+        .await
+        .assert_status(404);
+
+    let sign_in = |groups: Value| {
+        let app = &app;
+        let issuer = issuer.clone();
+        async move {
+            let (st, nonce) = start(app, "/").await;
+            app.get(&format!(
+                "/_bgh/sso/corp/callback?state={st}&code={}",
+                code(
+                    &issuer,
+                    &nonce,
+                    "g-1",
+                    "gina@corp.example",
+                    json!({"groups": groups})
+                )
+            ))
+            .send()
+            .await
+            .assert_status(303);
+        }
+    };
+    let members = || async {
+        app.get("/api/v3/orgs/acme/teams/eng/members")
+            .auth(&owner)
+            .send()
+            .await
+            .json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["login"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    sign_in(json!(["eng-all", "other"])).await;
+    let mut m = members().await;
+    m.sort();
+    assert_eq!(m, ["Jane-Doe", "owner"]);
+    app.get("/api/v3/orgs/acme/members/Jane-Doe")
+        .auth(&owner)
+        .send()
+        .await
+        .assert_status(204);
+    sign_in(json!(["other"])).await;
+    assert_eq!(members().await, ["owner"]);
+}
+
+#[tokio::test]
 async fn avatars() {
     let app = bgh_server::test_app().await;
     let ada = app.create_user("ada").await;

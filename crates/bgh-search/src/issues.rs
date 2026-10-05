@@ -213,8 +213,11 @@ pub async fn filters(
                 "public" => {
                     s.raw(format!("{not}r.visibility = 'public'"));
                 }
-                "private" | "internal" => {
+                "private" => {
                     s.raw(format!("{not}r.visibility <> 'public'"));
+                }
+                "internal" => {
+                    s.raw(format!("{not}r.visibility = 'internal'"));
                 }
                 "archived" => {
                     s.raw(format!("{not}r.archived"));

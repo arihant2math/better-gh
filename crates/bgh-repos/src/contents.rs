@@ -5,6 +5,7 @@
 //! * `PUT /repos/{o}/{r}/contents/{path}`: create or update a file
 //! * `DELETE /repos/{o}/{r}/contents/{path}`: delete a file
 //! * `GET /repos/{o}/{r}/readme[/{dir}]?ref=`
+//! * `GET /repos/{o}/{r}/license?ref=` (`license-content`)
 //! * raw downloads (`/{o}/{r}/raw/...`) live in [`crate::download`]
 //!
 //! Reads resolve the ref once to a commit SHA and do everything else in one
@@ -49,6 +50,7 @@ pub fn routes() -> Router<AppState> {
         .route("/repos/{owner}/{repo}/readme", get(readme_root))
         .route("/repos/{owner}/{repo}/readme/", get(readme_root))
         .route("/repos/{owner}/{repo}/readme/{*dir}", get(readme_dir))
+        .route("/repos/{owner}/{repo}/license", get(license))
 }
 
 // ----- JSON shapes -------------------------------------------------------------
@@ -728,6 +730,67 @@ async fn readme(
             Ok(Json(ctx.render(&found, false)).into_response())
         }
     }
+}
+
+/// `license-content`: the root license file plus the detected license.
+#[derive(Debug, Serialize)]
+struct LicenseContent {
+    #[serde(flatten)]
+    entry: ContentEntry,
+    license: Option<api::LicenseSimple>,
+}
+
+/// `GET /repos/{o}/{r}/license?ref=`: the license file of the root
+/// directory (404 without one), detected live for the requested ref.
+async fn license(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Query(q): Query<RefQuery>,
+) -> ApiResult<Response> {
+    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
+    let (git_ref, commit) = resolve_ref(&state, &access, q.git_ref.as_deref()).await?;
+    let m = media::media(&headers);
+    let limit = state.config.max_blob_size;
+    let c = commit.clone();
+    let found = crate::store(&state)
+        .read(access.repo.id, move |r| {
+            let Some((name, _)) = crate::licenses::find_license_file(r, &c)? else {
+                return Ok(None);
+            };
+            match find(r, &c, &name, limit, true)? {
+                f @ Found::File { .. } => Ok(Some(f)),
+                _ => Ok(None),
+            }
+        })
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let Found::File { data, .. } = &found else {
+        return Err(ApiError::NotFound);
+    };
+    if let (Media::Raw, Some(d)) = (m, data) {
+        return Ok(media::body(m, content_type_for(d), d.clone()));
+    }
+    let text = data
+        .as_deref()
+        .map(|d| String::from_utf8_lossy(d).into_owned())
+        .unwrap_or_default();
+    let spdx = tokio::task::spawn_blocking(move || crate::licenses::detect_text(&text))
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e)))?;
+    let ctx = Ctx {
+        r: RepoRef::new(&state.urls, &access),
+        git_ref: &git_ref,
+    };
+    let ContentsJson::One(entry) = ctx.render(&found, false) else {
+        return Err(ApiError::NotFound);
+    };
+    Ok(Json(LicenseContent {
+        entry: *entry,
+        license: Some(bgh_core::licenses::simple(&state.urls, &spdx)),
+    })
+    .into_response())
 }
 
 // ----- raw downloads ----------------------------------------------------------

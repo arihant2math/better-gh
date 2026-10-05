@@ -172,6 +172,41 @@ async fn private_and_public_pulls() {
         .send()
         .await
         .assert_status(401);
+
+    // Private mode: public packages need credentials too; tokens minted
+    // earlier for anonymous callers stop working and no new ones are
+    // issued, while signed-in pulls (PAT or registry JWT) keep working.
+    let anon = bearer(&app, None, "repository:alice/app:pull").await;
+    app.set_settings("privacy", json!({"private_mode": true}))
+        .await;
+    let res = app.get("/v2/alice/app/manifests/v1").send().await;
+    res.assert_status(401);
+    assert!(
+        res.header("www-authenticate")
+            .unwrap()
+            .starts_with("Bearer realm=")
+    );
+    app.get("/v2/alice/app/manifests/v1")
+        .header("authorization", &anon)
+        .send()
+        .await
+        .assert_status(401);
+    app.get("/v2/token?scope=repository:alice/app:pull")
+        .send()
+        .await
+        .assert_status(401);
+    app.get("/v2/").send().await.assert_status(401);
+    app.get("/v2/alice/app/manifests/v1")
+        .header("authorization", &basic("bob", &bob.token))
+        .send()
+        .await
+        .assert_status(200);
+    let jwt = user_bearer(&app, &bob, "alice/app").await;
+    app.get("/v2/alice/app/manifests/v1")
+        .header("authorization", &jwt)
+        .send()
+        .await
+        .assert_status(200);
 }
 
 /// An Actions `GITHUB_TOKEN` can push to its repository owner's namespace;

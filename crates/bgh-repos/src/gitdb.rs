@@ -95,6 +95,37 @@ async fn writable(
     Ok(access)
 }
 
+/// Expand a full or abbreviated (7–39 hex digits, unique) object SHA;
+/// 404 for anything else. The flag tells whether the SHA was given in
+/// full (only then is the response cacheable as immutable).
+async fn full_sha(state: &AppState, access: &RepoAccess, sha: &str) -> ApiResult<(String, bool)> {
+    let sha = sha.to_ascii_lowercase();
+    if is_sha(&sha) {
+        return Ok((sha, true));
+    }
+    if !(7..40).contains(&sha.len()) || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ApiError::NotFound);
+    }
+    let prefix = sha.clone();
+    let found = crate::store(state)
+        .read(access.repo.id, move |r| r.resolve(&prefix))
+        .await?;
+    // `resolve` also accepts ref names; keep only object-prefix matches.
+    match found {
+        Some(full) if full.starts_with(&sha) => Ok((full, false)),
+        _ => Err(ApiError::NotFound),
+    }
+}
+
+/// Immutable caching only for responses addressed by a full SHA.
+fn cacheable(resp: Response, private: bool, full: bool) -> Response {
+    if full {
+        media::immutable(resp, private)
+    } else {
+        resp
+    }
+}
+
 /// `{type, size}` of an object, if it exists.
 fn header_of(r: &GitRepo, sha: &str) -> GitResult<Option<(&'static str, u64)>> {
     if !is_sha(sha) {
@@ -122,10 +153,7 @@ async fn get_blob(
     Path((owner, repo, sha)): Path<(String, String, String)>,
 ) -> ApiResult<Response> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    if !is_sha(&sha) {
-        return Err(ApiError::NotFound);
-    }
-    let sha = sha.to_ascii_lowercase();
+    let (sha, full) = full_sha(&state, &access, &sha).await?;
     let m = media::media(&headers);
     let limit = if m == Media::Raw {
         RAW_LIMIT
@@ -143,7 +171,7 @@ async fn get_blob(
         } else {
             "text/plain; charset=utf-8"
         };
-        return Ok(media::immutable(media::body(m, ct, blob.data), private));
+        return Ok(cacheable(media::body(m, ct, blob.data), private, full));
     }
     let r = RepoRef::new(&state.urls, &access);
     let json = BlobJson {
@@ -154,7 +182,7 @@ async fn get_blob(
         node_id: node_id::encode_str(NodeType::Blob, &format!("{}:{sha}", access.repo.id)),
         sha,
     };
-    Ok(media::immutable(Json(json).into_response(), private))
+    Ok(cacheable(Json(json).into_response(), private, full))
 }
 
 #[derive(Deserialize)]
@@ -434,18 +462,16 @@ async fn get_commit(
     Path((owner, repo, sha)): Path<(String, String, String)>,
 ) -> ApiResult<Response> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    if !is_sha(&sha) {
-        return Err(ApiError::NotFound);
-    }
-    let s = sha.to_ascii_lowercase();
+    let (s, full) = full_sha(&state, &access, &sha).await?;
     let commit = crate::store(&state)
         .read(access.repo.id, move |r| r.commit(&s))
         .await?;
     let mut json = git_commit(&RepoRef::new(&state.urls, &access), &commit);
     json.verification = crate::signatures::verify_commit(&state, &commit).await?;
-    Ok(media::immutable(
+    Ok(cacheable(
         Json(json).into_response(),
         access.repo.is_private(),
+        full,
     ))
 }
 
@@ -863,18 +889,16 @@ async fn get_tag(
     Path((owner, repo, sha)): Path<(String, String, String)>,
 ) -> ApiResult<Response> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    if !is_sha(&sha) {
-        return Err(ApiError::NotFound);
-    }
-    let s = sha.to_ascii_lowercase();
+    let (s, full) = full_sha(&state, &access, &sha).await?;
     let tag = crate::store(&state)
         .read(access.repo.id, move |r| r.tag(&s))
         .await?;
     let mut json = git_tag(&RepoRef::new(&state.urls, &access), &tag);
     json.verification = crate::signatures::verify_tag(&state, &tag).await?;
-    Ok(media::immutable(
+    Ok(cacheable(
         Json(json).into_response(),
         access.repo.is_private(),
+        full,
     ))
 }
 

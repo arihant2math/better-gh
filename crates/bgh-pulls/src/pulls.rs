@@ -824,9 +824,14 @@ pub async fn commits(
                 .collect::<Result<Vec<_>, _>>()
         })
         .await?;
-    let items =
-        crate::commits::render_many(&state, &access.owner.login, &access.repo.name, &commits)
-            .await?;
+    let items = crate::commits::render_many(
+        &state,
+        access.repo.id,
+        &access.owner.login,
+        &access.repo.name,
+        &commits,
+    )
+    .await?;
     Ok(p.page_with_total(items, total))
 }
 
