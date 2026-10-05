@@ -1,7 +1,10 @@
+Integration: ready
+Org rulesets, push/metadata rules (GH013), evaluate mode, rule suites, tag protection, GraphQL rulesets for `gh ruleset`.
+
 # P23 — Rulesets, part 2 backend: status
 
-Branch `bgh/p23-rulesets`. **Status: complete** (PHASE4_PLAN §3 P23),
-self-integrated into `claude/sleepy-cray-9jj0t3`.
+Branch `bgh/p23-rulesets`. **Status: complete** (PHASE4_PLAN §3 P23);
+full gate green after merging the integration branch (8f9ed3e).
 
 ## Endpoints
 
