@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth';
 import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
+import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
 import { passkeySignIn, securityKeyTwoFactor, webauthnError } from '../../api/webauthn';
@@ -52,7 +53,10 @@ function Login({ search }: { search: string }) {
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [ssoBusy, setSsoBusy] = useState<string | null>(null);
-  const [privateMode, setPrivateMode] = useState(false);
+  const [site, setSite] = useState<PublicSiteInfo | null>(null);
+  const [adminForm, setAdminForm] = useState(false);
+  // Private mode (`/_bgh/site` stays public): explain why sign-in is needed.
+  const privateMode = !!site?.private_mode;
   const passwordRef = useRef<HTMLInputElement>(null);
   const loginRef = useRef<HTMLInputElement>(null);
 
@@ -62,9 +66,8 @@ function Login({ search }: { search: string }) {
       (p) => live && setProviders(p),
       () => undefined,
     );
-    // Private mode (`/_bgh/site` stays public): explain why sign-in is needed.
     api.get<PublicSiteInfo>('/_bgh/site').then(
-      (info) => live && setPrivateMode(!!info?.private_mode),
+      (s) => live && setSite(s),
       () => undefined,
     );
     return () => {
@@ -75,6 +78,7 @@ function Login({ search }: { search: string }) {
   // Captured at render: once the session flips, App itself redirects and the
   // URL loses its `return_to`.
   const target = returnTo(search);
+  const invite = invitationTarget(target);
   const done = () => navigate(target, { replace: true });
 
   const submit = async () => {
@@ -168,6 +172,11 @@ function Login({ search }: { search: string }) {
       });
   };
 
+  // Until /_bgh/site answers (or when it fails) the form is shown.
+  const ldap = !!site?.ldap;
+  const showForm = !site || site.password_login || ldap || adminForm;
+  const usernameLabel = ldap && !site?.password_login ? 'LDAP username' : 'Username or email address';
+
   if (twoFactorToken) {
     return (
       <AuthLayout
@@ -209,7 +218,15 @@ function Login({ search }: { search: string }) {
   return (
     <AuthLayout
       title={`Sign in to ${config.siteName}`}
-      banner={notice && <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Flash>}
+      banner={
+        notice ? (
+          <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>
+            {notice.text}
+          </Flash>
+        ) : (
+          invite && <Flash>Sign in{config.signupEnabled ? ' or create an account' : ''} to accept your invitation to {invitationTargetLabel(invite)}.</Flash>
+        )
+      }
       below={
         config.signupEnabled ? (
           <>
@@ -228,17 +245,23 @@ function Login({ search }: { search: string }) {
           Any credentials work. Passwords <code>wrong</code>, <code>throttle</code> and <code>2fa</code> (code <code>123456</code>) try the other paths.
         </p>
       )}
-      <form
-        className={styles.form}
-        noValidate
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
+      {!showForm && (
+        <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 4px' }}>
+          Password sign-in is disabled. Sign in with single sign-on.
+        </p>
+      )}
+      {showForm && (
+        <form
+          className={styles.form}
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
         <div className={styles.fieldGroup}>
           <div className={styles.labelRow}>
-            <label htmlFor="login_field">Username or email address</label>
+            <label htmlFor="login_field">{usernameLabel}</label>
           </div>
           <Input
             id="login_field"
@@ -265,9 +288,11 @@ function Login({ search }: { search: string }) {
         <div className={styles.fieldGroup}>
           <div className={styles.labelRow}>
             <label htmlFor="password">Password</label>
-            <Link to="/password_reset" className={styles.small}>
-              Forgot password?
-            </Link>
+            {site?.password_login !== false && (
+              <Link to="/password_reset" className={styles.small}>
+                Forgot password?
+              </Link>
+            )}
           </div>
           <Input
             id="password"
@@ -292,7 +317,8 @@ function Login({ search }: { search: string }) {
         <Button type="submit" variant="primary" size="lg" block loading={busy}>
           Sign in
         </Button>
-      </form>
+        </form>
+      )}
       {passkeysAvailable() && (
         <>
           <Divider />
@@ -303,7 +329,7 @@ function Login({ search }: { search: string }) {
       )}
       {providers.length > 0 && (
         <>
-          <Divider />
+          {showForm && <Divider />}
           <div className={styles.sso}>
             {providers.map((p) => (
               <a key={p.id} href={ssoLoginHref(p.id, target)} className={styles.ssoButton} aria-busy={ssoBusy === p.id} onClick={startSso(p)}>
@@ -313,6 +339,13 @@ function Login({ search }: { search: string }) {
             ))}
           </div>
         </>
+      )}
+      {!showForm && site?.password_login_admin_exempt && (
+        <div className={`${styles.small} ${styles.centered}`} style={{ marginTop: 14 }}>
+          <button type="button" className={styles.linkButton} onClick={() => setAdminForm(true)}>
+            Site administrator sign-in
+          </button>
+        </div>
       )}
     </AuthLayout>
   );

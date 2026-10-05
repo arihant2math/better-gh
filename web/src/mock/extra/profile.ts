@@ -11,6 +11,8 @@
  */
 import type { ID, Membership, Org, Repo, User, ViewerRepo } from '../../sync/models';
 import type { Ctx, MockServer, Resp } from '../server';
+import { gitFor } from '../git';
+import { gitignoreTemplate, isLicenseKey, licenseText } from './licenses';
 import { mockProfile } from './user';
 import { invalid, noContent, notFound, ok, param, simpleUser, state } from './util';
 
@@ -596,7 +598,22 @@ export function installProfileMocks(server: MockServer): void {
     const vis = typeof b.visibility === 'string' ? b.visibility : b.private ? 'private' : 'public';
     if (vis !== 'public' && vis !== 'private' && !(vis === 'internal' && owner.isOrg)) return invalid('Validation Failed', 'visibility', 'invalid', 'Repository');
     const desc = typeof b.description === 'string' && b.description ? b.description : null;
-    const repo = insertRepo(owner, b, { visibility: vis, autoInit: b.auto_init === true, description: desc, isTemplate: b.is_template === true });
+    const gitignore = typeof b.gitignore_template === 'string' && b.gitignore_template ? gitignoreTemplate(b.gitignore_template) : undefined;
+    if (b.gitignore_template && gitignore === undefined) return invalid('Validation Failed', 'gitignore_template', 'invalid', 'Repository');
+    const license = typeof b.license_template === 'string' && b.license_template ? b.license_template : undefined;
+    if (b.license_template && (!license || !isLicenseKey(license))) return invalid('Validation Failed', 'license_template', 'invalid', 'Repository');
+    const team = b.team_id === undefined || b.team_id === null ? undefined : [...t.team.values()].find((x) => x.id === Number(b.team_id) && x.orgId === owner.id);
+    if (b.team_id !== undefined && b.team_id !== null && !team) return invalid('Validation Failed', 'team_id', 'invalid', 'Repository');
+    // Templates imply an initial commit (like the server).
+    const autoInit = b.auto_init === true || gitignore !== undefined || license !== undefined;
+    const repo = insertRepo(owner, b, { visibility: vis, autoInit, description: desc, isTemplate: b.is_template === true });
+    if (gitignore !== undefined || license) {
+      const files = new Map<string, string | null>();
+      if (gitignore !== undefined) files.set('.gitignore', gitignore);
+      if (license) files.set('LICENSE', licenseText(license, owner.login)!);
+      gitFor(server, repo).write(repo.defaultBranch, files, 'Initial commit', server.db.viewerId);
+    }
+    if (team) server.put('team', { ...team, repoIds: [...team.repoIds, repo.id] });
     return ok(repoJson(repo), 201);
   };
 

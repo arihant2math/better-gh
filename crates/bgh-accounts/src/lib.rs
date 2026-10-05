@@ -8,8 +8,10 @@ pub mod avatars;
 pub mod boot;
 pub mod emails;
 pub mod gpg;
+pub mod group_sync;
 pub mod json;
 pub mod keys;
+pub mod ldap;
 pub mod meta;
 pub mod oauth;
 pub mod org_two_factor;
@@ -246,6 +248,10 @@ fn team_routes(base: &str) -> Router<AppState> {
                 .delete(teams::delete_membership),
         )
         .route(&format!("{base}/invitations"), get(teams::invitations))
+        .route(
+            &format!("{base}/team-sync/group-mappings"),
+            get(group_sync::get_mappings).patch(group_sync::set_mappings),
+        )
         .route(&format!("{base}/repos"), get(teams::repos))
         .route(
             &format!("{base}/repos/{{owner}}/{{repo}}"),
@@ -345,6 +351,11 @@ pub fn web_router() -> Router<AppState> {
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
         .route("/_bgh/orgs", post(orgs::web_create_org))
+        .route(
+            "/_bgh/orgs/{org}/invitation",
+            get(orgs::viewer_invitation).delete(orgs::decline_invitation),
+        )
+        .route("/_bgh/user/organizations", get(orgs::viewer_organizations))
         // avatars
         .route("/avatars/u/{id}", get(avatars::serve))
         .route(
@@ -435,9 +446,16 @@ pub fn web_router() -> Router<AppState> {
         .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
 }
 
-/// Background work: the `accounts.security` service (PAT expiry reminders,
-/// legacy TOTP secret encryption). Account mail is queued as the shared
-/// `mail.send` job of `bgh_core::mail`.
+/// Background work: LDAP sync jobs and the periodic `accounts.ldap_sync`
+/// service (also installs the LDAP password directory,
+/// `bgh_core::auth::check_password`), and the `accounts.security` service
+/// (PAT expiry reminders, legacy TOTP secret encryption). Account mail is
+/// queued as the shared `mail.send` job of `bgh_core::mail`.
 pub fn register(reg: &mut Registry) {
+    ldap::install();
+    reg.job(ldap::sync::sync_all_job);
+    reg.job(ldap::sync::sync_user_job);
+    reg.job(ldap::sync::sync_team_job);
+    reg.service("accounts.ldap_sync", ldap::sync::service);
     reg.service("accounts.security", security::service);
 }

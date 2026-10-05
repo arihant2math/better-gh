@@ -3,7 +3,9 @@
 //! Credentials accepted (first match wins):
 //! 1. `Authorization: token <pat>` / `Authorization: Bearer <pat>`
 //! 2. `Authorization: Basic base64(user:<pat>)`; `user:<password>` only when
-//!    [`AuthOptions::allow_password`] is set (git transport)
+//!    [`AuthOptions::allow_password`] is set (git transport), checked by
+//!    [`check_password`] (directory/LDAP, `password_login` policy, failure
+//!    throttling and auditing shared with the web sign-in)
 //! 3. `bgh_session` cookie (web client)
 //!
 //! GitHub App credentials: `Bearer <jwt>` authenticates an app
@@ -26,11 +28,15 @@ use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
 
+use futures::future::BoxFuture;
+use serde_json::json;
+
 use crate::config::Config;
 use crate::crypto;
 use crate::error::{ApiError, ApiResult};
 use crate::models::db;
 use crate::state::AppState;
+use crate::{audit, ratelimit, settings};
 
 /// Name of the session cookie.
 pub const SESSION_COOKIE: &str = "bgh_session";
@@ -226,7 +232,7 @@ pub async fn authenticate(
         let rest = rest.trim();
         match scheme.to_ascii_lowercase().as_str() {
             "token" | "bearer" => Some(token_auth(state, rest).await?),
-            "basic" => Some(basic_auth(state, rest, opts).await?),
+            "basic" => Some(basic_auth(state, headers, rest, opts).await?),
             _ => return Err(ApiError::bad_credentials()),
         }
     } else if let Some(token) = cookie(headers, SESSION_COOKIE) {
@@ -301,7 +307,12 @@ async fn token_auth(state: &AppState, token: &str) -> ApiResult<AuthContext> {
     })
 }
 
-async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiResult<AuthContext> {
+async fn basic_auth(
+    state: &AppState,
+    headers: &HeaderMap,
+    encoded: &str,
+    opts: AuthOptions,
+) -> ApiResult<AuthContext> {
     let decoded = STANDARD
         .decode(encoded)
         .ok()
@@ -320,9 +331,8 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     if !opts.allow_password {
         return Err(ApiError::bad_credentials());
     }
-    let user = verify_login(state, login, secret)
-        .await?
-        .ok_or_else(ApiError::bad_credentials)?;
+    let ip = request_ip(&state.config, headers);
+    let user = check_password(state, login, secret, PasswordTransport::Git, &ip).await?;
     // Accounts with two-factor authentication must use a token.
     let two_factor: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM user_two_factor WHERE user_id = $1 AND enabled_at IS NOT NULL)",
@@ -340,13 +350,223 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     })
 }
 
-/// Check a login (or primary email) + password. Returns the user on success.
-pub async fn verify_login(
+// ---------------------------------------------------------------------------
+// Password sign-in policy (web login and git/LFS basic auth)
+// ---------------------------------------------------------------------------
+
+/// Failed password attempts are counted per login and per client IP in
+/// this window (seconds).
+pub const LOGIN_WINDOW_SECS: u64 = 900;
+/// Failures per login within the window before sign-in is locked.
+pub const MAX_FAILS_PER_LOGIN: u64 = 10;
+/// Failures per client IP within the window before sign-in is locked.
+pub const MAX_FAILS_PER_IP: u64 = 50;
+
+/// Throttle counter of failed sign-ins for a login (as submitted).
+pub fn login_fail_key(login: &str) -> String {
+    format!("login_fail:{}", login.to_lowercase())
+}
+
+/// Throttle counter of failed sign-ins from a client IP.
+pub fn ip_fail_key(ip: &str) -> String {
+    format!("login_fail_ip:{ip}")
+}
+
+/// Where a password was presented (audited as `transport`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasswordTransport {
+    /// Web / `_bgh` sign-in.
+    Web,
+    /// Git smart HTTP, LFS and wiki git (HTTP basic auth).
+    Git,
+}
+
+impl PasswordTransport {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Git => "git",
+        }
+    }
+}
+
+/// Answer of a password directory (LDAP) for a sign-in attempt.
+#[derive(Debug)]
+pub enum DirectoryAuth {
+    /// No directory configured: built-in passwords only.
+    NotConfigured,
+    /// The directory has no such user; built-in accounts may still sign in.
+    UnknownUser,
+    /// The directory could not be reached; built-in passwords are checked
+    /// as usual (directory accounts are refused, site admins excepted).
+    Unavailable,
+    /// The directory refused the credentials (wrong password, not in the
+    /// restricted group, ...).
+    Rejected,
+    /// Authenticated; the local account (provisioned / updated).
+    Authenticated(Box<db::User>),
+}
+
+/// A password directory consulted before built-in passwords
+/// (`bgh_accounts::ldap` registers the LDAP one at startup).
+pub trait PasswordDirectory: Send + Sync + 'static {
+    /// Check `login` + `password` against the directory.
+    fn authenticate<'a>(
+        &'a self,
+        state: &'a AppState,
+        login: &'a str,
+        password: &'a str,
+    ) -> BoxFuture<'a, ApiResult<DirectoryAuth>>;
+
+    /// Whether the local account is managed by the directory (then its
+    /// built-in password, if any, is not accepted while the directory is
+    /// enabled, except for break-glass site administrators).
+    fn manages<'a>(&'a self, state: &'a AppState, user_id: i64) -> BoxFuture<'a, ApiResult<bool>>;
+}
+
+static DIRECTORY: OnceLock<Arc<dyn PasswordDirectory>> = OnceLock::new();
+
+/// Install the password directory (first call wins; it is process-wide and
+/// reads its configuration from the site settings of each request).
+pub fn set_password_directory(directory: Arc<dyn PasswordDirectory>) {
+    let _ = DIRECTORY.set(directory);
+}
+
+/// 403 for a built-in password while `auth_providers.password_login` is off.
+pub fn password_login_disabled(transport: PasswordTransport) -> ApiError {
+    ApiError::forbidden(match transport {
+        PasswordTransport::Web => {
+            "Password sign-in is disabled on this instance. Sign in with single sign-on."
+        }
+        PasswordTransport::Git => {
+            "Password authentication is disabled on this instance. Use a personal access token instead."
+        }
+    })
+}
+
+/// 429 while failed sign-ins of a login or IP are over the threshold.
+pub fn too_many_failed_logins() -> ApiError {
+    ApiError::Status(
+        axum::http::StatusCode::TOO_MANY_REQUESTS,
+        "Too many failed login attempts. Please try again later.".into(),
+    )
+}
+
+/// Check a sign-in password: the one policy for web sign-in and git/LFS
+/// basic auth.
+///
+/// * Locked (429) after [`MAX_FAILS_PER_LOGIN`] failures of the login or
+///   [`MAX_FAILS_PER_IP`] of the client IP within [`LOGIN_WINDOW_SECS`].
+/// * The password directory (LDAP), when configured, is asked first.
+/// * Built-in passwords are refused (403) when `auth_providers.password_login`
+///   is off, except for site admins with `password_login_admin_exempt`.
+/// * Failures count against both throttles and are audited as
+///   `user.failed_login` with `transport`.
+/// * Suspended accounts → 403. Two-factor is up to the caller.
+pub async fn check_password(
     state: &AppState,
-    login_or_email: &str,
+    login: &str,
     password: &str,
-) -> ApiResult<Option<db::User>> {
-    let user: Option<db::User> = sqlx::query_as(&format!(
+    transport: PasswordTransport,
+    ip: &str,
+) -> ApiResult<db::User> {
+    let login = login.trim();
+    if login.is_empty() || password.is_empty() {
+        return Err(ApiError::bad_credentials());
+    }
+    if ratelimit::count(state, &login_fail_key(login)).await >= MAX_FAILS_PER_LOGIN
+        || ratelimit::count(state, &ip_fail_key(ip)).await >= MAX_FAILS_PER_IP
+    {
+        return Err(too_many_failed_logins());
+    }
+    let s = settings::load(state).await?;
+    let ap = &s.auth_providers;
+    let directory = DIRECTORY.get();
+    if let Some(dir) = directory {
+        match dir.authenticate(state, login, password).await? {
+            DirectoryAuth::NotConfigured
+            | DirectoryAuth::UnknownUser
+            | DirectoryAuth::Unavailable => {}
+            DirectoryAuth::Rejected => {
+                return Err(failed_login(state, login, None, transport, ip).await?);
+            }
+            DirectoryAuth::Authenticated(user) => {
+                return signed_in(state, login, *user, transport, ip).await;
+            }
+        }
+    }
+    let admin_exempt = |u: &db::User| u.site_admin && ap.password_login_admin_exempt;
+    if !ap.password_login {
+        // Decide before checking the password, so a disabled sign-in is
+        // not a password oracle.
+        let user = find_login(state, login).await?;
+        if !user.as_ref().is_some_and(admin_exempt) {
+            return Err(password_login_disabled(transport));
+        }
+    }
+    let Some(user) = verify_login(state, login, password).await? else {
+        return Err(failed_login(state, login, None, transport, ip).await?);
+    };
+    if let Some(dir) = directory
+        && ap.ldap.enabled
+        && !user.site_admin
+        && dir.manages(state, user.id).await?
+    {
+        // Directory accounts use their directory password only (site
+        // admins keep a break-glass built-in password).
+        return Err(failed_login(state, login, Some(&user), transport, ip).await?);
+    }
+    signed_in(state, login, user, transport, ip).await
+}
+
+async fn signed_in(
+    state: &AppState,
+    login: &str,
+    user: db::User,
+    transport: PasswordTransport,
+    ip: &str,
+) -> ApiResult<db::User> {
+    if user.is_suspended() {
+        audit::log_with_ip(
+            &state.db,
+            Some(&user),
+            "user.failed_login",
+            audit::Target::User(user.id),
+            json!({ "reason": "suspended", "transport": transport.name() }),
+            Some(ip),
+        )
+        .await?;
+        return Err(ApiError::forbidden("Sorry. Your account was suspended."));
+    }
+    ratelimit::clear(state, &login_fail_key(login)).await;
+    Ok(user)
+}
+
+/// Count and audit a failed sign-in; returns the 401 to answer with.
+async fn failed_login(
+    state: &AppState,
+    login: &str,
+    user: Option<&db::User>,
+    transport: PasswordTransport,
+    ip: &str,
+) -> ApiResult<ApiError> {
+    ratelimit::hit(state, &login_fail_key(login), LOGIN_WINDOW_SECS).await?;
+    ratelimit::hit(state, &ip_fail_key(ip), LOGIN_WINDOW_SECS).await?;
+    audit::log_with_ip(
+        &state.db,
+        user,
+        "user.failed_login",
+        user.map_or(audit::Target::None, |u| audit::Target::User(u.id)),
+        json!({ "login": login, "transport": transport.name() }),
+        Some(ip),
+    )
+    .await?;
+    Ok(ApiError::bad_credentials())
+}
+
+/// The user signing in with `login_or_email` (login or verified email).
+pub async fn find_login(state: &AppState, login_or_email: &str) -> ApiResult<Option<db::User>> {
+    Ok(sqlx::query_as(&format!(
         "SELECT {} FROM users u
           WHERE u.type = 'User' AND (lower(u.login) = lower($1)
              OR u.id = (SELECT user_id FROM user_emails WHERE lower(email) = lower($1) AND verified))",
@@ -354,7 +574,16 @@ pub async fn verify_login(
     ))
     .bind(login_or_email)
     .fetch_optional(&state.db)
-    .await?;
+    .await?)
+}
+
+/// Check a login (or primary email) + password. Returns the user on success.
+pub async fn verify_login(
+    state: &AppState,
+    login_or_email: &str,
+    password: &str,
+) -> ApiResult<Option<db::User>> {
+    let user = find_login(state, login_or_email).await?;
     // Unknown users still pay for a hash check to equalize timing.
     let hash = user
         .as_ref()
@@ -603,6 +832,23 @@ pub fn client_ip(config: &Config, headers: &HeaderMap, extensions: &Extensions) 
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+tokio::task_local! {
+    /// TCP peer of the request being handled (set by
+    /// [`auth_headers_middleware`]), for code that only sees headers.
+    static PEER: Option<std::net::SocketAddr>;
+}
+
+/// [`client_ip`] for code that has the request headers but not its
+/// extensions (e.g. git basic auth): the peer address comes from the
+/// request scope installed by [`auth_headers_middleware`].
+pub fn request_ip(config: &Config, headers: &HeaderMap) -> String {
+    let mut ext = Extensions::new();
+    if let Ok(Some(peer)) = PEER.try_with(|p| *p) {
+        ext.insert(axum::extract::ConnectInfo(peer));
+    }
+    client_ip(config, headers, &ext)
+}
+
 /// First `X-Forwarded-For` hop, else `X-Real-IP`, regardless of
 /// `BGH_TRUST_PROXY` (spoofable: informational use only, e.g. audit
 /// entries written where only headers are at hand). Prefer [`client_ip`].
@@ -775,14 +1021,21 @@ pub fn token_expiration_header(at: DateTime<Utc>) -> String {
 pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
     let slot = AuthSlot::default();
     req.extensions_mut().insert(slot.clone());
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|c| c.0);
     let accepted = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (mut resp, expiry) = TOKEN_EXPIRATION
         .scope(
             std::cell::Cell::new(None),
-            ACCEPTED_SCOPES.scope(accepted.clone(), async {
-                let resp = next.run(req).await;
-                (resp, TOKEN_EXPIRATION.with(|e| e.get()))
-            }),
+            PEER.scope(
+                peer,
+                ACCEPTED_SCOPES.scope(accepted.clone(), async {
+                    let resp = next.run(req).await;
+                    (resp, TOKEN_EXPIRATION.with(|e| e.get()))
+                }),
+            ),
         )
         .await;
     if let Some(at) = expiry

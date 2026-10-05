@@ -290,5 +290,5 @@ Profile changes record `user` in `user:{id}` and in each org scope
   endpoint is left to admin (B7), because it needs repo storage cleanup.
 - `GET /api/v3/` (trailing slash) is mounted as an absolute web route; it
   is rate limited by `ratelimit::root_middleware`.
-- The `auth_providers.password_login` site setting is not enforced by the
-  password login endpoints yet.
+- `auth_providers.password_login` is enforced since P14 (see
+  `docs/packages/p14-ldap-auth.md`).

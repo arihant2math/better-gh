@@ -310,7 +310,10 @@ pub async fn search(
                 item: CommitItem {
                     html_url: urls.commit_html(&owner, &name, &h.sha),
                     comments_url: format!("{url}/comments"),
-                    node_id: node_id::encode_str(NodeType::Commit, &h.sha),
+                    node_id: node_id::encode_str(
+                        NodeType::Commit,
+                        &format!("{}:{}", h.repo_id, h.sha),
+                    ),
                     commit: CommitInner {
                         url: urls.api(&format!("/repos/{owner}/{name}/git/commits/{}", h.sha)),
                         author: GitActor {

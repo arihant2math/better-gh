@@ -187,9 +187,27 @@ export interface CreateRepoInput {
   description?: string;
   visibility: 'public' | 'private' | 'internal';
   auto_init?: boolean;
+  /** `.gitignore` template name (`GET /gitignore/templates`). */
   gitignore_template?: string;
+  /** License key (`GET /licenses`). */
   license_template?: string;
+  /** Organization team granted access to the new repository. */
+  team_id?: number;
 }
+
+/** license-simple (`GET /licenses`). */
+export interface RestLicenseSimple {
+  key: string;
+  name: string;
+  spdx_id: string | null;
+  url: string | null;
+  node_id: string;
+}
+
+/** `GET /gitignore/templates` → template names. */
+export const listGitignoreTemplates = () => api.get<string[]>(v3('gitignore', 'templates'));
+/** `GET /licenses` → commonly used licenses. */
+export const listLicenses = () => getAll<RestLicenseSimple>(v3('licenses'));
 
 /** `POST /user/repos` or `POST /orgs/{org}/repos` → 201 repository. */
 export function createRepo(org: string | null, input: CreateRepoInput) {
@@ -222,6 +240,8 @@ export const profileKeys = {
   members: (org: string) => `profile:members:${org.toLowerCase()}`,
   teams: (org: string) => `profile:teams:${org.toLowerCase()}`,
   events: (login: string) => `profile:events:${login.toLowerCase()}`,
+  gitignoreTemplates: 'profile:gitignore-templates',
+  licenses: 'profile:licenses',
 };
 
 /**

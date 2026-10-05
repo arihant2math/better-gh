@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { emailProblem, loginProblem, passwordProblem } from '../../api/auth';
 import { ApiError } from '../../api/client';
 import { returnTo } from '../../app/App';
+import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import { getBoot } from '../../boot';
 import { Link, navigate } from '../../router';
@@ -41,6 +42,9 @@ export default function SignupPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [disabled, setDisabled] = useState(!config.signupEnabled);
   const [busy, setBusy] = useState(false);
+  const target = returnTo();
+  const invite = invitationTarget(target);
+  const loginHref = target === '/' ? '/login' : `/login?return_to=${encodeURIComponent(target)}`;
   const refs = { email: useRef<HTMLInputElement>(null), password: useRef<HTMLInputElement>(null), login: useRef<HTMLInputElement>(null) };
 
   const client: Errors = {
@@ -54,7 +58,6 @@ export default function SignupPage() {
     setTouched({ email: true, password: true, login: true });
     const first = (['email', 'password', 'login'] as const).find((f) => client[f]);
     if (first) return refs[first].current?.focus();
-    const target = returnTo();
     setBusy(true);
     setNotice(null);
     setServerErrors({});
@@ -63,7 +66,9 @@ export default function SignupPage() {
       navigate(target, { replace: true });
     } catch (e) {
       const status = statusOf(e);
-      if (status === 403) setDisabled(true);
+      // Closed instances disable the form; invite-only and domain rules explain themselves.
+      if (status === 403 && /disabled/i.test(messageOf(e))) setDisabled(true);
+      else if (status === 403) setNotice(invite ? `${messageOf(e)} Use the email address your invitation was sent to.` : messageOf(e));
       else if (status === 422) {
         const fields = signupFieldErrors(e, login.trim());
         setServerErrors(fields);
@@ -83,7 +88,7 @@ export default function SignupPage() {
           icon={CircleSlashIcon}
           title="Sign up is disabled"
           actions={
-            <Button size="lg" variant="primary" onClick={() => navigate('/login')}>
+            <Button size="lg" variant="primary" onClick={() => navigate(loginHref)}>
               Sign in
             </Button>
           }
@@ -107,10 +112,18 @@ export default function SignupPage() {
   return (
     <AuthLayout
       title={`Create your ${config.siteName} account`}
-      banner={notice && <Flash tone="danger" onDismiss={() => setNotice(null)}>{notice}</Flash>}
+      banner={
+        notice ? (
+          <Flash tone="danger" onDismiss={() => setNotice(null)}>
+            {notice}
+          </Flash>
+        ) : (
+          invite && <Flash>Create an account to accept your invitation to {invitationTargetLabel(invite)}.</Flash>
+        )
+      }
       below={
         <>
-          Already have an account? <Link to="/login">Sign in →</Link>
+          Already have an account? <Link to={loginHref}>Sign in →</Link>
         </>
       }
     >

@@ -32,9 +32,7 @@ use crate::users::{self, NewAccount};
 use crate::util::{self, ClientInfo};
 use crate::validate;
 
-const LOGIN_WINDOW_SECS: u64 = 900;
-const MAX_FAILS_PER_LOGIN: u64 = 10;
-const MAX_FAILS_PER_IP: u64 = 50;
+use bgh_core::auth::{LOGIN_WINDOW_SECS, MAX_FAILS_PER_LOGIN};
 const PENDING_2FA_TTL_SECS: u64 = 300;
 const MAX_2FA_ATTEMPTS: u64 = 5;
 const RESET_TTL_MINUTES: i64 = 60;
@@ -183,11 +181,7 @@ pub async fn signup(
 }
 
 fn login_key(login: &str) -> String {
-    format!("login_fail:{}", login.to_lowercase())
-}
-
-fn ip_key(ip: &str) -> String {
-    format!("login_fail_ip:{ip}")
+    auth::login_fail_key(login)
 }
 
 /// Result of checking a login + password.
@@ -198,7 +192,8 @@ pub enum PasswordLogin {
     TwoFactor(String),
 }
 
-/// Check credentials with throttling (429), suspension (403) and 2FA.
+/// Check credentials ([`auth::check_password`]: directory/LDAP, the
+/// `password_login` policy, throttling (429), suspension (403)) and 2FA.
 /// Bad credentials → 401 "Bad credentials".
 pub async fn password_login(
     state: &AppState,
@@ -206,45 +201,14 @@ pub async fn password_login(
     login: &str,
     password: &str,
 ) -> ApiResult<PasswordLogin> {
-    let login = login.trim();
-    if login.is_empty() || password.is_empty() {
-        return Err(ApiError::bad_credentials());
-    }
-    if ratelimit::count(state, &login_key(login)).await >= MAX_FAILS_PER_LOGIN
-        || ratelimit::count(state, &ip_key(&client.ip)).await >= MAX_FAILS_PER_IP
-    {
-        return Err(too_many(
-            "Too many failed login attempts. Please try again later.",
-        ));
-    }
-    let ip = Some(client.ip.as_str());
-    let Some(user) = auth::verify_login(state, login, password).await? else {
-        ratelimit::hit(state, &login_key(login), LOGIN_WINDOW_SECS).await?;
-        ratelimit::hit(state, &ip_key(&client.ip), LOGIN_WINDOW_SECS).await?;
-        audit::log_with_ip(
-            &state.db,
-            None,
-            "user.failed_login",
-            audit::Target::None,
-            json!({ "login": login }),
-            ip,
-        )
-        .await?;
-        return Err(ApiError::bad_credentials());
-    };
-    if user.is_suspended() {
-        audit::log_with_ip(
-            &state.db,
-            Some(&user),
-            "user.failed_login",
-            audit::Target::User(user.id),
-            json!({ "reason": "suspended" }),
-            ip,
-        )
-        .await?;
-        return Err(ApiError::forbidden("Sorry. Your account was suspended."));
-    }
-    ratelimit::clear(state, &login_key(login)).await;
+    let user = auth::check_password(
+        state,
+        login,
+        password,
+        auth::PasswordTransport::Web,
+        &client.ip,
+    )
+    .await?;
     Ok(match after_first_factor(state, &user).await? {
         LoginStep::Done => PasswordLogin::Done(Box::new(user)),
         LoginStep::TwoFactor(token) => PasswordLogin::TwoFactor(token),

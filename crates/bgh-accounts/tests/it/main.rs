@@ -8,6 +8,8 @@ mod accounts;
 mod apps;
 mod auth;
 mod boot;
+mod invitations;
+mod ldap;
 mod oauth;
 mod orgs;
 mod root;
