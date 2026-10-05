@@ -229,6 +229,8 @@ async fn deleting_the_source_keeps_forks_working() {
         .await;
     c.assert_status(200);
     assert_eq!(c.json()["files"][0]["filename"], "a.txt");
+    // Forks are made self-contained when the deleted source is purged.
+    app.purge_deleted_repos().await;
     let store = bgh_git::RepoStore::from_config(&app.state.config);
     let id = app.get("/api/v3/repos/carol/src").send().await.json()["id"]
         .as_i64()

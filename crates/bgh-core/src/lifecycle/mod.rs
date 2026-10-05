@@ -420,3 +420,44 @@ pub async fn sole_owned_orgs(
     .fetch_all(db)
     .await
 }
+
+/// Purge repositories past their retention: the storage (repository,
+/// wiki) goes in the owners' jobs (`repos.delete_storage`,
+/// `wiki.delete_storage`), blobs only they referenced in the next LFS and
+/// uploads GC runs. Also drops expired transfer requests. Returns how many
+/// repositories were purged. Run hourly by bgh-repos `repos.purge_deleted`.
+pub async fn purge_expired(state: &crate::AppState) -> anyhow::Result<usize> {
+    use serde_json::json;
+    let mut tx = Tx::begin(state).await?;
+    let purged: Vec<(i64, Vec<i64>)> = sqlx::query_as(
+        "DELETE FROM deleted_repositories WHERE id IN (
+            SELECT id FROM deleted_repositories WHERE purge_after <= now()
+             ORDER BY purge_after LIMIT 100 FOR UPDATE SKIP LOCKED)
+         RETURNING id, forks",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for (repo_id, forks) in &purged {
+        crate::jobs::enqueue(
+            &mut *tx,
+            "repos.delete_storage",
+            &json!({ "repo_id": repo_id, "forks": forks }),
+        )
+        .await?;
+        crate::jobs::enqueue(
+            &mut *tx,
+            "wiki.delete_storage",
+            &json!({ "repo_id": repo_id }),
+        )
+        .await?;
+    }
+    if !purged.is_empty() {
+        crate::jobs::enqueue(&mut *tx, "repos.lfs_gc", &json!({})).await?;
+        crate::jobs::enqueue(&mut *tx, "uploads.gc", &json!({})).await?;
+    }
+    sqlx::query("DELETE FROM repo_transfers WHERE expires_at <= now()")
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(purged.len())
+}

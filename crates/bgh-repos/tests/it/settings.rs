@@ -217,7 +217,13 @@ async fn rename_keeps_redirect() {
     assert_eq!(v["url"], app.url("/api/v3/repos/alice/new-name"));
 
     // The old name keeps working for the API and git.
-    let v = app.get("/api/v3/repos/alice/old-name").send().await.json();
+    let res = app.get("/api/v3/repos/alice/old-name").send().await;
+    res.assert_status(301);
+    let v = app
+        .get(&format!("/api/v3/repositories/{id}"))
+        .send()
+        .await
+        .json();
     assert_eq!(v["id"], id);
     assert_eq!(v["full_name"], "alice/new-name");
     common::ok(work.run(&["fetch", "-q", &work.remote]).await);
@@ -299,7 +305,14 @@ async fn transfer_to_org() {
     assert_eq!(v["organization"]["login"], "acme");
 
     // Old URL redirects, team got access.
-    let v = app.get("/api/v3/repos/alice/tool").send().await.json();
+    let res = app.get("/api/v3/repos/alice/tool").send().await;
+    res.assert_status(301);
+    let location = res.header("location").unwrap().to_string();
+    let v = app
+        .get(location.strip_prefix(&app.url("")).unwrap())
+        .send()
+        .await
+        .json();
     assert_eq!(v["full_name"], "acme/acme-tool");
     let teams = app
         .get("/api/v3/repos/acme/acme-tool/teams")

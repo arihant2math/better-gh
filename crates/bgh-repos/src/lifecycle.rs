@@ -32,7 +32,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use crate::jobs::DeleteStorage;
 use crate::json::full_repo;
 
 pub fn web_routes() -> Router<AppState> {
@@ -244,41 +243,10 @@ async fn restore(
     Ok(Json(full_repo(&state, Some(&auth), &access).await?))
 }
 
-/// Remove repositories past their retention: storage (repository, wiki)
-/// goes in jobs, blobs only they referenced in the next GC runs. Also
-/// drops expired transfer requests. Returns how many repositories.
+/// Remove repositories past their retention and expired transfer
+/// requests (`bgh_core::lifecycle::purge_expired`).
 pub async fn purge_expired(state: &AppState) -> anyhow::Result<usize> {
-    let mut tx = Tx::begin(state).await?;
-    let purged: Vec<(i64, Vec<i64>)> = sqlx::query_as(
-        "DELETE FROM deleted_repositories WHERE id IN (
-            SELECT id FROM deleted_repositories WHERE purge_after <= now()
-             ORDER BY purge_after LIMIT 100 FOR UPDATE SKIP LOCKED)
-         RETURNING id, forks",
-    )
-    .fetch_all(&mut *tx)
-    .await?;
-    for (repo_id, forks) in &purged {
-        tx.enqueue(&DeleteStorage {
-            repo_id: *repo_id,
-            forks: forks.clone(),
-        })
-        .await?;
-        bgh_core::jobs::enqueue(
-            &mut *tx,
-            "wiki.delete_storage",
-            &json!({ "repo_id": repo_id }),
-        )
-        .await?;
-    }
-    if !purged.is_empty() {
-        tx.enqueue(&crate::lfs::gc::LfsGc {}).await?;
-        bgh_core::jobs::enqueue(&mut *tx, "uploads.gc", &json!({})).await?;
-    }
-    sqlx::query("DELETE FROM repo_transfers WHERE expires_at <= now()")
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(purged.len())
+    lifecycle::purge_expired(state).await
 }
 
 /// Service `repos.purge_deleted`: [`purge_expired`] hourly.
