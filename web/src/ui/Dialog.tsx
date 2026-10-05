@@ -39,9 +39,13 @@ export function Dialog({
     if (open && !el.open) {
       const prev = document.activeElement as HTMLElement | null;
       el.showModal();
-      // showModal() focuses the first focusable element; if that is our close
-      // button, focus the dialog itself instead (no stray focus ring).
-      if ((document.activeElement as HTMLElement | null)?.dataset.dialogClose !== undefined) el.focus();
+      // showModal() focuses the first focusable element (React's `autoFocus`
+      // ran before and is overridden): prefer an element marked
+      // `data-autofocus`; if it landed on our close button, focus the dialog
+      // itself instead (no stray focus ring).
+      const auto = el.querySelector<HTMLElement>('[data-autofocus]');
+      if (auto) auto.focus();
+      else if ((document.activeElement as HTMLElement | null)?.dataset.dialogClose !== undefined) el.focus();
       return () => {
         if (el.open) el.close();
         prev?.focus?.();

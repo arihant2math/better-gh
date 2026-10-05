@@ -189,17 +189,19 @@ await page.keyboard.press('Enter');
 await page.waitForURL(/openfield\/fieldkit/);
 check(page.url().endsWith('/openfield/fieldkit'), 'command palette navigates');
 
-// 9. g n → inbox, e marks read.
+// 9. g n → inbox, u marks the selected notification read.
 await page.evaluate(() => document.activeElement?.blur());
 await page.keyboard.press('g');
 await page.keyboard.press('n');
-await page.waitForSelector('[role=tablist] >> text=Unread');
-const unreadCount = () => page.locator('[role=tablist] [role=tab] >> nth=0').innerText();
+// Header count ("101 unread"); group headers below repeat the pattern.
+const unreadLabel = page.locator('text=/^\\d+ unread$/').first();
+await unreadLabel.waitFor();
+const unreadCount = () => unreadLabel.innerText();
 const unread1 = await unreadCount();
-await page.keyboard.press('e');
+await page.keyboard.press('u');
 await page.waitForTimeout(50);
 const unread2 = await unreadCount();
-check(parseInt(unread2.replace(/\D/g, ''), 10) === parseInt(unread1.replace(/\D/g, ''), 10) - 1, `e marks notification read (${unread1} → ${unread2})`);
+check(parseInt(unread2.replace(/\D/g, ''), 10) === parseInt(unread1.replace(/\D/g, ''), 10) - 1, `u marks notification read (${unread1} → ${unread2})`);
 
 check(errors.length === 0, `no page errors ${errors.length ? JSON.stringify(errors) : ''}`);
 await browser.close();

@@ -288,6 +288,7 @@ const PaletteBody = observer(function PaletteBody() {
         )}
         <input
           autoFocus
+          data-autofocus
           className={styles.input}
           value={query}
           placeholder={scope.id === 'global' ? 'Search issues, repositories, people, commands…  (type > for commands)' : `Search in ${scope.label}…`}
