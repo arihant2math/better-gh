@@ -96,6 +96,15 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
 `BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`.
 
+Runtime site settings (edited by site admins, `site_settings` table) are
+read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
+cached 5 s per process): sign-up policy (`open|invite|closed` + allowed
+email domains), default repository visibility, max repository size and
+per-owner `storage_quotas` (checked on push), organization creation
+policy, announcement banner, API rate limits, auth providers (password
+login, OIDC), SMTP, maintenance mode. `BGH_SIGNUP_ENABLED=false` still
+disables sign-up regardless of the setting.
+
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
@@ -139,6 +148,15 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
   (`index.html` for unknown non-API GET paths) → `no-cache`; `.br`/`.gz`
   siblings are served when accepted. Unknown `/api/*` and `/_bgh/*` paths
   get GitHub JSON 404s.
+
+Cross-cutting middleware: maintenance mode (`settings::maintenance_middleware`,
+503 + `Retry-After` for API/`_bgh`/git requests except site admins,
+`/healthz`, `/_bgh/site`, `/_bgh/session`) and API rate limiting
+(`ratelimit::rate_limit_middleware` on `/api/v3`, Redis hourly window per
+user / client IP, disabled by default like GHES). Repositories with
+`disabled = true` answer 403 "Repository access blocked" to everyone but
+site admins (`RepoAccess`). Suspended users get 403 on every credential
+(token, session, password).
 
 Compatibility is tested with the official `gh` CLI (`GH_HOST`, GHES mode)
 and octokit-style raw requests.
@@ -221,6 +239,16 @@ add a new one.
   the client can reconcile its optimistic write with the echoed delta.
 * Large/cold data (file contents, diffs, comment bodies for old issues) is
   fetched on demand and cached (immutable when keyed by SHA).
+
+## Audit log
+
+`audit_log` rows are written with `bgh_core::audit::log` /
+`log_with_ip` in the transaction of the action (actions use GitHub's
+dotted names: `repo.create`, `user.login`, `org.rename`, ...). Searched by
+site admins at `/_bgh/admin/audit-log` and in GitHub's shape at
+`/orgs/{org}/audit-log` / `/enterprises/{e}/audit-log` (id cursors).
+Site-level account changes also emit `UserAccountChanged` /
+`OrganizationChanged` events, the source of global webhooks.
 
 ## Background work
 
