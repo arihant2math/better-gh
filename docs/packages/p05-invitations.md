@@ -1,6 +1,8 @@
 # P5 invitations — status
 
-**Done.** Branch `bgh/p05-invitations`. Scope: `docs/PHASE4_PLAN.md` §P5
+**Done.** Branch `bgh/p05-invitations`, self-integrated (fast-forward)
+into `claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build). Scope: `docs/PHASE4_PLAN.md` §P5
 (plus the §5 note "`billing_manager` and leave-org are in P5"). No
 migrations (range 1700–1799 unused).
 
