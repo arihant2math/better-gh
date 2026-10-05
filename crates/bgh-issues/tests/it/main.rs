@@ -10,5 +10,6 @@ mod issues;
 mod labels_milestones;
 mod links;
 mod relationships;
+mod moderation;
 mod smoke;
 mod web_client;

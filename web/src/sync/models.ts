@@ -123,6 +123,8 @@ export interface Issue {
   title: string;
   /** Lazy: `undefined` = not loaded yet (load via partial sync). */
   body?: string | null;
+  /** Lazy, sent with `body`: latest body edit (edit history, P42); `null` if never edited. */
+  bodyEditedAt?: Timestamp | null;
   state: 'open' | 'closed';
   stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
@@ -200,9 +202,14 @@ export interface Comment {
   body: string;
   authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'NONE';
   reactions?: ReactionCounts;
+  /** Hidden by a triager (P42); `null`/absent when shown. */
+  minimizedReason?: MinimizedReason | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
+
+/** Why a comment was hidden (GraphQL `minimizedReason` spelling). */
+export type MinimizedReason = 'spam' | 'abuse' | 'off-topic' | 'outdated' | 'duplicate' | 'resolved';
 
 export interface Review {
   id: ID;
@@ -213,6 +220,7 @@ export interface Review {
   body: string;
   commitId: string;
   submittedAt: Timestamp | null;
+  minimizedReason?: MinimizedReason | null;
 }
 
 export type IssueEventType =
@@ -485,6 +493,7 @@ export interface ReviewComment {
   resolvedById: ID | null;
   diffHunk?: string;
   reactions?: ReactionCounts;
+  minimizedReason?: MinimizedReason | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

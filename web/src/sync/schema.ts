@@ -61,7 +61,7 @@ export const SCHEMA: SchemaMap = {
     scope: repoScope,
     indexes: ['repoId', 'assigneeIds', 'authorId'],
     keys: { number: (i) => `${i.repoId}#${i.number}` },
-    lazyFields: ['body'],
+    lazyFields: ['body', 'bodyEditedAt'],
     cascade: [
       { model: 'comment', field: 'issueId' },
       { model: 'review', field: 'issueId' },

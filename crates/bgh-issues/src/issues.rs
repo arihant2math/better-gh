@@ -41,7 +41,13 @@ pub async fn load(
     number: i64,
 ) -> ApiResult<(RepoAccess, db::Issue)> {
     let access = RepoAccess::load(state, auth, owner, repo).await?;
-    let issue = service::find_issue(&state.db, access.repo.id, number).await?;
+    let issue = match service::find_issue(&state.db, access.repo.id, number).await {
+        Err(ApiError::NotFound) => {
+            crate::moderation::gone_if_deleted(&state.db, access.repo.id, number).await?;
+            return Err(ApiError::NotFound);
+        }
+        r => r?,
+    };
     if !issue.is_pull_request {
         require_issues_enabled(&access)?;
     }
@@ -308,6 +314,7 @@ pub async fn get(
     let issue = match service::find_issue(&state.db, access.repo.id, number).await {
         Ok(i) => i,
         Err(ApiError::NotFound) => {
+            crate::moderation::gone_if_deleted(&state.db, access.repo.id, number).await?;
             return transferred_redirect(&state, auth.as_ref(), &access, number).await;
         }
         Err(e) => return Err(e),
@@ -585,6 +592,16 @@ pub async fn update(
             .execute(&mut *tx)
             .await?;
         changes.insert("body".into(), json!({ "from": issue.body }));
+        bgh_core::moderation::record_edit(
+            &mut tx,
+            issue.repo_id,
+            bgh_core::moderation::ContentKind::Issue,
+            issue.id,
+            auth.user.id,
+            issue.body.as_deref().unwrap_or(""),
+            b.as_deref().unwrap_or(""),
+        )
+        .await?;
         if let Some(text) = b.as_deref() {
             refs::process(
                 &mut tx,

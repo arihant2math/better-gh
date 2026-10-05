@@ -1,14 +1,15 @@
 import { observer } from 'mobx-react-lite';
-import { createContext, useContext, useRef, useState } from 'react';
+import { Suspense, createContext, lazy, useContext, useRef, useState } from 'react';
 import { store } from '../../sync';
 import type { Issue, ReactionContent, ReviewComment } from '../../sync/models';
 import { deleteReviewComment, editReviewComment, replyToThread, setThreadResolved, toggleReviewCommentReaction } from '../../sync/pullMutations';
 import { isPendingComment, type ReviewThread as Thread } from '../../sync/pullSelectors';
 import { viewerReactions } from '../../sync/viewerReactions';
-import { canWrite } from '../../sync/selectors';
+import { canAdmin, reasonLabel, setMinimized } from '../../sync/moderation';
+import { canTriage, canWrite } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
-import { CheckIcon, CopyIcon, FileIcon, KebabHorizontalIcon, PencilIcon, SmileyIcon, TrashIcon, UnfoldIcon } from '../../ui/icons';
+import { CheckIcon, CopyIcon, EyeClosedIcon, EyeIcon, FileIcon, KebabHorizontalIcon, PencilIcon, SmileyIcon, TrashIcon, TriangleDownIcon, UnfoldIcon } from '../../ui/icons';
 import { Markdown } from '../../ui/Markdown';
 import { Menu } from '../../ui/Menu';
 import { Popover } from '../../ui/Popover';
@@ -17,6 +18,10 @@ import { MarkdownEditor } from '../issues/Timeline';
 import { CommitSuggestionsDialog } from './CommitSuggestionsDialog';
 import styles from './Review.module.css';
 import { addToBatch, batchOf, inBatch, removeFromBatch } from './suggestionBatch';
+
+// Moderation (P42): lazily loaded edit history / hide dialog.
+const EditHistory = lazy(() => import('../issues/Moderation').then((m) => ({ default: m.EditHistory })));
+const HideDialog = lazy(() => import('../issues/Moderation').then((m) => ({ default: m.HideDialog })));
 
 /**
  * Lookup of the current text of `path` lines `start..end` (RIGHT side) for
@@ -180,6 +185,13 @@ export const ReviewCommentView = observer(function ReviewCommentView({ comment: 
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
   const writable = canWrite(c.repoId);
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLButtonElement>(null);
+  const [owner = '', name = ''] = repo.split('/');
+  const collapsed = !!c.minimizedReason && !showHidden && editing === null;
+  const triage = c.id > 0 && !pending && canTriage(c.repoId);
   return (
     <div className={cx(styles.comment, c.id < 0 && styles.optimistic)} id={`discussion_r${c.id}`}>
       <Avatar user={author} size={24} />
@@ -188,8 +200,21 @@ export const ReviewCommentView = observer(function ReviewCommentView({ comment: 
           <strong>{author?.login ?? 'ghost'}</strong>
           <span className={styles.subtle}>
             <RelativeTime date={c.createdAt} />
-            {c.updatedAt !== c.createdAt && ' · edited'}
+            {c.updatedAt !== c.createdAt && c.id < 0 && ' · edited'}
           </span>
+          {c.updatedAt !== c.createdAt && c.id > 0 && (
+            <button ref={historyRef} type="button" className={styles.editedButton} aria-expanded={historyOpen} aria-haspopup="dialog" onClick={() => setHistoryOpen((o) => !o)}>
+              edited <TriangleDownIcon size={12} />
+            </button>
+          )}
+          {c.minimizedReason && (
+            <span className={styles.minimizedNote}>
+              · Marked as {reasonLabel(c.minimizedReason)}.{' '}
+              <button type="button" className={styles.linkButton} onClick={() => setShowHidden((v) => !v)} aria-expanded={!collapsed}>
+                {collapsed ? 'Show comment' : 'Hide comment'}
+              </button>
+            </span>
+          )}
           {pending && <span className={cx(styles.chip, styles.chipPending)}>Pending</span>}
           {c.authorId === pr.authorId && <span className={styles.chip}>Author</span>}
           <span className={styles.spacer} />
@@ -204,13 +229,36 @@ export const ReviewCommentView = observer(function ReviewCommentView({ comment: 
                 items={[
                   { id: 'copy', label: 'Copy link', icon: CopyIcon, onSelect: () => void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#discussion_r${c.id}`) },
                   ...(mine ? [{ id: 'edit', label: 'Edit', icon: PencilIcon, onSelect: () => setEditing(c.body) }] : []),
+                  ...(triage
+                    ? [
+                        c.minimizedReason
+                          ? { id: 'unhide', label: 'Unhide', icon: EyeIcon, onSelect: () => void setMinimized({ reviewComment: c }, null) }
+                          : { id: 'hide', label: 'Hide', icon: EyeClosedIcon, onSelect: () => setHiding(true) },
+                      ]
+                    : []),
                   ...(mine || writable ? [{ separator: true as const, id: 's' }, { id: 'delete', label: 'Delete', icon: TrashIcon, danger: true, onSelect: () => deleteReviewComment(c) }] : []),
                 ]}
               />
             </>
           )}
         </div>
-        {editing !== null ? (
+        {historyOpen && (
+          <Suspense fallback={null}>
+            <EditHistory
+              target={{ owner, repo: name, kind: 'review_comment', id: c.id, canDelete: mine || canAdmin(c.repoId) }}
+              anchor={historyRef}
+              onClose={() => setHistoryOpen(false)}
+              authorLogin={author?.login ?? 'ghost'}
+              createdAt={c.createdAt}
+            />
+          </Suspense>
+        )}
+        {hiding && (
+          <Suspense fallback={null}>
+            <HideDialog onClose={() => setHiding(false)} onHide={(reason) => void setMinimized({ reviewComment: c }, reason)} />
+          </Suspense>
+        )}
+        {collapsed ? null : editing !== null ? (
           <MarkdownEditor
             value={editing}
             onChange={setEditing}
@@ -226,7 +274,7 @@ export const ReviewCommentView = observer(function ReviewCommentView({ comment: 
         ) : (
           <CommentBody comment={c} pr={pr} repo={repo} pending={pending} />
         )}
-        {c.id > 0 && !pending && <Reactions comment={c} />}
+        {c.id > 0 && !pending && !collapsed && <Reactions comment={c} />}
       </div>
     </div>
   );

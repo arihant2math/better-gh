@@ -18,6 +18,7 @@ pub mod json;
 pub mod labels;
 pub mod links;
 pub mod milestones;
+pub mod moderation;
 pub mod pins;
 pub mod reactions;
 pub mod refs;
@@ -185,6 +186,27 @@ pub fn web_router() -> Router<AppState> {
         .route(
             "/_bgh/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{content}",
             delete(reactions::delete_own_for_comment),
+        )
+        // Moderation (P42): hide comments, edit history, issue deletion.
+        .route(
+            "/_bgh/repos/{owner}/{repo}/minimized/{kind}",
+            get(moderation::minimized_list),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/minimized/{kind}/{id}",
+            put(moderation::minimize).delete(moderation::unminimize),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/edits/{kind}/{id}",
+            get(moderation::edits),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/edits/{kind}/{id}/{edit_id}",
+            delete(moderation::delete_edit),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}",
+            delete(moderation::delete_issue),
         )
 }
 

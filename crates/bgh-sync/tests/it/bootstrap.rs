@@ -462,13 +462,14 @@ async fn partial_sync_lazy_models() {
     assert_eq!(
         *find(&body, "comment", comment),
         json!({"id": comment, "repoId": repo, "issueId": pr, "authorId": ada.id, "body": "LGTM",
-               "authorAssociation": "OWNER", "reactions": {},
+               "authorAssociation": "OWNER", "reactions": {}, "minimizedReason": null,
                "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-01T00:00:00Z"})
     );
     assert_eq!(
         *find(&body, "review", review),
         json!({"id": review, "repoId": repo, "issueId": pr, "authorId": ada.id, "state": "APPROVED",
-               "body": "ok", "commitId": "aaaa", "submittedAt": "2024-01-02T00:00:00Z"})
+               "body": "ok", "commitId": "aaaa", "submittedAt": "2024-01-02T00:00:00Z",
+               "minimizedReason": null})
     );
     // Someone else's pending review is private.
     assert!(rows(&body, "review").iter().all(|r| r["id"] != pending));
@@ -586,6 +587,8 @@ async fn tx_helpers_record_bootstrap_shapes() {
     let us = format!("user:{}", ada.id);
     let mut boot_issue = find(&body, "issue", i).clone();
     boot_issue["body"] = json!("the body");
+    // Lazy, sent with the body (P42 edit history).
+    boot_issue["bodyEditedAt"] = Value::Null;
     let want = vec![
         (
             rs.clone(),

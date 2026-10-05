@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use async_graphql::{Context, ID, MergedObject, Object, Union};
 use bgh_core::markdown::{self, RenderContext};
+use bgh_core::moderation::ContentKind;
 use bgh_core::node_id::NodeType;
 use bgh_core::prelude::*;
 use sqlx::{Postgres, QueryBuilder};
@@ -147,20 +148,36 @@ impl Conversation {
     pub async fn updated_at(&self) -> DateTime {
         dt(self.i.updated_at)
     }
-    pub async fn last_edited_at(&self) -> Option<DateTime> {
-        None
+    pub async fn last_edited_at(&self, ctx: &Context<'_>) -> GResult<Option<DateTime>> {
+        super::moderation::last_edited_at(ctx, ContentKind::Issue, self.i.id).await
     }
     pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.i.created_at))
     }
-    pub async fn includes_created_edit(&self) -> bool {
-        false
+    pub async fn includes_created_edit(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::includes_created_edit(ctx, ContentKind::Issue, self.i.id).await
     }
     pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.i.author_id).await
     }
-    pub async fn editor(&self) -> Option<Actor> {
-        None
+    pub async fn editor(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+        super::moderation::editor(ctx, ContentKind::Issue, self.i.id).await
+    }
+    pub async fn user_content_edits(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<super::moderation::UserContentEditConnection> {
+        super::moderation::user_content_edits(
+            ctx,
+            ContentKind::Issue,
+            self.i.id,
+            ConnArgs::new(first, last, after, before),
+        )
+        .await
     }
     pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.i.repo_id, self.i.author_id).await
@@ -885,8 +902,8 @@ impl IssueComment {
     pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.0.author_id).await
     }
-    pub async fn editor(&self) -> Option<Actor> {
-        None
+    pub async fn editor(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+        super::moderation::editor(ctx, ContentKind::Comment, self.0.id).await
     }
     pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.0.repo_id, self.0.author_id).await
@@ -912,17 +929,46 @@ impl IssueComment {
     pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.0.created_at))
     }
-    pub async fn last_edited_at(&self) -> Option<DateTime> {
-        edited(self.0.created_at, self.0.updated_at).then(|| dt(self.0.updated_at))
+    pub async fn last_edited_at(&self, ctx: &Context<'_>) -> GResult<Option<DateTime>> {
+        // Edits from before the history was recorded only moved `updated_at`.
+        Ok(
+            super::moderation::last_edited_at(ctx, ContentKind::Comment, self.0.id)
+                .await?
+                .or_else(|| {
+                    edited(self.0.created_at, self.0.updated_at).then(|| dt(self.0.updated_at))
+                }),
+        )
     }
-    pub async fn includes_created_edit(&self) -> bool {
-        edited(self.0.created_at, self.0.updated_at)
+    pub async fn includes_created_edit(&self, ctx: &Context<'_>) -> GResult<bool> {
+        Ok(edited(self.0.created_at, self.0.updated_at)
+            || super::moderation::includes_created_edit(ctx, ContentKind::Comment, self.0.id)
+                .await?)
     }
-    pub async fn is_minimized(&self) -> bool {
-        false
+    pub async fn is_minimized(&self, ctx: &Context<'_>) -> GResult<bool> {
+        Ok(
+            super::moderation::minimized_reason(ctx, ContentKind::Comment, self.0.id)
+                .await?
+                .is_some(),
+        )
     }
-    pub async fn minimized_reason(&self) -> Option<String> {
-        None
+    pub async fn minimized_reason(&self, ctx: &Context<'_>) -> GResult<Option<String>> {
+        super::moderation::minimized_reason(ctx, ContentKind::Comment, self.0.id).await
+    }
+    pub async fn user_content_edits(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<super::moderation::UserContentEditConnection> {
+        super::moderation::user_content_edits(
+            ctx,
+            ContentKind::Comment,
+            self.0.id,
+            ConnArgs::new(first, last, after, before),
+        )
+        .await
     }
     pub async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
         Ok(Some(
@@ -971,8 +1017,8 @@ impl IssueComment {
     pub async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
-    pub async fn viewer_can_minimize(&self) -> bool {
-        false
+    pub async fn viewer_can_minimize(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::viewer_can_minimize(ctx, self.0.repo_id).await
     }
     pub async fn issue(&self, ctx: &Context<'_>) -> GResult<Issue> {
         Ok(Issue::new(self.issue_row(ctx).await?))

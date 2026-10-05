@@ -10,6 +10,7 @@ pub mod git;
 pub mod issue;
 pub mod issue_type;
 pub mod misc;
+pub mod moderation;
 pub mod project;
 pub mod pull;
 pub mod release;

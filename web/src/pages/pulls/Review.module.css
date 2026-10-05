@@ -404,6 +404,32 @@
   color: var(--fg-muted);
 }
 
+/* Moderation (P42): "edited ▾" revisions button, hidden comments. */
+.editedButton {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.editedButton:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.minimizedNote {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  font-style: italic;
+}
+
 .linkButton {
   padding: 0;
   border: 0;
@@ -412,4 +438,10 @@
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
+}
+
+  color: var(--accent);
+  font: inherit;
+  font-style: normal;
+  cursor: pointer;
 }
