@@ -8,6 +8,7 @@
 import type { Repo, User } from '../sync/models';
 import { blobSha, highlight, languageOf } from './content';
 import { installContentsRoutes } from './contents';
+import { repoLicense } from './extra/licenses';
 import { gitFor, splitLines, type MockCommit, type MockGit } from './git';
 import { installCommitCommentRoutes } from './commitComments';
 import { rulesetProtects } from './extra/rulesets';
@@ -346,7 +347,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
         subscribers_count: repo.watchers,
         forks_count: repo.forks,
         open_issues_count: repo.openIssues + repo.openPulls,
-        license: { key: 'mit', name: 'MIT License', spdx_id: 'MIT' },
+        license: repoLicense(s, repo),
         archived: repo.archived,
         fork: repo.fork,
         size: 412,

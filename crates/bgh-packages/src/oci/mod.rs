@@ -320,6 +320,11 @@ pub async fn authorize(
     action: &'static str,
 ) -> OciResult<(Repo, Caps)> {
     let scope = format!("repository:{full_name}:{action}");
+    // Private mode: anonymous callers (and tokens minted for them) get
+    // nothing, just the challenge.
+    if caller.is_anonymous() && bgh_core::privacy::private_mode(state).await? {
+        return Err(unauthorized(state, Some(&scope), false));
+    }
     let repo = load_repo(state, full_name).await?;
     let Some(repo) = repo else {
         if caller.is_anonymous() {
@@ -544,6 +549,10 @@ fn bad_credentials(state: &AppState) -> Response {
 
 /// Mint a JWT granting the subset of `scopes` the caller is allowed.
 async fn issue(state: &AppState, auth: Option<AuthContext>, scopes: Vec<String>) -> Response {
+    // Private mode: no anonymous tokens.
+    if auth.is_none() && bgh_core::privacy::private_mode(state).await.unwrap_or(true) {
+        return bad_credentials(state);
+    }
     let mut access: Vec<Access> = Vec::new();
     for scope in &scopes {
         let Some((kind, rest)) = scope.split_once(':') else {

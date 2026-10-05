@@ -56,8 +56,11 @@ describe('header helpers', () => {
     expect(syncSummary(0, 3, 'acme/api:main')).toBe('This branch is 3 commits behind acme/api:main.');
     expect(syncSummary(1, 2, 'u:main')).toBe('This branch is 1 commit ahead of and 2 commits behind u:main.');
   });
-  it('only security and insights keep placeholders', () => {
-    expect([...PLACEHOLDER_TABS].sort()).toEqual(['pulse', 'security']);
+  it('only security keeps a placeholder', () => {
+    expect([...PLACEHOLDER_TABS].sort()).toEqual(['security']);
+  });
+  it('insights sub-pages select the Insights tab', () => {
+    for (const s of ['pulse', 'graphs', 'community', 'network']) expect(currentRepoTab(s)).toBe('pulse');
   });
 });
 

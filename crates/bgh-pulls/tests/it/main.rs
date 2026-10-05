@@ -9,5 +9,6 @@ mod diffview;
 mod governance;
 mod merge;
 mod pulls;
+mod rest_compat;
 mod reviews;
 mod web_client;

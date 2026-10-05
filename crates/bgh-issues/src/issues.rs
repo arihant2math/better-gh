@@ -795,7 +795,7 @@ async fn list_cross_repo(
         qb.push(" AND i.repo_id IN ");
         push_member_repos(&mut qb, uid, scope);
     } else {
-        qb.push(" AND (rr.visibility = 'public' OR i.repo_id IN ");
+        qb.push(" AND (rr.visibility IN ('public', 'internal') OR i.repo_id IN ");
         push_member_repos(&mut qb, uid, scope);
         qb.push(")");
     }

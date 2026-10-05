@@ -171,11 +171,9 @@ pub fn readable(r: &bgh_core::perms::ReadableRepos, alias: &str) -> Sql {
     if r.all {
         s.raw("TRUE");
     } else {
-        s.raw(format!(
-            "{alias}.visibility = 'public' OR {alias}.id = ANY("
-        ))
-        .arg(Arg::I64s(r.private_ids.clone()))
-        .raw(")");
+        s.raw(format!("{} OR {alias}.id = ANY(", r.visibility_sql(alias)))
+            .arg(Arg::I64s(r.private_ids.clone()))
+            .raw(")");
     }
     s
 }

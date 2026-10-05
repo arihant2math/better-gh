@@ -112,6 +112,57 @@ async fn list_branches(
     Ok(p.page_with_total(items, total))
 }
 
+/// `branch-short` (`branches-where-head`).
+#[derive(Debug, Serialize)]
+pub struct BranchShort {
+    pub name: String,
+    pub commit: ShaUrl,
+    pub protected: bool,
+}
+
+/// `GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head`:
+/// branches whose tip is the commit (422 when it doesn't exist).
+pub async fn where_head(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo, sha)): Path<(String, String, String)>,
+) -> ApiResult<Json<Vec<BranchShort>>> {
+    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
+    let rev = sha.clone();
+    let found = crate::store(&state)
+        .read(access.repo.id, move |r| {
+            let commit = match r.resolve_commit(&rev) {
+                Ok(c) => c,
+                Err(bgh_git::GitError::NotFound(_)) => return Ok(None),
+                Err(e) => return Err(e),
+            };
+            let branches = r.branches()?;
+            Ok(Some((commit, branches)))
+        })
+        .await?;
+    let Some((commit, branches)) = found else {
+        return Err(ApiError::unprocessable(format!(
+            "No commit found for SHA: {sha}"
+        )));
+    };
+    let rules = RepoRules::load(&state.db, &access.repo).await?;
+    let r = RepoRef::new(&state.urls, &access);
+    let items = branches
+        .iter()
+        .filter(|b| b.peeled == commit)
+        .map(|b| {
+            let name = b.short_name().to_string();
+            BranchShort {
+                commit: short_commit(&r, &b.peeled),
+                protected: rules.protection_for(&name).is_some()
+                    || rules.rulesets_for(&b.name).next().is_some(),
+                name,
+            }
+        })
+        .collect();
+    Ok(Json(items))
+}
+
 /// `branch-with-protection`.
 #[derive(Debug, Serialize)]
 pub struct Branch {

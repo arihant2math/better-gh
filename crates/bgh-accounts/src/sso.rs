@@ -46,7 +46,7 @@ use sha2::{Digest, Sha256};
 
 use crate::session::{self, LoginStep};
 use crate::util::{self, ClientInfo};
-use crate::{users, validate};
+use crate::{group_sync, users, validate};
 
 const STATE_TTL_SECS: u64 = 600;
 const DISCOVERY_TTL_SECS: u64 = 3600;
@@ -65,6 +65,8 @@ pub struct OidcProvider {
     pub login_claim: String,
     /// Lower-case domains; empty = any.
     pub allowed_domains: Vec<String>,
+    /// Claim listing the user's groups (team sync, [`group_sync`]).
+    pub groups_claim: Option<String>,
 }
 
 impl From<&settings::OidcProvider> for OidcProvider {
@@ -96,6 +98,11 @@ impl From<&settings::OidcProvider> for OidcProvider {
                 .map(|d| d.trim().to_lowercase())
                 .filter(|d| !d.is_empty())
                 .collect(),
+            groups_claim: p
+                .groups_claim
+                .clone()
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty()),
         }
     }
 }
@@ -286,6 +293,22 @@ struct Identity {
     email_verified: bool,
     login: Option<String>,
     name: Option<String>,
+    /// Values of the groups claim (`None` when not configured or absent).
+    groups: Option<Vec<String>>,
+}
+
+/// Values of a groups claim: an array of strings or one string.
+fn claim_groups(claims: &Value, claim: Option<&str>) -> Option<Vec<String>> {
+    match &claims[claim?] {
+        Value::Array(a) => Some(
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect(),
+        ),
+        Value::String(s) => Some(vec![s.clone()]),
+        _ => None,
+    }
 }
 
 fn claims_identity(
@@ -325,6 +348,7 @@ fn claims_identity(
         email_verified: claims["email_verified"].as_bool().unwrap_or(false),
         login: claims[p.login_claim.as_str()].as_str().map(str::to_string),
         name: claims["name"].as_str().map(str::to_string),
+        groups: claim_groups(claims, p.groups_claim.as_deref()),
     })
 }
 
@@ -539,6 +563,9 @@ pub async fn callback(
         ident.name = ident
             .name
             .or_else(|| info["name"].as_str().map(str::to_string));
+        ident.groups = ident
+            .groups
+            .or_else(|| claim_groups(&info, p.groups_claim.as_deref()));
     }
     let user = match resolve_user(&state, &p, &ident).await? {
         Ok(u) => u,
@@ -546,6 +573,10 @@ pub async fn callback(
     };
     if user.is_suspended() {
         return Ok(sso_error("Sorry. Your account was suspended."));
+    }
+    if let Some(groups) = &ident.groups {
+        let groups = groups.iter().cloned().collect();
+        group_sync::apply_user_groups(&state, &user, group_sync::OIDC, &groups).await?;
     }
     match session::after_first_factor(&state, &user).await? {
         LoginStep::TwoFactor(token) => {

@@ -234,10 +234,21 @@ async fn prepare_spec(
     let settings = bgh_core::settings::load(state)
         .await
         .map_err(|e| anyhow::anyhow!("loading settings: {e}"))?;
-    let mut permissions = match &stored.permissions {
+    let default = || TokenPermissions::default_for(&settings.actions.default_workflow_permissions);
+    let resolve = |p: &Option<crate::workflow::Permissions>| match p {
         Some(p) => token_permissions(p),
-        None => TokenPermissions::default_for(&settings.actions.default_workflow_permissions),
+        None => default(),
     };
+    // A called job (reusable workflow) without its own `permissions:`
+    // inherits its caller's; every caller on the way caps it.
+    let mut permissions = match (&stored.permissions, stored.permission_caps.last()) {
+        (Some(p), _) => token_permissions(p),
+        (None, Some(cap)) => resolve(cap),
+        (None, None) => default(),
+    };
+    for cap in &stored.permission_caps {
+        permissions = intersect(&permissions, &resolve(cap));
+    }
     if from_fork {
         permissions = permissions.read_only();
     }
@@ -273,14 +284,35 @@ async fn prepare_spec(
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))
         .collect();
 
-    let mut secrets = if from_fork {
-        IndexMap::new()
-    } else {
-        crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
-    };
-    secrets.insert("GITHUB_TOKEN".into(), token.clone());
     let vars = crate::scoped::vars_for(state, &repo, spec.environment.as_deref()).await?;
     spec.vars = Value::Object(vars);
+    let mut secrets = if from_fork {
+        IndexMap::new()
+    } else if stored.secret_layers.is_empty() {
+        crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
+    } else {
+        // A called job: the caller's secrets through each `secrets:` hop;
+        // its own environment's secrets are added on top (they can't be
+        // passed by a caller).
+        let base = crate::scoped::secrets_for(state, &repo, None).await?;
+        let mut layered = crate::reusable::apply_secret_layers(
+            base.clone(),
+            &stored.secret_layers,
+            &spec.github,
+            &spec.vars,
+        );
+        if spec.environment.is_some() {
+            for (k, v) in
+                crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
+            {
+                if base.get(&k) != Some(&v) {
+                    layered.insert(k, v);
+                }
+            }
+        }
+        layered
+    };
+    secrets.insert("GITHUB_TOKEN".into(), token.clone());
     spec.token = token;
     let secrets_json: serde_json::Map<String, Value> = secrets
         .iter()
@@ -328,6 +360,11 @@ async fn prepare_spec(
         first.started_at = Some(Utc::now());
     }
     Ok((spec, token_row.id, steps))
+}
+
+/// Per category, the lower of the two levels.
+fn intersect(a: &TokenPermissions, b: &TokenPermissions) -> TokenPermissions {
+    TokenPermissions::from_pairs(a.iter().map(|(c, x)| (c, x.min(b.get(c)))))
 }
 
 /// The token permission map of a workflow `permissions:` value. Listed
@@ -506,7 +543,7 @@ pub async fn complete_job(
 pub async fn reap_stale_jobs(state: &AppState) -> anyhow::Result<usize> {
     let stale: Vec<JobRow> = sqlx::query_as(&format!(
         "SELECT {} FROM actions_jobs j
-          WHERE j.status = 'in_progress'
+          WHERE j.status = 'in_progress' AND j.kind = 'job'
             AND (j.started_at < now() - make_interval(mins => j.timeout_minutes + 10)
                  OR j.updated_at < now() - interval '10 minutes'
                  OR j.runner_id IS NULL)",
