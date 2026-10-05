@@ -1,9 +1,21 @@
 //! Repository maintenance run by background jobs: `git gc`, `git fsck`,
-//! `git repack`, size and language recalculation.
+//! `git repack`, size and language recalculation, forced pruning and fork
+//! dissociation. Object maintenance is fork-network aware
+//! (`bgh_repos::maintenance::run_task`): repositories other forks borrow
+//! objects from are never pruned, and nothing is pruned before the grace
+//! period (`git_maintenance.prune_grace_days`) except by the forced `prune`.
 //!
-//! * `POST /_bgh/admin/repos/{owner}/{repo}/maintenance` `{"operation"}` → 202
+//! * `POST /_bgh/admin/repos/{owner}/{repo}/maintenance` `{"operation",
+//!   "force"}` → 202 (`prune` needs `"force": true` and a repository no
+//!   other repository borrows from; 422 otherwise)
 //! * `GET  /_bgh/admin/repos/{owner}/{repo}/maintenance` → recent runs
+//! * `POST /_bgh/admin/repos/{owner}/{repo}/detach` → 202: leave the fork
+//!   network (clear parent/source, then a `dissociate` run)
 //! * `POST /_bgh/admin/maintenance` `{"operation"}` → 202, every repository
+//!   (not `prune` / `dissociate`)
+//! * `GET  /_bgh/admin/git-maintenance` → schedule settings + status counts
+//! * `GET  /_bgh/admin/git-maintenance/repos?status=` → per-repo status
+//! * `POST /_bgh/admin/git-maintenance/run` → 202: one scheduler pass now
 
 use std::collections::HashMap;
 use std::path::Path as FsPath;
@@ -21,6 +33,8 @@ use serde_json::{Value, json};
 use sqlx::FromRow;
 use tokio::process::Command;
 
+use bgh_git::maintenance::Task;
+
 use crate::common::{self, log, repo_target};
 
 pub const OPERATIONS: &[&str] = &[
@@ -29,7 +43,12 @@ pub const OPERATIONS: &[&str] = &[
     "repack",
     "recalculate_size",
     "recalculate_languages",
+    "prune",
+    "dissociate",
 ];
+
+/// Operations that `POST /_bgh/admin/maintenance` may not run everywhere.
+const SINGLE_REPO_ONLY: &[&str] = &["prune", "dissociate"];
 
 /// Job: execute one `repo_maintenance_runs` row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +110,17 @@ impl From<RunRow> for RunJson {
 pub struct OperationBody {
     #[serde(default)]
     pub operation: String,
+    /// Required (`true`) for `prune`.
+    #[serde(default)]
+    pub force: bool,
+}
+
+fn op_error(message: impl Into<String>) -> ApiError {
+    ApiError::invalid_field(FieldError::custom(
+        "Maintenance",
+        "operation",
+        message.into(),
+    ))
 }
 
 fn check_operation(op: &str) -> ApiResult<()> {
@@ -115,27 +145,134 @@ pub async fn schedule(
 ) -> ApiResult<(StatusCode, Json<RunJson>)> {
     check_operation(&body.operation)?;
     let (owner, repo) = common::repo(&state, &owner, &name).await?;
-    let mut tx = Tx::begin(&state).await?;
+    if body.operation == "prune" {
+        if !body.force {
+            return Err(op_error(
+                "prune removes unreachable objects immediately; pass \"force\": true",
+            ));
+        }
+        let role = bgh_repos::maintenance::network_role(&state, repo.id)
+            .await
+            .map_err(ApiError::internal)?;
+        if role.has_dependents {
+            return Err(op_error(
+                "other repositories borrow objects from this one; prune is not allowed",
+            ));
+        }
+    }
+    let run = insert_run(
+        &state,
+        &auth,
+        &headers,
+        &owner,
+        &repo,
+        &body.operation,
+        body.force,
+    )
+    .await?;
+    Ok((StatusCode::ACCEPTED, Json(run.into())))
+}
+
+/// Insert a run row, enqueue its job and audit it (one transaction).
+async fn insert_run(
+    state: &AppState,
+    auth: &RequireSiteAdmin,
+    headers: &HeaderMap,
+    owner: &db::User,
+    repo: &db::Repository,
+    operation: &str,
+    force: bool,
+) -> ApiResult<RunRow> {
+    let mut tx = Tx::begin(state).await?;
     let run: RunRow = sqlx::query_as(&format!(
         "INSERT INTO repo_maintenance_runs (repo_id, operation, requested_by_id)
          VALUES ($1, $2, $3) RETURNING {RUN_COLUMNS}"
     ))
     .bind(repo.id)
-    .bind(&body.operation)
+    .bind(operation)
     .bind(auth.user.id)
     .fetch_one(&mut *tx)
     .await?;
     tx.enqueue(&RepoMaintenance { run_id: run.id }).await?;
+    let mut data = json!({ "operation": operation, "run_id": run.id, "repo": format!("{}/{}", owner.login, repo.name) });
+    if force {
+        data["force"] = json!(true);
+    }
+    log(
+        &mut tx,
+        auth,
+        headers,
+        "repo.maintenance",
+        repo_target(owner, repo.id),
+        data,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(run)
+}
+
+/// `POST /_bgh/admin/repos/{owner}/{repo}/detach` → 202 run: the
+/// repository leaves its fork network. Its parent/source links are cleared
+/// (its own forks get it as their new source) and a `dissociate` run makes
+/// its storage self-contained.
+pub async fn detach(
+    State(state): State<AppState>,
+    auth: RequireSiteAdmin,
+    headers: HeaderMap,
+    Path((owner, name)): Path<(String, String)>,
+) -> ApiResult<(StatusCode, Json<RunJson>)> {
+    let (owner, repo) = common::repo(&state, &owner, &name).await?;
+    let store = bgh_repos::store(&state);
+    let dir = store.path(repo.id);
+    let borrows = tokio::task::spawn_blocking(move || bgh_git::maintenance::has_alternates(&dir))
+        .await
+        .map_err(ApiError::internal)?;
+    if repo.parent_id.is_none() && repo.source_id.is_none() && !borrows {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "Repository",
+            "parent",
+            "repository is not part of a fork network",
+        )));
+    }
+    let mut tx = Tx::begin(&state).await?;
+    sqlx::query("UPDATE repositories SET fork = false, parent_id = NULL, source_id = NULL, updated_at = now() WHERE id = $1")
+        .bind(repo.id)
+        .execute(&mut *tx)
+        .await?;
+    if let Some(parent) = repo.parent_id {
+        sqlx::query(
+            "UPDATE repositories SET forks_count = greatest(forks_count - 1, 0) WHERE id = $1",
+        )
+        .bind(parent)
+        .execute(&mut *tx)
+        .await?;
+    }
+    // The detached repository becomes the root of its own subtree.
+    let moved: Vec<i64> = sqlx::query_scalar(
+        "WITH RECURSIVE sub AS (
+             SELECT id FROM repositories WHERE parent_id = $1
+             UNION SELECT r.id FROM repositories r JOIN sub ON r.parent_id = sub.id
+         )
+         UPDATE repositories SET source_id = $1 WHERE id IN (SELECT id FROM sub) RETURNING id",
+    )
+    .bind(repo.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for id in std::iter::once(repo.id).chain(repo.parent_id).chain(moved) {
+        tx.sync_model(SyncModel::Repo, id, SyncAction::Update)
+            .await?;
+    }
     log(
         &mut tx,
         &auth,
         &headers,
-        "repo.maintenance",
+        "repo.detach_fork_network",
         repo_target(&owner, repo.id),
-        json!({ "operation": body.operation, "run_id": run.id, "repo": format!("{}/{}", owner.login, repo.name) }),
+        json!({ "repo": format!("{}/{}", owner.login, repo.name), "parent_id": repo.parent_id }),
     )
     .await?;
     tx.commit().await?;
+    let run = insert_run(&state, &auth, &headers, &owner, &repo, "dissociate", false).await?;
     Ok((StatusCode::ACCEPTED, Json(run.into())))
 }
 
@@ -168,6 +305,12 @@ pub async fn schedule_all(
     Json(body): Json<OperationBody>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     check_operation(&body.operation)?;
+    if SINGLE_REPO_ONLY.contains(&body.operation.as_str()) {
+        return Err(op_error(format!(
+            "{} can only run on a single repository",
+            body.operation
+        )));
+    }
     let mut tx = Tx::begin(&state).await?;
     let n: i64 = sqlx::query_scalar(
         "WITH runs AS (
@@ -344,10 +487,28 @@ async fn execute(state: &AppState, run: &RunRow) -> anyhow::Result<(bool, String
         return Ok((false, "repository storage does not exist".into()));
     }
     let dir = store.path(run.repo_id);
+    let object_task = match run.operation.as_str() {
+        "gc" => Some(Task::Gc),
+        "repack" => Some(Task::Repack),
+        "prune" => Some(Task::PruneNow),
+        _ => None,
+    };
+    if let Some(task) = object_task {
+        return Ok(
+            match bgh_repos::maintenance::run_task(state, run.repo_id, task).await {
+                Ok(out) => (true, if out.is_empty() { "done".into() } else { out }),
+                Err(e) => (false, format!("{e:#}")),
+            },
+        );
+    }
     match run.operation.as_str() {
-        "gc" => git(state, &dir, &["gc", "--quiet", "--prune=now"]).await,
-        // -l: don't copy objects borrowed from a fork parent (alternates).
-        "repack" => git(state, &dir, &["repack", "-a", "-d", "-l", "-q"]).await,
+        "dissociate" => {
+            bgh_repos::maintenance::dissociate(state, run.repo_id).await?;
+            Ok((
+                true,
+                "repository is self-contained (fsck --connectivity-only passed)".into(),
+            ))
+        }
         "fsck" => {
             let (ok, out) = git(state, &dir, &["fsck", "--no-progress", "--no-dangling"]).await?;
             Ok((
@@ -415,6 +576,146 @@ pub async fn run(state: AppState, job: RepoMaintenance) -> anyhow::Result<()> {
     .execute(&state.db)
     .await?;
     Ok(())
+}
+
+// ----- scheduled maintenance status --------------------------------------------
+
+#[derive(Debug, FromRow)]
+struct StatusRow {
+    repo_id: i64,
+    full_name: String,
+    status: String,
+    error: Option<String>,
+    last_run_at: Option<DateTime<Utc>>,
+    last_full_at: Option<DateTime<Utc>>,
+    pack_count: i64,
+    loose_count: i64,
+    has_alternates: bool,
+    has_dependents: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusJson {
+    pub repository_id: i64,
+    pub full_name: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub last_run_at: Option<Timestamp>,
+    pub last_full_at: Option<Timestamp>,
+    pub pack_count: i64,
+    pub loose_count: i64,
+    pub has_alternates: bool,
+    pub has_dependents: bool,
+}
+
+impl From<StatusRow> for StatusJson {
+    fn from(r: StatusRow) -> Self {
+        Self {
+            repository_id: r.repo_id,
+            full_name: r.full_name,
+            status: r.status,
+            error: r.error,
+            last_run_at: ts(r.last_run_at),
+            last_full_at: ts(r.last_full_at),
+            pack_count: r.pack_count,
+            loose_count: r.loose_count,
+            has_alternates: r.has_alternates,
+            has_dependents: r.has_dependents,
+        }
+    }
+}
+
+const STATUS_SELECT: &str = "SELECT m.repo_id, o.login || '/' || r.name AS full_name, m.status, m.error,
+        m.last_run_at, m.last_full_at, m.pack_count, m.loose_count, m.has_alternates, m.has_dependents
+   FROM repo_maintenance m
+   JOIN repositories r ON r.id = m.repo_id
+   JOIN users o ON o.id = r.owner_id";
+
+/// Scheduled-maintenance status of one repository (admin repo detail).
+pub async fn repo_status(state: &AppState, repo_id: i64) -> ApiResult<Option<StatusJson>> {
+    let row: Option<StatusRow> = sqlx::query_as(&format!("{STATUS_SELECT} WHERE m.repo_id = $1"))
+        .bind(repo_id)
+        .fetch_optional(&state.db)
+        .await?;
+    Ok(row.map(Into::into))
+}
+
+/// `GET /_bgh/admin/git-maintenance` → `{settings, counts}`.
+pub async fn overview(
+    State(state): State<AppState>,
+    _auth: RequireSiteAdmin,
+) -> ApiResult<Json<Value>> {
+    let s = bgh_core::settings::load_uncached(&state.config, &state.db).await?;
+    let counts: (i64, i64, i64, i64, i64, Option<DateTime<Utc>>) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM repositories),
+                count(*) FILTER (WHERE m.status = 'succeeded'),
+                count(*) FILTER (WHERE m.status = 'failed'),
+                count(*) FILTER (WHERE m.status = 'skipped'),
+                count(*) FILTER (WHERE m.has_dependents),
+                max(m.last_run_at)
+           FROM repo_maintenance m",
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(Json(json!({
+        "settings": s.git_maintenance,
+        "repositories": counts.0,
+        "succeeded": counts.1,
+        "failed": counts.2,
+        "skipped": counts.3,
+        "never_run": (counts.0 - counts.1 - counts.2 - counts.3).max(0),
+        "with_dependents": counts.4,
+        "last_run_at": ts(counts.5),
+    })))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct StatusQuery {
+    /// `succeeded` | `failed` | `skipped`
+    pub status: Option<String>,
+}
+
+/// `GET /_bgh/admin/git-maintenance/repos?status=` → per-repository state,
+/// failures first, then most recently run.
+pub async fn list_status(
+    State(state): State<AppState>,
+    _auth: RequireSiteAdmin,
+    p: Pagination,
+    Query(q): Query<StatusQuery>,
+) -> ApiResult<Page<StatusJson>> {
+    let rows: Vec<StatusRow> = sqlx::query_as(&format!(
+        "{STATUS_SELECT} WHERE ($1::text IS NULL OR m.status = $1)
+          ORDER BY (m.status = 'failed') DESC, m.updated_at DESC, m.repo_id DESC
+          LIMIT $2 OFFSET $3"
+    ))
+    .bind(q.status.as_deref())
+    .bind(p.limit_plus_one())
+    .bind(p.offset())
+    .fetch_all(&state.db)
+    .await?;
+    Ok(p.page(rows).map(StatusJson::from))
+}
+
+/// `POST /_bgh/admin/git-maintenance/run` → 202: queue one scheduler pass
+/// (including archive-cache pruning).
+pub async fn run_now(
+    State(state): State<AppState>,
+    auth: RequireSiteAdmin,
+    headers: HeaderMap,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let mut tx = Tx::begin(&state).await?;
+    tx.enqueue(&bgh_repos::maintenance::RunPass {}).await?;
+    log(
+        &mut tx,
+        &auth,
+        &headers,
+        "business.git_maintenance_run",
+        Target::Site,
+        json!({}),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((StatusCode::ACCEPTED, Json(json!({ "queued": true }))))
 }
 
 #[cfg(test)]

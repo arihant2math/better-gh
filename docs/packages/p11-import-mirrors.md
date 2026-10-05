@@ -92,7 +92,7 @@ REST `mirror_url` is set on every repository shape; GraphQL
 * Repo settings → **Mirror** (only for mirrors): status (last/next sync,
   last error), Sync now, URL, interval, pause, LFS, replace/remove
   credentials, Danger Zone "Convert repository".
-* Site admin → **Mirrors** (`/site-admin/mirrors`, `g m`): failing / all
+* Site admin → **Mirrors** (`/site-admin/mirrors`, `g y`): failing / all
   mirrors with errors and Sync now.
 * Mock backend: `src/mock/extra/imports.ts` (simulated ~3 s progress; URLs
   containing `fail` fail, retry succeeds).

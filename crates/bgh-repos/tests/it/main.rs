@@ -19,6 +19,7 @@ mod gitdb;
 mod import;
 mod keys;
 mod lfs;
+mod maintenance;
 mod protection;
 mod push_hardening;
 mod push_rules;
