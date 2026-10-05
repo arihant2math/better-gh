@@ -422,7 +422,9 @@ pub async fn check_outcomes(
     .bind(sha)
     .fetch_all(db)
     .await?;
-    let runs: Vec<(String, String, Option<i64>, String, Option<String>)> = sqlx::query_as(
+    // (name, app_slug, app_id, status, conclusion)
+    type RunOutcome = (String, String, Option<i64>, String, Option<String>);
+    let runs: Vec<RunOutcome> = sqlx::query_as(
         "SELECT DISTINCT ON (r.name, s.app_slug, s.app_id) r.name, s.app_slug, s.app_id,
                 r.status, r.conclusion
            FROM check_runs r JOIN check_suites s ON s.id = r.check_suite_id
