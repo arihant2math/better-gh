@@ -10,6 +10,7 @@
 //! * Every API response carries GitHub's
 //!   `X-RateLimit-{Limit,Remaining,Reset,Used,Resource}` headers.
 //!   `GET /rate_limit` always answers in GitHub's shape and is not counted.
+//! * `304 Not Modified` responses are not counted ([`refund`]), like GitHub.
 //! * Enforcement is a switch (`rate_limits.enabled`, off by default like
 //!   GHES): when on, a caller over budget gets 403 "API rate limit exceeded
 //!   for …" with `Retry-After`. Redis failures fail open (no headers).
@@ -21,7 +22,7 @@
 //! (`/api/graphql`, `/api/v3/`).
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
@@ -188,6 +189,21 @@ pub async fn quota(
     Ok(Quota::new(resource, limit, used, reset))
 }
 
+/// Give back one request counted by [`quota`] (`consume`) in the window of
+/// `q`, e.g. for a `304 Not Modified` (GitHub doesn't count those).
+pub async fn refund(
+    state: &AppState,
+    q: &Quota,
+    ctx: Option<&AuthContext>,
+    ip: &str,
+) -> redis::RedisResult<Quota> {
+    let start = q.reset - q.resource.window_secs();
+    let key = bucket_key(state, q.resource, &caller_key(ctx, ip), start);
+    let mut redis = state.redis.clone();
+    let n: i64 = redis.decr(&key, 1).await?;
+    Ok(Quota::new(q.resource, q.limit, n.max(0), q.reset))
+}
+
 /// Body of `GET /rate_limit` (GitHub's shape: `resources.{core, search,
 /// graphql, …}` and the deprecated `rate` = core). Nothing is counted.
 pub async fn status(
@@ -274,6 +290,13 @@ async fn limit(state: AppState, mut req: Request, next: Next) -> Response {
         return exceeded_response(&q, ctx.as_ref(), &ip);
     }
     let mut resp = next.run(req).await;
+    // Conditional requests answered with 304 are free (mount the ETag layer
+    // inside this middleware).
+    let q = if resp.status() == StatusCode::NOT_MODIFIED && !not_counted {
+        refund(&state, &q, ctx.as_ref(), &ip).await.unwrap_or(q)
+    } else {
+        q
+    };
     q.apply(resp.headers_mut());
     resp
 }

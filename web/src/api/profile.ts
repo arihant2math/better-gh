@@ -52,6 +52,7 @@ export interface RestOrg {
   members_can_create_repositories?: boolean;
   members_can_create_public_repositories?: boolean;
   members_can_create_private_repositories?: boolean;
+  members_can_create_internal_repositories?: boolean;
 }
 
 /** organization-simple (`/users/{u}/orgs`). */

@@ -253,7 +253,9 @@ async fn redirect(
         access.repo.name,
         encode_path(&spec)
     ));
-    if access.repo.is_private() {
+    // Browsers and `curl -L` don't resend credentials: private
+    // repositories (and every repository in private mode) get a token.
+    if access.repo.is_private() || bgh_core::privacy::private_mode(&state).await? {
         let token = super::token::issue(&state, access.repo.id).await?;
         location.push_str(&format!("?token={token}"));
     }

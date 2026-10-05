@@ -234,7 +234,7 @@ pub async fn list_for_user(
     .await
 }
 
-/// `GET /orgs/{org}/repos` (`type=all|public|private|forks|sources|member`,
+/// `GET /orgs/{org}/repos` (`type=all|public|private|internal|forks|sources|member`,
 /// default sort `created`): repositories visible to the caller.
 pub async fn list_for_org(
     State(state): State<AppState>,
@@ -251,6 +251,7 @@ pub async fn list_for_org(
         None | Some("all") => "true",
         Some("public") => "r.visibility = 'public'",
         Some("private") => "r.visibility <> 'public'",
+        Some("internal") => "r.visibility = 'internal'",
         Some("forks") => "r.fork",
         Some("sources") => "NOT r.fork",
         Some("member") => COLLABORATOR,
@@ -260,11 +261,13 @@ pub async fn list_for_org(
         Some(uid) => perms::org_role(&state.db, org.id, uid).await?.is_some(),
         None => false,
     };
-    // Outsiders only see public repositories (plus private ones they were
-    // granted access to); per-repo permissions are applied by
-    // `views::minimal_repos`.
+    // Outsiders only see public repositories (internal ones too when signed
+    // in, plus private ones they were granted access to); per-repo
+    // permissions are applied by `views::minimal_repos`.
     let base = if member || auth.as_ref().is_some_and(|a| a.user.site_admin) {
         "true"
+    } else if auth.0.is_some() {
+        "(r.visibility IN ('public', 'internal') OR EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1))"
     } else {
         "(r.visibility = 'public' OR EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1))"
     };

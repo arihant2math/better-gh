@@ -385,6 +385,28 @@ docker compose start bgh
 After restoring onto a new host keep the same `BGH_BASE_URL` (or update it:
 URLs are generated on the fly, nothing stores the old one).
 
+## Migrating from GitHub
+
+Repositories move with their issues (original numbers), comments,
+reactions, labels, milestones, releases with assets and, for
+organizations, teams: **Site admin → Imports** or **Organization settings →
+Import**, or on the server
+
+```
+BGH_IMPORT_TOKEN=ghp_... bgh import github --repo octo-org/app --owner acme \
+    --user-map users.csv            # optional: source-login,local-login per line
+```
+
+(`--api-url https://ghe.example/api/v3` for GitHub Enterprise Server). The
+importer reaches the source over HTTPS like webhooks do: a GHES host on a
+private network must be listed in `BGH_WEBHOOK_ALLOWED_HOSTS` (or the
+`webhooks.allowed_hosts` site setting). Users are matched by verified
+email (the source's public profile email), then by the map; everyone else
+becomes a non-login *mannequin* account named `<login>-imported`. Imports
+are resumable (`bgh import resume --id N`, or Resume in the UI) and a rerun
+only adds what is new. Pull requests follow in a later release.
+Details: `docs/packages/p18-metadata-import.md`.
+
 ## Upgrades and migrations
 
 * `bgh serve` applies pending migrations before it starts listening;

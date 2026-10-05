@@ -345,6 +345,7 @@ export function installProfileMocks(server: MockServer): void {
         members_can_create_repositories: x.members_can_create_repositories,
         members_can_create_public_repositories: x.members_can_create_repositories,
         members_can_create_private_repositories: x.members_can_create_repositories,
+        members_can_create_internal_repositories: x.members_can_create_repositories,
         two_factor_requirement_enabled: false,
       });
     }

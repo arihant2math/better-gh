@@ -93,12 +93,11 @@ pub(crate) async fn authorize_org(
             let s = db::OrgSettings::find(&state.db, org.id)
                 .await?
                 .ok_or(ApiError::NotFound)?;
-            let private = wants_private(body);
             s.members_can_create_repositories
-                && if private {
-                    s.members_can_create_private_repositories
-                } else {
-                    s.members_can_create_public_repositories
+                && match body.visibility.as_deref() {
+                    Some("internal") => s.members_can_create_internal_repositories,
+                    _ if wants_private(body) => s.members_can_create_private_repositories,
+                    _ => s.members_can_create_public_repositories,
                 }
         }
         None if auth.user.site_admin => true,
@@ -132,7 +131,7 @@ async fn create(
 
 /// Create a repository (row, storage, defaults). `import` additionally
 /// records an import (and pull mirror) in the same transaction.
-pub(crate) async fn create_with(
+pub async fn create_with(
     state: &AppState,
     auth: &AuthContext,
     owner: db::User,
@@ -176,6 +175,11 @@ pub(crate) async fn create_with(
             )));
         }
     };
+
+    bgh_core::settings::load(state)
+        .await?
+        .privacy
+        .check_visibility(&visibility)?;
 
     let mut tx = Tx::begin(state).await?;
     let repo: db::Repository = sqlx::query_as(&format!(

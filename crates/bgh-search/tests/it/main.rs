@@ -4,6 +4,7 @@
 
 mod common;
 
+mod access_policy;
 mod activity;
 mod palette;
 mod search_code;

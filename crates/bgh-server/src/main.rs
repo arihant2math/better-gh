@@ -6,6 +6,11 @@
 //! bgh admin create-user --login L --email E --password P [--site-admin]
 //! bgh admin create-org --login L --admin USER [--name NAME]
 //! bgh admin create-token --user L [--scopes repo,read:org] [--name N] [--expires-in-days D]
+//! bgh import github --repo O/R --owner OWNER [--api-url U] [--name N] [--user-map FILE] ...
+//!                                               import a GitHub/GHES repository with its
+//!                                               issues, labels, milestones and releases
+//!                                               (token in BGH_IMPORT_TOKEN)
+//! bgh import resume --id N                      resume (or rerun) an import
 //! bgh healthcheck                               exit 0 if the local server is healthy
 //! ```
 //! Configuration comes from environment variables (see `bgh_core::config`).
@@ -33,6 +38,11 @@ enum Command {
     Admin {
         #[command(subcommand)]
         command: AdminCommand,
+    },
+    /// Import repositories from other forges (P18).
+    Import {
+        #[command(subcommand)]
+        command: ImportCommand,
     },
     /// Probe `GET /healthz` on the local server (BGH_LISTEN); exit status 0
     /// when it answers 200. For container and service-manager health checks.
@@ -87,6 +97,62 @@ enum AdminCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum ImportCommand {
+    /// Import a GitHub.com / GHES repository: git, settings, labels,
+    /// milestones, issues (original numbers, comments, reactions, events),
+    /// releases with assets and optionally teams. Unmapped users become
+    /// mannequins. Follows the run and prints its log.
+    Github {
+        /// Source repository `owner/name`.
+        #[arg(long)]
+        repo: String,
+        /// Target owner (organization or user) on this server.
+        #[arg(long)]
+        owner: String,
+        /// Target name (default: the source name).
+        #[arg(long)]
+        name: Option<String>,
+        /// `https://api.github.com` or `https://HOST/api/v3`.
+        #[arg(long, default_value = bgh_import::api::DEFAULT_API_URL)]
+        api_url: String,
+        /// Source token (read access; `repo` for private repositories).
+        #[arg(long, env = "BGH_IMPORT_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        /// `public`, `private` or `internal` (default: the source's).
+        #[arg(long)]
+        visibility: Option<String>,
+        /// Login map file: `source,local` per line (GEI mannequin CSV works).
+        #[arg(long)]
+        user_map: Option<std::path::PathBuf>,
+        /// Acting site administrator (default: the first one).
+        #[arg(long = "as")]
+        actor: Option<String>,
+        /// Steps to skip, comma-separated: git,settings,labels,milestones,issues,releases.
+        #[arg(long, value_delimiter = ',')]
+        skip: Vec<String>,
+        /// Also import org teams and their repository permissions.
+        #[arg(long)]
+        teams: bool,
+        /// Fetch Git LFS objects in the git step.
+        #[arg(long)]
+        include_lfs: bool,
+        /// Queue the import for the running server and exit.
+        #[arg(long)]
+        detach: bool,
+    },
+    /// Resume a failed, cancelled or interrupted import, or rerun a
+    /// complete one (only new source objects are imported).
+    Resume {
+        #[arg(long)]
+        id: i64,
+        #[arg(long = "as")]
+        actor: Option<String>,
+        #[arg(long)]
+        detach: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -106,6 +172,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Admin { command } => admin(config, command).await,
+        Command::Import { command } => import(config, command).await,
         Command::Healthcheck { timeout } => healthcheck(&config, timeout).await,
     }
 }
@@ -237,6 +304,124 @@ async fn healthcheck(config: &Config, timeout: u64) -> anyhow::Result<()> {
     );
     println!("{body}");
     Ok(())
+}
+
+/// The acting site administrator for CLI imports.
+async fn site_admin(
+    state: &AppState,
+    login: Option<&str>,
+) -> anyhow::Result<bgh_core::models::db::User> {
+    let user = match login {
+        Some(l) => bgh_core::models::db::User::find_by_login(&state.db, l).await?,
+        None => {
+            sqlx::query_as::<_, bgh_core::models::db::User>(&format!(
+                "SELECT {} FROM users WHERE site_admin AND type = 'User' ORDER BY id LIMIT 1",
+                bgh_core::models::db::User::COLUMNS
+            ))
+            .fetch_optional(&state.db)
+            .await?
+        }
+    };
+    user.filter(|u| u.site_admin)
+        .ok_or_else(|| anyhow::anyhow!("no such site administrator (use --as LOGIN)"))
+}
+
+async fn import(config: Config, command: ImportCommand) -> anyhow::Result<()> {
+    let state = AppState::connect(config).await?;
+    bgh_core::db::migrate(&state.db).await?;
+    let api = |e: bgh_core::ApiError| anyhow::anyhow!("{e}: {e:?}");
+    let (id, detach) = match command {
+        ImportCommand::Github {
+            repo,
+            owner,
+            name,
+            api_url,
+            token,
+            visibility,
+            user_map,
+            actor,
+            skip,
+            teams,
+            include_lfs,
+            detach,
+        } => {
+            let user = site_admin(&state, actor.as_deref()).await?;
+            let user_map = match user_map {
+                Some(path) => bgh_import::cli::parse_user_map(
+                    &std::fs::read_to_string(&path)
+                        .with_context(|| format!("reading {}", path.display()))?,
+                )?,
+                None => Default::default(),
+            };
+            let on = |step: &str| Some(!skip.iter().any(|s| s == step));
+            let auth = bgh_core::auth::AuthContext {
+                user,
+                method: bgh_core::auth::AuthMethod::Password,
+                scopes: None,
+            };
+            let row = bgh_import::api::create_import(
+                &state,
+                &auth,
+                bgh_import::api::CreateBody {
+                    api_url: Some(api_url),
+                    source_repo: Some(repo),
+                    token,
+                    owner: Some(owner),
+                    name,
+                    visibility,
+                    git: on("git"),
+                    settings: on("settings"),
+                    labels: on("labels"),
+                    milestones: on("milestones"),
+                    issues: on("issues"),
+                    releases: on("releases"),
+                    teams: Some(teams),
+                    include_lfs: Some(include_lfs),
+                    user_map,
+                },
+            )
+            .await
+            .map_err(api)?;
+            println!("import {} queued", row.id);
+            (row.id, detach)
+        }
+        ImportCommand::Resume { id, actor, detach } => {
+            let user = site_admin(&state, actor.as_deref()).await?;
+            let row = bgh_import::row::ImportRow::find(&state.db, id)
+                .await
+                .map_err(api)?
+                .ok_or_else(|| anyhow::anyhow!("no import {id}"))?;
+            bgh_import::api::resume_import(&state, &user, &row, None)
+                .await
+                .map_err(api)?;
+            println!("import {id} queued");
+            (id, detach)
+        }
+    };
+    if detach {
+        return Ok(());
+    }
+    // Run the job workers in this process until the import ends (a running
+    // server may pick the jobs up as well; claims are atomic).
+    let mut registry = Registry::new();
+    bgh_server::register(&mut registry);
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let workers = tokio::spawn(bgh_core::jobs::run_workers(
+        state.clone(),
+        std::sync::Arc::new(registry.jobs),
+        2,
+        shutdown.clone(),
+    ));
+    let row = bgh_import::cli::follow(&state, id).await?;
+    shutdown.cancel();
+    let _ = workers.await;
+    match row.status.as_str() {
+        "complete" => {
+            println!("import {id} complete: {}", row.stats);
+            Ok(())
+        }
+        status => anyhow::bail!("import {id} {status}: {}", row.error.unwrap_or_default()),
+    }
 }
 
 async fn serve(config: Config) -> anyhow::Result<()> {

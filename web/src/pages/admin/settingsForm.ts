@@ -13,6 +13,7 @@ export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
 export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'signup', title: 'Sign-up', anchor: 'signup' },
   { key: 'repositories', title: 'Repositories', anchor: 'repositories' },
+  { key: 'privacy', title: 'Privacy', anchor: 'privacy' },
   { key: 'git', title: 'Git pushes', anchor: 'git' },
   { key: 'organizations', title: 'Organizations', anchor: 'organizations' },
   { key: 'announcement', title: 'Announcement', anchor: 'announcement' },
@@ -73,6 +74,7 @@ export interface SettingsForm {
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
   retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
   actions: SiteSettings['actions'];
+  privacy: { private_mode: boolean; anonymous_directory: boolean; allowed: Visibility[] };
 }
 
 /** Retention windows (days); off = keep forever (0 in the API). */
@@ -85,6 +87,9 @@ const RETENTION_DEFAULTS: Record<RetentionWindow, number> = {
   webhook_delivery_days: 90,
   activity_days: 90,
 };
+
+/** Repository visibilities in display order. */
+export const VISIBILITIES: Visibility[] = ['public', 'internal', 'private'];
 
 /** An optional megabyte limit: on/off plus the typed value. */
 export interface Limit {
@@ -184,6 +189,11 @@ export function toForm(s: SiteSettings): SettingsForm {
       >),
     },
     actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
+    privacy: {
+      private_mode: s.privacy?.private_mode ?? false,
+      anonymous_directory: s.privacy?.allow_anonymous_directory ?? true,
+      allowed: VISIBILITIES.filter((v) => (s.privacy?.allowed_visibilities ?? VISIBILITIES).includes(v)),
+    },
   };
 }
 
@@ -261,6 +271,9 @@ export function validate(f: SettingsForm): Errors {
   const { max_object: max, warn_object: warn } = f.git;
   if (max.on && warn.on && !e['git.max_object'] && !e['git.warn_object'] && Number(warn.mb) >= Number(max.mb))
     e['git.warn_object'] = 'The warning size must be below the maximum file size.';
+  if (f.privacy.allowed.length === 0) e['privacy.allowed'] = 'Allow at least one visibility.';
+  else if (!f.privacy.allowed.includes(f.repositories.default_visibility))
+    e['privacy.allowed'] = `The default visibility (${f.repositories.default_visibility}, under Repositories) must be allowed. Allow it or change the default.`;
   return e;
 }
 
@@ -363,6 +376,13 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
         break;
       case 'actions':
         out.actions = { ...f.actions };
+        break;
+      case 'privacy':
+        out.privacy = {
+          private_mode: f.privacy.private_mode,
+          allow_anonymous_directory: f.privacy.anonymous_directory,
+          allowed_visibilities: f.privacy.allowed,
+        };
         break;
     }
   }

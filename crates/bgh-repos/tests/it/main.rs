@@ -5,6 +5,7 @@
 mod common;
 mod gitwork;
 
+mod access_policy;
 mod api;
 mod bench;
 mod branches;
@@ -18,6 +19,7 @@ mod forks;
 mod git_transport;
 mod gitdb;
 mod import;
+mod insights;
 mod keys;
 mod lfs;
 mod maintenance;
