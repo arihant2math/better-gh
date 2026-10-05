@@ -124,6 +124,10 @@ pub fn pattern_matches(pattern: &str, path: &str) -> bool {
     if !dir_only && glob(p, n) {
         return true;
     }
+    // `dir/*` matches direct children only (GitHub), no directory expansion.
+    if full.ends_with("/*") {
+        return false;
+    }
     // Directory match: the pattern matches a leading directory of `path`.
     let dir_pat = format!("{full}/**");
     glob(dir_pat.as_bytes(), n)
