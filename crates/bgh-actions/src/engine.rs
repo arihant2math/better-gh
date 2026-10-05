@@ -641,6 +641,21 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
         }
     }
 
+    // Jobs completed in this run free their concurrency groups; jobs
+    // waiting for a group are left to the group (not max-parallel).
+    release_job_groups(state, &mut tx, &run).await?;
+    let group_pending: HashSet<i64> = sqlx::query_scalar(
+        "SELECT id FROM actions_jobs
+          WHERE run_id = $1 AND run_attempt = $2 AND status = 'pending'
+            AND concurrency_group IS NOT NULL",
+    )
+    .bind(run.id)
+    .bind(run.run_attempt)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .collect();
+
     // fail-fast and max-parallel, per job key.
     for key in &order {
         let job = &def.jobs[key];
@@ -670,7 +685,9 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
                 .count() as i64;
             let promote: Vec<i64> = rows
                 .iter()
-                .filter(|r| &r.job_key == key && r.status == "pending")
+                .filter(|r| {
+                    &r.job_key == key && r.status == "pending" && !group_pending.contains(&r.id)
+                })
                 .take((max - active).max(0) as usize)
                 .map(|r| r.id)
                 .collect();
@@ -1145,7 +1162,7 @@ async fn materialize(
             _ => "queued",
         };
         let steps = initial_steps(&job.steps);
-        let row = insert_job(
+        let mut row = insert_job(
             tx,
             run,
             data,
@@ -1161,9 +1178,145 @@ async fn materialize(
             &steps,
         )
         .await?;
+        if let Some(conc) = &job.concurrency {
+            let group = expr::interpolate(&conc.group, &ctx).unwrap_or_else(|_| conc.group.clone());
+            let cancel_in_progress = eval_bool(&conc.cancel_in_progress, &ctx, false);
+            if !group.is_empty() {
+                row = job_concurrency(tx, row, &group, cancel_in_progress).await?;
+            }
+        }
         out.push(row);
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Job-level concurrency
+// ---------------------------------------------------------------------------
+
+/// Serialize writers of one repository's concurrency group.
+async fn lock_job_group(tx: &mut Tx, repo_id: i64, group: &str) -> anyhow::Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 26))")
+        .bind(format!("actions-job-group:{repo_id}:{group}"))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Apply `jobs.<id>.concurrency` to a just-inserted job: like GitHub, at
+/// most one job of a group runs and one waits (`pending`, the newest);
+/// older pending jobs are cancelled, and running ones too with
+/// `cancel-in-progress`. The waiting job starts when the group frees up
+/// ([`release_job_groups`]).
+async fn job_concurrency(
+    tx: &mut Tx,
+    row: JobRow,
+    group: &str,
+    cancel_in_progress: bool,
+) -> anyhow::Result<JobRow> {
+    if row.status == "completed" {
+        return Ok(row);
+    }
+    lock_job_group(tx, row.repo_id, group).await?;
+    sqlx::query("UPDATE actions_jobs SET concurrency_group = $2 WHERE id = $1")
+        .bind(row.id)
+        .bind(group)
+        .execute(&mut **tx)
+        .await?;
+    let others: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, status FROM actions_jobs
+          WHERE repo_id = $1 AND concurrency_group = $2 AND status <> 'completed' AND id <> $3
+          ORDER BY id",
+    )
+    .bind(row.repo_id)
+    .bind(group)
+    .bind(row.id)
+    .fetch_all(&mut **tx)
+    .await?;
+    for (id, status) in &others {
+        if cancel_in_progress || status == "pending" {
+            tx.enqueue(&CancelJob { job_id: *id }).await?;
+        }
+    }
+    let blocked = others.iter().any(|(_, s)| s != "pending");
+    if !blocked || row.status != "queued" {
+        return Ok(row);
+    }
+    let row: JobRow = sqlx::query_as(&format!(
+        "UPDATE actions_jobs SET status = 'pending', updated_at = now() WHERE id = $1 RETURNING {}",
+        JobRow::COLUMNS
+    ))
+    .bind(row.id)
+    .fetch_one(&mut **tx)
+    .await?;
+    sync_job(tx, &row, SyncAction::Update).await?;
+    let ev = job_event(tx, &row, "waiting").await?;
+    tx.emit(ev);
+    Ok(row)
+}
+
+/// Start the oldest waiting job of every concurrency group a completed job
+/// of `run` belonged to, once nothing else of the group is queued or
+/// running. Idempotent.
+async fn release_job_groups(_state: &AppState, tx: &mut Tx, run: &RunRow) -> anyhow::Result<()> {
+    let groups: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT concurrency_group FROM actions_jobs
+          WHERE run_id = $1 AND concurrency_group IS NOT NULL AND status = 'completed'",
+    )
+    .bind(run.id)
+    .fetch_all(&mut **tx)
+    .await?;
+    for group in groups {
+        lock_job_group(tx, run.repo_id, &group).await?;
+        let next: Option<JobRow> = sqlx::query_as(&format!(
+            "UPDATE actions_jobs SET status = 'queued', updated_at = now()
+              WHERE id = (SELECT id FROM actions_jobs
+                           WHERE repo_id = $1 AND concurrency_group = $2 AND status = 'pending'
+                           ORDER BY id LIMIT 1)
+                AND NOT EXISTS (SELECT 1 FROM actions_jobs
+                                 WHERE repo_id = $1 AND concurrency_group = $2
+                                   AND status IN ('queued', 'in_progress'))
+              RETURNING {}",
+            JobRow::COLUMNS
+        ))
+        .bind(run.repo_id)
+        .bind(&group)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if let Some(next) = next {
+            sync_job(tx, &next, SyncAction::Update).await?;
+            let ev = job_event(tx, &next, "queued").await?;
+            tx.emit(ev);
+        }
+    }
+    Ok(())
+}
+
+/// Durable cancellation of one job (job concurrency).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelJob {
+    pub job_id: i64,
+}
+
+impl JobPayload for CancelJob {
+    const KIND: &'static str = "actions.cancel_job";
+}
+
+pub async fn cancel_job_job(state: AppState, job: CancelJob) -> anyhow::Result<()> {
+    let mut tx = Tx::begin(&state).await?;
+    let row: Option<JobRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM actions_jobs WHERE id = $1 AND status <> 'completed' FOR UPDATE",
+        JobRow::COLUMNS
+    ))
+    .bind(job.job_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else { return Ok(()) };
+    let run_id = row.run_id;
+    let mut rows = vec![row];
+    cancel_job_row(&mut tx, &mut rows, job.job_id).await?;
+    tx.commit().await?;
+    advance_run(&state, run_id).await
 }
 
 fn has_status_function(cond: &str) -> bool {
@@ -1194,17 +1347,45 @@ async fn insert_job(
     } else {
         "queued"
     };
-    let check_run_id = checks::create_run(
-        tx,
-        run.check_suite_id,
-        run.repo_id,
-        &run.head_sha,
-        name,
-        key,
-        check_status,
-        conclusion,
-    )
-    .await?;
+    // A check run of an earlier attempt reset by a rerequest is reused.
+    let rerequested: Option<i64> = if run.run_attempt > 1 {
+        sqlx::query_scalar(
+            "SELECT j.check_run_id FROM actions_jobs j JOIN check_runs c ON c.id = j.check_run_id
+              WHERE j.run_id = $1 AND j.run_attempt < $2 AND j.job_key = $3 AND j.name = $4
+                AND c.status = 'queued'
+                AND NOT EXISTS (SELECT 1 FROM actions_jobs k
+                                 WHERE k.run_id = $1 AND k.run_attempt = $2
+                                   AND k.check_run_id = j.check_run_id)
+              ORDER BY j.run_attempt DESC LIMIT 1",
+        )
+        .bind(run.id)
+        .bind(run.run_attempt)
+        .bind(key)
+        .bind(name)
+        .fetch_optional(&mut **tx)
+        .await?
+    } else {
+        None
+    };
+    let check_run_id = match rerequested {
+        Some(id) => {
+            checks::reuse_run(tx, id, name, check_status, conclusion).await?;
+            Some(id)
+        }
+        None => {
+            checks::create_run(
+                tx,
+                run.check_suite_id,
+                run.repo_id,
+                &run.head_sha,
+                name,
+                key,
+                check_status,
+                conclusion,
+            )
+            .await?
+        }
+    };
     if let Some(ev) = checks::check_run_event(
         run.repo_id,
         check_run_id,

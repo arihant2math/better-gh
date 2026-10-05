@@ -13,6 +13,7 @@
 //! See `docs/packages/actions.md` for the feature overview and gaps.
 
 pub mod api;
+pub mod badge;
 pub mod checks;
 pub mod context;
 pub mod crypto;
@@ -22,11 +23,13 @@ pub mod json;
 pub mod logs;
 pub mod models;
 pub mod protocol;
+pub mod rerequest;
 pub mod runner;
 pub mod scoped;
 pub mod server;
 pub mod services;
 pub mod trigger;
+pub mod trigger_events;
 pub mod ui;
 pub mod web;
 pub mod workflow;
@@ -35,7 +38,7 @@ use axum::Router;
 use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
-use api::{artifacts, environments, runners, runs, secrets, variables, workflows};
+use api::{artifacts, dispatches, environments, runners, runs, secrets, variables, workflows};
 
 /// REST API routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
@@ -43,6 +46,7 @@ pub fn router() -> Router<AppState> {
     let r = |p: &str| format!("{R}{p}");
     let o = |p: &str| format!("/orgs/{{org}}{p}");
     Router::new()
+        .route(&r("/dispatches"), post(dispatches::create))
         // workflows
         .route(&r("/actions/workflows"), get(workflows::list))
         .route(&r("/actions/workflows/{workflow_id}"), get(workflows::get))
@@ -279,7 +283,10 @@ pub fn router() -> Router<AppState> {
 
 /// Non-API routes (`/_bgh/actions/...`).
 pub fn web_router() -> Router<AppState> {
-    web::routes().merge(ui::routes())
+    web::routes().merge(ui::routes()).route(
+        "/{owner}/{repo}/actions/workflows/{file}/badge.svg",
+        get(badge::badge),
+    )
 }
 
 /// Background jobs, event listeners and services.
@@ -287,7 +294,10 @@ pub fn register(reg: &mut Registry) {
     reg.job(trigger::trigger_job);
     reg.job(engine::advance_run_job);
     reg.job(engine::cancel_run_job);
+    reg.job(engine::cancel_job_job);
+    reg.job(rerequest::rerequest_job);
     reg.on_event("actions.trigger", trigger::on_event);
+    reg.on_event("actions.rerequest", rerequest::on_event);
     reg.service("actions.maintenance", |s, c| async move {
         services::maintenance(s, c).await;
         Ok(())
