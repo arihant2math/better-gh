@@ -1,11 +1,14 @@
+Integration: ready
+LDAP sign-in and sync, password_login enforcement, git basic-auth throttling, LDAP/OIDC team sync, admin LDAP UI.
+
 # P14 ldap-auth — status
 
-**Done.** Branch `bgh/p14-ldap-auth`, self-integrated (fast-forward) into
-`claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
-`cargo test --workspace`, web typecheck/lint/test/build, `api-smoke.sh`
-45/45, `gh-compat.sh` 41/41). Scope: `docs/PHASE4_PLAN.md` §P14 (no §5
-quick fixes are assigned to P14). Migrations: 2600–2699
-(`2600_directory_auth.sql`).
+**Done.** Branch `bgh/p14-ldap-auth`, merged with the latest integration
+branch and gate-green (fmt, clippy, `cargo test --workspace`, web
+typecheck/lint/test/build; earlier also `api-smoke.sh` 45/45 and
+`gh-compat.sh` 41/41). Landing is up to the integrator (WORKER_GUIDE rule
+14). Scope: `docs/PHASE4_PLAN.md` §P14 (no §5 quick fixes are assigned to
+P14). Migrations: 2600–2699 (`2600_directory_auth.sql`).
 
 ## What changed
 
