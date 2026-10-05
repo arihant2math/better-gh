@@ -147,6 +147,127 @@ pub enum Event {
         review_id: i64,
         actor_id: i64,
     },
+    // ----- pulls (B4) -----
+    PullRequestEdited {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+        /// GitHub-style `changes` object (`{"title": {"from": "..."}}`).
+        changes: serde_json::Value,
+    },
+    PullRequestReadyForReview {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    PullRequestConvertedToDraft {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewRequested {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+        reviewer_id: Option<i64>,
+        team_id: Option<i64>,
+    },
+    PullRequestReviewRequestRemoved {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+        reviewer_id: Option<i64>,
+        team_id: Option<i64>,
+    },
+    PullRequestReviewEdited {
+        repo_id: i64,
+        pull_id: i64,
+        review_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewDismissed {
+        repo_id: i64,
+        pull_id: i64,
+        review_id: i64,
+        actor_id: Option<i64>,
+    },
+    PullRequestReviewCommentCreated {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewCommentEdited {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewCommentDeleted {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    /// `comment_id` is the thread's root review comment.
+    PullRequestReviewThreadResolved {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestReviewThreadUnresolved {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
+    PullRequestAutoMergeEnabled {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: i64,
+    },
+    PullRequestAutoMergeDisabled {
+        repo_id: i64,
+        pull_id: i64,
+        actor_id: Option<i64>,
+    },
+    CommitStatusCreated {
+        repo_id: i64,
+        status_id: i64,
+        sha: String,
+        actor_id: i64,
+    },
+    CheckRunCreated {
+        repo_id: i64,
+        check_run_id: i64,
+        actor_id: Option<i64>,
+    },
+    CheckRunCompleted {
+        repo_id: i64,
+        check_run_id: i64,
+        actor_id: Option<i64>,
+    },
+    CheckRunRerequested {
+        repo_id: i64,
+        check_run_id: i64,
+        actor_id: i64,
+    },
+    /// A check suite was created (`POST /check-suites`) and wants runs.
+    CheckSuiteRequested {
+        repo_id: i64,
+        check_suite_id: i64,
+        actor_id: Option<i64>,
+    },
+    CheckSuiteRerequested {
+        repo_id: i64,
+        check_suite_id: i64,
+        actor_id: i64,
+    },
+    CheckSuiteCompleted {
+        repo_id: i64,
+        check_suite_id: i64,
+    },
     ReleasePublished {
         repo_id: i64,
         release_id: i64,
@@ -180,6 +301,29 @@ impl Event {
             Self::PullRequestReopened { .. } => "pull_request_reopened",
             Self::PullRequestMerged { .. } => "pull_request_merged",
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
+            Self::PullRequestEdited { .. } => "pull_request_edited",
+            Self::PullRequestReadyForReview { .. } => "pull_request_ready_for_review",
+            Self::PullRequestConvertedToDraft { .. } => "pull_request_converted_to_draft",
+            Self::PullRequestReviewRequested { .. } => "pull_request_review_requested",
+            Self::PullRequestReviewRequestRemoved { .. } => "pull_request_review_request_removed",
+            Self::PullRequestReviewEdited { .. } => "pull_request_review_edited",
+            Self::PullRequestReviewDismissed { .. } => "pull_request_review_dismissed",
+            Self::PullRequestReviewCommentCreated { .. } => "pull_request_review_comment_created",
+            Self::PullRequestReviewCommentEdited { .. } => "pull_request_review_comment_edited",
+            Self::PullRequestReviewCommentDeleted { .. } => "pull_request_review_comment_deleted",
+            Self::PullRequestReviewThreadResolved { .. } => "pull_request_review_thread_resolved",
+            Self::PullRequestReviewThreadUnresolved { .. } => {
+                "pull_request_review_thread_unresolved"
+            }
+            Self::PullRequestAutoMergeEnabled { .. } => "pull_request_auto_merge_enabled",
+            Self::PullRequestAutoMergeDisabled { .. } => "pull_request_auto_merge_disabled",
+            Self::CommitStatusCreated { .. } => "commit_status_created",
+            Self::CheckRunCreated { .. } => "check_run_created",
+            Self::CheckRunCompleted { .. } => "check_run_completed",
+            Self::CheckRunRerequested { .. } => "check_run_rerequested",
+            Self::CheckSuiteRequested { .. } => "check_suite_requested",
+            Self::CheckSuiteRerequested { .. } => "check_suite_rerequested",
+            Self::CheckSuiteCompleted { .. } => "check_suite_completed",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
         }
@@ -205,6 +349,27 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
+            | Self::PullRequestEdited { repo_id, .. }
+            | Self::PullRequestReadyForReview { repo_id, .. }
+            | Self::PullRequestConvertedToDraft { repo_id, .. }
+            | Self::PullRequestReviewRequested { repo_id, .. }
+            | Self::PullRequestReviewRequestRemoved { repo_id, .. }
+            | Self::PullRequestReviewEdited { repo_id, .. }
+            | Self::PullRequestReviewDismissed { repo_id, .. }
+            | Self::PullRequestReviewCommentCreated { repo_id, .. }
+            | Self::PullRequestReviewCommentEdited { repo_id, .. }
+            | Self::PullRequestReviewCommentDeleted { repo_id, .. }
+            | Self::PullRequestReviewThreadResolved { repo_id, .. }
+            | Self::PullRequestReviewThreadUnresolved { repo_id, .. }
+            | Self::PullRequestAutoMergeEnabled { repo_id, .. }
+            | Self::PullRequestAutoMergeDisabled { repo_id, .. }
+            | Self::CommitStatusCreated { repo_id, .. }
+            | Self::CheckRunCreated { repo_id, .. }
+            | Self::CheckRunCompleted { repo_id, .. }
+            | Self::CheckRunRerequested { repo_id, .. }
+            | Self::CheckSuiteRequested { repo_id, .. }
+            | Self::CheckSuiteRerequested { repo_id, .. }
+            | Self::CheckSuiteCompleted { repo_id, .. }
             | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
         }
@@ -215,6 +380,12 @@ impl Event {
         match self {
             Self::Push(p) => p.pusher_id,
             Self::PullRequestSynchronized { actor_id, .. } => *actor_id,
+            Self::PullRequestReviewDismissed { actor_id, .. } => *actor_id,
+            Self::PullRequestAutoMergeDisabled { actor_id, .. } => *actor_id,
+            Self::CheckRunCreated { actor_id, .. } => *actor_id,
+            Self::CheckRunCompleted { actor_id, .. } => *actor_id,
+            Self::CheckSuiteRequested { actor_id, .. } => *actor_id,
+            Self::CheckSuiteCompleted { .. } => None,
             Self::RepositoryCreated { actor_id, .. }
             | Self::RepositoryDeleted { actor_id, .. }
             | Self::RepositoryUpdated { actor_id, .. }
@@ -230,6 +401,21 @@ impl Event {
             | Self::PullRequestReopened { actor_id, .. }
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
+            | Self::PullRequestEdited { actor_id, .. }
+            | Self::PullRequestReadyForReview { actor_id, .. }
+            | Self::PullRequestConvertedToDraft { actor_id, .. }
+            | Self::PullRequestReviewRequested { actor_id, .. }
+            | Self::PullRequestReviewRequestRemoved { actor_id, .. }
+            | Self::PullRequestReviewEdited { actor_id, .. }
+            | Self::PullRequestReviewCommentCreated { actor_id, .. }
+            | Self::PullRequestReviewCommentEdited { actor_id, .. }
+            | Self::PullRequestReviewCommentDeleted { actor_id, .. }
+            | Self::PullRequestReviewThreadResolved { actor_id, .. }
+            | Self::PullRequestReviewThreadUnresolved { actor_id, .. }
+            | Self::PullRequestAutoMergeEnabled { actor_id, .. }
+            | Self::CommitStatusCreated { actor_id, .. }
+            | Self::CheckRunRerequested { actor_id, .. }
+            | Self::CheckSuiteRerequested { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
             | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
         }

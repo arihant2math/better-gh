@@ -12,7 +12,9 @@
 //! the HTTP routes and performs authorization.
 
 mod cmd;
+pub mod merge;
 pub mod objects;
+pub mod patch;
 pub mod pktline;
 pub mod read;
 pub mod smart_http;
