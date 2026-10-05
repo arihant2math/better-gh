@@ -128,11 +128,14 @@ impl RulesetRow {
             .find(|r| r["type"].as_str() == Some(ty))
     }
 
-    fn bypassed_by(&self, actor: &Actor) -> bool {
+    /// Whether `actor` may bypass this ruleset for direct pushes
+    /// (`bypass_mode: pull_request` only covers pull request merges).
+    pub fn bypassed_by(&self, actor: &Actor) -> bool {
         self.bypass_actors
             .as_array()
             .into_iter()
             .flatten()
+            .filter(|b| b["bypass_mode"].as_str() != Some("pull_request"))
             .any(|b| {
                 let id = b["actor_id"].as_i64();
                 match b["actor_type"].as_str() {

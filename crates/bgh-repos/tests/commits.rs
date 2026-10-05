@@ -71,25 +71,25 @@ async fn list_and_filters() {
         .send()
         .await
         .json();
-    assert_eq!(shas(v), [c2.clone()]);
+    assert_eq!(shas(v), [c2.as_str()]);
     let v = app
         .get("/api/v3/repos/alice/r/commits?author=alice")
         .send()
         .await
         .json();
-    assert_eq!(shas(v), [c2.clone()]);
+    assert_eq!(shas(v), [c2.as_str()]);
     let v = app
         .get("/api/v3/repos/alice/r/commits?author=someone@else.org")
         .send()
         .await
         .json();
-    assert_eq!(shas(v), [c3.clone()]);
+    assert_eq!(shas(v), [c3.as_str()]);
     let v = app
         .get("/api/v3/repos/alice/r/commits?since=2024-02-01T00:00:00Z&until=2024-04-01T00:00:00Z")
         .send()
         .await
         .json();
-    assert_eq!(shas(v), [c2.clone()]);
+    assert_eq!(shas(v), [c2.as_str()]);
     let v = app
         .get(&format!("/api/v3/repos/alice/r/commits?sha={c2}"))
         .send()

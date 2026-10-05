@@ -3,24 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use bgh_core::AppState;
-use bgh_core::registry::AppFactory;
 use bgh_core::testing::{TestApp, TestUser};
 use serde_json::{Value, json};
 
 // ----- harness ---------------------------------------------------------------------
-
-/// The real app plus a test-only mount of the protection dispatcher (used
-/// until the branches catch-all hands protection paths over).
-fn router(state: AppState) -> axum::Router {
-    let extra = axum::Router::new()
-        .route(
-            "/__bp/repos/{owner}/{repo}/branches/{*rest}",
-            axum::routing::any(bgh_repos::protection_api::handle),
-        )
-        .with_state(state.clone());
-    bgh_server::app(state).merge(extra)
-}
 
 struct Git {
     ok: bool,
@@ -91,11 +77,7 @@ struct Fixture {
 
 impl Fixture {
     async fn new(name: &str) -> Self {
-        let app = TestApp::spawn_with(AppFactory {
-            router,
-            register: bgh_server::register,
-        })
-        .await;
+        let app = bgh_server::test_app().await;
         let alice = app.create_user("alice").await;
         let carol = app.create_user("carol").await;
         let repo = app.create_repo(&alice, name).await;
@@ -112,7 +94,7 @@ impl Fixture {
         let work = tmp.path().join("work");
         std::fs::create_dir(&work).unwrap();
         ok(git(&work, &["init", "-q", "-b", "main"]).await);
-        let mut f = Self {
+        let f = Self {
             app,
             alice,
             carol,
@@ -120,23 +102,11 @@ impl Fixture {
             name: name.to_string(),
             _tmp: tmp,
             work,
-            bp_prefix: "/__bp",
+            bp_prefix: "/api/v3",
         };
         f.commit("first").await;
         ok(f.push(&f.alice, &["main"]).await);
         f.app.drain_jobs().await;
-        // Use the real route once the branches module hands it over.
-        let res = f
-            .app
-            .get(&format!(
-                "/api/v3/repos/alice/{name}/branches/main/protection"
-            ))
-            .auth(&f.alice)
-            .send()
-            .await;
-        if res.status() == 404 && res.json()["message"] == "Branch not protected" {
-            f.bp_prefix = "/api/v3";
-        }
         f
     }
 

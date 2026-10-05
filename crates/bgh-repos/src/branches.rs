@@ -50,26 +50,7 @@ pub fn protection_summary(rule: Option<&ProtectionRow>) -> Value {
             "enabled": false,
             "required_status_checks": {"enforcement_level": "off", "contexts": [], "checks": []},
         }),
-        Some(p) => {
-            let checks = p
-                .required_status_checks
-                .as_ref()
-                .and_then(|v| v.get("checks").cloned())
-                .unwrap_or_else(|| json!([]));
-            let level = match (&p.required_status_checks, p.enforce_admins) {
-                (None, _) => "off",
-                (Some(_), true) => "everyone",
-                (Some(_), false) => "non_admins",
-            };
-            json!({
-                "enabled": true,
-                "required_status_checks": {
-                    "enforcement_level": level,
-                    "contexts": p.required_contexts(),
-                    "checks": checks,
-                },
-            })
-        }
+        Some(p) => crate::protection_api::protection_summary(p),
     }
 }
 

@@ -1146,7 +1146,7 @@ mod tests {
 
     #[test]
     fn readme_preference() {
-        let mut names = vec![
+        let mut names = [
             "README",
             "readme.txt",
             "README.md",

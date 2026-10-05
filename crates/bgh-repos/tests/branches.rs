@@ -43,7 +43,7 @@ async fn list_and_get_branches() {
     assert_eq!(
         v[1]["protection"],
         json!({"enabled": true, "required_status_checks": {
-            "enforcement_level": "everyone", "contexts": ["ci"], "checks": []}})
+            "enforcement_level": "everyone", "contexts": ["ci"], "checks": [{"context": "ci", "app_id": null}]}})
     );
     assert_eq!(
         v[1]["protection_url"],

@@ -2,60 +2,27 @@
 
 use std::path::Path;
 
-use bgh_core::AppState;
-use bgh_core::registry::AppFactory;
 use bgh_core::testing::{TestApp, TestUser};
 use serde_json::{Value, json};
 
 // ----- harness ---------------------------------------------------------------------
 
-/// The real app plus a test-only mount of the protection dispatcher, used
-/// while the branches catch-all route does not hand protection paths over.
-fn router(state: AppState) -> axum::Router {
-    let extra = axum::Router::new()
-        .route(
-            "/__bp/repos/{owner}/{repo}/branches/{*rest}",
-            axum::routing::any(bgh_repos::protection_api::handle),
-        )
-        .with_state(state.clone());
-    bgh_server::app(state).merge(extra)
-}
-
 async fn spawn() -> TestApp {
-    TestApp::spawn_with(AppFactory {
-        router,
-        register: bgh_server::register,
-    })
-    .await
+    bgh_server::test_app().await
 }
 
-/// Resolves protection paths to the real route when it is wired (detected
-/// by its "Branch not protected" answer), else to the test mount.
-struct Bp {
-    prefix: &'static str,
-}
+/// Protection paths (the branches catch-all hands them to
+/// `protection_api::dispatch`).
+struct Bp;
 
 impl Bp {
-    async fn detect(app: &TestApp, admin: &TestUser, owner: &str, repo: &str) -> Self {
-        let res = app
-            .get(&format!(
-                "/api/v3/repos/{owner}/{repo}/branches/main/protection"
-            ))
-            .auth(admin)
-            .send()
-            .await;
-        let wired = res.status() == 404 && res.json()["message"] == "Branch not protected";
-        Self {
-            prefix: if wired { "/api/v3" } else { "/__bp" },
-        }
+    async fn detect(_app: &TestApp, _admin: &TestUser, _owner: &str, _repo: &str) -> Self {
+        Self
     }
 
-    /// `/repos/{owner}/{repo}/branches/{branch}/protection{suffix}`
+    /// `/api/v3/repos/{owner}/{repo}/branches/{branch}/protection{suffix}`
     fn path(&self, owner: &str, repo: &str, branch: &str, suffix: &str) -> String {
-        format!(
-            "{}/repos/{owner}/{repo}/branches/{branch}/protection{suffix}",
-            self.prefix
-        )
+        format!("/api/v3/repos/{owner}/{repo}/branches/{branch}/protection{suffix}")
     }
 }
 
