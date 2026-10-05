@@ -59,14 +59,16 @@ pub async fn file(
 }
 
 /// 404 unless the caller may read the attachment. Returns whether it is
-/// public (cacheable by shared caches).
+/// public (cacheable by shared caches; never in private mode, where every
+/// download needs sign-in).
 async fn check_access(
     state: &AppState,
     auth: Option<&AuthContext>,
     row: &AttachmentRow,
 ) -> ApiResult<bool> {
+    let shareable = !bgh_core::privacy::private_mode(state).await?;
     let Some(repo_id) = row.repo_id else {
-        return Ok(true);
+        return Ok(shareable);
     };
     let repo = db::Repository::find(&state.db, repo_id)
         .await?
@@ -74,7 +76,7 @@ async fn check_access(
     let owner = db::User::find(&state.db, repo.owner_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let public = !repo.is_private();
+    let public = shareable && !repo.is_private();
     RepoAccess::for_repo(state, auth, repo, owner)
         .await
         .map_err(|_| ApiError::NotFound)?;

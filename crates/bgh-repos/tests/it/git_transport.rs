@@ -96,8 +96,9 @@ async fn push_then_clone_roundtrip() {
     .await);
 
     // The post-receive job was enqueued before `git push` returned (it
-    // then queues the languages computation for the default branch).
-    assert_eq!(app.drain_jobs().await, 2);
+    // then queues the languages computation and license detection for the
+    // default branch).
+    assert_eq!(app.drain_jobs().await, 3);
     let res = app.get("/api/v3/repos/alice/demo").send().await;
     let v = res.json();
     assert!(v["pushed_at"].is_string(), "pushed_at set: {v}");
@@ -318,8 +319,8 @@ async fn transport_authorization() {
     assert!(!out.ok);
     assert_eq!(
         app.drain_jobs().await,
-        2,
-        "only the first successful push enqueued work (post-receive + languages)"
+        3,
+        "only the first successful push enqueued work (post-receive + languages + license)"
     );
 }
 

@@ -33,6 +33,7 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   blocked: { title: 'Blocked users', load: () => import('../pages/settings/sections/BlockedSettings') },
   applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
   developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
+  organizations: { title: 'Organizations', load: () => import('../pages/settings/sections/OrganizationSettings') },
   apps: { title: 'GitHub Apps', load: () => import('../pages/apps/UserAppsSection') },
   installations: { title: 'Installed GitHub Apps', load: () => import('../pages/apps/UserInstallationsSection') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
@@ -53,6 +54,7 @@ function settingsRoutes() {
 
 const AliasPage = () => import('../pages/repo/AliasPage');
 const RepoPeoplePage = () => import('../pages/repo/RepoPeoplePage');
+const InsightsPage = () => import('../pages/repo/insights/InsightsPage');
 const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 const AdminLayout = () => import('../pages/admin/AdminLayout');
 const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout');
@@ -222,6 +224,9 @@ export function registerRoutes(): void {
       const q = new URLSearchParams(window.location.search).get('q');
       return q ? `${q} · Search` : 'Search';
     } },
+    // Invitations (no repo layout: a private repo isn't visible before accepting).
+    { path: '/orgs/:org/invitation', load: () => import('../pages/invitations/OrgInvitationPage'), title: (p) => `Invitation · ${p.org}` },
+    { path: '/:owner/:repo/invitations', load: () => import('../pages/invitations/RepoInvitationPage'), title: (p) => `Invitation · ${p.owner}/${p.repo}` },
     // Projects (owner level). Before `/:owner/...` patterns.
     { path: '/orgs/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
     { path: '/users/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
@@ -361,6 +366,13 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/runs/:id', layout: RepoLayout, load: () => import('../pages/repo/CheckRunPage'), title: (p) => `Check run ${p.id} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/labels/:name', layout: RepoLayout, load: AliasPage, title: (p) => `${p.name} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/search', layout: RepoLayout, load: AliasPage, title: (p) => `Search · ${p.owner}/${p.repo}` },
+    // Insights (package P31).
+    { path: '/:owner/:repo/pulse', layout: RepoLayout, load: InsightsPage, title: (p) => `Pulse · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/pulse/:period', layout: RepoLayout, load: InsightsPage, title: (p) => `Pulse · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/graphs/:graph', layout: RepoLayout, load: InsightsPage, title: (p) => `${p.graph!.replace(/-/g, ' ')} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/community', layout: RepoLayout, load: InsightsPage, title: (p) => `Community standards · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/network', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/network/members', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);

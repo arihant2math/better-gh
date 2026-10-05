@@ -137,6 +137,26 @@ async fn meta_reports_ghes_version() {
 }
 
 #[tokio::test]
+async fn meta_reports_ssh_host_keys() {
+    let app = bgh_server::test_app().await;
+    let path = bgh_repos::ssh::host_key_path(&app.state);
+    bgh_repos::ssh::keys::load_or_generate_host_key(&path).unwrap();
+    let res = app.get("/api/v3/meta").send().await;
+    res.assert_status(200);
+    let v = res.json();
+    let keys = v["ssh_keys"].as_array().expect("ssh_keys");
+    assert_eq!(keys.len(), 1);
+    let key = keys[0].as_str().unwrap();
+    assert!(key.starts_with("ssh-ed25519 AAAA"), "{key}");
+    assert_eq!(key.split(' ').count(), 2, "no comment: {key}");
+    let fp = v["ssh_key_fingerprints"]["SHA256_ED25519"]
+        .as_str()
+        .unwrap();
+    assert_eq!(fp.len(), 43, "unpadded base64 SHA-256: {fp}");
+    assert!(!fp.starts_with("SHA256:"));
+}
+
+#[tokio::test]
 async fn rate_limit_uses_the_graphql_budget() {
     let app = bgh_server::test_app().await;
     let alice = app.create_user("alice").await;

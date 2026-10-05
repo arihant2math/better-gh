@@ -94,7 +94,7 @@ SHA-addressed responses (commits/blobs/trees by full SHA) send
 * List endpoints filtered by readability after paging (`/user/starred`, `/users/{u}/starred`, subscriptions) can return short pages.
 * Ruleset `bypass_mode: pull_request`, `required_signatures` and `update_allows_fetch_and_merge` are stored but not enforced; classic `required_signatures` likewise.
 * Contents: submodules in directory arrays are `type: "file"` (GitHub's documented compat behavior); symlinks to files resolve to the target file; `download_url` carries no token for private repos.
-* Short SHAs are not accepted by `git/blobs|commits|tags/{sha}`.
+* `git/blobs|commits|tags/{sha}` accept unique abbreviated SHAs (≥7 hex; P33); only full-SHA responses are marked immutable.
 * Restriction / bypass users aren't checked for push access on PUT; `apps` are always empty.
 * Coordination with `bgh/git-transport` (B2b), for the merge:
   * B2b owns `/{owner}/{repo}/raw/...`; repos-api registers no web routes of its own besides git HTTP.

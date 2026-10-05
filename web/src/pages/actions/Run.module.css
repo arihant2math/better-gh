@@ -585,3 +585,20 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* A job calling a reusable workflow: its called jobs are the rows. */
+.nodeCall .groupHead .groupCount {
+  overflow: hidden;
+  max-width: 34%;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeCall {
+  border-left: 3px solid var(--accent-subtle);
+}
+
+.groupRowPending {
+  color: var(--fg-subtle);
+}

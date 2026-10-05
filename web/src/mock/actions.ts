@@ -44,6 +44,8 @@ interface JobDef {
   main: string;
   runsOn: (mx: string | null) => string;
   environment?: string;
+  /** Set on jobs of a called reusable workflow (key `<caller>/<job>`). */
+  caller?: { key: string; name: string; uses: string; needs: string[] };
 }
 
 interface WorkflowDef {
@@ -88,15 +90,34 @@ const DEFS: WorkflowDef[] = [
     ],
     jobs: [
       { key: 'build', name: 'build', needs: [], steps: [...NODE, 'Build', 'Upload artifact'], main: 'Build', runsOn: ubuntu },
-      { key: 'deploy-staging', name: 'Deploy to staging', needs: ['build'], steps: ['Download artifact', 'Configure credentials', 'Deploy'], main: 'Deploy', runsOn: ubuntu, environment: 'staging' },
       {
-        key: 'deploy-production',
-        name: 'Deploy to production',
-        needs: ['deploy-staging'],
+        key: 'deploy-staging/deploy',
+        name: 'Deploy to staging / deploy',
+        needs: ['build'],
+        steps: ['Download artifact', 'Configure credentials', 'Deploy'],
+        main: 'Deploy',
+        runsOn: ubuntu,
+        environment: 'staging',
+        caller: { key: 'deploy-staging', name: 'Deploy to staging', uses: './.github/workflows/deploy-env.yml', needs: ['build'] },
+      },
+      {
+        key: 'deploy-production/deploy',
+        name: 'Deploy to production / deploy',
+        needs: ['deploy-staging/deploy'],
         steps: ['Download artifact', 'Configure credentials', 'Deploy'],
         main: 'Deploy',
         runsOn: ubuntu,
         environment: 'production',
+        caller: { key: 'deploy-production', name: 'Deploy to production', uses: './.github/workflows/deploy-env.yml', needs: ['deploy-staging'] },
+      },
+      {
+        key: 'deploy-production/verify',
+        name: 'Deploy to production / verify',
+        needs: ['deploy-production/deploy'],
+        steps: ['Smoke test'],
+        main: 'Smoke test',
+        runsOn: ubuntu,
+        caller: { key: 'deploy-production', name: 'Deploy to production', uses: './.github/workflows/deploy-env.yml', needs: ['deploy-staging'] },
       },
     ],
   },
@@ -742,7 +763,7 @@ const GEN: Record<string, (c: LogCtx) => string[]> = {
     `Authenticated as assumedRoleId AROA${fakeSha(`${c.job.id}:role`).slice(0, 16).toUpperCase()}:GitHubActions`,
   ],
   Deploy: (c) => {
-    const env = c.job.key === 'deploy-production' ? 'production' : 'staging';
+    const env = c.job.key.startsWith('deploy-production') ? 'production' : 'staging';
     const out = [...runCmd(c, `./scripts/deploy.sh ${env}`, { DEPLOY_ENV: env, AWS_REGION: 'eu-west-1' })];
     out.push(`${A.blue}==>${A.reset} ${A.bold}Deploying ${c.run.headSha.slice(0, 7)} to ${env}${A.reset}`);
     out.push(`##[command]aws s3 sync dist/ s3://acme-web-${env}/ --delete`);
@@ -1087,7 +1108,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
   };
 
   const pickFail = (def: WorkflowDef, rng: Rng): { key: string; mx: string | null } => {
-    const weighted = def.jobs.map((j) => ({ j, w: j.key === 'test' || j.key === 'e2e' || j.key === 'deploy-production' ? 3 : 1 }));
+    const weighted = def.jobs.map((j) => ({ j, w: j.key === 'test' || j.key === 'e2e' || j.key === 'deploy-production/deploy' ? 3 : 1 }));
     let roll = rng.next() * weighted.reduce((n, x) => n + x.w, 0);
     let pick = weighted[0]!.j;
     for (const x of weighted) {
@@ -2134,6 +2155,39 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
 
   // ------------------------------------------------------------ private UI endpoints
 
+  /** Top-level graph jobs: called jobs fold into one node per caller. */
+  const graphJobs = (def: WorkflowDef) => {
+    const out: { key: string; name: string; needs: string[]; matrix: boolean; uses: string | null }[] = [];
+    for (const d of def.jobs) {
+      if (d.caller) {
+        if (!out.some((o) => o.key === d.caller!.key)) out.push({ key: d.caller.key, name: d.caller.name, needs: d.caller.needs, matrix: false, uses: d.caller.uses });
+      } else out.push({ key: d.key, name: d.name, needs: d.needs.map((n) => n.split('/')[0]!), matrix: !!d.matrix, uses: null });
+    }
+    return out;
+  };
+  const graphCalls = (run: Run) => {
+    const callers = new Map<string, JobDef[]>();
+    for (const d of run.wf.def.jobs) if (d.caller) callers.set(d.caller.key, [...(callers.get(d.caller.key) ?? []), d]);
+    const cur = current(run);
+    return [...callers].map(([key, defs], i) => {
+      const jobs = cur.filter((j) => j.key.startsWith(`${key}/`));
+      const done = jobs.length === defs.length && jobs.every((j) => j.status === 'completed');
+      const caller = defs[0]!.caller!;
+      return {
+        id: run.id * 100 + i,
+        key,
+        root: key,
+        prefix: `${key}/`,
+        name: caller.name,
+        uses: caller.uses,
+        workflow_ref: `${caller.uses.slice(2)}@refs/heads/${run.headBranch}`,
+        status: done ? 'completed' : 'in_progress',
+        conclusion: done ? (jobs.find((j) => j.conclusion !== 'success')?.conclusion ?? 'success') : null,
+        jobs: defs.map((d) => ({ key: d.key, name: d.key.slice(key.length + 1), needs: d.needs.filter((n) => n.startsWith(`${key}/`)), matrix: !!d.matrix, uses: null })),
+      };
+    }).filter((c) => cur.some((j) => j.key.startsWith(c.prefix)));
+  };
+
   R('GET', '/_bgh/actions/repos/:owner/:repo/runs/:id/graph', (ctx) => {
     const r = runOf(ctx);
     if (isResp(r)) return r;
@@ -2143,8 +2197,9 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
       body: {
         run_id: run.id,
         workflow_name: run.wf.def.name,
-        jobs: run.wf.def.jobs.map((d) => ({ key: d.key, name: d.name, needs: d.needs, matrix: !!d.matrix, uses: null })),
+        jobs: graphJobs(run.wf.def),
         job_keys: Object.fromEntries(run.jobs.map((j) => [String(j.id), j.key])),
+        calls: graphCalls(run),
       },
     };
   });

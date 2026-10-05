@@ -3,8 +3,9 @@
 # throwaway bgh server (temp DB + data dir) serving web/dist with the built-in
 # runner on the shell executor, pushes a repository with a small workflow,
 # waits for the run, then drives the web UI with Playwright
-# (web/scripts/actions-e2e.mjs): runs list, run graph, logs (live + done),
-# dispatch form, secrets (sealed box, verified by a job), runners.
+# (web/scripts/actions-e2e.mjs): runs list, run graph (matrix group and a
+# reusable workflow call), logs (live + done), dispatch form, secrets (sealed
+# box, verified by a job), runners.
 #
 #   scripts/actions-e2e.sh [--shots DIR] [--keep]
 #
@@ -134,6 +135,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo deploying
+  package:
+    needs: lint
+    uses: ./.github/workflows/package.yml
+    with:
+      target: linux
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          test "${{ needs.package.outputs.archive }}" = demo-linux.tar.gz
+          echo "published ${{ needs.package.outputs.archive }}"
+YAML
+# A reusable workflow called by CI's `package` job (P16).
+cat >"$SRC/.github/workflows/package.yml" <<'YAML'
+name: Package
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+    outputs:
+      archive:
+        value: ${{ jobs.bundle.outputs.archive }}
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "assembling for ${{ inputs.target }} (${{ github.job_workflow_sha }})"
+  bundle:
+    needs: assemble
+    runs-on: ubuntu-latest
+    outputs:
+      archive: ${{ steps.b.outputs.archive }}
+    steps:
+      - id: b
+        run: echo "archive=demo-${{ inputs.target }}.tar.gz" >> "$GITHUB_OUTPUT"
 YAML
 printf 'fn main() {\n    let x = 1;\n}\n' >"$SRC/src/main.rs"
 printf '# demo\n' >"$SRC/README.md"

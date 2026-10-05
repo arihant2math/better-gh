@@ -4,6 +4,9 @@
 //! * `GET …/runs/{run_id}/graph`: the run's job graph from the stored
 //!   workflow definition (`needs` edges, matrix jobs) plus the job key of
 //!   every job row of the run, so the client can place REST jobs on it.
+//!   `calls` lists the reusable workflow calls of the latest attempt (one
+//!   per matrix instance) with the called workflow's jobs, so the client can
+//!   group called jobs (keys `<call>/<job>`) under their calling job.
 //! * `GET …/workflows/{workflow_id}/dispatch?ref=`: `workflow_dispatch`
 //!   inputs of the workflow file at `ref` (default branch when omitted).
 
@@ -16,6 +19,8 @@ use serde_json::{Map, Value, json};
 
 use crate::api::runs::load_run;
 use crate::api::workflows::find_workflow;
+use crate::models::JobRow;
+use crate::reusable::{self, StoredCall};
 use crate::trigger;
 use crate::workflow::Workflow;
 
@@ -52,11 +57,52 @@ async fn run_graph(
             })
         })
         .collect();
-    let keys: Vec<(i64, String)> =
-        sqlx::query_as("SELECT id, job_key FROM actions_jobs WHERE run_id = $1 ORDER BY id")
-            .bind(run.id)
-            .fetch_all(&state.db)
-            .await?;
+    let keys: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, job_key FROM actions_jobs WHERE run_id = $1 AND kind = 'job' ORDER BY id",
+    )
+    .bind(run.id)
+    .fetch_all(&state.db)
+    .await?;
+    let call_rows: Vec<JobRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM actions_jobs
+          WHERE run_id = $1 AND run_attempt = $2 AND kind = 'call' ORDER BY id",
+        JobRow::COLUMNS
+    ))
+    .bind(run.id)
+    .bind(run.run_attempt)
+    .fetch_all(&state.db)
+    .await?;
+    let calls: Vec<Value> = call_rows
+        .iter()
+        .filter_map(|r| {
+            let call: StoredCall = serde_json::from_value(r.spec.clone()?).ok()?;
+            let jobs: Vec<Value> = call
+                .def
+                .jobs
+                .iter()
+                .map(|(key, job)| {
+                    json!({
+                        "key": format!("{}{key}", call.prefix),
+                        "name": job.name.clone().unwrap_or_else(|| key.clone()),
+                        "needs": job.needs.iter().map(|n| format!("{}{n}", call.prefix)).collect::<Vec<_>>(),
+                        "uses": job.uses,
+                    })
+                })
+                .collect();
+            Some(json!({
+                "id": r.id,
+                "key": r.job_key,
+                "root": reusable::root_key(&r.job_key),
+                "prefix": call.prefix,
+                "name": r.name,
+                "uses": call.uses,
+                "workflow_ref": call.workflow_ref,
+                "status": r.status,
+                "conclusion": r.conclusion,
+                "jobs": jobs,
+            }))
+        })
+        .collect();
     let job_keys: Map<String, Value> = keys
         .into_iter()
         .map(|(id, key)| (id.to_string(), Value::String(key)))
@@ -66,6 +112,7 @@ async fn run_graph(
         "workflow_name": def.as_ref().and_then(|d| d.name.clone()).unwrap_or(run.name),
         "jobs": jobs,
         "job_keys": job_keys,
+        "calls": calls,
     })))
 }
 

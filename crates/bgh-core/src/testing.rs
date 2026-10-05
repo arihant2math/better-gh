@@ -489,6 +489,25 @@ impl TestApp {
         .expect("add org member");
     }
 
+    /// Store site settings section `key` (fields merged over the stored
+    /// ones, unvalidated) and drop the cached copy.
+    pub async fn set_settings(&self, key: &str, fields: Value) {
+        let mut stored: Value =
+            sqlx::query_scalar("SELECT value FROM site_settings WHERE key = $1")
+                .bind(key)
+                .fetch_optional(&self.state.db)
+                .await
+                .expect("load setting")
+                .unwrap_or_else(|| json!({}));
+        for (k, v) in fields.as_object().expect("settings object") {
+            stored[k] = v.clone();
+        }
+        crate::settings::store_section(&self.state.db, key, &stored)
+            .await
+            .expect("store setting");
+        crate::settings::invalidate(&self.state);
+    }
+
     /// Create a repository through the API (`POST /api/v3/user/repos` or
     /// `/orgs/{org}/repos`), panicking unless it returns 201.
     pub async fn create_repo_with(&self, user: &TestUser, org: Option<&str>, body: Value) -> Value {

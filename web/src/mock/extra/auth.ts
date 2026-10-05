@@ -109,6 +109,20 @@ export function installAuthMocks(server: MockServer): void {
   const s = () => authState(server);
   const R = (method: string, pattern: string, h: (ctx: Ctx) => Resp, pub = true) => server.route(method, pattern, h, { public: pub });
 
+  // ---------------- site info (public, also in private mode)
+  R('GET', '/_bgh/site', () =>
+    ok({
+      site_name: 'Better GitHub',
+      announcement: null,
+      maintenance: { enabled: false, message: null, scheduled_at: null },
+      signup_policy: 'open',
+      password_login: true,
+      oidc_providers: [{ name: 'acme', display_name: 'Acme SSO' }],
+      private_mode: false,
+      repository_visibilities: { allowed: ['public', 'internal', 'private'], default_user: 'public', default_org: 'public' },
+    }),
+  );
+
   // ---------------- SSO
   R('GET', '/_bgh/sso', () => ok([{ id: 'acme', name: 'Acme SSO', login_url: 'http://mock.local/_bgh/sso/acme/login' }]));
   // The real endpoint redirects to the provider; the mock signs in at once.
