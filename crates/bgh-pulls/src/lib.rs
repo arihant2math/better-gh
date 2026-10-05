@@ -168,6 +168,10 @@ pub fn web_router() -> Router<AppState> {
         )
         .route(&p("/patch"), get(web::file_patch))
         .route(
+            "/_bgh/repos/{owner}/{repo}/check-runs/{id}/requested-action",
+            post(checks::request_action),
+        )
+        .route(
             "/_bgh/repos/{owner}/{repo}/pulls/comments/{id}/reactions/{content}",
             axum::routing::delete(comments::delete_own_reaction),
         )

@@ -1104,6 +1104,49 @@ pub async fn rerequest_run(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RequestedActionBody {
+    pub identifier: Option<String>,
+}
+
+/// `POST /_bgh/repos/{owner}/{repo}/check-runs/{id}/requested-action`
+/// `{"identifier"}`: a user clicked one of the run's `actions` buttons
+/// (GitHub's UI-only flow) → `check_run` `requested_action` webhook for
+/// the integration to act on. Write access; the identifier must be one of
+/// the run's actions.
+pub async fn request_action(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, id)): Path<(String, String, i64)>,
+    Json(body): Json<RequestedActionBody>,
+) -> ApiResult<StatusCode> {
+    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
+    access.require(Permission::Write)?;
+    let run = find_run(&state, access.repo.id, id).await?;
+    let identifier = body.identifier.unwrap_or_default();
+    let known = run
+        .actions
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|a| a["identifier"].as_str() == Some(identifier.as_str()));
+    if !known {
+        return Err(ApiError::invalid_field(FieldError::invalid(
+            "CheckRun",
+            "identifier",
+        )));
+    }
+    let mut tx = Tx::begin(&state).await?;
+    tx.emit(Event::CheckRunActionRequested {
+        repo_id: access.repo.id,
+        check_run_id: run.id,
+        actor_id: auth.user.id,
+        identifier,
+    });
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RunListQuery {
     pub check_name: Option<String>,
     pub status: Option<String>,

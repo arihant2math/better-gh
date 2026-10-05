@@ -353,6 +353,9 @@ pub async fn update_repo(
         repo_id: updated.id,
         actor_id: auth.user.id,
     });
+    for event in repository_webhook_events(&old, &updated, auth.user.id) {
+        tx.emit(event);
+    }
     if let Some(branch) = &set_head {
         // HEAD follows the default branch; done inside the transaction
         // window so a failure rolls the row back.
@@ -517,6 +520,80 @@ pub async fn transfer(
     ))
 }
 
+/// Webhook-facing events for a settings change: `archived`/`unarchived`,
+/// `publicized`/`privatized`, and `edited` (with GitHub's `changes` for
+/// description, homepage and default branch) when any other setting
+/// changed. Renames are emitted separately.
+pub fn repository_webhook_events(
+    old: &db::Repository,
+    new: &db::Repository,
+    actor_id: i64,
+) -> Vec<Event> {
+    let repo_id = new.id;
+    let mut out = Vec::new();
+    let mut changes = serde_json::Map::new();
+    if old.description != new.description {
+        changes.insert("description".into(), json!({ "from": old.description }));
+    }
+    if old.homepage != new.homepage {
+        changes.insert("homepage".into(), json!({ "from": old.homepage }));
+    }
+    if old.default_branch != new.default_branch {
+        changes.insert(
+            "default_branch".into(),
+            json!({ "from": old.default_branch }),
+        );
+    }
+    // Anything else (merge settings, features, ...) is an `edited` with
+    // only the documented keys in `changes`.
+    const SETTINGS: &[&str] = &[
+        "is_template",
+        "allow_forking",
+        "has_issues",
+        "has_projects",
+        "has_wiki",
+        "has_discussions",
+        "allow_merge_commit",
+        "allow_squash_merge",
+        "allow_rebase_merge",
+        "allow_auto_merge",
+        "allow_update_branch",
+        "delete_branch_on_merge",
+        "use_squash_pr_title_as_default",
+        "squash_merge_commit_title",
+        "squash_merge_commit_message",
+        "merge_commit_title",
+        "merge_commit_message",
+        "web_commit_signoff_required",
+    ];
+    let comparable = |r: &db::Repository| {
+        let v = serde_json::to_value(r).unwrap_or_default();
+        SETTINGS.iter().map(|k| v[*k].clone()).collect::<Vec<_>>()
+    };
+    if !changes.is_empty() || comparable(old) != comparable(new) {
+        out.push(Event::RepositoryEdited {
+            repo_id,
+            actor_id,
+            changes: serde_json::Value::Object(changes),
+        });
+    }
+    if old.archived != new.archived {
+        out.push(if new.archived {
+            Event::RepositoryArchived { repo_id, actor_id }
+        } else {
+            Event::RepositoryUnarchived { repo_id, actor_id }
+        });
+    }
+    if old.visibility != new.visibility {
+        if new.visibility == "public" {
+            out.push(Event::RepositoryPublicized { repo_id, actor_id });
+        } else if old.visibility == "public" {
+            out.push(Event::RepositoryPrivatized { repo_id, actor_id });
+        }
+    }
+    out
+}
+
 // ----- topics --------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -594,6 +671,13 @@ async fn put_topics(
         repo_id: updated.id,
         actor_id: auth.user.id,
     });
+    if updated.topics != access.repo.topics {
+        tx.emit(Event::RepositoryEdited {
+            repo_id: updated.id,
+            actor_id: auth.user.id,
+            changes: json!({ "topics": { "from": access.repo.topics } }),
+        });
+    }
     tx.commit().await?;
     Ok(Json(Topics {
         names: updated.topics,
