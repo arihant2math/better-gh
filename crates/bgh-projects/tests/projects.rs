@@ -1295,3 +1295,82 @@ async fn bootstrap_provider() {
             .any(|p| p.name == "projects")
     );
 }
+
+#[tokio::test]
+async fn projects_are_in_the_sync_bootstrap() {
+    let app = app().await;
+    let admin = app.create_user("admin").await;
+    let org = app.create_org("acme", &admin).await;
+    let bob = app.create_user("bob").await;
+    let p = create_project(&app, &admin, "acme", "Board").await;
+    create_project(&app, &admin, "admin", "Mine").await;
+    let item = app
+        .post(&format!("/_bgh/projects/{}/items", p["id"]))
+        .auth(&admin)
+        .json(&json!({"draft": {"title": "x"}}))
+        .send()
+        .await;
+    item.assert_status(201);
+    app.patch(&format!(
+        "/_bgh/projects/{}/items/{}",
+        p["id"],
+        item.json()["id"]
+    ))
+    .auth(&admin)
+    .json(&json!({"assigneeIds": [bob.id]}))
+    .send()
+    .await
+    .assert_status(200);
+
+    let res = app.get("/_bgh/sync/bootstrap").auth(&admin).send().await;
+    res.assert_status(200);
+    let body = res.json();
+    let models = &body["models"];
+    let projects = models["project"].as_array().unwrap();
+    assert_eq!(projects.len(), 2);
+    assert!(projects.iter().any(|x| x["ownerId"] == org.id));
+    assert_eq!(models["projectField"].as_array().unwrap().len(), 12);
+    assert_eq!(models["projectView"].as_array().unwrap().len(), 2);
+    assert_eq!(models["projectWorkflow"].as_array().unwrap().len(), 12);
+    let items = models["projectItem"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    // Bootstrap rows match the delta shape recorded for the same row.
+    let deltas = sync_actions(&app, &format!("org:{}", org.id), "projectItem").await;
+    assert_eq!(&deltas.last().unwrap().1, &items[0]);
+    // Referenced users (draft assignee) are included.
+    assert!(
+        models["user"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["id"] == bob.id)
+    );
+}
+
+#[tokio::test]
+async fn writes_echo_client_tx() {
+    let app = app().await;
+    let alice = app.create_user("alice").await;
+    let p = create_project(&app, &alice, "alice", "P").await;
+    let tx = "6f1c2a8e-8d4b-4e7a-9c1e-0b8b8f3f5a10";
+    let res = app
+        .patch(&format!("/_bgh/projects/{}", p["id"]))
+        .auth(&alice)
+        .header("x-client-tx", tx)
+        .json(&json!({"title": "Renamed"}))
+        .send()
+        .await;
+    res.assert_status(200);
+    let sync_id: i64 = res
+        .header("x-bgh-sync-id")
+        .expect("sync id header")
+        .parse()
+        .unwrap();
+    let recorded: Option<String> =
+        sqlx::query_scalar("SELECT tx::text FROM sync_actions WHERE id = $1")
+            .bind(sync_id)
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(recorded.as_deref(), Some(tx));
+}
