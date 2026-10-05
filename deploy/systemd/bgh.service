@@ -1,0 +1,62 @@
+# Better GitHub as a systemd service.
+#
+#   install -m 0755 target/release/bgh /usr/local/bin/bgh
+#   useradd --system --home-dir /var/lib/bgh --shell /usr/sbin/nologin bgh
+#   install -d -m 0750 /etc/bgh && install -m 0640 -g bgh deploy/bgh.env.example /etc/bgh/bgh.env
+#   install -m 0644 deploy/systemd/bgh.service /etc/systemd/system/bgh.service
+#   systemctl daemon-reload && systemctl enable --now bgh
+#
+# Data (git repositories, uploads) lives in /var/lib/bgh (StateDirectory).
+# See docs/SELF_HOSTING.md.
+
+[Unit]
+Description=Better GitHub
+After=network-online.target postgresql.service redis-server.service redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bgh
+Group=bgh
+EnvironmentFile=/etc/bgh/bgh.env
+Environment=BGH_DATA_DIR=/var/lib/bgh
+StateDirectory=bgh
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/bgh
+# Applies pending migrations, then serves HTTP and runs job workers.
+ExecStart=/usr/local/bin/bgh serve
+Restart=on-failure
+RestartSec=5s
+# SIGTERM goes to bgh only, which drains in-flight requests (including git
+# pushes) before exiting; leftover git children are killed after the timeout.
+KillMode=mixed
+TimeoutStopSec=90s
+LimitNOFILE=65536
+UMask=0027
+
+# Hardening. bgh only needs its state directory, the network and git.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# To serve SSH on port 22 directly (BGH_SSH_PORT=22), allow binding
+# privileged ports instead of the empty bounding set above:
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

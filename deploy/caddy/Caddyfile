@@ -1,0 +1,24 @@
+# Caddy reverse proxy for Better GitHub (bgh listening on 127.0.0.1:3000).
+# Caddy obtains and renews the TLS certificate automatically.
+#
+#   caddy run --config deploy/caddy/Caddyfile     (or copy to /etc/caddy/Caddyfile)
+#
+# Set BGH_BASE_URL=https://git.example.com and BGH_LISTEN=127.0.0.1:3000.
+# Caddy proxies WebSockets (/_bgh/sync/ws) transparently, streams request
+# bodies, and has no request body size limit by default.
+
+git.example.com {
+	reverse_proxy 127.0.0.1:3000 {
+		# Flush response bytes immediately: git packs and the sync stream
+		# must not be buffered.
+		flush_interval -1
+		transport http {
+			# Long clones/pushes.
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+}
+
+# git over SSH cannot go through Caddy's HTTP server: publish bgh's
+# BGH_SSH_PORT (default 2222) directly in the firewall.

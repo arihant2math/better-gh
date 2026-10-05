@@ -9,6 +9,7 @@
 //! * each crate's `web_router()` merged at the root (`/_bgh/...`, git HTTP)
 //! * everything else: the web client from `BGH_WEB_DIR` with SPA fallback
 
+pub mod embedded;
 mod web;
 
 use std::time::Duration;
