@@ -266,7 +266,11 @@ pub struct PasswordBody {
 
 /// Re-authentication for sensitive changes (users without a password, e.g.
 /// SSO-only accounts, must give a second factor instead).
-async fn confirm_password(state: &AppState, user: &db::User, password: &str) -> ApiResult<()> {
+pub(crate) async fn confirm_password(
+    state: &AppState,
+    user: &db::User,
+    password: &str,
+) -> ApiResult<()> {
     let key = format!("sudo_fail:{}", user.id);
     if bgh_core::ratelimit::count(state, &key).await >= 10 {
         return Err(ApiError::Status(

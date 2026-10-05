@@ -330,6 +330,9 @@ pub async fn get_org(
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateOrgBody {
+    /// New login (rename by an owner, `crate::lifecycle::rename`).
+    #[serde(default)]
+    pub login: Option<String>,
     #[serde(default)]
     pub name: Patch<String>,
     #[serde(default)]
@@ -368,6 +371,9 @@ pub async fn update_org(
 ) -> ApiResult<Json<OrganizationFull>> {
     let access = OrgAccess::load(&state, auth.as_ref(), &org).await?;
     let actor = access.require_admin()?.user.clone();
+    if let Some(login) = body.login.as_deref() {
+        crate::lifecycle::rename(&state, &actor, &access.org, login).await?;
+    }
     let mut errors = Vec::new();
     if let Some(p) = &body.default_repository_permission
         && !matches!(p.as_str(), "none" | "read" | "write" | "admin")

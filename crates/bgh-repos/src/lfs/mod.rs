@@ -216,11 +216,7 @@ pub async fn authorize(
         let grant = load_grant(state, token.trim())
             .await?
             .ok_or_else(|| challenge("Invalid or expired LFS token."))?;
-        let name = repo.strip_suffix(".git").unwrap_or(repo);
-        let owner_row = db::User::find_by_login(&state.db, owner)
-            .await?
-            .ok_or(ApiError::NotFound)?;
-        let repo_row = db::Repository::find_by_name(&state.db, owner_row.id, name)
+        let (repo_row, owner_row) = bgh_core::lifecycle::resolve_repo(&state.db, owner, repo)
             .await?
             .ok_or(ApiError::NotFound)?;
         if repo_row.id != grant.repo_id {

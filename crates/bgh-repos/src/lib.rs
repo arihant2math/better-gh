@@ -34,6 +34,7 @@ pub mod json;
 pub mod keys;
 pub mod lfs;
 pub mod licenses;
+pub mod lifecycle;
 pub mod maintenance;
 pub mod media;
 pub mod mirrors;
@@ -123,6 +124,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(mirrors::web_routes())
         .merge(traffic::web_routes())
         .merge(autolinks::web_routes())
+        .merge(lifecycle::web_routes())
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;
@@ -146,4 +148,5 @@ pub fn register(reg: &mut Registry) {
     reg.service("repos.mirrors", mirrors::service);
     reg.job(licenses::detect_job);
     reg.service("repos.license_backfill", licenses::backfill_service);
+    reg.service("repos.purge_deleted", lifecycle::purge_service);
 }

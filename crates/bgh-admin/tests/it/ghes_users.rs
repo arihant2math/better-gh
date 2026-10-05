@@ -151,10 +151,13 @@ async fn renames_and_deletes_users() {
         .send()
         .await
         .assert_status(200);
-    app.get("/api/v3/users/alice")
-        .send()
-        .await
-        .assert_status(404);
+    // The old login redirects (P50) and stays reserved.
+    let res = app.get("/api/v3/users/alice").send().await;
+    res.assert_status(301);
+    assert_eq!(
+        res.header("location").unwrap(),
+        app.url(&format!("/api/v3/user/{}", alice.id))
+    );
 
     // Taken login.
     let res = app

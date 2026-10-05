@@ -535,6 +535,37 @@ pub mod templates {
             &format!("You received this email because @{inviter} invited you to {full_name}."),
         )
     }
+
+    /// Repository transfer request to a user (accept within `valid_hours`).
+    pub fn repo_transfer(
+        site: &str,
+        to: &str,
+        login: &str,
+        requester: &str,
+        full_name: &str,
+        url: &str,
+        valid_hours: i64,
+    ) -> Email {
+        simple(
+            site,
+            to,
+            login,
+            format!("[{site}] @{requester} wants to transfer {full_name} to you"),
+            &[
+                format!(
+                    "@{requester} would like to transfer the {full_name} repository to your account."
+                ),
+                format!(
+                    "The request expires in {}. If you don't accept it, nothing changes.",
+                    duration(valid_hours * 60)
+                ),
+            ],
+            Some((url, "Review transfer request")),
+            &format!(
+                "You received this email because @{requester} requested a transfer of {full_name} to you."
+            ),
+        )
+    }
 }
 
 #[cfg(test)]

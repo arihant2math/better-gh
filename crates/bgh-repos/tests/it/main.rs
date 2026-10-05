@@ -22,6 +22,7 @@ mod import;
 mod insights;
 mod keys;
 mod lfs;
+mod lifecycle;
 mod maintenance;
 mod markdown;
 mod metadata;

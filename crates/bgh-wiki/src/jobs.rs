@@ -27,12 +27,17 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     Ok(())
 }
 
-/// Idempotent; never deletes the wiki of a repository that (still) exists.
+/// Idempotent; never deletes the wiki of a repository that (still) exists
+/// or is soft-deleted (restorable; the purge enqueues this job again).
 pub async fn delete_storage(state: AppState, job: DeleteWikiStorage) -> anyhow::Result<()> {
-    if db::Repository::find(&state.db, job.repo_id)
-        .await?
-        .is_some()
-    {
+    let keep: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM repositories WHERE id = $1)
+             OR EXISTS (SELECT 1 FROM deleted_repositories WHERE id = $1)",
+    )
+    .bind(job.repo_id)
+    .fetch_one(&state.db)
+    .await?;
+    if keep {
         return Ok(());
     }
     crate::access::store(&state).delete(job.repo_id).await?;

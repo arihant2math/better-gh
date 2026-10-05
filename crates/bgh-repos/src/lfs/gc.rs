@@ -85,11 +85,15 @@ pub async fn collect(state: &AppState, grace: Duration) -> anyhow::Result<usize>
     .await?;
     let mut removed = 0;
     for chunk in candidates.chunks(500) {
-        let referenced: Vec<String> =
-            sqlx::query_scalar("SELECT DISTINCT oid FROM lfs_objects WHERE oid = ANY($1)")
-                .bind(chunk)
-                .fetch_all(&state.db)
-                .await?;
+        let referenced: Vec<String> = sqlx::query_scalar(
+            // Soft-deleted repositories keep theirs until the purge.
+            "SELECT DISTINCT oid FROM lfs_objects WHERE oid = ANY($1)
+                 UNION SELECT DISTINCT o FROM deleted_repositories d, unnest(d.lfs_oids) o
+                  WHERE o = ANY($1)",
+        )
+        .bind(chunk)
+        .fetch_all(&state.db)
+        .await?;
         for oid in chunk.iter().filter(|o| !referenced.contains(o)) {
             store.remove(oid).await?;
             removed += 1;
