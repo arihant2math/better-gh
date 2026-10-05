@@ -11,6 +11,7 @@ import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
 import { Rng, fakeSha, iso } from './rng';
+import { installCodeRoutes } from './code';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
@@ -44,6 +45,8 @@ export interface Ctx {
   body: Record<string, unknown>;
   tx: string | null;
   accept: string;
+  /** Raw request body (uploads); JSON bodies are parsed into `body`. */
+  raw?: BodyInit | null;
 }
 
 export interface Resp {
@@ -140,6 +143,7 @@ export class MockServer implements Transport {
       body,
       tx: headers.get('x-client-tx'),
       accept: headers.get('accept') ?? '',
+      raw: init.body,
     };
     const isMutation = method !== 'GET' && !isAuthRoute;
     let resp: Resp;
@@ -338,6 +342,8 @@ export class MockServer implements Transport {
       );
       this.routes.push({ method, re, handler });
     };
+    // Code tab (mock/code.ts) first: it supersedes the simple browse routes below.
+    installCodeRoutes(R, this);
     const repoOr404 = (ctx: Ctx): Repo | Resp => this.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!)) ?? { status: 404, body: { message: 'Not Found' } };
     const issueOr404 = (ctx: Ctx): [Repo, Issue] | Resp => {
       const repo = repoOr404(ctx);
