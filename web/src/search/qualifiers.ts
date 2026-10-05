@@ -40,11 +40,14 @@ const ISSUE_COMMON: QualifierDef[] = [
   { key: 'assignee', description: 'Assigned to a user', values: 'user', negatable: true },
   { key: 'label', description: 'Has a label', values: 'label', negatable: true },
   { key: 'milestone', description: 'In a milestone', values: 'milestone' },
-  { key: 'no', description: 'Missing metadata', values: ['label', 'assignee', 'milestone'] },
+  { key: 'no', description: 'Missing metadata', values: ['label', 'assignee', 'milestone', 'type'] },
 ];
 
+/** Issue types (organization defaults; custom names work too). */
+const ISSUE_TYPE: QualifierDef = { key: 'type', description: 'Issue type', values: ['Bug', 'Feature', 'Task'] };
+
 const SERVER_ISSUES: QualifierDef[] = [
-  { key: 'is', description: 'State or type', values: ['open', 'closed', 'issue', 'pr', 'merged', 'unmerged', 'draft', 'locked', 'unlocked', 'public', 'private', 'archived'] },
+  { key: 'is', description: 'State or type', values: ['open', 'closed', 'issue', 'pr', 'merged', 'unmerged', 'draft', 'locked', 'unlocked', 'public', 'private', 'archived', 'blocked', 'blocking'] },
   { key: 'state', description: 'Open or closed', values: STATE },
   ...ISSUE_COMMON,
   { key: 'mentions', description: 'Mentions a user', values: 'user' },
@@ -56,7 +59,8 @@ const SERVER_ISSUES: QualifierDef[] = [
   { key: 'org', description: 'In an organization', values: 'owner', negatable: true },
   { key: 'user', description: 'In a user’s repositories', values: 'owner', negatable: true },
   { key: 'in', description: 'Search in fields', values: ['title', 'body', 'comments'] },
-  { key: 'reason', description: 'Close reason', values: ['completed', 'not-planned', 'reopened'] },
+  { key: 'reason', description: 'Close reason', values: ['completed', 'not-planned', 'reopened', 'duplicate'] },
+  ISSUE_TYPE,
   { key: 'created', description: 'Created date', values: 'date' },
   { key: 'updated', description: 'Updated date', values: 'date' },
   { key: 'closed', description: 'Closed date', values: 'date' },
@@ -73,8 +77,9 @@ const SERVER_ISSUES: QualifierDef[] = [
 
 const DEFS: Record<QualifierSet, QualifierDef[]> = {
   'issue-list': [
-    { key: 'is', description: 'State', values: ['open', 'closed', 'all'] },
+    { key: 'is', description: 'State', values: ['open', 'closed', 'all', 'blocked', 'blocking'] },
     ...ISSUE_COMMON,
+    ISSUE_TYPE,
     { key: 'sort', description: 'Sort order', values: SORT_ISSUE_LIST },
   ],
   'pull-list': [

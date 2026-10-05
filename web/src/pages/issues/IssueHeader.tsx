@@ -10,6 +10,7 @@ import { LockIcon, PinIcon } from '../../ui/icons';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
+import { IssueRelationTags } from './IssueRelations';
 import styles from './IssueView.module.css';
 
 /** Title (inline-editable, optimistic), state badge and the "opened by" line. */
@@ -68,6 +69,7 @@ export const IssueHeader = observer(function IssueHeader({ issue, meta }: { issu
       )}
       <div className={styles.metaRow}>
         <StateBadge issue={issue} />
+        <IssueRelationTags issue={issue} />
         {issue.pinned && (
           <Tag>
             <PinIcon size={12} /> Pinned

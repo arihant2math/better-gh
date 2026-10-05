@@ -1,15 +1,18 @@
 //! bgh-issues: issues, labels, milestones, assignees, comments, reactions,
 //! locking, events and timeline, issue templates, sub-issues, pinned
-//! issues, transfers, mentions and cross-references.
+//! issues, transfers, mentions and cross-references, issue types and
+//! dependencies (blocked by / blocking).
 //!
 //! See `docs/packages/issues.md` for the endpoint list and design notes.
 //! Migrations for this crate use the 0300-0399 range.
 
 pub mod assignees;
 pub mod comments;
+pub mod dependencies;
 pub mod deployed;
 pub mod events;
 pub mod import;
+pub mod issue_types;
 pub mod issues;
 pub mod json;
 pub mod labels;
@@ -127,6 +130,28 @@ pub fn router() -> Router<AppState> {
         .route(&i("/sub_issue"), delete(sub_issues::remove))
         .route(&i("/sub_issues/priority"), patch(sub_issues::reprioritize))
         .route(&i("/parent"), get(sub_issues::parent))
+        // Issue dependencies (blocked by / blocking).
+        .route(
+            &i("/dependencies/blocked_by"),
+            get(dependencies::list_blocked_by).post(dependencies::add),
+        )
+        .route(
+            &i("/dependencies/blocked_by/{issue_id}"),
+            delete(dependencies::remove),
+        )
+        .route(
+            &i("/dependencies/blocking"),
+            get(dependencies::list_blocking),
+        )
+        // Organization issue types.
+        .route(
+            "/orgs/{org}/issue-types",
+            get(issue_types::list).post(issue_types::create),
+        )
+        .route(
+            "/orgs/{org}/issue-types/{issue_type_id}",
+            put(issue_types::update).delete(issue_types::delete),
+        )
 }
 
 /// Web-client routes (absolute paths).

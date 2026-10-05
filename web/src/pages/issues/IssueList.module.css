@@ -203,6 +203,11 @@
   font-weight: var(--fw-medium);
 }
 
+.blocked {
+  color: var(--danger);
+  font-weight: var(--fw-medium);
+}
+
 .approved {
   color: var(--success);
 }

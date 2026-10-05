@@ -5,9 +5,10 @@ import { store } from '../../sync';
 import type { Issue } from '../../sync/models';
 import { AvatarStack, LabelPill, StateIcon } from '../../ui/Badge';
 import { cx } from '../../ui/Button';
-import { CheckIcon, CommentIcon, DotFillIcon, GitPullRequestIcon, IssueTracksIcon, LockIcon, MilestoneIcon, XIcon } from '../../ui/icons';
+import { BlockedIcon, CheckIcon, CommentIcon, DotFillIcon, GitPullRequestIcon, IssueTracksIcon, LockIcon, MilestoneIcon, XIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tooltip } from '../../ui/Tooltip';
+import { IssueTypeChip } from './IssueRelations';
 import styles from './IssueList.module.css';
 
 export function issueHref(issue: Pick<Issue, 'repoId' | 'number' | 'isPr'>): string {
@@ -113,6 +114,7 @@ export const IssueRow = observer(function IssueRow({
             {issue.title}
           </Link>
           {issue.draft && <span className={styles.draftTag}>Draft</span>}
+          {issue.issueType && <IssueTypeChip name={issue.issueType.name} color={issue.issueType.color} />}
           {labels.map((l) => (
             <LabelPill key={l.id} label={l} size="sm" />
           ))}
@@ -132,6 +134,12 @@ export const IssueRow = observer(function IssueRow({
                 <span className={cx(styles.review, styles[issue.reviewDecision])}>{REVIEW_TEXT[issue.reviewDecision]}</span>
               )}
               {issue.subIssueIds && issue.subIssueIds.length > 0 && <SubIssueProgress issue={issue} />}
+              {issue.state === 'open' && (issue.openBlockedBy ?? 0) > 0 && (
+                <span className={cx(styles.milestone, styles.blocked)} data-testid="blocked" title={`Blocked by ${issue.openBlockedBy} open issue${issue.openBlockedBy === 1 ? '' : 's'}`}>
+                  <BlockedIcon size={12} />
+                  Blocked
+                </span>
+              )}
               {!issue.isPr && issue.linkedPullIds && issue.linkedPullIds.length > 0 && (
                 <span
                   className={styles.milestone}

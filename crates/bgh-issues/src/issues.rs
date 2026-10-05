@@ -166,6 +166,33 @@ pub struct CreateIssue {
     pub assignees: Option<Vec<String>>,
     pub milestone: Option<Value>,
     pub labels: Option<Vec<Value>>,
+    /// Issue type name (organization repositories).
+    #[serde(rename = "type", default, deserialize_with = "double")]
+    pub issue_type: Option<Option<String>>,
+    /// bgh extension (GraphQL `issueTemplate`): the template (name or
+    /// file name) the issue was created from; its `type:` applies unless
+    /// `type` is given.
+    pub template: Option<String>,
+}
+
+/// The `type:` of the repository's issue template named `name` (template
+/// name or file name, case-insensitive).
+async fn template_type(
+    state: &AppState,
+    repo: &db::Repository,
+    name: &str,
+) -> ApiResult<Option<String>> {
+    let t = crate::templates::load(state, repo, None).await?;
+    let name = name.trim().to_lowercase();
+    Ok(t.templates
+        .into_iter()
+        .find(|t| {
+            t.name.to_lowercase() == name
+                || t.filename.to_lowercase() == name
+                || t.filename.to_lowercase().rsplit('/').next() == Some(name.as_str())
+        })
+        .and_then(|t| t.issue_type)
+        .filter(|t| !t.trim().is_empty()))
 }
 
 /// `POST /repos/{owner}/{repo}/issues`
@@ -196,6 +223,23 @@ pub async fn create(
         (milestone, assignees, names)
     } else {
         (None, vec![], vec![])
+    };
+    // Explicit `type` (triagers), else the template's `type:` (anyone,
+    // like template labels on GitHub; unknown names are ignored then).
+    let issue_type = match (&body.issue_type, triage) {
+        (Some(Some(name)), true) => {
+            Some(crate::issue_types::resolve(&state.db, &access.repo, name).await?)
+        }
+        (Some(_), true) => None,
+        _ => match body.template.as_deref() {
+            Some(t) => match template_type(&state, &access.repo, t).await? {
+                Some(name) => crate::issue_types::resolve(&state.db, &access.repo, &name)
+                    .await
+                    .ok(),
+                None => None,
+            },
+            None => None,
+        },
     };
     let info = RepoInfo::from_access(&access);
     let mut tx = Tx::begin(&state).await?;
@@ -229,6 +273,9 @@ pub async fn create(
     service::add_labels(&mut tx, &issue, auth.user.id, &labels).await?;
     let ids: Vec<i64> = assignees.iter().map(|u| u.id).collect();
     service::add_assignees(&mut tx, &issue, auth.user.id, &ids).await?;
+    if let Some(t) = &issue_type {
+        crate::issue_types::set_for_issue(&mut tx, &issue, auth.user.id, Some(t)).await?;
+    }
     service::subscribe(&mut tx, &issue, auth.user.id, "author").await?;
     if let Some(b) = issue.body.as_deref() {
         refs::process(&mut tx, &state, &info, &issue, None, None, b, &auth.user).await?;
@@ -334,6 +381,12 @@ pub struct UpdateIssue {
     pub assignees: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double")]
     pub assignee: Option<Option<String>>,
+    /// Issue type name; `null` clears it.
+    #[serde(rename = "type", default, deserialize_with = "double")]
+    pub issue_type: Option<Option<String>>,
+    /// bgh extension (GraphQL `closeIssue(duplicateIssueId)`): id of the
+    /// issue this one duplicates, with `state_reason: "duplicate"`.
+    pub duplicate_of: Option<i64>,
 }
 
 fn validate_state_reason(r: &str) -> ApiResult<()> {
@@ -345,6 +398,71 @@ fn validate_state_reason(r: &str) -> ApiResult<()> {
             "state_reason",
         )))
     }
+}
+
+/// Point `issue.duplicate_of_id` at `target` (`marked_as_duplicate`), or
+/// clear it when the issue is no longer closed as a duplicate
+/// (`unmarked_as_duplicate`). With `keep` and no target the current mark
+/// stays (e.g. re-closing as duplicate without naming the original).
+async fn mark_duplicate(
+    tx: &mut Tx,
+    issue: &db::Issue,
+    actor_id: i64,
+    target: Option<&(db::Issue, RepoInfo)>,
+    keep: bool,
+) -> ApiResult<()> {
+    let current: Option<i64> =
+        sqlx::query_scalar("SELECT duplicate_of_id FROM issues WHERE id = $1")
+            .bind(issue.id)
+            .fetch_one(&mut **tx)
+            .await?;
+    let new = match target {
+        Some((t, _)) => Some(t.id),
+        None if keep => current,
+        None => None,
+    };
+    if new == current {
+        return Ok(());
+    }
+    sqlx::query("UPDATE issues SET duplicate_of_id = $2 WHERE id = $1")
+        .bind(issue.id)
+        .bind(new)
+        .execute(&mut **tx)
+        .await?;
+    if let Some(old) = current {
+        let other = service::issue_by_id(&mut **tx, old).await;
+        if let Ok(other) = other {
+            let repo = db::Repository::find(&mut **tx, other.repo_id).await?;
+            let owner = match &repo {
+                Some(r) => db::User::find(&mut **tx, r.owner_id).await?,
+                None => None,
+            };
+            if let (Some(repo), Some(owner)) = (repo, owner) {
+                let info = RepoInfo { repo, owner };
+                service::add_event(
+                    tx,
+                    issue,
+                    Some(actor_id),
+                    "unmarked_as_duplicate",
+                    None,
+                    json!({ "canonical": crate::dependencies::ref_json(&info, &other) }),
+                )
+                .await?;
+            }
+        }
+    }
+    if let Some((other, info)) = target {
+        service::add_event(
+            tx,
+            issue,
+            Some(actor_id),
+            "marked_as_duplicate",
+            None,
+            json!({ "canonical": crate::dependencies::ref_json(info, other) }),
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 /// `PATCH /repos/{owner}/{repo}/issues/{issue_number}`
@@ -405,6 +523,35 @@ pub async fn update(
         (Some(ls), true) => Some(label_names(ls)?),
         _ => None,
     };
+    let issue_type = match (&body.issue_type, triage && !issue.is_pull_request) {
+        (Some(Some(name)), true) => Some(Some(
+            crate::issue_types::resolve(&state.db, &access.repo, name).await?,
+        )),
+        (Some(None), true) => Some(None),
+        _ => None,
+    };
+    let duplicate_of = match body.duplicate_of {
+        Some(_) if issue.is_pull_request => None,
+        Some(id) => {
+            if matches!(&body.state_reason, Some(Some(r)) if r != "duplicate")
+                || body.state.as_deref() == Some("open")
+            {
+                return Err(ApiError::invalid_field(FieldError::invalid(
+                    "Issue",
+                    "duplicate_of",
+                )));
+            }
+            let (other, other_info) =
+                crate::dependencies::load_other(&state, &auth, Some(id), "duplicate_of").await?;
+            if other.id == issue.id {
+                return Err(ApiError::unprocessable(
+                    "An issue cannot be a duplicate of itself",
+                ));
+            }
+            Some((other, other_info))
+        }
+        None => None,
+    };
 
     let info = RepoInfo::from_access(&access);
     let mut tx = Tx::begin(&state).await?;
@@ -463,26 +610,48 @@ pub async fn update(
         let ids: Vec<i64> = users.iter().map(|u| u.id).collect();
         service::replace_assignees(&mut tx, &issue, auth.user.id, &ids).await?;
     }
+    if let Some(t) = &issue_type {
+        crate::issue_types::set_for_issue(&mut tx, &issue, auth.user.id, t.as_ref()).await?;
+    }
     // State last: milestone counts then reflect the final milestone.
     let current = service::issue_by_id(&mut *tx, issue.id).await?;
-    let reason = body.state_reason.clone().flatten();
-    match body.state.as_deref() {
-        Some(s) => {
-            let reason = if s == "open" { None } else { reason.as_deref() };
-            service::set_state(&mut tx, &current, auth.user.id, s, reason, None).await?;
-        }
-        None if current.state == "closed" && reason.is_some() => {
-            service::set_state(
-                &mut tx,
-                &current,
-                auth.user.id,
-                "closed",
-                reason.as_deref(),
-                None,
-            )
-            .await?;
-        }
-        None => {}
+    let mut reason = body.state_reason.clone().flatten();
+    if duplicate_of.is_some() && reason.is_none() {
+        reason = Some("duplicate".into());
+    }
+    let closes = match body.state.as_deref() {
+        Some(s) => Some(s),
+        None if current.state == "closed" && reason.is_some() => Some("closed"),
+        None if duplicate_of.is_some() => Some("closed"),
+        None => None,
+    };
+    if let Some(s) = closes {
+        let reason = if s == "open" { None } else { reason.as_deref() };
+        let extra = match &duplicate_of {
+            Some((other, info)) if s == "closed" => {
+                json!({ "duplicate_of": crate::dependencies::ref_json(info, other) })
+            }
+            _ => json!({}),
+        };
+        let was_closed = current.state == "closed";
+        service::set_state_with(&mut tx, &current, auth.user.id, s, reason, None, extra).await?;
+        let now_duplicate = s == "closed"
+            && (reason == Some("duplicate")
+                || (reason.is_none()
+                    && was_closed
+                    && current.state_reason.as_deref() == Some("duplicate")));
+        mark_duplicate(
+            &mut tx,
+            &current,
+            auth.user.id,
+            if now_duplicate {
+                duplicate_of.as_ref()
+            } else {
+                None
+            },
+            now_duplicate,
+        )
+        .await?;
     }
     let issue = service::touch_and_sync_with(
         &mut tx,
@@ -520,6 +689,9 @@ pub struct ListQuery {
     pub sort: Option<String>,
     pub direction: Option<String>,
     pub since: Option<String>,
+    /// Issue type name, `*` (any type) or `none`.
+    #[serde(rename = "type")]
+    pub issue_type: Option<String>,
     /// Cross-repository lists: assigned | created | mentioned | subscribed | repos | all.
     pub filter: Option<String>,
 }
@@ -629,6 +801,22 @@ async fn push_filters(
             qb.push(
                 " AND EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id \
                  WHERE il.issue_id = i.id AND lower(l.name) = lower(",
+            )
+            .push_bind(name.to_string())
+            .push("))");
+        }
+    }
+    match q.issue_type.as_deref().map(str::trim) {
+        None | Some("") => {}
+        Some("*") => {
+            qb.push(" AND i.issue_type_id IS NOT NULL");
+        }
+        Some("none") => {
+            qb.push(" AND i.issue_type_id IS NULL");
+        }
+        Some(name) => {
+            qb.push(
+                " AND i.issue_type_id IN (SELECT t.id FROM issue_types t WHERE lower(t.name) = lower(",
             )
             .push_bind(name.to_string())
             .push("))");
