@@ -9,7 +9,7 @@ import { MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { Tooltip } from '../../ui/Tooltip';
 import { fromLocalInput } from '../../components/admin/format';
-import { domainError, emptyOidc, oidcErrors, type Errors, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
+import { domainError, emptyOidc, oidcErrors, type Errors, type Limit, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
 import s from './settings.module.css';
 
 interface Props<K extends keyof SettingsForm> {
@@ -189,6 +189,62 @@ export function RepositoriesSection({ value, onChange, errors }: Props<'reposito
           </Field>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Switch plus megabyte input for an optional limit. */
+function LimitField({ id, toggle, label, description, value, onChange, error }: { id: string; toggle: string; label: string; description: string; value: Limit; onChange: (v: Limit) => void; error?: string }) {
+  return (
+    <div>
+      <Switch checked={value.on} onChange={(on) => onChange({ ...value, on })} label={toggle} description={description} />
+      {value.on && (
+        <div className={s.narrow} style={{ marginTop: 8 }}>
+          <Field label={label} htmlFor={id} error={error}>
+            <Input id={id} inputMode="numeric" value={value.mb} trailing="MB" invalid={!!error} onChange={(e) => onChange({ ...value, mb: positiveInput(e.target.value) })} />
+          </Field>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function GitSection({ value, onChange, errors }: Props<'git'>) {
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.fsck}
+        onChange={(fsck) => onChange({ fsck })}
+        label="Check pushed objects"
+        description="Runs git’s integrity checks on every push and rejects malformed objects, malicious .gitmodules files and symlinks into .git."
+      />
+      <LimitField
+        id="set-git-max-object"
+        toggle="Limit file size"
+        label="Maximum file size"
+        description="Pushes containing a larger file are rejected with GH001, suggesting Git LFS."
+        value={value.max_object}
+        onChange={(max_object) => onChange({ max_object })}
+        error={errors['git.max_object']}
+      />
+      <LimitField
+        id="set-git-warn-object"
+        toggle="Warn about large files"
+        label="Warn about files larger than"
+        description="The push succeeds, but git shows a warning for each such file."
+        value={value.warn_object}
+        onChange={(warn_object) => onChange({ warn_object })}
+        error={errors['git.warn_object']}
+      />
+      <LimitField
+        id="set-git-max-push"
+        toggle="Limit push size"
+        label="Maximum push size"
+        description="Largest pack a single push may upload."
+        value={value.max_push}
+        onChange={(max_push) => onChange({ max_push })}
+        error={errors['git.max_push']}
+      />
     </div>
   );
 }
