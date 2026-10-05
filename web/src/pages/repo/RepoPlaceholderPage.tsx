@@ -1,17 +1,19 @@
+import { NotFound } from '../../app/NotFound';
 import { useParams } from '../../router';
 import { EmptyState } from '../../ui/EmptyState';
-import { BookIcon, GearIcon, GraphIcon, ShieldIcon, type Icon } from '../../ui/icons';
+import { GraphIcon, ShieldIcon, type Icon } from '../../ui/icons';
+import { PLACEHOLDER_TABS } from './nav';
 
 const TABS: Record<string, { title: string; icon: Icon; text: string }> = {
   security: { title: 'Security', icon: ShieldIcon, text: 'Security advisories, policies and alerts.' },
   pulse: { title: 'Insights', icon: GraphIcon, text: 'Contributors, traffic, commit activity and code frequency.' },
-  settings: { title: 'Settings', icon: GearIcon, text: 'General settings, collaborators, branches, webhooks and deploy keys.' },
 };
 
-/** Placeholder for repo tabs that feature agents will build. */
+/** `/:owner/:repo/:tab/*`: placeholders for announced tabs (P31 Insights, P66 Security), else a real 404. */
 export default function RepoPlaceholderPage() {
-  const { tab = '' } = useParams<{ tab: string }>();
-  const t = TABS[tab] ?? { title: tab, icon: BookIcon, text: 'This section does not exist yet.' };
+  const { tab = '', '*': rest = '' } = useParams<{ tab: string; '*'?: string }>();
+  const t = TABS[tab];
+  if (!t || !PLACEHOLDER_TABS.has(tab) || rest) return <NotFound />;
   return (
     <EmptyState icon={t.icon} title={`${t.title} — coming soon`}>
       {t.text}
