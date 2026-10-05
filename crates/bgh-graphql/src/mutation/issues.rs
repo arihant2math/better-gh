@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use async_graphql::{Context, ID, InputObject, Object, SimpleObject, Union};
+use async_graphql::{Context, ID, InputObject, Interface, Object, SimpleObject};
 use axum::extract::State;
 use bgh_core::auth::RequireUser;
 use bgh_core::node_id::NodeType;
@@ -22,8 +22,13 @@ use crate::model::{Issue, PullRequest};
 
 /// Issue or pull request, as returned by `Labelable` / `Assignable` /
 /// `Lockable` / `Closable` payload fields.
-#[derive(Union, Clone)]
-#[graphql(name = "IssueOrPullRequestNode")]
+#[derive(Interface, Clone)]
+#[graphql(
+    name = "Lockable",
+    field(name = "id", ty = "ID"),
+    field(name = "locked", ty = "bool"),
+    field(name = "active_lock_reason", ty = "Option<LockReason>")
+)]
 pub enum IssueLike {
     Issue(Issue),
     PullRequest(PullRequest),
@@ -320,11 +325,90 @@ pub async fn patch_issue(
     Ok(())
 }
 
+#[derive(InputObject)]
+pub struct CreateLinkedBranchInput {
+    pub issue_id: ID,
+    pub oid: crate::scalars::GitObjectID,
+    pub name: Option<String>,
+    pub repository_id: Option<ID>,
+    pub client_mutation_id: Option<String>,
+}
+
+#[derive(SimpleObject)]
+pub struct CreateLinkedBranchPayload {
+    pub linked_branch: Option<crate::model::issue::LinkedBranch>,
+    pub issue: Option<Issue>,
+    pub client_mutation_id: Option<String>,
+}
+
+/// `{number}-{slug of title}`, like GitHub's "create a branch" default.
+fn branch_name(number: i64, title: &str) -> String {
+    let mut slug = String::new();
+    for ch in title.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        } else if !slug.ends_with('-') && !slug.is_empty() {
+            slug.push('-');
+        }
+    }
+    let slug: String = slug.trim_end_matches('-').chars().take(60).collect();
+    let slug = slug.trim_end_matches('-');
+    if slug.is_empty() {
+        number.to_string()
+    } else {
+        format!("{number}-{slug}")
+    }
+}
+
 #[derive(Default)]
 pub struct IssueMutations;
 
 #[Object]
 impl IssueMutations {
+    /// Create a branch linked to an issue (named `{number}-...`).
+    pub async fn create_linked_branch(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateLinkedBranchInput,
+    ) -> GResult<CreateLinkedBranchPayload> {
+        let a = guard(ctx)?;
+        let (issue, issue_repo) = issue_by_node(ctx, &input.issue_id).await?;
+        let repo = match &input.repository_id {
+            Some(id) => repo_by_node(ctx, id).await?,
+            None => issue_repo,
+        };
+        let mut name = input
+            .name
+            .clone()
+            .unwrap_or_else(|| branch_name(issue.number, &issue.title));
+        if !name.starts_with(&format!("{}-", issue.number)) {
+            name = format!("{}-{name}", issue.number);
+        }
+        let (o, r) = owner_repo(&repo);
+        into_json(
+            bgh_repos::gitdb::create_ref(
+                st(ctx),
+                user(a),
+                Path((o, r)),
+                Json(body(
+                    json!({"ref": format!("refs/heads/{name}"), "sha": input.oid.0}),
+                )?),
+            )
+            .await,
+        )
+        .await?;
+        let repo = crate::model::Repository(repo);
+        let full = format!("refs/heads/{name}");
+        let linked = crate::model::Ref::load(ctx, repo, &full)
+            .await?
+            .map(|r| crate::model::issue::LinkedBranch { r });
+        Ok(CreateLinkedBranchPayload {
+            linked_branch: linked,
+            issue: as_issue(issue_like(ctx, issue.id).await?),
+            client_mutation_id: input.client_mutation_id,
+        })
+    }
+
     /// Creates a new issue.
     pub async fn create_issue(
         &self,

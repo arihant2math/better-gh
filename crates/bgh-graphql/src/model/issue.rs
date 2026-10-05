@@ -436,15 +436,19 @@ impl IssueOnly {
         let items = super::pull::from_issues(ctx, candidates).await?;
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
+    /// Branches linked to the issue: branches named `{number}-...` (the
+    /// naming `createLinkedBranch` / `gh issue develop` use).
     pub async fn linked_branches(
         &self,
+        ctx: &Context<'_>,
         first: Option<i32>,
         last: Option<i32>,
         after: Option<String>,
         before: Option<String>,
-    ) -> LinkedBranchConnection {
-        let _ = (first, last, after, before);
-        LinkedBranchConnection
+    ) -> GResult<LinkedBranchConnection> {
+        let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
+        let items = linked_branches(ctx, &repo, self.i.number).await?;
+        Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
     pub async fn tracked_issues(&self) -> crate::model::actor::CountOnly {
         crate::model::actor::CountOnly(0)
@@ -461,6 +465,19 @@ impl Issue {
     }
     pub fn row(&self) -> &db::Issue {
         &self.1.i
+    }
+    /// `Lockable.locked` (interfaces need inherent methods on MergedObjects).
+    pub async fn locked(&self, _ctx: &Context<'_>) -> GResult<bool> {
+        Ok(self.1.i.locked)
+    }
+    /// `Lockable.activeLockReason`.
+    pub async fn active_lock_reason(&self, _ctx: &Context<'_>) -> GResult<Option<LockReason>> {
+        Ok(self
+            .1
+            .i
+            .active_lock_reason
+            .as_deref()
+            .and_then(LockReason::from_db))
     }
     /// `Node.id` (MergedObject types need it as an inherent method).
     pub async fn id(&self, _ctx: &Context<'_>) -> GResult<ID> {
@@ -481,25 +498,46 @@ pub enum Assignee {
 
 connection!(AssigneeConnection, AssigneeEdge, Assignee);
 
-/// Branches linked to an issue (`gh issue develop`); none are tracked.
-#[derive(Default)]
-pub struct LinkedBranchConnection;
+/// A branch linked to an issue.
+#[derive(Clone)]
+pub struct LinkedBranch {
+    pub r: super::Ref,
+}
 
 #[Object]
-impl LinkedBranchConnection {
-    pub async fn nodes(&self) -> Vec<LinkedBranch> {
-        vec![]
+impl LinkedBranch {
+    pub async fn id(&self) -> ID {
+        ID(bgh_core::node_id::encode_str(
+            NodeType::Ref,
+            &format!("linked:{}:{}", self.r.repo.rid(), self.r.name),
+        ))
     }
-    pub async fn total_count(&self) -> i32 {
-        0
+    #[graphql(name = "ref")]
+    pub async fn ref_(&self) -> Option<super::Ref> {
+        Some(self.r.clone())
     }
 }
 
-#[derive(async_graphql::SimpleObject, Clone)]
-pub struct LinkedBranch {
-    pub id: ID,
-    #[graphql(name = "ref")]
-    pub ref_: Option<super::Ref>,
+connection!(LinkedBranchConnection, LinkedBranchEdge, LinkedBranch);
+
+/// Branches of `repo` named `{number}-...`.
+pub async fn linked_branches(
+    ctx: &Context<'_>,
+    repo: &Repository,
+    number: i64,
+) -> GResult<Vec<LinkedBranch>> {
+    let prefix = format!("refs/heads/{number}-");
+    let refs = super::git::list_refs(ctx, repo.rid(), &prefix).await?;
+    Ok(refs
+        .into_iter()
+        .map(|info| LinkedBranch {
+            r: super::Ref {
+                repo: repo.clone(),
+                name: info.name,
+                target: info.target,
+            },
+        })
+        .collect())
 }
 
 /// Either an issue or a pull request.

@@ -139,12 +139,12 @@ impl Loader<String> for UserByEmailLoader {
         let lower: Vec<String> = keys.iter().map(|k| k.to_lowercase()).collect();
         #[derive(sqlx::FromRow)]
         struct Row {
-            email: String,
+            match_email: String,
             #[sqlx(flatten)]
             user: db::User,
         }
         let rows: Vec<Row> = sqlx::query_as(&format!(
-            "SELECT lower(e.email) AS email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
+            "SELECT lower(e.email) AS match_email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
               WHERE e.verified AND lower(e.email) = ANY($1)",
             db::prefixed("u", db::User::COLUMNS)
         ))
@@ -154,7 +154,7 @@ impl Loader<String> for UserByEmailLoader {
         .map_err(|e| Arc::new(ApiError::from(e)))?;
         let mut out = HashMap::new();
         for k in keys {
-            if let Some(r) = rows.iter().find(|r| r.email == k.to_lowercase()) {
+            if let Some(r) = rows.iter().find(|r| r.match_email == k.to_lowercase()) {
                 out.insert(k.clone(), Arc::new(r.user.clone()));
             }
         }

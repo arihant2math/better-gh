@@ -42,6 +42,19 @@ impl PullRequest {
     pub fn pr(&self) -> &db::PullRequest {
         &self.0.p
     }
+    /// `Lockable.locked` (interfaces need inherent methods on MergedObjects).
+    pub async fn locked(&self, _ctx: &Context<'_>) -> GResult<bool> {
+        Ok(self.1.i.locked)
+    }
+    /// `Lockable.activeLockReason`.
+    pub async fn active_lock_reason(&self, _ctx: &Context<'_>) -> GResult<Option<LockReason>> {
+        Ok(self
+            .1
+            .i
+            .active_lock_reason
+            .as_deref()
+            .and_then(LockReason::from_db))
+    }
     /// `Node.id` (MergedObject types need it as an inherent method).
     pub async fn id(&self, _ctx: &Context<'_>) -> GResult<ID> {
         Ok(nid(NodeType::PullRequest, self.0.i.id))
