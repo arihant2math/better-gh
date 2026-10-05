@@ -112,6 +112,20 @@ heavy tabs are lazy chunks prefetched on link intent:
   commits/per-commit diff, compare → draft PR. Mock mode by default,
   `--real --pr /o/r/pull/n` against a server.
 * `cargo test -p bgh-pulls` (incl. `web_client.rs`), clippy clean.
+* **Real backend** (local scratch merge of this branch + `bgh/accounts`,
+  `bgh/repos-api`, `bgh/issues`; users `ada`/`bob`, repo seeded with git
+  pushes, PR, check runs with annotations, a status): `pulls-smoke.mjs --real`
+  passes end to end, plus browser runs of: resolve thread, reviewer picker,
+  check annotations, suggestion → "Commit suggestion" (commit lands on the
+  head branch), compare with PR template → create PR, squash merge with
+  confirm + "Delete branch" (ref deleted), branch protection (strict + 1
+  approval): "Update branch", enable/disable auto-merge, approval → PR
+  auto-merged.
+* Bug found and fixed on the way: `bgh-pulls` commit-author lookup decoded
+  `users.email` (NULL for users without a public email) as the matched
+  address → 500 on `/pulls/{n}/commits`; regression test in `tests/pulls.rs`.
+* Range selections are limited to one hunk (the API rejects cross-hunk
+  ranges); a rejected comment restores the composer text.
 
 ## Integration notes / known gaps
 

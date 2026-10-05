@@ -11,7 +11,7 @@ import { deleteHeadBranch, disableAutoMerge, enableAutoMerge, mergePullWith, upd
 import { checkRunsFor, checksSummary, latestReviews, runRollup, statusesFor, statusRollup } from '../../sync/pullSelectors';
 import { canWrite } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
-import { AlertIcon, CheckCircleIcon, CheckIcon, ChevronDownIcon, GitBranchIcon, GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestIcon, TrashIcon, XCircleFillIcon } from '../../ui/icons';
+import { AlertIcon, CheckCircleIcon, CheckIcon, ChevronDownIcon, DotFillIcon, GitBranchIcon, GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestIcon, TrashIcon, XCircleFillIcon } from '../../ui/icons';
 import { Input, Textarea } from '../../ui/Input';
 import { Menu } from '../../ui/Menu';
 import { Spinner } from '../../ui/Spinner';
@@ -132,6 +132,7 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
   const chosen: MergeMethod = method && methods.includes(method) ? method : methods[0]!;
   const reviews = latestReviews(issue.id);
   const approvals = [...reviews.values()].filter((r) => r.state === 'APPROVED').length;
+  const reviewsOptional = !!req && req.required_approvals === 0 && issue.reviewDecision !== 'changes_requested';
   const reviewHint = req
     ? req.required_approvals > 0
       ? `${req.approvals} of ${req.required_approvals} required approving review${req.required_approvals === 1 ? '' : 's'}.`
@@ -166,9 +167,11 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
       </span>
       <div className={styles.mergeCard}>
         <div className={styles.mergeRow}>
-          {approved ? <CheckCircleIcon size={20} className={pr.ok} /> : issue.reviewDecision === 'changes_requested' ? <XCircleFillIcon size={20} className={pr.fail} /> : <AlertIcon size={20} className={pr.pending} />}
+          {approved || (reviewsOptional && approvals > 0) ? <CheckCircleIcon size={20} className={pr.ok} /> : reviewsOptional ? <DotFillIcon size={20} className={pr.muted} /> : issue.reviewDecision === 'changes_requested' ? <XCircleFillIcon size={20} className={pr.fail} /> : <AlertIcon size={20} className={pr.pending} />}
           <div>
-            <div className={styles.mergeRowTitle}>{approved ? 'Changes approved' : issue.reviewDecision === 'changes_requested' ? 'Changes requested' : 'Review required'}</div>
+            <div className={styles.mergeRowTitle}>
+              {approved ? 'Changes approved' : issue.reviewDecision === 'changes_requested' ? 'Changes requested' : reviewsOptional ? (approvals ? 'Approved' : 'No reviews yet') : 'Review required'}
+            </div>
             <div className={styles.subtle}>{reviewHint}</div>
           </div>
         </div>

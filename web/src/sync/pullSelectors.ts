@@ -84,9 +84,11 @@ export function reactionCounts(reactions: readonly Reaction[]): ReactionCounts {
 /** Latest decisive state per reviewer (GitHub's sidebar), submitted reviews only. */
 export function latestReviews(issueId: ID): Map<ID, Review> {
   const out = new Map<ID, Review>();
+  const author = store().get('issue', issueId)?.authorId;
   const reviews = store()
     .byIndex('review', 'issueId', issueId)
-    .filter((r) => r.state !== 'PENDING' && r.submittedAt)
+    // The author's own (comment-only) reviews don't make them a reviewer.
+    .filter((r) => r.state !== 'PENDING' && r.submittedAt && r.authorId !== author)
     .sort((a, b) => cmp(a.submittedAt!, b.submittedAt!));
   for (const r of reviews) {
     const prev = out.get(r.authorId);
