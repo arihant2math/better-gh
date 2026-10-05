@@ -46,6 +46,9 @@ pub enum EmailKind {
         check_suite_id: i64,
         conclusion: String,
     },
+    CommitComment {
+        comment_id: i64,
+    },
 }
 
 /// Job: render and queue notification emails for `recipients`.
@@ -306,7 +309,9 @@ async fn content(
                 re,
                 false,
             ),
-            EmailKind::Release { .. } | EmailKind::Ci { .. } => return Ok(None),
+            EmailKind::Release { .. } | EmailKind::Ci { .. } | EmailKind::CommitComment { .. } => {
+                return Ok(None);
+            }
         };
         return Ok(Some(out));
     }
@@ -353,6 +358,28 @@ async fn content(
                 url: format!("{repo_html}/commit/{sha}/checks"),
                 message_id: format!("<{full}/check-suites/{check_suite_id}@{host}>"),
                 thread_id: None,
+            }))
+        }
+        EmailKind::CommitComment { comment_id } => {
+            let row: Option<(String, Option<String>, String)> =
+                sqlx::query_as("SELECT commit_id, path, body FROM commit_comments WHERE id = $1")
+                    .bind(comment_id)
+                    .fetch_optional(&state.db)
+                    .await?;
+            let Some((sha, path, body)) = row else {
+                return Ok(None);
+            };
+            let short: String = sha.chars().take(7).collect();
+            let body_md = match path {
+                Some(p) => format!("In `{p}`:\n\n{body}"),
+                None => body,
+            };
+            Ok(Some(Content {
+                subject: format!("[{full}] {} ({short})", job.title),
+                body_md,
+                url: format!("{repo_html}/commit/{sha}#commitcomment-{comment_id}"),
+                message_id: format!("<{full}/commit/{sha}/c{comment_id}@{host}>"),
+                thread_id: Some(format!("<{full}/commit/{sha}@{host}>")),
             }))
         }
         _ => Ok(None),

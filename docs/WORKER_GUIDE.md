@@ -42,19 +42,50 @@ integration branch `claude/sleepy-cray-9jj0t3`.
 12. Do not open pull requests. Finish when your package's scope is
     complete, tested, merged with the latest integration branch and pushed.
 
-## Phase 4 additions (self-integration)
+## Phase 4 additions
 
 13. Disk: containers have ~30 GB. Build with `CARGO_INCREMENTAL=0`, don't
     create extra worktrees with their own `target/`, and
     `rm -rf target/debug/incremental` when `df -h /` shows < 8 GB free.
-14. **Self-integrate when done** (phase 4 only): `git fetch origin`,
-    merge `origin/claude/sleepy-cray-9jj0t3` into your branch, run the full
-    gate (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets
-    -- -D warnings`, `cargo test --workspace`, and in web/ `npm run typecheck
-    && npm run lint && npm test && npm run build`), then
-    `git push origin HEAD:claude/sleepy-cray-9jj0t3` (fast-forward only —
-    never force). If the push is rejected because the integration branch
-    moved, fetch, merge again, re-run the gate, and retry. Also push your
-    own branch. Never leave the integration branch red.
+14. **Mark ready; the integrator lands it** (phase 4, replaces
+    self-integration). Workers never push to `claude/sleepy-cray-9jj0t3`.
+    When your scope is done: `git fetch origin`, merge
+    `origin/claude/sleepy-cray-9jj0t3` into your branch, run the full gate
+    **once** (`cargo fmt --all --check`, `cargo clippy --workspace
+    --all-targets -- -D warnings`, `cargo test --workspace`, and in web/
+    `npm run typecheck && npm run lint && npm test && npm run build`), set
+    the first status line of your status doc to exactly
+    `Integration: ready` (plus a one-line summary below it), commit, push
+    your own branch, and end your turn. Do not re-merge or re-gate when the
+    integration branch moves afterwards; the integrator handles that (see
+    "Integration queue" below). If the integrator sends you a failure, fix
+    it on your branch, re-run the affected checks, push, keep
+    `Integration: ready`, and end your turn again.
 15. Read `docs/PHASE4_PLAN.md` §0 conventions and your package section;
     `docs/AUDIT.md` has the evidence behind each gap.
+
+## Integration queue (phase 4)
+
+One integrator session (branch `bgh/integrator`) is the only writer of
+`claude/sleepy-cray-9jj0t3`, so there are no push races and no wasted
+gate runs. Its loop:
+
+1. `git fetch origin`; ready = every `origin/bgh/pNN-*` branch whose status
+   doc (`docs/packages/pNN-*.md` on that branch) starts with
+   `Integration: ready` and which is not yet an ancestor of the
+   integration branch.
+2. Take up to 4 ready branches (oldest first), merge each onto the current
+   integration head (merge commits, no rebase). Trivial conflicts (both
+   sides additive: routes, mod lists, mocks, docs, coverage lists) the
+   integrator resolves itself; a real logic conflict bounces that branch
+   back to its worker and leaves it out of the batch.
+3. In the merge, change each landed package's status line to
+   `Integration: landed` (keep the rest of the doc).
+4. Run the full gate once for the batch. Green: fast-forward push to
+   `claude/sleepy-cray-9jj0t3`. Red: find the culprit from the failing
+   crate/test (or split the batch in halves), drop it, send its worker the
+   failing output, and land the rest.
+5. Record each batch (packages, result, pushed commit) in
+   `docs/INTEGRATION_LOG.md` on `bgh/integrator` only.
+
+Never leave the integration branch red; never force-push.
