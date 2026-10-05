@@ -198,6 +198,44 @@ pub async fn fetch(
     Ok(diff_refs(&before, &after))
 }
 
+/// Fetch explicit refspecs from `remote` (e.g.
+/// `+refs/pull/*/head:refs/pull/*/head`, or `<sha>:refs/pull/7/head` for
+/// a commit the remote serves by id), without progress or ref diffing.
+/// A glob that matches nothing fetches nothing (not an error).
+pub async fn fetch_refspecs(
+    store: &RepoStore,
+    repo_id: i64,
+    remote: &Remote,
+    refspecs: &[String],
+) -> GitResult<()> {
+    if refspecs.is_empty() {
+        return Ok(());
+    }
+    let dir = store.git_dir(repo_id)?;
+    let mut c = remote.command(&store.git_bin, Some(&dir));
+    c.args(["fetch", "--no-tags", "--no-write-fetch-head", "--force"])
+        .arg("--")
+        .arg(&remote.url)
+        .args(refspecs)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let child = c.spawn()?;
+    let out = match remote.timeout {
+        Some(t) => tokio::time::timeout(t, child.wait_with_output())
+            .await
+            .map_err(|_| timeout_error("fetch"))??,
+        None => child.wait_with_output().await?,
+    };
+    if !out.status.success() {
+        return Err(GitError::Command {
+            args: "fetch".into(),
+            status: out.status.to_string(),
+            stderr: tail(&String::from_utf8_lossy(&out.stderr)),
+        });
+    }
+    Ok(())
+}
+
 fn timeout_error(what: &str) -> GitError {
     GitError::Command {
         args: what.into(),

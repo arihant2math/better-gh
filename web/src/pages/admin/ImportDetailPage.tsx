@@ -8,7 +8,7 @@ export default function ImportDetailPage() {
   return (
     <>
       <PageHeader title={`Import #${id}`} description={<Link to="/site-admin/imports">All imports</Link>} />
-      <ImportDetail id={Number(id)} />
+      <ImportDetail id={Number(id)} mannequinsPath="/site-admin/mannequins" />
     </>
   );
 }

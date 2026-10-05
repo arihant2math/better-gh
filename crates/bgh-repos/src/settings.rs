@@ -69,7 +69,8 @@ pub struct UpdateRepoBody {
     pub archived: Option<bool>,
     pub allow_forking: Option<bool>,
     pub web_commit_signoff_required: Option<bool>,
-    /// Accepted and ignored (security features are not modelled).
+    /// Secret scanning toggles (`bgh_security::settings::apply`); other
+    /// features are accepted and ignored.
     pub security_and_analysis: Option<serde_json::Value>,
 }
 
@@ -297,6 +298,25 @@ pub async fn update_repo(
 
     let mut tx = Tx::begin(&state).await?;
     let updated = save(&mut tx, &r).await?;
+    if let Some(sa) = &body.security_and_analysis {
+        let change = bgh_security::settings::apply(&mut tx, updated.id, sa).await?;
+        if change.changed() {
+            audit::log(
+                &mut *tx,
+                Some(&auth.user),
+                "repo.security_and_analysis",
+                audit::Target::Repo {
+                    id: updated.id,
+                    org_id: access.owner.is_org().then_some(access.owner.id),
+                },
+                json!({"security_and_analysis": sa}),
+            )
+            .await?;
+        }
+        if change.scanning_enabled() {
+            bgh_security::jobs::enqueue_history_scan(&mut tx, updated.id, "backfill").await?;
+        }
+    }
     let owner_login = access.owner.login.clone();
     let org_id = access.owner.is_org().then_some(access.owner.id);
     let target = audit::Target::Repo {

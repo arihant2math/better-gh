@@ -171,6 +171,7 @@ fn spec(steps: Vec<Step>) -> JobSpec {
         environment: None,
         token_permissions: IndexMap::new(),
         runtime_token: String::new(),
+        id_token_request_url: None,
     }
 }
 

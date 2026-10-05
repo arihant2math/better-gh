@@ -15,6 +15,7 @@ import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
+import { ReclaimBanner } from '../imports/ReclaimBanner';
 import { InvitationsBanner } from '../invitations/InvitationsBanner';
 import { issueHref } from '../issues/IssueRow';
 import styles from './DashboardPage.module.css';
@@ -227,6 +228,7 @@ export default observer(function DashboardPage() {
       <>
         <div className={styles.emptyInvites}>
           <InvitationsBanner />
+          <ReclaimBanner />
         </div>
         <EmptyState icon={RepoIcon} title="No repositories yet">
           Create a repository or ask to be added to an organization.
@@ -244,6 +246,7 @@ export default observer(function DashboardPage() {
         <ContextSwitcher value={ctx} />
       </div>
       <InvitationsBanner />
+      <ReclaimBanner />
       <p className={styles.sub}>
         {side.assigned} open issue{side.assigned === 1 ? '' : 's'} assigned to you, {side.reviews} review request{side.reviews === 1 ? '' : 's'}
         {side.unread ? `, ${side.unread} unread notification${side.unread === 1 ? '' : 's'}` : ''}.

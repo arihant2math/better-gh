@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from '../../router';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { EmptyState } from '../../ui/EmptyState';
-import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, ShieldLockIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
+import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, ShieldIcon, ShieldLockIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
 import styles from './RepoSettings.module.css';
 import { ListSkeleton, type SectionProps } from './shared';
 
@@ -35,7 +35,13 @@ const NAV: { group?: string; items: NavItem[] }[] = [
       section('key_links', 'Autolink references', LinkIcon, () => import('./sections/AutolinksSettings')),
     ],
   },
-  { group: 'Security', items: [section('keys', 'Deploy keys', KeyIcon, () => import('./sections/DeployKeysSettings'))] },
+  {
+    group: 'Security',
+    items: [
+      section('security_analysis', 'Code security', ShieldIcon, () => import('./sections/CodeSecuritySettings')),
+      section('keys', 'Deploy keys', KeyIcon, () => import('./sections/DeployKeysSettings')),
+    ],
+  },
 ];
 
 /** Shown in the nav only for pull mirrors. */

@@ -60,8 +60,12 @@ crates/
                            deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
-  bgh-import/              metadata importer (GitHub/GHES issues, labels,
-                           milestones, releases, users/mannequins)
+  bgh-import/              metadata importer (GitHub/GHES/GitLab issues, pull
+                           requests, reviews, labels, milestones, releases,
+                           wiki, repo config, users/mannequins + reclaim)
+  bgh-security/            secret scanning (pattern engine, history/push
+                           scans, alerts API, custom patterns) and push
+                           protection; code scanning builds on it (P66)
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -109,7 +113,12 @@ logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`,
 `_SEARCH_ANONYMOUS` (`30` / `10` per minute), `BGH_RATE_LIMIT_GRAPHQL`
 (`5000`/h), `BGH_TRUST_PROXY` (`false`; take client IPs from
 `X-Forwarded-For`), and `BGH_OIDC_*` for a single SSO provider (see
-`bgh_accounts::sso`). CI settings `BGH_ACTIONS_*` (see
+`bgh_accounts::sso`). Observability: `BGH_METRICS_TOKEN` /
+`BGH_METRICS_LISTEN` (Prometheus `/metrics`, off by default),
+`BGH_LOG_FORMAT` (`pretty`|`json`), `BGH_OTLP_ENDPOINT` (`--features
+otlp`); instrumentation helpers in `bgh_core::observability` (bounded
+labels only), recorder and `/metrics` in `bgh_server::telemetry`, metric
+names in `docs/SELF_HOSTING.md` "Monitoring". CI settings `BGH_ACTIONS_*` (see
 `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 Runtime site settings (edited by site admins, `site_settings` table) are
@@ -141,7 +150,8 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-org --login --admin <user> [--name]`,
 `bgh admin create-token --user <login> [--scopes a,b] [--name]
 [--expires-in-days]` (prints a PAT), `bgh import github --repo O/R --owner
-<login> [--api-url] [--user-map FILE] …` / `bgh import resume --id N`
+<login> [--api-url] [--user-map FILE] …` / `bgh import gitlab --repo
+GROUP/PROJECT --owner <login> …` / `bgh import resume --id N`
 (metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
 the log), `bgh healthcheck` (probes `/healthz`
 on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
@@ -156,6 +166,7 @@ reverse proxies, backups): `docs/SELF_HOSTING.md`.
 | `/_bgh/...`      | Private web-client endpoints (bootstrap, sync WS, rendered views, login) |
 | `/{owner}/{repo}.git/...` and `/{owner}/{repo}/info/refs` etc. | git smart HTTP |
 | `/{owner}/{repo}/raw/...`, `/{owner}/{repo}/archive/...` | raw files, archives |
+| `/metrics`       | Prometheus metrics (only with `BGH_METRICS_TOKEN`, bearer auth) |
 | `/v2/...`        | OCI container registry (Docker token auth at `/v2/token`; see `docs/packages/p15-container-registry.md`) |
 | everything else  | SPA `index.html` (client-side routing)               |
 
@@ -503,7 +514,13 @@ Site-level account changes also emit `UserAccountChanged` /
   (`bgh_pulls::protection`): the classic rule protecting the base branch
   plus every active ruleset selecting it, each requirement reported with
   its source and bypassed per source; required checks only count
-  statuses/check runs posted to the base repository. After git exits, refs are re-read to determine which
+  statuses/check runs posted to the base repository. Push protection
+  (`bgh_security::push`, P65) is one more object check combined into
+  `PushPolicy::object_check` by both transports: it scans only the blobs
+  the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,
+  within `push_scan_timeout_secs`, failing open) and rejects with GH013
+  and an unblock URL per secret; accepted pushes are rescanned in the
+  background (`security.scan_push`) to open alerts. After git exits, refs are re-read to determine which
   updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config
@@ -539,14 +556,21 @@ Site-level account changes also emit `UserAccountChanged` /
   `metadata-import`, which webhooks, notifications, activity and
   commit-keyword closing skip), settings, labels, milestones and issues
   with **original numbers**, comments, reactions, key events, releases with
-  assets and optionally teams. Writes go through internal insert APIs
-  (`bgh_issues::import`, `bgh_releases::import`) that keep source authors
+  assets and optionally teams; P51 adds pull requests with their numbers,
+  state, merge data and `refs/pull/{n}/head` (fetched, by SHA when the
+  branch is gone), reviews, review comments, the wiki, webhooks (imported
+  disabled), branch protection, rulesets, and GitLab (REST v4) as a source.
+  Writes go through internal insert APIs (`bgh_issues::import`,
+  `bgh_pulls::import`, `bgh_releases::import`) that keep source authors
   and timestamps and emit no domain events (sync actions only). Each object
   commits with its `import_mappings` row (resumable, idempotent); source
   users map by verified email, then a login map, else to a non-login
-  **mannequin** (`users.mannequin`). The source client is SSRF-pinned, uses
-  conditional requests and backs off on rate limits. Details:
-  `docs/packages/p18-metadata-import.md`.
+  **mannequin** (`users.mannequin`); an org owner or site admin invites the
+  real person to reclaim one, and on acceptance every `users` foreign key
+  (found in the catalog) moves to them (`mannequin_reclaims`). The source
+  client is SSRF-pinned, uses conditional requests and backs off on rate
+  limits. Details: `docs/packages/p18-metadata-import.md`,
+  `docs/packages/p51-metadata-import-2.md`.
 * Signatures (`bgh_git::signing`, `bgh_repos::signatures`): commit and tag
   signatures (OpenPGP via rPGP against `/user/gpg_keys` incl. subkeys and
   expiry, SSH `sshsig` against `/user/ssh_signing_keys`) are verified on

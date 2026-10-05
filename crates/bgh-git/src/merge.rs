@@ -124,7 +124,10 @@ pub async fn merge_tree(
     }
     args.push(ours);
     args.push(theirs);
+    let timer = bgh_core::observability::git_op("merge-tree");
     let out = cmd::run_status(&store.git_bin, Some(&dir), &args, &[]).await?;
+    // Exit 1 is a conflicted (but successful) merge.
+    timer.finish(matches!(out.code, Some(0 | 1)));
     let text = String::from_utf8_lossy(&out.stdout);
     match out.code {
         Some(0) => Ok(MergeTree::Clean {

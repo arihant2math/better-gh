@@ -107,6 +107,10 @@ async fn start(s: &Setup, extra: Value) -> Value {
         "name": "hello",
         "user_map": {"hubot": "hubby"},
         "teams": true,
+        // Pull requests, wiki and repository config are P51's (`pulls.rs`).
+        "pulls": false,
+        "wiki": false,
+        "repo_config": false,
     });
     for (k, v) in extra.as_object().unwrap() {
         body[k] = v.clone();
@@ -178,7 +182,7 @@ async fn imports_issues_labels_milestones_releases_and_users() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|s| s["state"] == "done")
+            .all(|s| s["state"] == "done" || s["state"] == "skipped")
     );
     // Both limits were waited out and retried.
     assert_eq!(s.fake.hits("/labels"), 2);
@@ -612,7 +616,8 @@ async fn validation_and_permissions() {
         let req = app.post("/_bgh/metadata-imports").auth(user).json(&body);
         async move { req.send().await }
     };
-    let base = json!({"api_url": s.fake.base, "source_repo": SOURCE, "token": admin.token, "owner": "acme"});
+    let base = json!({"api_url": s.fake.base, "source_repo": SOURCE, "token": admin.token, "owner": "acme",
+                      "pulls": false, "wiki": false, "repo_config": false});
     let with = |k: &str, v: Value| {
         let mut b = base.clone();
         b[k] = v;

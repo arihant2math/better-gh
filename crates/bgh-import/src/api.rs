@@ -24,9 +24,12 @@ pub const DEFAULT_API_URL: &str = "https://api.github.com";
 /// `POST /_bgh/metadata-imports`
 #[derive(Debug, Default, Deserialize)]
 pub struct CreateBody {
-    /// `https://api.github.com` (default) or `https://HOST/api/v3`.
+    /// `github` (default) or `gitlab` (P51).
+    pub kind: Option<String>,
+    /// `https://api.github.com` (default) or `https://HOST/api/v3`;
+    /// GitLab: `https://gitlab.com/api/v4` (default) or `https://HOST/api/v4`.
     pub api_url: Option<String>,
-    /// `owner/name` on the source.
+    /// `owner/name` on the source (GitLab: `group[/subgroup…]/project`).
     pub source_repo: Option<String>,
     pub token: Option<String>,
     /// Target owner login (organization, or a user for site admins).
@@ -43,6 +46,9 @@ pub struct CreateBody {
     pub releases: Option<bool>,
     pub teams: Option<bool>,
     pub include_lfs: Option<bool>,
+    pub pulls: Option<bool>,
+    pub wiki: Option<bool>,
+    pub repo_config: Option<bool>,
     /// Source login → local login.
     #[serde(default)]
     pub user_map: BTreeMap<String, String>,
@@ -52,19 +58,25 @@ fn invalid(field: &str, message: &str) -> ApiError {
     ApiError::invalid_field(FieldError::custom("Import", field, message))
 }
 
+fn valid_segment(p: &str) -> bool {
+    !p.is_empty()
+        && p != "."
+        && p != ".."
+        && p.len() <= 100
+        && p.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
 fn valid_source_repo(s: &str) -> bool {
     let mut parts = s.split('/');
-    let ok = |p: Option<&str>| {
-        p.is_some_and(|p| {
-            !p.is_empty()
-                && p != "."
-                && p != ".."
-                && p.len() <= 100
-                && p.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-        })
-    };
+    let ok = |p: Option<&str>| p.is_some_and(valid_segment);
     ok(parts.next()) && ok(parts.next()) && parts.next().is_none()
+}
+
+/// GitLab project paths: `group[/subgroup…]/project` (2–20 segments).
+fn valid_gitlab_path(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('/').collect();
+    (2..=20).contains(&parts.len()) && parts.iter().all(|p| valid_segment(p))
 }
 
 /// May `user` start an import into `owner`?
@@ -100,6 +112,11 @@ pub async fn create_import(
     body: CreateBody,
 ) -> ApiResult<ImportRow> {
     auth.require_scope("repo")?;
+    let kind = body.kind.as_deref().unwrap_or("github");
+    if !row::KINDS.contains(&kind) {
+        return Err(invalid("kind", "must be github or gitlab"));
+    }
+    let gitlab = kind == "gitlab";
     let source_repo = body
         .source_repo
         .as_deref()
@@ -107,7 +124,10 @@ pub async fn create_import(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| ApiError::invalid_field(FieldError::missing_field("Import", "source_repo")))?
         .to_string();
-    if !valid_source_repo(&source_repo) {
+    if gitlab && !valid_gitlab_path(&source_repo) {
+        return Err(invalid("source_repo", "must be group/project"));
+    }
+    if !gitlab && !valid_source_repo(&source_repo) {
         return Err(invalid("source_repo", "must be owner/name"));
     }
     let api_url = body
@@ -115,7 +135,11 @@ pub async fn create_import(
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(DEFAULT_API_URL)
+        .unwrap_or(if gitlab {
+            crate::gitlab::DEFAULT_API_URL
+        } else {
+            DEFAULT_API_URL
+        })
         .trim_end_matches('/')
         .to_string();
     let policy = bgh_core::ssrf::Policy::load(state).await;
@@ -140,10 +164,16 @@ pub async fn create_import(
         .as_deref()
         .map(str::trim)
         .filter(|t| !t.is_empty());
-    let gh = GitHub::new(state, &api_url, token.map(str::to_string), None)
+    let mut gh = GitHub::new(state, &api_url, token.map(str::to_string), None)
         .await
         .map_err(|e| invalid("api_url", &e.to_string()))?;
-    let src = match gh.get(&format!("/repos/{source_repo}")).await {
+    gh.gitlab = gitlab;
+    let source_path = if gitlab {
+        crate::gitlab::project_path(&source_repo)
+    } else {
+        format!("/repos/{source_repo}")
+    };
+    let src = match gh.get(&source_path).await {
         Ok((v, _)) => v,
         Err(e) => {
             return Err(match e.downcast_ref::<HttpError>() {
@@ -164,8 +194,11 @@ pub async fn create_import(
         milestones: body.milestones.unwrap_or(true),
         issues: body.issues.unwrap_or(true),
         releases: body.releases.unwrap_or(true),
-        teams: body.teams.unwrap_or(false),
+        teams: body.teams.unwrap_or(false) && !gitlab,
         include_lfs: body.include_lfs.unwrap_or(false),
+        pulls: body.pulls.unwrap_or(true),
+        wiki: body.wiki.unwrap_or(true),
+        repo_config: body.repo_config.unwrap_or(true) && !gitlab,
         user_map: body.user_map,
     };
     let name = body
@@ -175,10 +208,10 @@ pub async fn create_import(
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| {
-            source_repo
-                .rsplit('/')
-                .next()
-                .unwrap_or_default()
+            src["path"]
+                .as_str()
+                .filter(|_| gitlab)
+                .unwrap_or_else(|| source_repo.rsplit('/').next().unwrap_or_default())
                 .to_string()
         });
     let visibility = body
@@ -202,11 +235,13 @@ pub async fn create_import(
     let git = if options.git {
         let clone_url = src["clone_url"]
             .as_str()
+            .or(src["http_url_to_repo"].as_str())
             .ok_or_else(|| invalid("source_repo", "the source has no clone_url"))?;
         let (url, _) = bgh_repos::import::parse_remote_url(state, "source_repo", clone_url).await?;
+        let git_user = if gitlab { "oauth2" } else { "x-access-token" };
         let credentials = match token {
             Some(t) => Some(
-                bgh_repos::import::Credentials::from_parts(Some("x-access-token"), Some(t))
+                bgh_repos::import::Credentials::from_parts(Some(git_user), Some(t))
                     .expect("both parts")
                     .seal(state)?,
             ),
@@ -257,8 +292,8 @@ pub async fn create_import(
     }
     let row: ImportRow = sqlx::query_as(&format!(
         "INSERT INTO imports (api_url, source_repo, enc_token, owner_id, repo_name, repo_id,
-                              visibility, options, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING {}",
+                              visibility, options, created_by, kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING {}",
         ImportRow::COLUMNS
     ))
     .bind(&api_url)
@@ -270,6 +305,7 @@ pub async fn create_import(
     .bind(&access.repo.visibility)
     .bind(serde_json::to_value(&options).map_err(ApiError::internal)?)
     .bind(auth.user.id)
+    .bind(kind)
     .fetch_one(&mut *tx)
     .await?;
     bgh_core::audit::log(
@@ -280,7 +316,7 @@ pub async fn create_import(
             id: access.repo.id,
             org_id: (owner.kind == "Organization").then_some(owner.id),
         },
-        json!({"import_id": row.id, "api_url": api_url, "source_repo": source_repo}),
+        json!({"import_id": row.id, "kind": kind, "api_url": api_url, "source_repo": source_repo}),
     )
     .await?;
     tx.enqueue(&RunImport { import_id: row.id }).await?;
@@ -638,5 +674,8 @@ mod tests {
         assert!(!super::valid_source_repo("a/../b"));
         assert!(!super::valid_source_repo("/b"));
         assert!(!super::valid_source_repo("../b"));
+        assert!(super::valid_gitlab_path("group/sub/proj"));
+        assert!(!super::valid_gitlab_path("proj"));
+        assert!(!super::valid_gitlab_path("group/../proj"));
     }
 }

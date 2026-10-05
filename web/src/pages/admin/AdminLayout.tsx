@@ -31,6 +31,7 @@ const NAV: { to: string; label: string; icon: Icon; keys: string; group?: string
   { to: '/site-admin/repos', label: 'Repositories', icon: RepoIcon, keys: 'g r' },
   { to: '/site-admin/mirrors', label: 'Mirrors', icon: SyncIcon, keys: 'g y' },
   { to: '/site-admin/imports', label: 'Imports', icon: DownloadIcon, keys: 'g p' },
+  { to: '/site-admin/mannequins', label: 'Mannequins', icon: PersonIcon, keys: 'g q' },
   { to: '/site-admin/settings', label: 'Site settings', icon: GearIcon, keys: 'g e', group: 'Instance' },
   { to: '/site-admin/audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a' },
   { to: '/site-admin/jobs', label: 'Background jobs', icon: StackIcon, keys: 'g j' },

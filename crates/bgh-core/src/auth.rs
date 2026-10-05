@@ -262,6 +262,9 @@ pub async fn authenticate(
     if let Some(actor) = ctx.as_ref().and_then(crate::perms::job_token_actor) {
         crate::sync::context::note_actions_actor(actor);
     }
+    if let Some(ctx) = &ctx {
+        crate::observability::record_caller(ctx);
+    }
     Ok(ctx)
 }
 
@@ -633,7 +636,8 @@ async fn session_auth(state: &AppState, token: &str) -> ApiResult<Option<AuthCon
     let hash = crypto::sha256_hex(token);
     let key = state.redis_key(&format!("session:{hash}"));
     let mut redis = state.redis.clone();
-    let cached: Option<String> = redis.get(&key).await.unwrap_or(None);
+    let cached: Option<String> =
+        crate::observability::redis_result("session", redis.get(&key).await).unwrap_or(None);
     let (session_id, user_id) = match cached.as_deref().and_then(|v| v.split_once(':')) {
         Some((sid, uid)) => match (sid.parse::<i64>(), uid.parse::<i64>()) {
             (Ok(s), Ok(u)) => (s, u),

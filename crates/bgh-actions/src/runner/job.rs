@@ -799,6 +799,13 @@ impl JobRunner {
         );
         e.insert("GITHUB_WORKSPACE".into(), self.paths.guest_workspace());
         self.add_runtime_env(&mut e);
+        if let Some(url) = &self.spec.id_token_request_url {
+            e.insert("ACTIONS_ID_TOKEN_REQUEST_URL".into(), url.clone());
+            e.insert(
+                "ACTIONS_ID_TOKEN_REQUEST_TOKEN".into(),
+                self.spec.token.clone(),
+            );
+        }
         e.insert("GITHUB_ACTION".into(), action_name.to_string());
         if let Some(p) = &scope.action_path {
             e.insert("GITHUB_ACTION_PATH".into(), p.clone());

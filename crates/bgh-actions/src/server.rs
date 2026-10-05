@@ -314,6 +314,8 @@ async fn prepare_spec(
     .await?;
     spec.runtime_token = crate::runtime::mint(state, job, expires.timestamp())
         .map_err(|e| anyhow::anyhow!("minting runtime token: {e}"))?;
+    spec.id_token_request_url =
+        crate::oidc::allowed(&permissions).then(|| crate::oidc::request_url(state));
     spec.token_permissions = permissions
         .iter()
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))

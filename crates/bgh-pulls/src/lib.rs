@@ -16,6 +16,7 @@ pub mod comments;
 pub mod commits;
 pub mod diffview;
 pub mod git;
+pub mod import;
 pub mod jobs;
 pub mod json;
 pub mod merge;

@@ -41,8 +41,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "repository_advisory",
     "repository_import",
     "repository_vulnerability_alert",
-    "secret_scanning_alert",
-    "secret_scanning_alert_location",
     "security_advisory",
     "security_and_analysis",
     "sponsorship",
@@ -356,6 +354,17 @@ fn samples() -> Vec<Event> {
             status_id: 1,
             state: "success".into(),
             actor_id: Some(1),
+        },
+        Event::SecretScanningAlert {
+            repo_id: 1,
+            alert_id: 1,
+            action: "created".into(),
+            actor_id: None,
+        },
+        Event::SecretScanningAlertLocationCreated {
+            repo_id: 1,
+            alert_id: 1,
+            location_id: 1,
         },
         Event::CommitCommentCreated {
             repo_id: 1,

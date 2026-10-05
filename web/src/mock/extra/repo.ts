@@ -11,6 +11,7 @@ import { fakeSha } from '../rng';
 import { repoLicense } from './licenses';
 import type { Ctx, MockServer, Resp } from '../server';
 import { rulesetProtects } from './rulesets';
+import { applySecurityAndAnalysis, securityAndAnalysisJson } from './secretScanning';
 import { invalid, noContent, notFound, ok, param, simpleUser, state } from './util';
 
 // ------------------------------------------------------------------ state
@@ -333,6 +334,7 @@ export function fullRepo(server: MockServer, repo: Repo): Record<string, unknown
     created_at: repo.createdAt,
     updated_at: repo.updatedAt,
     permissions: perms(p),
+    ...(p === 'admin' ? { security_and_analysis: securityAndAnalysisJson(server, repo) } : {}),
     allow_rebase_merge: x.allow_rebase_merge,
     allow_squash_merge: x.allow_squash_merge,
     allow_auto_merge: x.allow_auto_merge,
@@ -616,6 +618,10 @@ export function installRepoSettingsMocks(server: MockServer): void {
       if (!branchNames(server, repo).includes(br))
         return invalid(`The branch ${br} was not found. Please push that ref first or create it via the Git Data API.`, 'default_branch', 'custom', 'Repository');
       next.defaultBranch = br;
+    }
+    if (b.security_and_analysis !== undefined) {
+      const err = applySecurityAndAnalysis(server, repo, b.security_and_analysis);
+      if (err) return err;
     }
     S(server).extras.set(repo.id, x);
     server.put('repo', next);

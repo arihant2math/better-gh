@@ -127,6 +127,36 @@ impl Default for GitSettings {
     }
 }
 
+/// Secret scanning and push protection (`secret_scanning` section, P65).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SecretScanningSettings {
+    /// Owners may enable secret scanning (off: no scans, no push
+    /// protection, the API answers as if disabled everywhere).
+    pub available: bool,
+    /// Secret scanning on for every repository, whatever its settings.
+    pub enable_all: bool,
+    /// Push protection on for every repository.
+    pub push_protection_all: bool,
+    /// Largest file scanned (KB); larger blobs are skipped.
+    pub max_blob_kb: i64,
+    /// Time budget of the push protection scan; a push whose scan takes
+    /// longer is accepted (and still scanned in the background).
+    pub push_scan_timeout_secs: i64,
+}
+
+impl Default for SecretScanningSettings {
+    fn default() -> Self {
+        Self {
+            available: true,
+            enable_all: false,
+            push_protection_all: false,
+            max_blob_kb: 1024,
+            push_scan_timeout_secs: 20,
+        }
+    }
+}
+
 /// Repository visibilities, in display order.
 pub const VISIBILITIES: &[&str] = &["public", "internal", "private"];
 
@@ -562,6 +592,7 @@ pub struct SiteSettings {
     pub actions: ActionsSettings,
     pub privacy: PrivacySettings,
     pub markdown: MarkdownSettings,
+    pub secret_scanning: SecretScanningSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -580,6 +611,7 @@ pub const SECTIONS: &[&str] = &[
     "actions",
     "privacy",
     "markdown",
+    "secret_scanning",
 ];
 
 impl SiteSettings {
@@ -709,6 +741,15 @@ impl SiteSettings {
                 self.actions = a;
             }
             "privacy" => self.privacy = serde_json::from_value(section)?,
+            "secret_scanning" => {
+                let s: SecretScanningSettings = serde_json::from_value(section)?;
+                if s.max_blob_kb <= 0 || s.push_scan_timeout_secs <= 0 {
+                    return Err(serde::de::Error::custom(
+                        "max_blob_kb and push_scan_timeout_secs must be positive",
+                    ));
+                }
+                self.secret_scanning = s;
+            }
             _ => {}
         }
         Ok(())
