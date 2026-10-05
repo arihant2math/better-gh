@@ -300,6 +300,17 @@ and octokit-style raw requests.
   above it). Manifest flow: `POST /settings/apps/new` →
   `/app-manifests/{code}/conversions`. Details:
   `docs/packages/p46-github-apps-2.md`.
+* Personal access token restrictions (`bgh_core::pat`, P47): fine-grained
+  tokens (`bgh_pat_…`, `kind = 'fine_grained'`) have one resource owner, a
+  repository selection and a permission map mirrored into their scopes, so
+  `perms::effective` caps them (`pat::effective_cap`, min with the user's
+  role) and `pat::guard` (run from `token_permissions::middleware`) checks
+  repository categories, account and organization permissions.
+  Organization token policies (`org_pat_policies`) are evaluated at
+  authentication into `pat:blocked_org:{id}` scopes. Classic tokens with
+  `repo:status` / `repo_deployment` but no `repo` reach private
+  repositories only for those categories (`pat::narrow_cap`, via a
+  request-scoped category the middleware sets).
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations
@@ -482,7 +493,15 @@ Site-level account changes also emit `UserAccountChanged` /
   `pre-receive` hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
   `-c core.hooksPath`, inputs in `PushPolicy`/`PushLimits`) while the
   objects are quarantined (`GIT_QUARANTINE_PATH`), so rejected packs leave
-  nothing behind. `refs/pull/*` and `refs/bgh/*` are server-only:
+  nothing behind. Rulesets (repository and organization ones, `active`
+  and `evaluate`) are evaluated by `bgh_repos::rule_eval`: ref rules in
+  the authorize callback, object rules (force pushes, linear history,
+  commit metadata patterns, file path / extension / size / path length
+  push rules) from the hook, which calls back into the server over a FIFO
+  pair (`PushPolicy::object_check`, `BGH_CHECK_DIR`) so the evaluation
+  runs in Rust against the quarantined objects. Violations are reported
+  with GitHub's `GH013` text; every evaluated update (and PR merge) is
+  stored in `rule_suites`. `refs/pull/*` and `refs/bgh/*` are server-only:
   `receive.hideRefs` (repo config and `-c` on every receive-pack) rejects
   them per ref ("deny updating a hidden ref"), pushes touching only them
   are refused before git runs, and `write_ref` answers 422; internal

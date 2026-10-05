@@ -258,9 +258,11 @@ impl TokenPermissions {
     /// minted before permission scopes existed get [`Self::write_all`], or
     /// read-all when read-only). `None` for every other credential.
     pub fn of(auth: &AuthContext) -> Option<Self> {
-        // GitHub App installation tokens carry their map the same way.
+        // GitHub App installation and user-to-server tokens and fine-grained
+        // personal access tokens carry their map the same way.
         if crate::apps::installation_id(auth).is_some()
             || crate::apps::user_to_server_app_id(auth).is_some()
+            || crate::pat::is_fine_grained(auth)
         {
             let scopes = auth.scopes.as_deref().unwrap_or_default();
             return Some(Self::from_scopes(scopes).unwrap_or_else(Self::none));
@@ -564,6 +566,11 @@ pub async fn middleware(State(state): State<AppState>, mut req: Request, next: N
     let Ok(Some(auth)) = crate::auth::resolve_request(&state, &mut req).await else {
         return next.run(req).await;
     };
+    // Personal access tokens: fine-grained permissions, organization token
+    // policies, narrow classic scopes (P47).
+    if crate::pat::applies(&auth) {
+        return crate::pat::guard(&state, &auth, req, next).await;
+    }
     let Some(perms) = TokenPermissions::of(&auth) else {
         return next.run(req).await;
     };

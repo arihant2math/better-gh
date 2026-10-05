@@ -200,6 +200,17 @@ pub async fn perform_merge(
         return Err(not_allowed("You're not authorized to push to this branch."));
     }
     let ev = protection::evaluate(state, repo, pull, &rules).await?;
+    if let Some(suite) = protection::merge_suite(
+        repo.id,
+        &rules,
+        &ev,
+        &actor,
+        &pull.pr.base_ref,
+        &base_tip,
+        &pull.pr.head_sha,
+    ) {
+        bgh_repos::rule_eval::record_all(&state.db, &[suite]).await;
+    }
     let blocking = ev.unbypassed(&rules, &actor);
     if !blocking.is_empty() {
         return Err(not_allowed(protection::violation_message(&blocking)));

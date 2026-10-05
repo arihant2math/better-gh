@@ -172,6 +172,11 @@ pub(super) enum PostKind {
         entrypoint: Option<String>,
         args: Vec<String>,
     },
+    /// Native `actions/cache` save.
+    CacheSave {
+        paths: Vec<String>,
+        key: String,
+    },
 }
 
 /// Everything about the step currently executing.
@@ -426,6 +431,9 @@ pub(super) async fn run(
     if !spec.token.is_empty() {
         masker.add(&spec.token);
         masker.add(&basic_auth(&spec.token));
+    }
+    if !spec.runtime_token.is_empty() {
+        masker.add(&spec.runtime_token);
     }
     let logger = Arc::new(Logger::new(backend.clone(), spec.job_id, masker.clone()));
 
@@ -790,6 +798,7 @@ impl JobRunner {
             self.paths.guest("_temp/_github_workflow/event.json"),
         );
         e.insert("GITHUB_WORKSPACE".into(), self.paths.guest_workspace());
+        self.add_runtime_env(&mut e);
         e.insert("GITHUB_ACTION".into(), action_name.to_string());
         if let Some(p) = &scope.action_path {
             e.insert("GITHUB_ACTION_PATH".into(), p.clone());
@@ -1548,6 +1557,10 @@ impl JobRunner {
         }
         let mut body = match &post.kind {
             PostKind::Node { script } => self.run_node(&post_scope, &run, script, &extra).await,
+            PostKind::CacheSave { paths, key } => {
+                self.cache_post_save(&post_scope, &run, paths, key, &post.state)
+                    .await
+            }
             PostKind::Docker {
                 image,
                 entrypoint,

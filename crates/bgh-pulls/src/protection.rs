@@ -504,6 +504,61 @@ impl Evaluation {
     }
 }
 
+/// The rule suite of a merge attempt (`bgh_repos::rule_eval`): one
+/// evaluation per `pull_request` / `required_status_checks` rule of each
+/// ruleset among `rules`' sources; `None` without rulesets.
+pub fn merge_suite(
+    repo_id: i64,
+    rules: &Rules,
+    ev: &Evaluation,
+    actor: &Actor,
+    base_ref: &str,
+    before: &str,
+    after: &str,
+) -> Option<bgh_repos::rule_eval::SuiteRecord> {
+    use bgh_repos::rule_eval::{Eval, SuiteRecord, Violation};
+    let mut evals = Vec::new();
+    for (i, src) in rules.sources.iter().enumerate() {
+        let Source::Ruleset(r) = &src.source else {
+            continue;
+        };
+        for ty in ["pull_request", "required_status_checks"] {
+            if r.find_rule(ty).is_none() {
+                continue;
+            }
+            let items: Vec<String> = ev
+                .blockers
+                .iter()
+                .filter(|b| b.source_index == i)
+                .filter(|b| {
+                    let review = b.review || b.message.contains("conversation");
+                    review == (ty == "pull_request")
+                })
+                .map(|b| b.message.clone())
+                .collect();
+            evals.push(Eval {
+                ruleset_id: r.id,
+                ruleset_name: r.name.clone(),
+                enforcement: r.enforcement.clone(),
+                bypassed: r.bypass_mode(actor) != "never",
+                rule_type: ty.to_string(),
+                failure: (!items.is_empty()).then(|| Violation {
+                    message: items.join(" "),
+                    items: vec![],
+                }),
+            });
+        }
+    }
+    (!evals.is_empty()).then(|| SuiteRecord {
+        repo_id,
+        actor_id: Some(actor.user_id),
+        refname: format!("refs/heads/{base_ref}"),
+        before_sha: before.to_string(),
+        after_sha: after.to_string(),
+        evals,
+    })
+}
+
 fn dedup_messages<'a>(blockers: impl Iterator<Item = &'a Blocker>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for b in blockers {

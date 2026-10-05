@@ -142,6 +142,41 @@ async fn ruleset_blocks_merge_and_auto_merge() {
         .assert_status(201);
     settle(app).await;
     assert_eq!(pr_json(app).await["merged"], true);
+
+    // Merge evaluations are recorded as rule suites (newest first).
+    let suites = app
+        .get("/api/v3/repos/alice/demo/rulesets/rule-suites?ref=main")
+        .auth(&f.alice)
+        .send()
+        .await
+        .json();
+    let suites = suites.as_array().unwrap();
+    assert!(suites.len() >= 3, "{suites:?}");
+    assert_eq!(suites[0]["result"], "pass");
+    assert_eq!(suites[0]["after_sha"], f.feature);
+    let oldest = suites.last().unwrap();
+    assert_eq!(oldest["result"], "fail");
+    assert_eq!(oldest["actor_name"], "alice");
+    assert_eq!(oldest["ref"], "refs/heads/main");
+    let detail = app
+        .get(&format!(
+            "/api/v3/repos/alice/demo/rulesets/rule-suites/{}",
+            oldest["id"]
+        ))
+        .auth(&f.alice)
+        .send()
+        .await
+        .json();
+    let evals = detail["rule_evaluations"].as_array().unwrap();
+    assert_eq!(evals.len(), 2);
+    assert_eq!(evals[0]["rule_type"], "pull_request");
+    assert_eq!(evals[0]["result"], "fail");
+    assert_eq!(evals[1]["rule_type"], "required_status_checks");
+    assert_eq!(evals[1]["result"], "fail");
+    assert_eq!(
+        evals[1]["details"],
+        "Required status check \"ci\" is expected."
+    );
 }
 
 #[tokio::test]

@@ -9,6 +9,7 @@ mod apps;
 mod apps_p46;
 mod auth;
 mod boot;
+mod fine_grained;
 mod invitations;
 mod ldap;
 mod oauth;

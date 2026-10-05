@@ -666,3 +666,72 @@ async fn push_hardening_over_ssh() {
     .stdout;
     assert!(refs.starts_with(&c1), "{refs}");
 }
+
+#[tokio::test]
+async fn deploy_key_bypasses_rulesets() {
+    if !have_ssh() {
+        return;
+    }
+    let s = start().await;
+    let alice = s.app.create_user("alice").await;
+    s.app.create_repo(&alice, "dk").await;
+    let alice_key = s.user_key(&alice).await;
+    let rw = s.deploy_key(&alice, "dk", false).await;
+    let w = s.tmp.path().join("work");
+    work_repo(&w).await;
+    ok(s.git(
+        &alice_key,
+        &w,
+        &["push", "-q", &s.url("alice", "dk"), "main"],
+    )
+    .await);
+    s.app.drain_jobs().await;
+
+    s.app
+        .post("/api/v3/repos/alice/dk/rulesets")
+        .auth(&alice)
+        .json(&json!({
+            "name": "deploys only",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+            "rules": [
+                {"type": "update"},
+                {"type": "commit_message_pattern", "parameters": {
+                    "operator": "starts_with", "pattern": "release:"}},
+            ],
+            "bypass_actors": [{"actor_id": null, "actor_type": "DeployKey", "bypass_mode": "always"}],
+        }))
+        .send()
+        .await
+        .assert_status(201);
+
+    commit_files(&w, &[("new.txt", b"n\n")], "more", ("A", "a@example.com")).await;
+    let out = s
+        .git(&alice_key, &w, &["push", &s.url("alice", "dk"), "main"])
+        .await;
+    assert!(!out.ok);
+    assert!(
+        out.stderr
+            .contains("GH013: Repository rule violations found for refs/heads/main."),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("- Cannot update this protected ref."));
+    ok(
+        s.git(&rw, &w, &["push", "-q", &s.url("alice", "dk"), "main"])
+            .await,
+    );
+
+    let res = s
+        .app
+        .get("/api/v3/repos/alice/dk/rulesets/rule-suites")
+        .auth(&alice)
+        .send()
+        .await;
+    res.assert_status(200);
+    let list = res.json();
+    assert_eq!(list[0]["result"], "bypass");
+    assert_eq!(list[0]["actor_id"], serde_json::Value::Null);
+    assert_eq!(list[1]["result"], "fail");
+    assert_eq!(list[1]["actor_name"], "alice");
+}

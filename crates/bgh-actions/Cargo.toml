@@ -42,6 +42,7 @@ zip.workspace = true
 crypto_box.workspace = true
 chacha20poly1305.workspace = true
 reqwest.workspace = true
+hmac.workspace = true
 async-trait.workspace = true
 tempfile.workspace = true
 

@@ -3,6 +3,7 @@
 
 pub mod access;
 pub mod artifacts;
+pub mod caches;
 pub mod deployments;
 pub mod dispatches;
 pub mod environments;

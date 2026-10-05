@@ -923,6 +923,7 @@ async fn rulesets_crud() {
     assert_eq!(
         v["rules"][2],
         json!({"type": "pull_request", "parameters": {
+            "allowed_merge_methods": ["merge", "squash", "rebase"],
             "required_approving_review_count": 1,
             "dismiss_stale_reviews_on_push": false,
             "require_code_owner_review": false,
@@ -938,7 +939,12 @@ async fn rulesets_crud() {
     // Validation.
     for bad in [
         json!({"name": "x", "enforcement": "sometimes"}),
-        json!({"name": "x", "enforcement": "active", "target": "push"}),
+        json!({"name": "x", "enforcement": "active", "target": "everything"}),
+        json!({"name": "x", "enforcement": "active", "target": "push", "rules": [{"type": "deletion"}]}),
+        json!({"name": "x", "enforcement": "active", "rules": [{"type": "max_file_size", "parameters": {"max_file_size": 500}}]}),
+        json!({"name": "x", "enforcement": "active", "rules": [{"type": "commit_message_pattern", "parameters": {"operator": "regex", "pattern": "(unclosed"}}]}),
+        json!({"name": "x", "enforcement": "active", "rules": [{"type": "commit_message_pattern", "parameters": {"operator": "like", "pattern": "x"}}]}),
+        json!({"name": "x", "enforcement": "active", "bypass_actors": [{"actor_type": "Integration"}]}),
         json!({"name": "x", "enforcement": "active", "rules": [{"type": "teleport"}]}),
         json!({"name": "x", "enforcement": "active", "rules": [{"type": "deletion"}, {"type": "deletion"}]}),
         json!({"name": "x", "enforcement": "active", "bypass_actors": [{"actor_id": 9, "actor_type": "RepositoryRole"}]}),

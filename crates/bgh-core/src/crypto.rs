@@ -22,6 +22,10 @@ pub const USER_TO_SERVER_TOKEN_PREFIX: &str = "bghu_";
 /// Prefix of GitHub App refresh tokens (`bghr_…`, GitHub's `ghr_`).
 pub const REFRESH_TOKEN_PREFIX: &str = "bghr_";
 
+/// Prefix of fine-grained personal access tokens (`bgh_pat_…`, GitHub's
+/// `github_pat_`).
+pub const FINE_GRAINED_PAT_PREFIX: &str = "bgh_pat_";
+
 /// Hash a password with Argon2id (PHC string format).
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
@@ -75,6 +79,11 @@ pub fn new_user_to_server_token() -> String {
 /// New refresh token: `bghr_` + 76 alphanumerics (GitHub's length).
 pub fn new_refresh_token() -> String {
     format!("{REFRESH_TOKEN_PREFIX}{}", random_token(76))
+}
+
+/// New fine-grained personal access token: `bgh_pat_` + 60 alphanumerics.
+pub fn new_fine_grained_pat() -> String {
+    format!("{FINE_GRAINED_PAT_PREFIX}{}", random_token(60))
 }
 
 /// Constant-time string comparison (for secrets compared in memory).
