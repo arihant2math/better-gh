@@ -24,3 +24,8 @@ Queue (wave order): W2 P35 P36; W3 P20(P19) P25 P27 P29 P37 P38 P39(P23,P26) P41
 ## Integration process (since 15:53 UTC)
 
 Workers no longer push to the integration branch. They mark `Integration: ready` in their status doc and push their own branch; the integrator session `session_0199JgoqhKWUQwuSikBwmDCv` (branch `bgh/integrator`, log `docs/INTEGRATION_LOG.md`) lands batches of up to 4 with one gate run per batch. See docs/WORKER_GUIDE.md rule 14 + "Integration queue".
+
+## Standing launch notes
+
+- Bundle: integration b02d3ec initial JS is 142.8 KB gzip of 150 KB (orchestrator, 15:54). Every web-touching prompt adds: "new UI must be lazy-loaded route chunks; do not grow the initial bundle". P68 must bring initial JS back under ~120 KB.
+- Gate baseline at b02d3ec: 950 Rust tests, 341 web tests, green.
