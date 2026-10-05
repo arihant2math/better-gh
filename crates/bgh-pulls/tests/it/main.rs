@@ -5,6 +5,7 @@
 mod common;
 
 mod checks;
+mod diffview;
 mod governance;
 mod merge;
 mod pulls;

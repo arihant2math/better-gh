@@ -7,7 +7,7 @@
 import { parseDiff } from '../components/diff/parseDiff';
 import type { CheckRun, CheckSuite, CommitStatus, ID, Issue, Reaction, Repo, Review, ReviewComment, User } from '../sync/models';
 import type { MockFile } from './content';
-import { pullDiff } from './content';
+import { highlight, languageOf, pullDiff } from './content';
 import { Rng, fakeSha, iso } from './rng';
 import type { MockDb } from './seed';
 
@@ -273,6 +273,86 @@ export function registerPullRoutes(host: PullHost): void {
       status: 200,
       body: { filename: f.path, previous_filename: null, status: f.status === 'deleted' ? 'removed' : f.status, additions: f.additions, deletions: f.deletions, patch: patchOf(text, path), truncated: false },
     };
+  });
+
+  // ---------------------------------------------------------------- diff viewer (P37)
+  /** The PR whose head (or `base...head`) is `spec`, with both versions of `path`. */
+  const versions = (repo: Repo, spec: string, path: string): { old: string | null; cur: string | null; isOld: boolean } | null => {
+    const head = spec.includes('...') ? spec.split('...')[1]! : spec;
+    const pr = [...t().issue.values()].find((i) => i.isPr && i.repoId === repo.id && (i.headSha === head || i.baseSha === head));
+    const base = host.files(repo).find((f) => f.path === path)?.content ?? null;
+    if (!pr) return base == null ? null : { old: base, cur: base, isOld: false };
+    const file = parseDiff(pullDiffText(host, repo, pr)).find((f) => f.path === path);
+    const isOld = spec.includes('...') || spec === pr.baseSha;
+    if (!file) return base == null ? null : { old: base, cur: base, isOld };
+    const old = file.status === 'added' ? null : base;
+    const oldLines = (old ?? '').replace(/\n$/, '').split('\n');
+    const out: string[] = [];
+    let cursor = 0;
+    for (const h of file.hunks) {
+      const start = h.oldLines === 0 ? h.oldStart : h.oldStart - 1;
+      while (cursor < start && cursor < oldLines.length) out.push(oldLines[cursor++]!);
+      for (const l of h.lines) {
+        if (l.type === 'add') out.push(l.text);
+        else if (l.type === 'ctx') {
+          out.push(l.text);
+          cursor++;
+        } else if (l.type === 'del') cursor++;
+      }
+    }
+    if (old != null) while (cursor < oldLines.length) out.push(oldLines[cursor++]!);
+    return { old, cur: file.status === 'deleted' ? null : `${out.join('\n')}\n`, isOld };
+  };
+  R('GET', '/_bgh/repos/:owner/:repo/blob-lines/:spec', (ctx) => {
+    const repo = host.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!));
+    const spec = decodeURIComponent(ctx.m[3]!);
+    const path = ctx.url.searchParams.get('path') ?? '';
+    if (!repo) return notFound;
+    if (!path) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Blob', field: 'path', code: 'missing_field' }] } };
+    const v = versions(repo, spec, path);
+    const content = v ? (v.isOld ? v.old : v.cur) : null;
+    if (content == null) return notFound;
+    const all = content.replace(/\n$/, '').split('\n');
+    const q = ctx.url.searchParams;
+    const start = Math.max(1, Number(q.get('start') ?? 1));
+    const end = Math.max(start - 1, Math.min(all.length, Number(q.get('end') ?? all.length)));
+    const language = languageOf(path);
+    const commit = spec.includes('...') ? fakeSha(`mb:${spec}`) : spec;
+    return {
+      status: 200,
+      body: {
+        commit,
+        path,
+        sha: fakeSha(`${spec}:${path}`),
+        size: content.length,
+        binary: false,
+        image: false,
+        mime: 'text/plain',
+        total_lines: all.length,
+        start,
+        end,
+        lines: q.get('text') === '0' ? null : all.slice(start - 1, end),
+        html: q.get('hl') === '1' && language ? highlight(content, language).slice(start - 1, end) : null,
+        language,
+        raw_url: `/${repo.owner}/${repo.name}/raw/${commit}/${path}`,
+      },
+    };
+  });
+  R('GET', '/_bgh/repos/:owner/:repo/commits/:sha/annotations', (ctx) => {
+    const repo = host.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!));
+    if (!repo) return notFound;
+    const sha = ctx.m[3]!;
+    const pr = [...t().issue.values()].find((i) => i.isPr && i.repoId === repo.id && i.headSha === sha);
+    const runs = [...t().checkRun.values()].filter((r) => r.headSha === sha && r.status === 'completed');
+    if (!pr || !runs.length) return { status: 200, body: [] };
+    const added = parseDiff(pullDiffText(host, repo, pr)).flatMap((f) => f.hunks.flatMap((h) => h.lines.filter((l) => l.type === 'add').map((l) => ({ path: f.path, line: l.newNo! }))));
+    const lint = runs.find((r) => r.name === 'lint') ?? runs[0]!;
+    const failed = runs.find((r) => r.conclusion === 'failure');
+    const out = [];
+    if (added[0]) out.push({ check_run_id: lint.id, check_run_name: lint.name, path: added[0].path, start_line: added[0].line, end_line: added[0].line, start_column: null, end_column: null, annotation_level: 'warning', title: 'clippy::needless_return', message: 'unneeded `return` statement', raw_details: null });
+    const last = added[added.length - 1];
+    if (failed && last && last !== added[0]) out.push({ check_run_id: failed.id, check_run_name: failed.name, path: last.path, start_line: last.line, end_line: last.line, start_column: null, end_column: null, annotation_level: 'failure', title: 'assertion failed', message: 'left == right failed\n  left: 1\n right: 2', raw_details: 'thread main panicked at src/lib.rs' });
+    return { status: 200, body: out };
   });
 
   // ---------------------------------------------------------------- review comments

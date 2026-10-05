@@ -14,6 +14,7 @@ pub mod checks;
 pub mod codeowners;
 pub mod comments;
 pub mod commits;
+pub mod diffview;
 pub mod git;
 pub mod jobs;
 pub mod json;
@@ -167,6 +168,10 @@ pub fn web_router() -> Router<AppState> {
             post(web::create_pending_comment),
         )
         .route(&p("/patch"), get(web::file_patch))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/commits/{sha}/annotations",
+            get(diffview::commit_annotations),
+        )
         .route(
             "/_bgh/repos/{owner}/{repo}/check-runs/{id}/requested-action",
             post(checks::request_action),

@@ -14,6 +14,7 @@ mod collaborators;
 mod commit_comments;
 mod commits;
 mod contents;
+mod diff_lines;
 mod download;
 mod forks;
 mod git_transport;

@@ -136,7 +136,8 @@ heavy tabs are lazy chunks prefetched on link intent:
 * Viewed-file state is per browser (localStorage), not server-side.
 * Checks/statuses are synced for the head commit only; older commits in the
   Commits tab have no status icon.
-* Syntax highlighting in diffs is not implemented (plain text).
+* Syntax highlighting, context expansion, image / rich diffs and inline
+  check annotations in diffs: see `docs/packages/p37-diff-viewer.md`.
 * Timeline rendering of PR-only events (`review_dismissed`,
   `auto_merge_enabled`, `base_ref_changed`, …) uses the generic fallback of
   F3's `EventItem`; F3 owns that component.
