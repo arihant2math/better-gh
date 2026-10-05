@@ -171,6 +171,7 @@ pub fn web_router() -> Router<AppState> {
 pub fn register(reg: &mut Registry) {
     reg.job(email::send_notification_emails);
     reg.job(webhooks::deliver::deliver_webhook);
+    reg.job(webhooks::deliver::deliver_meta);
     reg.on_event("notify.notifications", fanout::on_event);
     reg.on_event("notify.webhooks", webhooks::dispatch::on_event);
 }

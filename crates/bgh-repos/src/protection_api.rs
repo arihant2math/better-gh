@@ -249,6 +249,89 @@ fn ids(v: Option<&Value>, key: &str) -> Vec<i64> {
 }
 
 /// `(context, app_id)` pairs of a stored `required_status_checks` value.
+/// GitHub's `branch_protection_rule` webhook object for a rule.
+pub fn webhook_rule_json(row: &ProtectionRow) -> Value {
+    let level = |on: bool| {
+        if !on {
+            "off"
+        } else if row.enforce_admins {
+            "everyone"
+        } else {
+            "non_admins"
+        }
+    };
+    let reviews = row.required_pull_request_reviews.as_ref();
+    let review = |k: &str| reviews.map(|r| r[k].clone()).unwrap_or(Value::Null);
+    let restrictions = row.restrictions.as_ref();
+    let actor_names: Vec<Value> = restrictions
+        .map(|r| {
+            ["users", "teams", "apps"]
+                .iter()
+                .flat_map(|k| r[*k].as_array().cloned().unwrap_or_default())
+                .map(|v| match v {
+                    Value::Object(ref o) => o
+                        .get("login")
+                        .or_else(|| o.get("slug"))
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    other => other,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let dismissal = reviews.and_then(|r| r.get("dismissal_restrictions"));
+    json!({
+        "id": row.id,
+        "repository_id": row.repo_id,
+        "name": row.pattern,
+        "created_at": Timestamp(row.created_at),
+        "updated_at": Timestamp(row.updated_at),
+        "pull_request_reviews_enforcement_level": level(reviews.is_some()),
+        "required_approving_review_count": review("required_approving_review_count").as_i64().unwrap_or(0),
+        "dismiss_stale_reviews_on_push": review("dismiss_stale_reviews").as_bool().unwrap_or(false),
+        "require_code_owner_review": review("require_code_owner_reviews").as_bool().unwrap_or(false),
+        "require_last_push_approval": review("require_last_push_approval").as_bool().unwrap_or(false),
+        "authorized_dismissal_actors_only": dismissal.is_some_and(|d| !d.is_null()),
+        "ignore_approvals_from_contributors": false,
+        "required_status_checks": checks_of(row.required_status_checks.as_ref())
+            .into_iter()
+            .map(|c| c.0)
+            .collect::<Vec<_>>(),
+        "required_status_checks_enforcement_level": level(row.required_status_checks.is_some()),
+        "strict_required_status_checks_policy": row
+            .required_status_checks
+            .as_ref()
+            .and_then(|v| v["strict"].as_bool())
+            .unwrap_or(false),
+        "signature_requirement_enforcement_level": level(row.required_signatures),
+        "linear_history_requirement_enforcement_level": level(row.required_linear_history),
+        "admin_enforced": row.enforce_admins,
+        "allow_force_pushes_enforcement_level": level(row.allow_force_pushes),
+        "allow_deletions_enforcement_level": level(row.allow_deletions),
+        "merge_queue_enforcement_level": "off",
+        "required_deployments_enforcement_level": "off",
+        "required_conversation_resolution_level": level(row.required_conversation_resolution),
+        "authorized_actors_only": restrictions.is_some(),
+        "authorized_actor_names": actor_names,
+        "create_protected": row.block_creations,
+        "lock_branch_enforcement_level": level(row.lock_branch),
+        "lock_allows_fork_sync": row.allow_fork_syncing,
+    })
+}
+
+/// `changes` (`{"<field>": {"from": old}}`) between two webhook rule objects.
+fn rule_changes(old: &Value, new: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    if let (Some(o), Some(n)) = (old.as_object(), new.as_object()) {
+        for (k, v) in o {
+            if k != "updated_at" && n.get(k) != Some(v) {
+                out.insert(k.clone(), json!({ "from": v }));
+            }
+        }
+    }
+    Value::Object(out)
+}
+
 fn checks_of(v: Option<&Value>) -> Vec<(String, Option<i64>)> {
     let mut out: Vec<(String, Option<i64>)> = Vec::new();
     let Some(v) = v else { return out };
@@ -745,6 +828,11 @@ impl Cx<'_> {
 
     /// Upsert the rule within `tx`, with sync, audit and event.
     async fn persist(&self, tx: &mut Tx, existed: bool, d: &Draft) -> ApiResult<ProtectionRow> {
+        let before = if existed {
+            self.lock_row(tx).await?
+        } else {
+            None
+        };
         let row: ProtectionRow = sqlx::query_as(&format!(
             "INSERT INTO branch_protections (repo_id, pattern, required_status_checks,
                  required_pull_request_reviews, restrictions, enforce_admins,
@@ -810,6 +898,20 @@ impl Cx<'_> {
             repo_id: self.access.repo.id,
             actor_id: self.user.id,
         });
+        let rule = webhook_rule_json(&row);
+        let (action, changes) = match &before {
+            Some(old) => ("edited", rule_changes(&webhook_rule_json(old), &rule)),
+            None => ("created", Value::Null),
+        };
+        if action == "created" || changes.as_object().is_some_and(|c| !c.is_empty()) {
+            tx.emit(Event::BranchProtectionRuleChanged {
+                repo_id: self.access.repo.id,
+                actor_id: self.user.id,
+                action: action.into(),
+                rule,
+                changes,
+            });
+        }
         Ok(row)
     }
 
@@ -1011,6 +1113,13 @@ impl Cx<'_> {
         tx.emit(Event::RepositoryUpdated {
             repo_id: self.access.repo.id,
             actor_id: self.user.id,
+        });
+        tx.emit(Event::BranchProtectionRuleChanged {
+            repo_id: self.access.repo.id,
+            actor_id: self.user.id,
+            action: "deleted".into(),
+            rule: webhook_rule_json(&row),
+            changes: Value::Null,
         });
         tx.commit().await?;
         no_content()

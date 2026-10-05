@@ -486,6 +486,14 @@ export interface CheckRun {
   title: string | null;
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
+  /** Buttons the integration offers (`requested_action` on click). */
+  actions?: CheckRunAction[];
+}
+
+export interface CheckRunAction {
+  label: string;
+  description: string;
+  identifier: string;
 }
 
 export interface CommitStatus {

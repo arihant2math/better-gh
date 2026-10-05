@@ -183,7 +183,7 @@ to, plus the site-level events from B7: `UserAccountChanged` → `user`
 
 ## Jobs and listeners
 
-Jobs `notify.email`, `notify.deliver_webhook`; listeners
+Jobs `notify.email`, `notify.deliver_webhook`, `notify.deliver_meta` (P10); listeners
 `notify.notifications`, `notify.webhooks`. Also additive:
 `Pagination::with_default_per_page` in bgh-core.
 
@@ -192,10 +192,10 @@ Jobs `notify.email`, `notify.deliver_webhook`; listeners
 * Reply-by-email (optional) not implemented: creating comments belongs to
   bgh-issues; an inbound endpoint could call a pub service fn from there.
 * Email digests not implemented (one email per activity).
-* No `meta` (hook deleted) event; no automatic pruning of old
-  `webhook_deliveries` (index on `created_at` exists for a cleanup job).
-* Delete events (`IssueCommentDeleted`, review comment deleted) send a
-  minimal comment object (row is gone); `changes` for comment edits is `{}`.
+* No automatic pruning of old `webhook_deliveries` (index on `created_at`
+  exists for a cleanup job). (`meta` deleted, comment-edit `changes` and
+  full deleted-comment objects were added by P10, see
+  `docs/packages/p10-webhook-wiring.md`.)
 * Listeners are in-process/best-effort (per architecture); a crash between
   commit and fan-out loses that notification (deliveries are durable once
   queued).
