@@ -74,6 +74,11 @@
 * Attachments (`bgh-uploads`, P6): anonymous downloads are refused by the
   middleware; signed-in downloads are never `Cache-Control: public` in
   private mode (no shared-cache replay to anonymous users).
+* Container registry (`bgh-packages`, P15): `/v2/...` passes the
+  middleware (Docker's Bearer challenge and registry JWTs are handled by
+  the registry); in private mode the registry refuses anonymous callers
+  and anonymous tokens with its challenge, and `/v2/token` issues no
+  anonymous tokens.
 * Second line of defence: `RepoAccess::for_repo` returns 404 to anonymous
   callers in private mode (covers any handler the middleware lets through).
 * `GET /users` and `GET /organizations` require authentication in private

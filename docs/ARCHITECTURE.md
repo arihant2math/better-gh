@@ -190,7 +190,9 @@ with credentials reach the git handlers, which accept passwords), and a
 emails/verify|sso*`, the OAuth token/device-code endpoints, static assets
 and the public sign-in pages; raw/archive URLs with a download `?token=`
 pass to the handler (in private mode the tarball/zipball redirects carry
-one for every repository). `RepoAccess` also refuses anonymous callers in
+one for every repository). The container registry (`/v2/...`) is let through
+and refuses anonymous callers itself (Bearer challenge, no anonymous
+tokens). `RepoAccess` also refuses anonymous callers in
 private mode as a second line. Maintenance mode (`settings::maintenance_middleware`,
 503 + `Retry-After` for API/`_bgh`/git requests except site admins,
 `/healthz`, `/_bgh/site`, `/_bgh/session`) and API rate limiting

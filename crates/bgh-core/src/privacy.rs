@@ -14,6 +14,9 @@
 //! * Everything else (raw files, archives, avatars, release downloads,
 //!   the sync WebSocket): 401. Raw/archive URLs with a short-lived
 //!   `?token=` reach the handler, which validates the token.
+//! * The container registry (`/v2/...`) answers for itself: its Bearer
+//!   challenge and token endpoint work as usual, and it refuses anonymous
+//!   callers (and anonymous tokens) in private mode.
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
@@ -86,6 +89,11 @@ pub fn is_git_path(path: &str) -> bool {
         || path.ends_with("/git-upload-pack")
         || path.ends_with("/git-receive-pack")
         || path.contains("/info/lfs/")
+}
+
+/// Container registry (OCI distribution, `/v2/...`).
+pub fn is_registry_path(path: &str) -> bool {
+    path == "/v2" || path.starts_with("/v2/")
 }
 
 /// Raw file and archive downloads, which accept a `?token=` instead of
@@ -184,6 +192,12 @@ pub async fn private_mode_middleware(
         Err(err) => return err.into_response(),
     }
     let path = req.uri().path();
+    // The container registry runs Docker's token flow itself (Bearer
+    // challenge, its own JWTs) and refuses anonymous callers in private
+    // mode.
+    if is_registry_path(path) {
+        return next.run(req).await;
+    }
     if is_git_path(path) {
         // Git handlers accept passwords, which the API resolver doesn't:
         // let them authenticate whatever was sent.
@@ -246,5 +260,8 @@ mod tests {
         assert!(is_download_path("/o/r/raw/main/a.txt"));
         assert!(is_download_path("/o/r/legacy.zip/main"));
         assert!(!is_download_path("/o/r/issues/1"));
+        assert!(is_registry_path("/v2/"));
+        assert!(is_registry_path("/v2/acme/app/manifests/latest"));
+        assert!(!is_registry_path("/v2acme"));
     }
 }
