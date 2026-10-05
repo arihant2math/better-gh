@@ -1,6 +1,6 @@
 # P2 push-hardening — status
 
-**Done.** Branch `bgh/p02-push-hardening`. No migrations (range 1400–1499
+**Done.** Branch `bgh/p02-push-hardening`, self-integrated into `claude/sleepy-cray-9jj0t3` (full gate green: fmt, clippy, `cargo test --workspace`, web typecheck/lint/test/build, api-smoke, gh-compat). No migrations (range 1400–1499
 unused).
 
 ## Hidden refs
