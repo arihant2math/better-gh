@@ -444,6 +444,28 @@ pub async fn mark_thread_read(
     Ok(StatusCode::RESET_CONTENT)
 }
 
+/// `DELETE /_bgh/notifications/threads/{thread_id}/read` — mark unread
+/// (204; GitHub's REST API has no equivalent). docs/SYNC_PROTOCOL.md §10.
+pub async fn mark_thread_unread(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let row = load_thread(&state, auth.id(), &id).await?;
+    let mut tx = Tx::begin(&state).await?;
+    let rows: Vec<NotificationRow> = sqlx::query_as(&format!(
+        "UPDATE notifications SET unread = true WHERE id = $1 AND NOT unread AND NOT done
+        RETURNING {}",
+        NotificationRow::COLUMNS
+    ))
+    .bind(row.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    sync_rows(&mut tx, &rows, &[]).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// `DELETE /notifications/threads/{thread_id}` — mark done (204).
 pub async fn mark_thread_done(
     State(state): State<AppState>,

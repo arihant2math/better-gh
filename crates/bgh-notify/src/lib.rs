@@ -149,6 +149,10 @@ pub fn web_router() -> Router<AppState> {
             get(settings::get_settings).put(settings::put_settings),
         )
         .route(
+            "/_bgh/notifications/threads/{thread_id}/read",
+            axum::routing::delete(threads::mark_thread_unread),
+        )
+        .route(
             "/_bgh/notifications/unsubscribe",
             get(settings::unsubscribe_page).post(settings::unsubscribe),
         )

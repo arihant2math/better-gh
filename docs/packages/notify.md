@@ -47,6 +47,13 @@ Web client (`/_bgh`):
   email: {reason: bool}, email_enabled, notification_email (verified
   address), own_activity_email}`; synced as `notificationSettings` in
   `user:{id}`.
+* `DELETE /_bgh/notifications/threads/{id}/read` — mark unread (204),
+  SYNC_PROTOCOL §10. Writes go through `Tx::sync`, so `X-Client-Tx`
+  echo/idempotency apply once B8's `sync::record` carries the tx.
+  `notification` sync data is exactly the §3 shape (`id, repoId,
+  subjectType, subjectId, title, reason, unread, updatedAt, lastReadAt`);
+  done threads are synced as deletes. The client model has no
+  done/saved fields, so "saved" notifications are not implemented.
 * `GET/POST /_bgh/notifications/unsubscribe?token=` — signed (HMAC,
   secret in `site_settings['notify.secret']`) thread or all-email tokens;
   GET is a confirmation page, POST (RFC 8058 one-click) applies.

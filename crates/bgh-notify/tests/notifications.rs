@@ -254,6 +254,52 @@ async fn mark_read_and_done() {
     assert_eq!(list(&w, &w.bob, "").await.len(), 1);
     assert_eq!(list(&w, &w.bob, "?all=true").await.len(), 2);
 
+    // Web client: mark unread again, synced with the exact client shape.
+    w.app
+        .delete(&format!("/_bgh/notifications/threads/{id}/read"))
+        .auth(&w.bob)
+        .send()
+        .await
+        .assert_status(204);
+    assert_eq!(list(&w, &w.bob, "").await.len(), 2);
+    let d: Value = sqlx::query_scalar(
+        "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'notification' ORDER BY id DESC LIMIT 1",
+    )
+    .bind(format!("user:{}", w.bob.id))
+    .fetch_one(&w.app.state.db)
+    .await
+    .unwrap();
+    let mut keys: Vec<&str> = d.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "id",
+            "lastReadAt",
+            "reason",
+            "repoId",
+            "subjectId",
+            "subjectType",
+            "title",
+            "unread",
+            "updatedAt"
+        ]
+    );
+    assert_eq!(d["unread"], true);
+    assert!(d["updatedAt"].as_str().unwrap().ends_with('Z'));
+    w.app
+        .delete(&format!("/_bgh/notifications/threads/{id}/read"))
+        .auth(&w.carol)
+        .send()
+        .await
+        .assert_status(404);
+    w.app
+        .patch(&format!("/api/v3/notifications/threads/{id}"))
+        .auth(&w.bob)
+        .send()
+        .await
+        .assert_status(205);
+
     // Other users can't see the thread.
     w.app
         .get(&format!("/api/v3/notifications/threads/{id}"))
