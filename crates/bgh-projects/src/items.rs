@@ -20,13 +20,13 @@ use crate::util::{nullable, validate_text};
 
 const MAX_ITEMS: i64 = 10_000;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct DraftInput {
     pub title: Option<String>,
     pub body: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBody {
     pub issue_id: Option<i64>,
@@ -106,7 +106,26 @@ pub async fn create(
     Path(id): Path<i64>,
     Json(body): Json<CreateBody>,
 ) -> ApiResult<axum::response::Response> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    let (item, created) = add_item(&state, &auth, id, body).await?;
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok((status, Json(item.sync_json())).into_response())
+}
+
+/// Add an issue, pull request or draft issue to a project. Returns the item
+/// and whether it was created (an issue already on the project is returned
+/// as is).
+pub async fn add_item(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    body: CreateBody,
+) -> ApiResult<(ItemRow, bool)> {
+    let state = state.clone();
+    let access = ProjectAccess::load(&state, Some(auth), id).await?;
     access.require(Role::Write)?;
     if let Some(p) = &body.position {
         check_position(p)?;
@@ -146,10 +165,10 @@ pub async fn create(
         let item = service::sync_item(&mut tx, &scope, item_id, SyncAction::Insert).await?;
         service::touch_project(&mut tx, &scope, id).await?;
         tx.commit().await?;
-        return Ok((StatusCode::CREATED, Json(item.sync_json())).into_response());
+        return Ok((item, true));
     }
 
-    let (issue_id, is_pr) = resolve_issue(&state, &auth, &body).await?;
+    let (issue_id, is_pr) = resolve_issue(&state, auth, &body).await?;
     let mut tx = Tx::begin(&state).await?;
     let (item, created) = service::add_issue_item(
         &mut tx,
@@ -165,12 +184,7 @@ pub async fn create(
         service::touch_project(&mut tx, &scope, id).await?;
     }
     tx.commit().await?;
-    let status = if created {
-        StatusCode::CREATED
-    } else {
-        StatusCode::OK
-    };
-    Ok((status, Json(item.sync_json())).into_response())
+    Ok((item, created))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -195,10 +209,22 @@ pub async fn update(
     Path((id, item_id)): Path<(i64, i64)>,
     Json(body): Json<UpdateBody>,
 ) -> ApiResult<Json<Value>> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    let item = update_item(&state, &auth, id, item_id, body).await?;
+    Ok(Json(item.sync_json()))
+}
+
+/// Update an item (archive state, positions, draft content, field values).
+pub async fn update_item(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    item_id: i64,
+    body: UpdateBody,
+) -> ApiResult<ItemRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     let scope = access.scope();
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let item: ItemRow = sqlx::query_as(&format!(
         "{} WHERE i.id = $1 AND i.project_id = $2 FOR UPDATE OF i",
         ItemRow::SELECT
@@ -288,6 +314,9 @@ pub async fn update(
 
     sqlx::query(
         "UPDATE project_items SET
+            archived_at = CASE WHEN $2::bool IS NULL THEN archived_at
+                               WHEN $2 AND NOT archived THEN now()
+                               WHEN NOT $2 THEN NULL ELSE archived_at END,
             archived = COALESCE($2, archived),
             position = COALESCE($3, position),
             view_positions = COALESCE($4, view_positions),
@@ -358,7 +387,7 @@ pub async fn update(
     // Unarchiving / archiving through the API is also what auto-archive does.
     let item = service::sync_item(&mut tx, &scope, item_id, SyncAction::Update).await?;
     tx.commit().await?;
-    Ok(Json(item.sync_json()))
+    Ok(item)
 }
 
 /// `DELETE /_bgh/projects/{id}/items/{item_id}`
@@ -367,10 +396,21 @@ pub async fn delete(
     auth: RequireUser,
     Path((id, item_id)): Path<(i64, i64)>,
 ) -> ApiResult<StatusCode> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    delete_item(&state, &auth, id, item_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Remove an item from a project.
+pub async fn delete_item(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    item_id: i64,
+) -> ApiResult<()> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     let scope = access.scope();
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let deleted = sqlx::query("DELETE FROM project_items WHERE id = $1 AND project_id = $2")
         .bind(item_id)
         .bind(id)
@@ -390,5 +430,55 @@ pub async fn delete(
     .await?;
     service::touch_project(&mut tx, &scope, id).await?;
     tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
+}
+
+/// Move an item right after `after_id` (`None`: to the top), like
+/// GitHub's `updateProjectV2ItemPosition`.
+pub async fn move_item(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    item_id: i64,
+    after_id: Option<i64>,
+) -> ApiResult<ItemRow> {
+    let positions: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, position FROM project_items WHERE project_id = $1 AND id <> $2
+          ORDER BY position, id",
+    )
+    .bind(id)
+    .bind(item_id)
+    .fetch_all(&state.db)
+    .await?;
+    let (lo, hi) = match after_id {
+        Some(after) => {
+            let idx = positions
+                .iter()
+                .position(|(i, _)| *i == after)
+                .ok_or_else(|| {
+                    ApiError::invalid_field(FieldError::invalid("ProjectV2Item", "afterId"))
+                })?;
+            (
+                Some(positions[idx].1.as_str()),
+                positions.get(idx + 1).map(|p| p.1.as_str()),
+            )
+        }
+        None => (None, positions.first().map(|p| p.1.as_str())),
+    };
+    // Equal neighbours (legacy duplicates) can't be split: append instead.
+    let position = match (lo, hi) {
+        (Some(a), Some(b)) if a >= b => position::between(Some(a), None),
+        _ => position::between(lo, hi),
+    };
+    update_item(
+        state,
+        auth,
+        id,
+        item_id,
+        UpdateBody {
+            position: Some(position),
+            ..Default::default()
+        },
+    )
+    .await
 }

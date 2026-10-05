@@ -1,7 +1,7 @@
-//! Small value types: licenses, languages, topics, templates, projects
-//! (always empty), reaction groups, rate limit.
+//! Small value types: licenses, languages, topics, templates, classic
+//! projects (always empty), reaction groups, rate limit.
 
-use async_graphql::{Context, ID, Object, SimpleObject, Union};
+use async_graphql::{Context, ID, Object, SimpleObject};
 
 use super::enums::ReactionContent;
 use crate::conn::{ConnArgs, Page, PageInfo, connection, encode_cursor};
@@ -246,7 +246,8 @@ impl RepositoryTopicConnection {
 }
 
 // ---------------------------------------------------------------------------
-// Projects (classic and v2): always empty here; bgh-projects owns them.
+// Classic projects (sunset by GitHub): always empty. Projects v2 live in
+// `model/project.rs`.
 // ---------------------------------------------------------------------------
 
 #[derive(SimpleObject, Clone)]
@@ -273,57 +274,6 @@ pub struct ProjectCard {
     pub column: Option<ProjectColumn>,
 }
 
-#[derive(SimpleObject, Clone)]
-#[graphql(name = "ProjectV2")]
-pub struct ProjectV2 {
-    pub id: ID,
-    pub number: i32,
-    pub title: String,
-    pub resource_path: URI,
-    pub url: URI,
-    pub closed: bool,
-}
-
-#[derive(SimpleObject, Clone)]
-#[graphql(name = "ProjectV2ItemFieldSingleSelectValue")]
-pub struct ProjectV2ItemFieldSingleSelectValue {
-    pub option_id: Option<String>,
-    pub name: Option<String>,
-}
-
-#[derive(SimpleObject, Clone)]
-#[graphql(name = "ProjectV2ItemFieldTextValue")]
-pub struct ProjectV2ItemFieldTextValue {
-    pub text: Option<String>,
-}
-
-#[derive(Union, Clone)]
-#[graphql(name = "ProjectV2ItemFieldValue")]
-pub enum ProjectV2ItemFieldValue {
-    SingleSelect(ProjectV2ItemFieldSingleSelectValue),
-    Text(ProjectV2ItemFieldTextValue),
-}
-
-#[derive(Clone)]
-pub struct ProjectV2Item {
-    pub id: ID,
-    pub project: ProjectV2,
-}
-
-#[Object(name = "ProjectV2Item")]
-impl ProjectV2Item {
-    pub async fn id(&self) -> &ID {
-        &self.id
-    }
-    pub async fn project(&self) -> &ProjectV2 {
-        &self.project
-    }
-    pub async fn field_value_by_name(&self, name: String) -> Option<ProjectV2ItemFieldValue> {
-        let _ = name;
-        None
-    }
-}
-
 macro_rules! empty_connection {
     ($conn:ident, $node:ty, $name:literal) => {
         #[derive(Default)]
@@ -345,13 +295,7 @@ macro_rules! empty_connection {
 }
 
 empty_connection!(ProjectConnection, Project, "ProjectConnection");
-empty_connection!(ProjectV2Connection, ProjectV2, "ProjectV2Connection");
 empty_connection!(ProjectCardConnection, ProjectCard, "ProjectCardConnection");
-empty_connection!(
-    ProjectV2ItemConnection,
-    ProjectV2Item,
-    "ProjectV2ItemConnection"
-);
 
 // ---------------------------------------------------------------------------
 // Reactions

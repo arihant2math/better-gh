@@ -9,6 +9,7 @@ pub mod enums;
 pub mod git;
 pub mod issue;
 pub mod misc;
+pub mod project;
 pub mod pull;
 pub mod release;
 pub mod repo;
@@ -48,6 +49,13 @@ pub enum Node {
     Release(Release),
     Ref(Ref),
     Commit(Commit),
+    ProjectV2(project::ProjectV2),
+    ProjectV2Item(project::ProjectV2Item),
+    DraftIssue(project::DraftIssue),
+    ProjectV2Field(project::ProjectV2Field),
+    ProjectV2SingleSelectField(project::ProjectV2SingleSelectField),
+    ProjectV2IterationField(project::ProjectV2IterationField),
+    ProjectV2View(project::ProjectV2View),
 }
 
 /// Represents an object which can take actions on GitHub.
