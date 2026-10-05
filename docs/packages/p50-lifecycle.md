@@ -40,7 +40,7 @@ fixes are assigned to P50). Migration `6200_lifecycle.sql`.
 * `delete_account_in` (soft-deletes owned repos, deletes the row; authored
   content renders as `ghost` via the existing `SET NULL` FKs) and
   `sole_owned_orgs`. Admin `delete_repo_in`/`delete_account` now soft-delete.
-* `mail::templates::repo_transfer`.
+* `mail::templates::repo_transfer`; `testing::TestApp::purge_deleted_repos`.
 
 ### Endpoints
 | Endpoint | Notes |
@@ -59,7 +59,8 @@ fixes are assigned to P50). Migration `6200_lifecycle.sql`.
 | `GET`/`DELETE /_bgh/repos/{o}/{r}/transfer` | pending transfer (repo admins), cancel |
 | `GET /_bgh/user/repo_transfers`, `POST …/{id}/accept`, `POST …/{id}/decline` | recipient; accept → 200 Repository (moved, old name redirects), expired → 410 |
 
-Service `repos.purge_deleted` (hourly): purges repos past `purge_after`
+Service `repos.purge_deleted` (hourly, `bgh_core::lifecycle::purge_expired`):
+purges repos past `purge_after`
 (enqueues `repos.delete_storage`, `wiki.delete_storage`, LFS + uploads GC)
 and expired transfers. `repos.delete_storage`, `wiki.delete_storage`, the
 LFS GC and the uploads GC never touch data of a repo still in
@@ -89,8 +90,17 @@ reservation, delete/restore round trip with issues/labels/comments/stars/git,
 purge, user transfer accept/expire/decline/cancel, admin restore);
 `bgh-accounts` `lifecycle::*` (rename validation + rate limit, org
 rename/delete, account deletion → ghost, sole-owner/password checks);
-`bgh-packages` `renames::*` (old owner image path pulls). Updated
-`bgh-admin` `ghes_users::renames_and_deletes_users` (old login now 301).
+`bgh-packages` `renames::*` (old owner image path pulls).
+Test helper `TestApp::purge_deleted_repos()` (ends retention, purges, drains
+jobs). Adapted to soft delete / 301: `bgh-admin`
+`ghes_users::renames_and_deletes_users`; `bgh-repos` `api::delete_repository`,
+`forks::deleting_the_source_keeps_forks_working`,
+`lfs::raw_resolves_pointers_and_gc`,
+`maintenance::deleting_parent_makes_forks_self_contained`,
+`settings::rename_keeps_redirect`, `settings::transfer_to_org`; `bgh-uploads`
+`uploads::repo_deletion_removes_attachments_and_blobs`; `bgh-wiki`
+`pages::repository_deletion_removes_wiki_storage` (storage/blobs now survive
+until the purge, which they assert).
 
 ## Known gaps
 * `DELETE /user` uses password re-confirmation; P36 sudo mode was not
