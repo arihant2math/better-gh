@@ -9,6 +9,10 @@ publish.workspace = true
 [features]
 # Exposes `bgh_server::test_app()` for other crates' integration tests.
 testing = ["bgh-core/testing"]
+# Compile web/dist (run `npm run build` in web/ first) into the binary so a
+# single file serves everything. A directory at BGH_WEB_DIR containing an
+# index.html still takes precedence (handy for hot-swapping a client build).
+embed-web = ["dep:rust-embed"]
 
 [lib]
 name = "bgh_server"
@@ -50,6 +54,9 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 sha2.workspace = true
 base64.workspace = true
+chrono.workspace = true
+mime_guess.workspace = true
+rust-embed = { workspace = true, optional = true }
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }

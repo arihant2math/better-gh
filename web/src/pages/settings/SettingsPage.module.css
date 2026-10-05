@@ -1,0 +1,140 @@
+.page {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 32px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+}
+
+.navItem:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.navItem[aria-current='page'] {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.navItem svg {
+  color: var(--fg-subtle);
+}
+
+.content {
+  min-width: 0;
+}
+
+.title {
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 520px;
+}
+
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.desc {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 640px;
+}
+
+.themeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.themeCard:hover {
+  border-color: var(--border-strong);
+}
+
+.themeCard[aria-checked='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.swatch {
+  height: 72px;
+  margin-bottom: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.swatch-light {
+  background: linear-gradient(135deg, #ffffff 50%, #f3f4f6 50%);
+}
+
+.swatch-dark {
+  background: linear-gradient(135deg, #111215 50%, #1c1d21 50%);
+}
+
+.swatch-system {
+  background: linear-gradient(135deg, #ffffff 50%, #111215 50%);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--fs-md);
+}
+
+.stats dt {
+  color: var(--fg-muted);
+}
+
+.stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}

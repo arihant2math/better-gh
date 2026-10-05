@@ -13,7 +13,12 @@ export DATABASE_URL=postgres://postgres:postgres@localhost/bgh
 export REDIS_URL=redis://127.0.0.1/
 cargo run -p bgh-server         # http://localhost:3000
 cd web && npm install && npm run dev
+./scripts/dev.sh                # or: both together (cargo-watch if installed)
+./scripts/gh-compat.sh          # real `gh` CLI against a throwaway server
+./scripts/api-smoke.sh          # curl + jq checks of core REST shapes
 ```
+
+Deployment (Docker, systemd, proxies): `docs/SELF_HOSTING.md`.
 
 ## Conventions
 
