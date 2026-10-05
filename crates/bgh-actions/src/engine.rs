@@ -125,6 +125,36 @@ pub async fn run_event(
     })
 }
 
+/// `Event::WorkflowJobUpdated` carrying the job as GitHub REST JSON (the
+/// `workflow_job` webhook payload, same shape as `GET /actions/jobs/{id}`).
+pub async fn job_event(tx: &mut Tx, job: &JobRow, action: &str) -> anyhow::Result<Event> {
+    let state = tx.state().clone();
+    let mut workflow_job = Value::Null;
+    if let Some(repo) = db::Repository::find(&mut **tx, job.repo_id).await?
+        && let Some(owner) = db::User::find(&mut **tx, repo.owner_id).await?
+    {
+        let access = bgh_core::perms::RepoAccess {
+            repo,
+            owner,
+            permission: bgh_core::perms::Permission::Read,
+            authenticated: false,
+        };
+        let name: Option<String> =
+            sqlx::query_scalar("SELECT name FROM actions_runs WHERE id = $1")
+                .bind(job.run_id)
+                .fetch_optional(&mut **tx)
+                .await?;
+        workflow_job = crate::json::job_json(&state, &access, job, name.as_deref().unwrap_or(""));
+    }
+    Ok(Event::WorkflowJobUpdated {
+        repo_id: job.repo_id,
+        run_id: job.run_id,
+        job_id: job.id,
+        action: action.to_string(),
+        workflow_job,
+    })
+}
+
 async fn sync_run(tx: &mut Tx, run: &RunRow) -> anyhow::Result<()> {
     tx.sync(
         &sync::repo_scope(run.repo_id),
@@ -783,12 +813,8 @@ async fn cancel_job_row(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Re
         {
             tx.emit(ev);
         }
-        tx.emit(Event::WorkflowJobUpdated {
-            repo_id: row.repo_id,
-            run_id: row.run_id,
-            job_id: row.id,
-            action: "completed".into(),
-        });
+        let ev = job_event(tx, &row, "completed").await?;
+        tx.emit(ev);
     }
     sync_job(tx, &row, SyncAction::Update).await?;
     if let Some(r) = rows.iter_mut().find(|r| r.id == id) {
@@ -1225,12 +1251,8 @@ async fn insert_job(
     let url = format!("{}/actions/runs/{}/job/{}", data.repo_html, run.id, row.id);
     checks::set_details_url(tx, check_run_id, &url).await?;
     sync_job(tx, &row, SyncAction::Insert).await?;
-    tx.emit(Event::WorkflowJobUpdated {
-        repo_id: row.repo_id,
-        run_id: row.run_id,
-        job_id: row.id,
-        action: if completed { "completed" } else { "queued" }.into(),
-    });
+    let ev = job_event(tx, &row, if completed { "completed" } else { "queued" }).await?;
+    tx.emit(ev);
     Ok(row)
 }
 

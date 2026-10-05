@@ -158,6 +158,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::CheckRunUpdated { .. } => vec!["check_run"],
         E::CheckSuiteUpdated { .. } => vec!["check_suite"],
         E::WorkflowRunUpdated { .. } => vec!["workflow_run"],
+        E::WorkflowJobUpdated { .. } => vec!["workflow_job"],
         E::OrgMemberAdded { .. } => vec!["organization"],
         _ => Vec::new(),
     }
@@ -588,6 +589,16 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 ("workflow_run", workflow_run.clone()),
                 ("workflow", workflow.clone().unwrap_or(Value::Null)),
             ],
+        )]),
+        E::WorkflowJobUpdated { workflow_job, .. } if workflow_job.is_null() => Ok(Vec::new()),
+        E::WorkflowJobUpdated {
+            action,
+            workflow_job,
+            ..
+        } => Ok(vec![b.emit(
+            "workflow_job",
+            Some(action),
+            vec![("workflow_job", workflow_job.clone())],
         )]),
         _ => Ok(Vec::new()),
     }

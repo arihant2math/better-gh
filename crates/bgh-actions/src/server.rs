@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bgh_core::events::Event;
 use bgh_core::models::db;
 use bgh_core::perms::{JOB_TOKEN_READ_ONLY_SCOPE, JOB_TOKEN_SCOPE_PREFIX};
 use bgh_core::prelude::{SyncAction, Tx};
@@ -130,12 +129,8 @@ pub async fn try_acquire(state: &AppState, runner: &RunnerRow) -> anyhow::Result
                 .await?;
             checks::start_run(&mut tx, job.check_run_id).await?;
             engine::sync_job(&mut tx, &job, SyncAction::Update).await?;
-            tx.emit(Event::WorkflowJobUpdated {
-                repo_id: job.repo_id,
-                run_id: job.run_id,
-                job_id: job.id,
-                action: "in_progress".into(),
-            });
+            let ev = engine::job_event(&mut tx, &job, "in_progress").await?;
+            tx.emit(ev);
             tx.commit().await?;
             engine::advance_run(state, job.run_id).await?;
             Ok(Some(spec))
@@ -412,12 +407,8 @@ pub async fn finish_job_row(
         tx.emit(ev);
     }
     engine::sync_job(tx, &job, SyncAction::Update).await?;
-    tx.emit(Event::WorkflowJobUpdated {
-        repo_id: job.repo_id,
-        run_id: job.run_id,
-        job_id: job.id,
-        action: "completed".into(),
-    });
+    let ev = engine::job_event(tx, &job, "completed").await?;
+    tx.emit(ev);
     Ok(job)
 }
 
