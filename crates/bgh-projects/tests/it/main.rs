@@ -3,3 +3,4 @@
 //! shared helpers live in the helper modules (see docs/BACKEND_PATTERNS.md).
 
 mod projects;
+mod rest;

@@ -166,7 +166,6 @@ merge of integration 895a904 (rate limiter consolidation).
 Schema check against gh's query corpus: every GraphQL operation gh 2.89.0
 sends in its own test suite (~120) was replayed against the server; the
 only remaining unknown fields are github.com-only or out of scope:
-`addProjectV2ItemById`/`deleteProjectV2Item` (project editing),
 `suggestedReviewerActors` (github.com actor reviewers), `deleteIssue`,
 `revertPullRequest`, `Release.immutable` (only queried when introspection
 reports it).
@@ -274,9 +273,9 @@ Runs the gh-compat fixtures, then:
 
 ## Known gaps / TODO
 
-* Projects (classic and v2) connections are empty and project mutations
-  aren't exposed (bgh-projects owns the data; wire `projectItems`,
-  `projectsV2` and `addProjectV2ItemById` when needed).
+* Classic projects connections are empty (GitHub sunset them). Projects v2
+  are implemented in `model/project.rs` / `mutation/projects.rs` (P13, see
+  `docs/packages/p13-projects-api.md`).
 * `languages` reports only the primary language (sized by repo size);
   `issueTemplates`/`pullRequestTemplates` are empty (bgh-issues parses
   templates for the web client and could provide them).

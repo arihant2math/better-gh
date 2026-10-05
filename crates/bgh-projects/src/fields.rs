@@ -191,7 +191,7 @@ fn normalize_iterations(input: IterationsInput, existing: Option<&Value>) -> Api
     }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBody {
     pub name: Option<String>,
@@ -207,7 +207,18 @@ pub async fn create(
     Path(id): Path<i64>,
     Json(body): Json<CreateBody>,
 ) -> ApiResult<impl IntoResponse> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    let field = create_field(&state, &auth, id, body).await?;
+    Ok((StatusCode::CREATED, Json(field.sync_json())))
+}
+
+/// Create a custom field.
+pub async fn create_field(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    body: CreateBody,
+) -> ApiResult<FieldRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     let name = validate_text("ProjectV2Field", "name", body.name.as_deref(), 256)?;
     let data_type = body.data_type.ok_or_else(|| {
@@ -230,7 +241,7 @@ pub async fn create(
         )?),
         _ => None,
     };
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM project_fields WHERE project_id = $1")
             .bind(id)
@@ -267,7 +278,7 @@ pub async fn create(
     )
     .await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(field.sync_json())))
+    Ok(field)
 }
 
 fn name_conflict(e: sqlx::Error) -> ApiError {
@@ -410,10 +421,21 @@ pub async fn delete(
     auth: RequireUser,
     Path((id, field_id)): Path<(i64, i64)>,
 ) -> ApiResult<StatusCode> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    delete_field(&state, &auth, id, field_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a custom field (built-ins: 422). Returns the deleted row.
+pub async fn delete_field(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    field_id: i64,
+) -> ApiResult<FieldRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     let scope = access.scope();
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let field = load_field(&mut tx, id, field_id).await?;
     if field.is_builtin() {
         return Err(invalid("id", "built-in fields can't be deleted"));
@@ -462,7 +484,7 @@ pub async fn delete(
     }
     service::sync_items(&mut tx, &scope, &affected).await?;
     tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(field)
 }
 
 /// Validate a value for `field`; `Null` clears it.

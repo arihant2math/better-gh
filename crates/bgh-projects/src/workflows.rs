@@ -299,7 +299,8 @@ async fn on_state_change(state: &AppState, issue_id: i64, change: Change) -> any
                 .is_some()
         {
             changed |= sqlx::query(
-                "UPDATE project_items SET archived = true, updated_at = now() WHERE id = $1 AND NOT archived",
+                "UPDATE project_items SET archived = true, archived_at = now(), updated_at = now()
+                  WHERE id = $1 AND NOT archived",
             )
             .bind(it.item_id)
             .execute(&mut *tx)
