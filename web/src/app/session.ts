@@ -92,7 +92,35 @@ class Session {
     this.adopt(boot);
   }
 
-  private adopt(boot: BootData) {
+  /**
+   * Second factor of a pending login that did not start on the login page
+   * (SSO redirect to /login/two-factor): the legacy session endpoint sets
+   * the cookie but answers with the user, so boot data is fetched after.
+   */
+  async completeTwoFactor(twoFactorToken: string, code: string): Promise<void> {
+    await api.post('/_bgh/session/two_factor', { two_factor_token: twoFactorToken, code });
+    await this.refreshBoot();
+  }
+
+  /** Re-read boot data (after a cookie changed out of band) and adopt it. */
+  async refreshBoot(): Promise<BootData> {
+    const boot = await api.get<BootData>('/_bgh/boot');
+    if (boot.user?.id !== this.user?.id || boot.csrf !== getBoot().csrf) {
+      if (this.user && boot.user?.id !== this.user.id) this.teardown();
+      this.adopt(boot);
+    }
+    return boot;
+  }
+
+  /** Use fresh boot data (sign-in responses): updates CSRF + user and starts sync. */
+  /** Patch the signed-in user's display fields (after profile / avatar edits). */
+  updateUser(patch: Partial<Pick<BootUser, 'name' | 'avatarUrl' | 'login'>>): void {
+    if (!this.user) return;
+    this.user = { ...this.user, ...patch };
+    setBoot({ ...getBoot(), user: this.user });
+  }
+
+  adopt(boot: BootData) {
     setBoot(boot);
     runInAction(() => {
       this.user = boot.user;

@@ -41,6 +41,8 @@ export interface Ctx {
   body: Record<string, unknown>;
   tx: string | null;
   accept: string;
+  /** Raw request body (non-JSON uploads such as avatars). */
+  raw?: BodyInit | null;
 }
 
 export interface Resp {
@@ -135,6 +137,7 @@ export class MockServer implements Transport {
       body,
       tx: headers.get('x-client-tx'),
       accept: headers.get('accept') ?? '',
+      raw: init.body ?? null,
     };
     const isMutation = method !== 'GET' && !isAuthRoute;
     let resp: Resp;
@@ -176,6 +179,11 @@ export class MockServer implements Transport {
     if (this.liveTimer) clearTimeout(this.liveTimer);
     if (this.saveTimer) clearTimeout(this.saveTimer);
     for (const s of this.sockets) s.serverClose(1001);
+  }
+
+  /** Tell connected clients they lost `scope` (e.g. a deleted repository). */
+  revoke(scope: string, reason = 'forbidden'): void {
+    for (const s of this.sockets) s.revoke(scope, reason);
   }
 
   detach(s: MockSocket): void {
@@ -271,11 +279,14 @@ export class MockServer implements Transport {
   /**
    * Register an extra route (used by `mock/extra/*`). Patterns use `:name`
    * and `:name*`; captures land in `ctx.m[1..]` (still URI-encoded).
-   * Routes registered here are matched after the built-in ones.
+   * Routes registered here are matched after the built-in ones, unless
+   * `override` puts them first (to serve a fuller shape of a built-in route).
    */
-  route(method: string, pattern: string, handler: Route['handler'], opts: { public?: boolean } = {}): void {
+  route(method: string, pattern: string, handler: Route['handler'], opts: { public?: boolean; override?: boolean } = {}): void {
     const re = new RegExp(`^${pattern.replace(/:\w+\*/g, '(.*)').replace(/:\w+/g, '([^/]+)')}$`);
-    this.routes.push({ method, re, handler, public: opts.public });
+    const r = { method, re, handler, public: opts.public };
+    if (opts.override) this.routes.unshift(r);
+    else this.routes.push(r);
   }
 
   repo(owner: string, name: string): Repo | undefined {
@@ -355,13 +366,22 @@ export class MockServer implements Transport {
     R('GET', '/_bgh/boot', () => ({ status: 200, body: this.boot() }));
     R('POST', '/_bgh/auth/login', (ctx) => {
       if (!ctx.body.login || !ctx.body.password) return { status: 422, body: { message: 'Incorrect username or password.' } };
+      // Magic passwords exercise the other sign-in paths (mock/extra/auth.ts has /_bgh/auth/2fa).
+      const pw = String(ctx.body.password);
+      if (pw === 'wrong') return { status: 422, body: { message: 'Incorrect username or password.' } };
+      if (pw === 'throttle') return { status: 429, body: { message: 'Too many failed login attempts. Please try again later.' } };
+      if (pw === '2fa' && ctx.body.otp !== '123456')
+        return { status: 401, body: { message: 'Two-factor authentication required.', twoFactorRequired: true, twoFactorToken: 'mock-2fa-token' } };
       this.signedIn = true;
       this.scheduleSave();
       return { status: 200, body: this.boot() };
     });
     R('POST', '/_bgh/auth/signup', (ctx) => {
-      if (!ctx.body.login || !ctx.body.email || String(ctx.body.password ?? '').length < 8)
-        return { status: 422, body: { message: 'Password must be at least 8 characters.' } };
+      const fieldErr = (field: string, code: string, message?: string) => ({ status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'User', field, code, message }] } });
+      if (!ctx.body.login) return fieldErr('login', 'missing_field');
+      if (String(ctx.body.login).toLowerCase() === 'taken') return fieldErr('login', 'already_exists');
+      if (!ctx.body.email) return fieldErr('email', 'missing_field');
+      if (String(ctx.body.password ?? '').length < 8) return fieldErr('password', 'custom', 'password must be at least 8 characters');
       this.signedIn = true;
       this.scheduleSave();
       return { status: 201, body: this.boot() };
@@ -671,7 +691,7 @@ export class MockServer implements Transport {
     R('PUT', '/api/v3/user/starred/:owner/:repo', (ctx) => star(ctx, true));
     R('DELETE', '/api/v3/user/starred/:owner/:repo', (ctx) => star(ctx, false));
 
-    R('GET', '/api/v3/user', () => ({ status: 200, body: { login: this.viewer.login, id: this.viewer.id, name: this.viewer.name, avatar_url: '' } }));
+    // GET|PATCH /api/v3/user (private-user with profile fields) live in mock/extra/user.ts.
   }
 
   private userByLogin(login: string): User | undefined {
@@ -907,6 +927,13 @@ export class MockSocket implements SocketLike {
     this.readyState = 3;
     this.server.detach(this);
     setTimeout(() => this.onclose?.({ code }), 0);
+  }
+
+  /** Server-initiated revocation (repo deleted or access lost), docs/SYNC_PROTOCOL.md `revoke`. */
+  revoke(scope: string, reason = 'forbidden'): void {
+    if (!this.scopes.delete(scope)) return;
+    this.flush();
+    this.emit({ t: 'revoke', scope, reason });
   }
 
   publish(d: Delta): void {
