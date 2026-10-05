@@ -103,6 +103,35 @@ pub async fn create_run(
     Ok(Some(id))
 }
 
+/// Reuse a check run that `POST /check-runs/{id}/rerequest` (or the suite
+/// variant) reset to `queued` for the re-run of its job, so the rerequested
+/// check moves queued → completed instead of being replaced.
+pub async fn reuse_run(
+    tx: &mut Tx,
+    id: i64,
+    name: &str,
+    status: &str,
+    conclusion: Option<&str>,
+) -> ApiResult<()> {
+    let completed = status == "completed";
+    sqlx::query(
+        "UPDATE check_runs SET name = $2, status = $3, conclusion = $4, output = '{}',
+                started_at = CASE WHEN $5 THEN now() END,
+                completed_at = CASE WHEN $5 THEN now() END, updated_at = now()
+          WHERE id = $1",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(status)
+    .bind(conclusion)
+    .bind(completed)
+    .execute(&mut **tx)
+    .await?;
+    tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
+        .await?;
+    Ok(())
+}
+
 pub async fn set_details_url(tx: &mut Tx, check_run_id: Option<i64>, url: &str) -> ApiResult<()> {
     if let Some(id) = check_run_id {
         sqlx::query("UPDATE check_runs SET details_url = $2 WHERE id = $1")
