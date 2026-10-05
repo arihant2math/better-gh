@@ -163,8 +163,8 @@ live from the owner's verified e-mails.
 ## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at c783bac)
 
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
-warnings`, `cargo test --workspace` (1067 passed, 13 ignored), web
-`typecheck && lint && test (438) && build` (budget OK), `api-smoke.sh`
+warnings`, `cargo test --workspace` (1165 passed, 14 ignored), web
+`typecheck && lint && test (513) && build` (budget OK, 144.8 KB), `api-smoke.sh`
 (45/45), `gh-compat.sh` (63/63), Playwright `web/scripts/signatures-smoke.mjs`
 (mock, light + dark).
 
