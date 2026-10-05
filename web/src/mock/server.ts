@@ -613,6 +613,46 @@ export class MockServer implements Transport {
       this.bumpCounts(repo, pr, -1);
       return { status: 200, body: { sha, merged: true, message: 'Pull Request successfully merged' } };
     });
+    for (const [action, draft] of [['ready_for_review', false], ['convert_to_draft', true]] as const) {
+      R('POST', `/_bgh/repos/:owner/:repo/pulls/:number/${action}`, (ctx) => {
+        const r = issueOr404(ctx);
+        if (isResp(r)) return r;
+        const [, pr] = r;
+        if (!pr.isPr) return { status: 404, body: { message: 'Not Found' } };
+        if (pr.draft !== draft) {
+          this.event(pr, action);
+          this.put('issue', { ...pr, draft, updatedAt: this.now() });
+        }
+        return { status: 200, body: this.restIssue({ ...pr, draft }) };
+      });
+    }
+    R('GET', '/_bgh/repos/:owner/:repo/pulls/:number/requirements', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, pr] = r;
+      const blockers: string[] = [];
+      if (pr.reviewDecision !== 'approved') blockers.push('At least 1 approving review is required by reviewers with write access.');
+      if (pr.checks === 'failure') blockers.push('Required status check "ci" is failing.');
+      return {
+        status: 200,
+        body: {
+          mergeable: pr.mergeable ?? null,
+          rebaseable: pr.mergeable ?? null,
+          mergeable_state: pr.mergeableState ?? 'unknown',
+          protected: true,
+          blockers,
+          approvals: pr.reviewDecision === 'approved' ? 1 : 0,
+          required_approvals: 1,
+          changes_requested: pr.reviewDecision === 'changes_requested',
+          behind: pr.mergeableState === 'behind',
+          unstable: pr.mergeableState === 'unstable',
+          required_checks: ['ci'],
+          linear_history: false,
+          allowed_merge_methods: ['merge', 'squash', 'rebase'],
+          can_bypass: true,
+        },
+      };
+    });
     R('PATCH', '/api/v3/repos/:owner/:repo/pulls/:number', (ctx) => {
       const r = issueOr404(ctx);
       if (isResp(r)) return r;

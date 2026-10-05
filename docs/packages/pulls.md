@@ -137,6 +137,16 @@ and `data` keys are documented in `crates/bgh-pulls/src/timeline.rs`
 `base_ref_changed {from, to}`, `renamed {rename}`, `convert_to_draft`,
 `ready_for_review`, `auto_merge_enabled|disabled`).
 
+## Web client wiring
+
+`web/src/pages/pulls/PullDetailPage.tsx`: Files tab uses the `.diff` media
+type (cache key includes base/head SHAs; 406 → "too large" state), Commits
+tab uses `/pulls/{n}/commits`, the merge box reads
+`/_bgh/.../requirements` (blockers, approvals, required checks, allowed
+merge methods with a method picker, admin bypass) and merges via
+`PUT /pulls/{n}/merge`. `setDraft` now calls the `/_bgh` ready_for_review /
+convert_to_draft endpoints (the mock backend implements them too).
+
 ## Schema (0400_pulls.sql)
 
 `pr_reviews`: one-pending-per-user unique index, `dismissed_at`,
