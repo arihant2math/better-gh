@@ -36,7 +36,7 @@ struct Scoped {
 
 /// Visible rows ordered org → repo → environment.
 const SCOPED_SQL: &str = "
-    SELECT name, VALUE FROM (
+    SELECT name, VALUE AS value FROM (
         SELECT 0 AS lvl, s.name, s.VALUE, s.id FROM TABLE s
          WHERE s.org_id = $2
            AND (s.visibility = 'all'
