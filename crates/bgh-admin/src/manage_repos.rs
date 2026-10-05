@@ -374,6 +374,9 @@ pub async fn update(
         repo_id: updated.id,
         actor_id: auth.user.id,
     });
+    for event in bgh_repos::settings::repository_webhook_events(&repo, &updated, auth.user.id) {
+        tx.emit(event);
+    }
     tx.commit().await?;
     Ok(Json(render(&state, &updated, &owner.login, &owner.kind)))
 }
@@ -438,6 +441,13 @@ pub async fn transfer(
         repo_id: moved.id,
         actor_id: auth.user.id,
     });
+    if owner.id != new_owner.id {
+        tx.emit(Event::RepositoryTransferred {
+            repo_id: moved.id,
+            actor_id: auth.user.id,
+            old_owner_id: owner.id,
+        });
+    }
     tx.commit().await?;
     Ok(Json(render(
         &state,

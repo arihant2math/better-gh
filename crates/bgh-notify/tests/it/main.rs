@@ -4,7 +4,9 @@
 
 mod support;
 
+mod coverage;
 mod email;
 mod notifications;
 mod payloads;
 mod webhooks;
+mod wiring;
