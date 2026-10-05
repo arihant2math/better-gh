@@ -71,6 +71,9 @@
   * raw/archive URLs with a `?token=` download token pass through (the
     handler validates it); in private mode the tarball/zipball redirect
     issues a token for every repository, not just private ones.
+* Attachments (`bgh-uploads`, P6): anonymous downloads are refused by the
+  middleware; signed-in downloads are never `Cache-Control: public` in
+  private mode (no shared-cache replay to anonymous users).
 * Second line of defence: `RepoAccess::for_repo` returns 404 to anonymous
   callers in private mode (covers any handler the middleware lets through).
 * `GET /users` and `GET /organizations` require authentication in private
