@@ -79,3 +79,60 @@ export interface HighlightedBlob {
   /** One HTML string per line, using `hl-*` classes. */
   lines: string[];
 }
+
+/** `GET /repos/{o}/{r}/pulls/{n}/files` entry (also compare / commit `files`). */
+export interface RestDiffEntry {
+  sha?: string;
+  filename: string;
+  previous_filename?: string | null;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  changes?: number;
+  patch?: string | null;
+}
+
+/** `GET /_bgh/repos/{o}/{r}/pulls/{n}/patch?path=` */
+export interface FilePatch {
+  filename: string;
+  previous_filename: string | null;
+  status: RestDiffEntry['status'];
+  additions: number;
+  deletions: number;
+  patch: string | null;
+  truncated: boolean;
+}
+
+export interface CheckAnnotation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  annotation_level: 'notice' | 'warning' | 'failure';
+  title: string | null;
+  message: string;
+  raw_details: string | null;
+}
+
+export interface RestCompare {
+  status: 'diverged' | 'ahead' | 'behind' | 'identical';
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  merge_base_commit?: { sha: string };
+  commits: RestCommit[];
+  files?: RestDiffEntry[];
+}
+
+export interface RestCommitDetail extends RestCommit {
+  stats?: { additions: number; deletions: number; total?: number };
+  files?: RestDiffEntry[];
+  parents?: { sha: string }[];
+}
+
+export interface RestFork {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: RestUser;
+  default_branch: string;
+}

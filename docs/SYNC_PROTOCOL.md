@@ -283,6 +283,37 @@ user was deleted (GitHub's "ghost"). `stateReason` `duplicate` is sent as
 `blocked`. `reactions` is always present (`{}` when empty) so a removed
 last reaction reaches the client.
 
+### 3.0 Pull-request extension models (lazy)
+
+Recorded by bgh-pulls in `repo:{id}` scopes and streamed as ordinary deltas;
+not part of the bootstrap. A client loads them per PR with
+`GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (same envelope as partial sync:
+`{lastSyncId, models}` with `reviewComment`, `review` (incl. the viewer's
+pending one), `reaction`, `checkSuite`, `checkRun`, `commitStatus` of the
+head commit, `user`). Clients that don't know a model ignore its deltas.
+Pending reviews and their comments are never broadcast: writes to them
+return the rows in the response (see `TxApply` in `web/src/sync/transactions.ts`).
+The `issue` row of a PR additionally carries `mergeCommitSha`, `rebaseable`,
+`maintainerCanModify`, `autoMerge {mergeMethod, enabledById, ...} | null` and
+`reviewComments`.
+
+```ts
+interface ReviewComment {     // thread = root (inReplyToId null) + replies
+  id: ID; repoId: ID; issueId: ID; reviewId: ID | null; inReplyToId: ID | null;
+  authorId: ID; body: string; path: string; commitId: string; originalCommitId: string;
+  subjectType: 'line' | 'file'; side: 'LEFT' | 'RIGHT' | null; startSide: 'LEFT' | 'RIGHT' | null;
+  line: number | null;        // null when outdated
+  originalLine: number | null; startLine: number | null; originalStartLine: number | null;
+  position: number | null; originalPosition: number | null; outdated: boolean;
+  resolvedAt: Timestamp | null; resolvedById: ID | null;   // on the root
+  diffHunk: string; createdAt: Timestamp; updatedAt: Timestamp;
+}
+interface Reaction { id: ID; subjectType: 'pull_request_review_comment'; subjectId: ID; userId: ID; content: ReactionContent; issueId: ID }
+interface CheckSuite { id: ID; repoId: ID; headSha: string; headBranch: string | null; appSlug: string; status: string; conclusion: string | null; latestCheckRunsCount: number }
+interface CheckRun { id: ID; repoId: ID; checkSuiteId: ID | null; headSha: string; name: string; status: string; conclusion: string | null; detailsUrl: string | null; title: string | null; startedAt: Timestamp | null; completedAt: Timestamp | null }
+interface CommitStatus { id: ID; repoId: ID; sha: string; state: 'error' | 'failure' | 'pending' | 'success'; context: string; description: string | null; targetUrl: string | null; creatorId: ID | null; createdAt: Timestamp }
+```
+
 ### 3.1 Users
 
 `user` rows are not owned by a scope. The server includes every user
@@ -312,15 +343,20 @@ are built by the same shape loader as everything else
   sync): `reviewComment` (PR inline comment: `id, repoId, issueId,
   reviewId, inReplyToId, authorId, body, path, commitId, originalCommitId,
   subjectType, side, startSide, line, originalLine, startLine,
-  originalStartLine, position, originalPosition, outdated, resolvedAt,
-  resolvedById, reactions, createdAt, updatedAt`; comments of pending
-  reviews are never sent), `checkRun` (`id, repoId, checkSuiteId, headSha,
+  originalStartLine, position, originalPosition, diffHunk, outdated,
+  resolvedAt, resolvedById, reactions, createdAt, updatedAt`; comments of
+  pending reviews are never sent; the PR page loads the current rows, incl.
+  the viewer's own pending ones, from `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`,
+  built from the same shapes), `checkRun` (`id, repoId, checkSuiteId, headSha,
   name, status, conclusion, detailsUrl, title, startedAt, completedAt`),
   `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
   conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
   state, context, description, targetUrl, creatorId, createdAt`).
 * Reactions have no model: the reacted `issue`, `comment` or
-  `reviewComment` row is re-sent with its `reactions` counts.
+  `reviewComment` row is re-sent with its `reactions` counts. (The PR
+  page's `/sync` snapshot also lists per-user `Reaction` rows of review
+  comments so the client knows the viewer's own reactions; they are never
+  sent as deltas — counts come from `reviewComment.reactions`.)
 * A `D` action's `d` is `null`.
 
 ---

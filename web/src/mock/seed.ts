@@ -30,6 +30,8 @@ export interface MockDb {
   nextNumber: Record<ID, number>;
   /** Viewer's own reactions: `issue:ID` / `comment:ID` → contents. */
   viewerReactions?: Record<string, string[]>;
+  /** PRs whose review threads / checks were generated (mock/pulls.ts). */
+  seededPulls?: ID[];
 }
 
 export function emptyTables(): Tables {

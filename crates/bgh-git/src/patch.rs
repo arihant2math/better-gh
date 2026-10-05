@@ -274,48 +274,12 @@ pub async fn diff_files(
     let patch_out = cmd::run(bin, Some(&dir), &args, &[], None).await?;
     let chunks = split_patches(&patch_out);
 
-    let zero = |s: &str| s.bytes().all(|b| b == b'0');
     let mut files = Vec::with_capacity(entries.len().min(limits.max_files));
     for (i, e) in entries.into_iter().enumerate() {
         if files.len() >= limits.max_files {
             break;
         }
-        let status = match e.status {
-            'A' => FileStatus::Added,
-            'D' => FileStatus::Removed,
-            'R' => FileStatus::Renamed,
-            'C' => FileStatus::Copied,
-            'T' => FileStatus::Changed,
-            'M' => FileStatus::Modified,
-            _ => FileStatus::Changed,
-        };
-        let mut patch = if e.binary {
-            None
-        } else {
-            chunks.get(i).and_then(|c| hunks_of(c))
-        };
-        let mut truncated = false;
-        if patch
-            .as_ref()
-            .is_some_and(|p| p.len() > limits.max_patch_bytes)
-        {
-            patch = None;
-            truncated = true;
-        }
-        files.push(FileDiff {
-            status,
-            filename: e.path,
-            previous_filename: e.previous,
-            old_sha: (!zero(&e.old_sha)).then_some(e.old_sha),
-            new_sha: (!zero(&e.new_sha)).then_some(e.new_sha),
-            old_mode: e.old_mode,
-            new_mode: e.new_mode,
-            additions: e.additions,
-            deletions: e.deletions,
-            binary: e.binary,
-            patch,
-            patch_truncated: truncated,
-        });
+        files.push(file_diff(e, chunks.get(i).copied(), limits.max_patch_bytes));
     }
     Ok(DiffResult {
         files,
@@ -323,6 +287,116 @@ pub async fn diff_files(
         additions,
         deletions,
     })
+}
+
+/// One file of the diff `base` → `head` (both full SHAs), or `None` when
+/// `path` (the new name) is not part of it. Renames are detected over the
+/// whole tree first, then numstat and patch are computed only for `path`
+/// (plus its previous name) via a literal pathspec. `ignore_whitespace`
+/// adds `-w`; patches over `max_patch_bytes` are dropped
+/// (`patch_truncated`).
+pub async fn diff_file(
+    store: &RepoStore,
+    repo_id: i64,
+    base: &str,
+    head: &str,
+    path: &str,
+    ignore_whitespace: bool,
+    max_patch_bytes: usize,
+) -> GitResult<Option<FileDiff>> {
+    check_sha(base)?;
+    check_sha(head)?;
+    if path.is_empty() {
+        return Ok(None);
+    }
+    let dir = store.git_dir(repo_id)?;
+    let bin = store.git_bin.as_str();
+    let literal: &[(&str, &str)] = &[("GIT_LITERAL_PATHSPECS", "1")];
+
+    // 1. Is `path` part of the diff, and was it renamed/copied from somewhere?
+    let mut args: Vec<&str> = DIFF_FLAGS.to_vec();
+    args.extend(["--raw", "-z", "--abbrev=40", base, head]);
+    let raw = cmd::run(bin, Some(&dir), &args, &[], None).await?;
+    let Some(entry) = parse_raw_numstat(&raw)?
+        .into_iter()
+        .find(|e| e.path == path)
+    else {
+        return Ok(None);
+    };
+    let previous = entry.previous.clone();
+    let mut pathspec: Vec<&str> = vec!["--", path];
+    if let Some(p) = previous.as_deref() {
+        pathspec.push(p);
+    }
+
+    // 2. Numstat + patch restricted to the file.
+    let ws: &[&str] = if ignore_whitespace { &["-w"] } else { &[] };
+    let mut args: Vec<&str> = DIFF_FLAGS.to_vec();
+    args.extend(ws);
+    args.extend(["--raw", "--numstat", "-z", "--abbrev=40", base, head]);
+    args.extend(&pathspec);
+    let raw = cmd::run(bin, Some(&dir), &args, literal, None).await?;
+    let entries = parse_raw_numstat(&raw)?;
+    let Some(idx) = entries.iter().position(|e| e.path == path) else {
+        return Ok(None);
+    };
+    let mut args: Vec<&str> = DIFF_FLAGS.to_vec();
+    args.extend(ws);
+    args.extend(["-p", "--full-index", base, head]);
+    args.extend(&pathspec);
+    let patch_out = cmd::run(bin, Some(&dir), &args, literal, None).await?;
+    let chunks = split_patches(&patch_out);
+    // With `-w`, files whose changes are whitespace-only have no chunk, so
+    // match chunks by their header when the counts differ.
+    let chunk = if chunks.len() == entries.len() {
+        chunks.get(idx).copied()
+    } else {
+        let needle = format!(" b/{path}");
+        chunks.iter().copied().find(|c| {
+            c.split(|&b| b == b'\n')
+                .next()
+                .is_some_and(|l| String::from_utf8_lossy(l).ends_with(&needle))
+        })
+    };
+    let e = entries.into_iter().nth(idx).expect("index in range");
+    Ok(Some(file_diff(e, chunk, max_patch_bytes)))
+}
+
+fn file_diff(e: RawEntry, chunk: Option<&[u8]>, max_patch_bytes: usize) -> FileDiff {
+    let zero = |s: &str| s.bytes().all(|b| b == b'0');
+    let status = match e.status {
+        'A' => FileStatus::Added,
+        'D' => FileStatus::Removed,
+        'R' => FileStatus::Renamed,
+        'C' => FileStatus::Copied,
+        'T' => FileStatus::Changed,
+        'M' => FileStatus::Modified,
+        _ => FileStatus::Changed,
+    };
+    let mut patch = if e.binary {
+        None
+    } else {
+        chunk.and_then(hunks_of)
+    };
+    let mut truncated = false;
+    if patch.as_ref().is_some_and(|p| p.len() > max_patch_bytes) {
+        patch = None;
+        truncated = true;
+    }
+    FileDiff {
+        status,
+        filename: e.path,
+        previous_filename: e.previous,
+        old_sha: (!zero(&e.old_sha)).then_some(e.old_sha),
+        new_sha: (!zero(&e.new_sha)).then_some(e.new_sha),
+        old_mode: e.old_mode,
+        new_mode: e.new_mode,
+        additions: e.additions,
+        deletions: e.deletions,
+        binary: e.binary,
+        patch,
+        patch_truncated: truncated,
+    }
 }
 
 fn child_stream(

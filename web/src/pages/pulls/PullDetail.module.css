@@ -106,3 +106,219 @@
   color: var(--fg-muted);
   font-size: var(--fs-sm);
 }
+
+.reviewerState {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.rollup {
+  display: inline-flex;
+  align-items: center;
+}
+
+.splitButton {
+  display: inline-flex;
+}
+
+.splitButton > button:first-child:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.splitToggle {
+  padding: 0 6px;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+.menuCheck {
+  display: inline-flex;
+  width: 16px;
+  color: var(--accent-fg);
+}
+
+.confirm {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 8px;
+}
+
+.mergeFooter {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background: var(--bg-subtle);
+}
+
+.checkList {
+  max-height: 260px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 40px;
+  color: var(--fg);
+  font-size: var(--fs-md);
+  text-decoration: none;
+}
+
+.checkItem:hover {
+  background: var(--bg-hover);
+}
+
+/* ------------------------------------------------------------------ checks tab */
+.checks {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.checksNav {
+  overflow-y: auto;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.suiteTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.runItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.runItem:hover {
+  background: var(--bg-hover);
+}
+
+.runItem[aria-current='true'] {
+  background: var(--accent-subtle);
+}
+
+.runName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checksMain {
+  overflow-y: auto;
+  padding: 20px 24px 48px;
+}
+
+.runHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 18px;
+  font-weight: var(--fw-semibold);
+}
+
+.annotation {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+}
+
+.annotation[data-level='failure'] {
+  border-left-color: var(--danger);
+}
+
+.annotation[data-level='notice'] {
+  border-left-color: var(--accent);
+}
+
+.annotation pre {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.summaryBar {
+  display: flex;
+  gap: 16px;
+  margin: 10px 0 16px;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+/* ------------------------------------------------------------------ commits tab */
+.commitLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.commitLink:hover .commitMsg {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.commitNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.commitPage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.commitPage > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.commitHead {
+  padding: 0 24px 12px;
+}
+
+.reviewThreads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 12px 44px;
+}

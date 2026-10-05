@@ -115,3 +115,39 @@ export function parseDiff(text: string): DiffFile[] {
   }
   return files;
 }
+
+/** Parse GitHub's per-file `patch` (hunks only, from the first `@@`). */
+export function parsePatch(patch: string): DiffHunk[] {
+  const file = parseDiff(`diff --git a/x b/x\n--- a/x\n+++ b/x\n${patch}\n`)[0];
+  return file?.hunks ?? [];
+}
+
+export type SplitCell = { line: DiffLine } | null;
+
+/** Pair a hunk's lines for side-by-side view: context on both sides, del/add blocks zipped. */
+export function splitHunk(hunk: DiffHunk): { left: SplitCell; right: SplitCell }[] {
+  const out: { left: SplitCell; right: SplitCell }[] = [];
+  const lines = hunk.lines;
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i]!;
+    if (l.type === 'ctx') {
+      out.push({ left: { line: l }, right: { line: l } });
+      i++;
+    } else if (l.type === 'meta') {
+      i++;
+    } else {
+      const dels: DiffLine[] = [];
+      const adds: DiffLine[] = [];
+      while (i < lines.length && lines[i]!.type === 'del') dels.push(lines[i++]!);
+      while (i < lines.length && (lines[i]!.type === 'add' || lines[i]!.type === 'meta')) {
+        if (lines[i]!.type === 'add') adds.push(lines[i]!);
+        i++;
+      }
+      for (let k = 0; k < Math.max(dels.length, adds.length); k++) {
+        out.push({ left: dels[k] ? { line: dels[k]! } : null, right: adds[k] ? { line: adds[k]! } : null });
+      }
+    }
+  }
+  return out;
+}

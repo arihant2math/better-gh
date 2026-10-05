@@ -156,6 +156,16 @@ pub fn web_router() -> Router<AppState> {
             put(automerge::put).delete(automerge::delete),
         )
         .route(&p("/requirements"), get(web::requirements))
+        .route(&p("/sync"), get(web::pull_sync))
+        .route(
+            &p("/reviews/pending/comments"),
+            post(web::create_pending_comment),
+        )
+        .route(&p("/patch"), get(web::file_patch))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/pulls/comments/{id}/reactions/{content}",
+            axum::routing::delete(comments::delete_own_reaction),
+        )
 }
 
 /// Jobs and event listeners.

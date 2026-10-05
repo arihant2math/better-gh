@@ -68,6 +68,7 @@ export const SCHEMA: SchemaMap = {
       { model: 'issueEvent', field: 'issueId' },
       // The DB cascades project items of a deleted issue without a delta.
       { model: 'projectItem', field: 'issueId' },
+      { model: 'reviewComment', field: 'issueId' },
     ],
   },
   comment: { scope: repoScope, indexes: ['issueId'], lazy: true },
@@ -89,6 +90,12 @@ export const SCHEMA: SchemaMap = {
   projectView: { scope: projectChildScope, indexes: ['projectId'] },
   projectItem: { scope: projectChildScope, indexes: ['projectId', 'issueId'], lazyFields: ['body'] },
   projectWorkflow: { scope: projectChildScope, indexes: ['projectId'] },
+  // PR extension models (lazy; loaded per PR, see SyncClient.loadPull).
+  reviewComment: { scope: repoScope, indexes: ['issueId', 'reviewId'], lazy: true },
+  reaction: { scope: (r) => `repo:${r.repoId ?? 0}`, indexes: ['subjectId'], lazy: true },
+  checkSuite: { scope: repoScope, indexes: ['headSha'], lazy: true },
+  checkRun: { scope: repoScope, indexes: ['headSha', 'checkSuiteId'], lazy: true },
+  commitStatus: { scope: repoScope, indexes: ['sha'], lazy: true },
 };
 
 export const MODEL_NAMES = Object.keys(SCHEMA) as ModelName[];

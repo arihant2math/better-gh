@@ -482,7 +482,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'subjectType', c.subject_type, 'side', c.side, 'startSide', c.start_side,
                  'line', c.line, 'originalLine', c.original_line, 'startLine', c.start_line,
                  'originalStartLine', c.original_start_line, 'position', c.position,
-                 'originalPosition', c.original_position,
+                 'originalPosition', c.original_position, 'diffHunk', c.diff_hunk,
                  'outdated', (c.subject_type = 'line' AND c.position IS NULL),
                  'resolvedAt', bgh_ts(c.resolved_at), 'resolvedById', c.resolved_by_id,
                  'reactions', coalesce((SELECT json_object_agg(x.content, x.n) FROM

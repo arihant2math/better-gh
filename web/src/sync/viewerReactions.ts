@@ -10,9 +10,9 @@ import type { ID, ReactionContent } from './models';
 const mine = observable.map<string, readonly ReactionContent[]>();
 const loaded = new Set<string>();
 
-export type ReactionSubject = { kind: 'issue'; id: ID } | { kind: 'comment'; id: ID };
+export type ReactionSubject = { kind: 'issue'; id: ID } | { kind: 'comment'; id: ID } | { kind: 'reviewComment'; id: ID };
 
-const key = (s: ReactionSubject) => `${s.kind === 'issue' ? 'i' : 'c'}${s.id}`;
+const key = (s: ReactionSubject) => `${s.kind === 'issue' ? 'i' : s.kind === 'comment' ? 'c' : 'r'}${s.id}`;
 
 export function viewerReactions(s: ReactionSubject): readonly ReactionContent[] {
   return mine.get(key(s)) ?? [];
@@ -41,6 +41,18 @@ export async function loadViewerReactions(owner: string, repo: string, issue: { 
   } catch {
     loaded.delete(k);
   }
+}
+
+/** Seed the viewer's reactions on PR review comments (from the PR `/sync` snapshot). */
+export function setReviewCommentReactions(rows: readonly { subjectId: ID; userId: ID; content: ReactionContent }[], viewerId: ID, commentIds: readonly ID[]): void {
+  runInAction(() => {
+    for (const id of commentIds) mine.set(key({ kind: 'reviewComment', id }), []);
+    for (const r of rows) {
+      if (r.userId !== viewerId) continue;
+      const k = key({ kind: 'reviewComment', id: r.subjectId });
+      mine.set(k, [...(mine.get(k) ?? []).filter((c) => c !== r.content), r.content]);
+    }
+  });
 }
 
 /** Test helper. */

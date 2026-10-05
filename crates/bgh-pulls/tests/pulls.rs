@@ -508,6 +508,25 @@ async fn files_and_commits() {
     assert!(commits[1]["author"].is_null());
     assert_eq!(commits[1]["commit"]["verification"]["verified"], false);
 
+    // Commit emails map to users through verified `user_emails`, also for
+    // users without a public profile email (`users.email` NULL).
+    sqlx::query("UPDATE users SET email = NULL WHERE id = $1")
+        .bind(f.alice.id)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO user_emails (user_id, email, verified) VALUES ($1, 'author@example.com', true)")
+        .bind(f.alice.id)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    let res = app
+        .get("/api/v3/repos/alice/demo/pulls/1/commits")
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(res.json()[1]["author"]["login"], "alice");
+
     // A rename within the PR range shows up as `renamed`.
     branch(app, f.repo_id, "mv", &f.main).await;
     commit(

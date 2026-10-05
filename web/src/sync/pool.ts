@@ -168,8 +168,9 @@ export class ObjectPool {
   readonly lookupBase = (<M extends ModelName>(model: M, id: ID) => this.base.get(model)!.get(id) as ModelMap[M] | undefined) as ScopeLookup;
 
   /**
-   * Remove confirmed rows that are not covered by a synced scope (e.g. rows
-   * merged from a project snapshot that disappeared server-side).
+   * Delete confirmed base rows locally: writes the server doesn't broadcast,
+   * or rows not covered by a synced scope (e.g. rows merged from a project
+   * snapshot that disappeared server-side).
    */
   removeRows(model: ModelName, ids: readonly ID[]): void {
     if (!ids.length) return;

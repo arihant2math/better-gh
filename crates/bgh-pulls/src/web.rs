@@ -3,20 +3,29 @@
 //! (list / resolve / unresolve), draft ⇄ ready for review, auto-merge, and
 //! a detailed merge-requirements view for the merge box. The underlying
 //! service functions are public for bgh-graphql.
+//!
+//! Plus the pull request page's data endpoints (pulls-web): a consistent
+//! per-PR sync snapshot (`/sync`), adding comments to the viewer's pending
+//! review (`/reviews/pending/comments`) and a single file's patch with
+//! optional whitespace-insensitive diffing (`/patch`).
+
+use std::collections::BTreeSet;
 
 use axum::extract::State;
+use axum::http::StatusCode;
 use bgh_core::models::api::SimpleUser;
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::prelude::*;
-use serde::Serialize;
-use serde_json::json;
+use bgh_core::sync::shapes::{self, Filter, Model, Opts};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use crate::comments::{self, ReviewCommentJson};
 use crate::jobs::Refresh;
 use crate::json::{self, PullRequest};
-use crate::model::{Pull, ReviewComment};
+use crate::model::{PENDING, Pull, Review, ReviewComment};
 use crate::pulls::load_pull;
-use crate::{protection, timeline};
+use crate::{git, protection, timeline};
 
 #[derive(Debug, Serialize)]
 pub struct ThreadJson {
@@ -329,5 +338,318 @@ pub async fn requirements(
         linear_history: rules.linear_history,
         allowed_merge_methods: methods,
         can_bypass: access.permission >= Permission::Admin && !rules.enforce_admins,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Pull request page data (pulls-web)
+// ---------------------------------------------------------------------------
+
+/// Compact rows of `model` (the shared sync shapes) as plain JSON.
+async fn load_rows(
+    conn: &mut sqlx::PgConnection,
+    opts: Opts,
+    model: Model,
+    filter: Filter<'_>,
+) -> ApiResult<Vec<Value>> {
+    Ok(shapes::load(conn, model, filter, opts)
+        .await?
+        .into_iter()
+        .map(|r| r.data)
+        .collect())
+}
+
+#[derive(sqlx::FromRow)]
+struct ReactionSyncRow {
+    id: i64,
+    subject_id: i64,
+    user_id: i64,
+    content: String,
+}
+
+/// `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`: every row the pull request
+/// page needs beyond partial sync (review comments incl. the viewer's
+/// pending ones, reviews incl. the viewer's pending one, reactions on the
+/// comments, check suites/runs and commit statuses of the head, referenced
+/// users), read in one `REPEATABLE READ` snapshot whose `lastSyncId` is
+/// taken first, so applying deltas `> lastSyncId` afterwards is safe.
+pub async fn pull_sync(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo, number)): Path<(String, String, i64)>,
+) -> ApiResult<axum::Json<Value>> {
+    let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
+    let viewer = auth.user_id();
+    let repo_id = access.repo.id;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await?;
+    let last_sync_id: i64 = sqlx::query_scalar("SELECT coalesce(max(id), 0) FROM sync_actions")
+        .fetch_one(&mut *tx)
+        .await?;
+    // Re-read the head inside the snapshot (a push may have landed since).
+    let head_sha: String =
+        sqlx::query_scalar("SELECT head_sha FROM pull_requests WHERE issue_id = $1")
+            .bind(pull.id())
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
+    // Rows come from the shared sync shapes (`bgh_core::sync::shapes`), so
+    // this snapshot equals what bootstrap/partial sync and deltas send.
+    let pull_ids = [pull.id()];
+    let opts = Opts {
+        viewer,
+        ..Opts::default()
+    };
+    let comment_rows = load_rows(&mut tx, opts, Model::ReviewComment, Filter::Issues(&pull_ids)).await?;
+    let review_rows = load_rows(&mut tx, opts, Model::Review, Filter::Issues(&pull_ids)).await?;
+    let comment_ids: Vec<i64> = comment_rows
+        .iter()
+        .filter_map(|c| c["id"].as_i64())
+        .collect();
+    // The viewer-independent per-user reaction rows (who reacted with
+    // what) are not a synced model; rows carry `reactions` counts.
+    let reaction_rows: Vec<ReactionSyncRow> = if comment_ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(
+            "SELECT id, subject_id, user_id, content FROM reactions
+              WHERE subject_type = $1 AND subject_id = ANY($2) ORDER BY id",
+        )
+        .bind(comments::SUBJECT)
+        .bind(&comment_ids)
+        .fetch_all(&mut *tx)
+        .await?
+    };
+    let suite_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM check_suites WHERE repo_id = $1 AND head_sha = $2")
+            .bind(repo_id)
+            .bind(&head_sha)
+            .fetch_all(&mut *tx)
+            .await?;
+    let run_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM check_runs WHERE repo_id = $1 AND head_sha = $2")
+            .bind(repo_id)
+            .bind(&head_sha)
+            .fetch_all(&mut *tx)
+            .await?;
+    let status_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM commit_statuses WHERE repo_id = $1 AND sha = $2")
+            .bind(repo_id)
+            .bind(&head_sha)
+            .fetch_all(&mut *tx)
+            .await?;
+    let suites = load_rows(&mut tx, opts, Model::CheckSuite, Filter::Ids(&suite_ids)).await?;
+    let runs = load_rows(&mut tx, opts, Model::CheckRun, Filter::Ids(&run_ids)).await?;
+    let status_rows = load_rows(&mut tx, opts, Model::CommitStatus, Filter::Ids(&status_ids)).await?;
+
+    let mut user_ids = BTreeSet::new();
+    for (model, rows) in [
+        (Model::ReviewComment, &comment_rows),
+        (Model::Review, &review_rows),
+        (Model::CommitStatus, &status_rows),
+    ] {
+        for row in rows {
+            shapes::referenced_users(model.name(), row, &mut user_ids);
+        }
+    }
+    user_ids.extend(reaction_rows.iter().map(|r| r.user_id));
+    let user_ids: Vec<i64> = user_ids.into_iter().collect();
+    let users = load_rows(&mut tx, opts, Model::User, Filter::Ids(&user_ids)).await?;
+    tx.commit().await?;
+
+    let pull_id = pull.id();
+    Ok(axum::Json(json!({
+        "lastSyncId": last_sync_id,
+        "models": {
+            "reviewComment": comment_rows,
+            "review": review_rows,
+            "reaction": reaction_rows.iter().map(|r| json!({
+                "id": r.id, "subjectType": comments::SUBJECT, "subjectId": r.subject_id,
+                "userId": r.user_id, "content": r.content, "issueId": pull_id,
+            })).collect::<Vec<_>>(),
+            "checkSuite": suites,
+            "checkRun": runs,
+            "commitStatus": status_rows,
+            "user": users,
+        }
+    })))
+}
+
+/// `POST /_bgh/repos/{o}/{r}/pulls/{n}/reviews/pending/comments`: add a
+/// comment (or a reply, `in_reply_to`) to the viewer's pending review,
+/// creating that review first. Pending rows are private: no sync actions.
+pub async fn create_pending_comment(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, number)): Path<(String, String, i64)>,
+    Json(body): Json<comments::CreateBody>,
+) -> ApiResult<(StatusCode, axum::Json<Value>)> {
+    let (access, pull) = load_pull(&state, Some(&auth), &owner, &repo, number).await?;
+    access.require_not_archived()?;
+    let text = body.body.as_deref().unwrap_or("");
+    if text.trim().is_empty() {
+        return Err(ApiError::invalid_field(FieldError::missing_field(
+            "PullRequestReviewComment",
+            "body",
+        )));
+    }
+    if pull.issue.locked && access.permission < Permission::Write {
+        return Err(ApiError::forbidden(
+            "Unable to create comment because issue is locked.",
+        ));
+    }
+    let review_commit = body
+        .commit_id
+        .clone()
+        .unwrap_or_else(|| pull.pr.head_sha.clone());
+    if !bgh_git::is_sha(&review_commit) {
+        return Err(ApiError::invalid_field(FieldError::invalid(
+            "PullRequestReviewComment",
+            "commit_id",
+        )));
+    }
+    let (loc, reply_to) = if let Some(parent_id) = body.in_reply_to {
+        let parent =
+            comments::visible_comment(&state, access.repo.id, parent_id, Some(auth.user.id))
+                .await?;
+        if parent.pull_id != pull.id() {
+            return Err(ApiError::NotFound);
+        }
+        let root = match parent.in_reply_to_id {
+            Some(r) => comments::find_comment(&state, access.repo.id, r).await?,
+            None => parent,
+        };
+        (comments::reply_location(&root), Some(root.id))
+    } else {
+        (
+            comments::locate(&state, &pull, &review_commit, &body.location).await?,
+            None,
+        )
+    };
+    let mut tx = Tx::begin(&state).await?;
+    let existing: Option<Review> = sqlx::query_as(&format!(
+        "SELECT {} FROM pr_reviews WHERE pull_id = $1 AND user_id = $2 AND state = 'PENDING'
+          FOR UPDATE",
+        Review::COLUMNS
+    ))
+    .bind(pull.id())
+    .bind(auth.user.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let review = match existing {
+        Some(r) => r,
+        None => sqlx::query_as(&format!(
+            "INSERT INTO pr_reviews (pull_id, repo_id, user_id, body, state, commit_id, submitted_at)
+             VALUES ($1, $2, $3, '', $4, $5, NULL) RETURNING {}",
+            Review::COLUMNS
+        ))
+        .bind(pull.id())
+        .bind(access.repo.id)
+        .bind(auth.user.id)
+        .bind(PENDING)
+        .bind(&review_commit)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| match bgh_core::db::unique_violation(&e).as_deref() {
+            Some("pr_reviews_one_pending_key") => {
+                ApiError::conflict("A pending review was created concurrently; retry")
+            }
+            _ => e.into(),
+        })?,
+    };
+    let row = comments::insert(
+        &mut tx,
+        &pull,
+        review.id,
+        auth.user.id,
+        text,
+        &loc,
+        reply_to,
+        false,
+    )
+    .await?;
+    // Private rows (not synced): rendered by the shared shapes for the
+    // viewer, so they equal what `/sync` returns.
+    let opts = Opts {
+        viewer: Some(auth.user.id),
+        ..Opts::default()
+    };
+    let review_json = shapes::load_one(&mut tx, Model::Review, review.id, opts)
+        .await?
+        .map(|r| r.data);
+    let comment_json = shapes::load_one(&mut tx, Model::ReviewComment, row.id, opts)
+        .await?
+        .map(|r| r.data);
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(json!({
+            "review": review_json,
+            "comment": comment_json,
+        })),
+    ))
+}
+
+/// Largest single-file patch returned by [`file_patch`].
+pub const FILE_PATCH_MAX: usize = 5 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+pub struct PatchQuery {
+    pub path: Option<String>,
+    pub w: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FilePatch {
+    pub filename: String,
+    pub previous_filename: Option<String>,
+    pub status: &'static str,
+    pub additions: u64,
+    pub deletions: u64,
+    pub patch: Option<String>,
+    pub truncated: bool,
+}
+
+/// `GET /_bgh/repos/{o}/{r}/pulls/{n}/patch?path=…&w=1`: one file of the
+/// PR diff (merge base → head), optionally ignoring whitespace.
+pub async fn file_patch(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo, number)): Path<(String, String, i64)>,
+    Query(q): Query<PatchQuery>,
+) -> ApiResult<axum::Json<FilePatch>> {
+    let (_access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
+    let path = q
+        .path
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| ApiError::invalid_field(FieldError::missing_field("PullRequest", "path")))?;
+    let ignore_ws = matches!(q.w.as_deref(), Some("1" | "true"));
+    let base = pull
+        .pr
+        .merge_base_sha
+        .clone()
+        .unwrap_or_else(|| pull.pr.base_sha.clone());
+    let file = bgh_git::patch::diff_file(
+        &git::store(&state),
+        pull.pr.repo_id,
+        &base,
+        &pull.pr.head_sha,
+        &path,
+        ignore_ws,
+        FILE_PATCH_MAX,
+    )
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    Ok(axum::Json(FilePatch {
+        status: file.status.as_str(),
+        filename: file.filename,
+        previous_filename: file.previous_filename,
+        additions: file.additions,
+        deletions: file.deletions,
+        patch: file.patch,
+        truncated: file.patch_truncated,
     }))
 }

@@ -410,7 +410,7 @@ pub fn reply_location(root: &ReviewComment) -> Location {
     }
 }
 
-async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<ReviewComment> {
+pub(crate) async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<ReviewComment> {
     let c: ReviewComment = sqlx::query_as(&format!(
         "SELECT {} FROM pr_review_comments c WHERE c.id = $1 AND c.repo_id = $2",
         ReviewComment::COLUMNS
@@ -424,7 +424,7 @@ async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<Revi
 }
 
 /// A comment visible to `viewer` (pending review comments only to their author).
-async fn visible_comment(
+pub(crate) async fn visible_comment(
     state: &AppState,
     repo_id: i64,
     id: i64,
@@ -444,7 +444,7 @@ async fn visible_comment(
 }
 
 /// Visibility predicate on `c` (alias of pr_review_comments) for `$viewer`.
-fn visible_sql(viewer_param: &str) -> String {
+pub(crate) fn visible_sql(viewer_param: &str) -> String {
     format!(
         "(c.review_id IS NULL OR NOT EXISTS (SELECT 1 FROM pr_reviews r WHERE r.id = c.review_id
             AND r.state = 'PENDING' AND r.user_id IS DISTINCT FROM {viewer_param}))"
@@ -1010,6 +1010,41 @@ pub async fn delete_reaction(
     }
     tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
         .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `DELETE /_bgh/repos/{o}/{r}/pulls/comments/{id}/reactions/{content}`:
+/// remove the viewer's reaction by content (the web client only knows
+/// counts, not reaction ids). 204 also when there is none.
+pub async fn delete_own_reaction(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, id, content)): Path<(String, String, i64, String)>,
+) -> ApiResult<StatusCode> {
+    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
+    visible_comment(&state, access.repo.id, id, Some(auth.user.id)).await?;
+    if !REACTION_CONTENTS.contains(&content.as_str()) {
+        return Err(ApiError::invalid_field(FieldError::invalid(
+            "Reaction", "content",
+        )));
+    }
+    let mut tx = Tx::begin(&state).await?;
+    let n = sqlx::query(
+        "DELETE FROM reactions WHERE subject_type = $1 AND subject_id = $2
+            AND user_id = $3 AND content = $4",
+    )
+    .bind(SUBJECT)
+    .bind(id)
+    .bind(auth.user.id)
+    .bind(&content)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n > 0 {
+        tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
+            .await?;
+    }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

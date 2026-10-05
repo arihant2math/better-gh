@@ -98,12 +98,15 @@ export const Timeline = observer(function Timeline({
   repoFullName,
   footer,
   afterBody,
+  renderReview,
 }: {
   issue: Issue;
   repoFullName: string;
   footer?: ReactNode;
   /** Rendered right below the description (sub-issues panel). */
   afterBody?: ReactNode;
+  /** Extra content under a review (PRs: its inline review threads). */
+  renderReview?: (review: Review) => ReactNode;
 }) {
   const loaded = useIssueDetails(issue.id);
   const [owner = '', name = ''] = repoFullName.split('/');
@@ -137,7 +140,7 @@ export const Timeline = observer(function Timeline({
         ) : it.kind === 'events' ? (
           <EventItem key={`e${it.e[0]!.id}`} events={it.e} repo={repoFullName} />
         ) : (
-          <ReviewItem key={`r${it.r.id}`} review={it.r} repo={repoFullName} />
+          <ReviewItem key={`r${it.r.id}`} review={it.r} repo={repoFullName} extra={renderReview?.(it.r)} />
         ),
       )}
       {!loaded && issue.comments > 0 && (
@@ -545,7 +548,7 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
   );
 });
 
-const ReviewItem = observer(function ReviewItem({ review, repo }: { review: Review; repo: string }) {
+const ReviewItem = observer(function ReviewItem({ review, repo, extra }: { review: Review; repo: string; extra?: ReactNode }) {
   const author = store().get('user', review.authorId);
   const map = {
     APPROVED: { icon: CheckCircleIcon, text: 'approved these changes', cls: styles.evOpen },
@@ -571,6 +574,7 @@ const ReviewItem = observer(function ReviewItem({ review, repo }: { review: Revi
           <Markdown source={review.body} repo={repo} />
         </div>
       )}
+      {extra}
     </>
   );
 });

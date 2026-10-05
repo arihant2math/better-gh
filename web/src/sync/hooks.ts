@@ -36,3 +36,18 @@ export function useIssueDetails(issueId: ID | undefined): boolean {
   }, [issueId, loaded]);
   return loaded;
 }
+
+/**
+ * Ensure a PR's extension rows (review threads, reactions, checks) are
+ * loaded for its current head. Returns `true` once loaded.
+ */
+export function usePullDetails(issueId: ID | undefined): boolean {
+  const loaded = issueId != null && hasSync() && sync().isPullLoaded(issueId);
+  useEffect(() => {
+    if (issueId == null || loaded || !hasSync()) return;
+    void sync()
+      .loadPull(issueId)
+      .catch(() => undefined);
+  }, [issueId, loaded]);
+  return loaded;
+}

@@ -4,7 +4,7 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
-import { getContents, getIssueTemplates, getPullDiff, listPullCommits } from '../api/endpoints';
+import { getContents, getIssueTemplates, listPullCommits, listPullFiles } from '../api/endpoints';
 import { defineRoutes, type Params } from '../router';
 import { hasSync, sync } from '../sync';
 import { issueByNumber, repoByName } from '../sync/selectors';
@@ -33,10 +33,19 @@ function prefetchIssue(p: Params) {
 
 function prefetchPull(p: Params) {
   prefetchIssue(p);
-  if (p['*'] === 'files' || p.tab === 'files') {
-    prefetchResource(`diff:${p.owner}/${p.repo}#${p.number}`, () => getPullDiff(p.owner!, p.repo!, Number(p.number)));
+  if (!hasSync()) return;
+  const repo = repoByName(p.owner!, p.repo!);
+  const pr = repo && issueByNumber(repo.id, Number(p.number));
+  if (pr?.isPr) void sync().loadPull(pr.id).catch(() => undefined);
+  // Warm the tab's chunk and first data page.
+  if (p.tab === 'files') {
+    void import('../pages/pulls/FilesTab');
+    if (pr) prefetchResource(`files:${p.owner}/${p.repo}#${p.number}@${pr.baseSha}...${pr.headSha}:1`, () => listPullFiles(p.owner!, p.repo!, Number(p.number), 1), { immutable: true });
   } else if (p.tab === 'commits') {
-    prefetchResource(`commits:${p.owner}/${p.repo}#${p.number}`, () => listPullCommits(p.owner!, p.repo!, Number(p.number)));
+    void import('../pages/pulls/CommitsTab');
+    if (pr) prefetchResource(`commits:${p.owner}/${p.repo}#${p.number}@${pr.headSha}`, () => listPullCommits(p.owner!, p.repo!, Number(p.number)), { immutable: true });
+  } else if (p.tab === 'checks') {
+    void import('../pages/pulls/ChecksTab');
   }
 }
 
@@ -107,6 +116,8 @@ export function registerRoutes(): void {
       prefetch: prefetchIssue,
       title: (p) => `#${p.number} · ${p.owner}/${p.repo}`,
     },
+    { path: '/:owner/:repo/compare', layout: RepoLayout, load: () => import('../pages/pulls/ComparePage'), title: (p) => `Compare · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/compare/*', layout: RepoLayout, load: () => import('../pages/pulls/ComparePage'), title: (p) => `Comparing ${p['*']} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/pulls', layout: RepoLayout, load: () => import('../pages/pulls/PullListPage'), title: (p) => `Pull requests · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/pull/:number',
@@ -114,6 +125,13 @@ export function registerRoutes(): void {
       load: () => import('../pages/pulls/PullDetailPage'),
       prefetch: prefetchPull,
       title: (p) => `PR #${p.number} · ${p.owner}/${p.repo}`,
+    },
+    {
+      path: '/:owner/:repo/pull/:number/commits/:sha',
+      layout: RepoLayout,
+      load: () => import('../pages/pulls/PullDetailPage'),
+      prefetch: (p) => prefetchPull({ ...p, tab: 'commits' }),
+      title: (p) => `${p.sha!.slice(0, 7)} · PR #${p.number} · ${p.owner}/${p.repo}`,
     },
     {
       path: '/:owner/:repo/pull/:number/:tab',
