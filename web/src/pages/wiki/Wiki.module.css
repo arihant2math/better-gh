@@ -1,0 +1,298 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.main {
+  min-width: 0;
+}
+
+.pageHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.muted {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.banner {
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.html :global(a.wiki-missing) {
+  color: var(--danger);
+}
+
+.footer {
+  margin-top: 32px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.box {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.boxTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.pageList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pageList a {
+  display: block;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+}
+
+.pageList a:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.pageList a[aria-current='page'] {
+  background: var(--bg-selected);
+  font-weight: var(--fw-semibold);
+}
+
+.snippet {
+  margin: 0 6px 6px;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.sidebarHtml {
+  font-size: var(--fs-md);
+}
+
+/* ------------------------------------------------------------------ editor */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.editorTabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.editorPanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.textarea {
+  min-height: 420px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+}
+
+.preview {
+  min-height: 420px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+@media (max-width: 1000px) {
+  .editorPanes {
+    grid-template-columns: 1fr;
+  }
+  .editorPanes[data-tab='write'] .preview,
+  .editorPanes[data-tab='preview'] .textarea {
+    display: none;
+  }
+}
+
+@media (min-width: 1001px) {
+  .editorTabs > :first-child {
+    display: none;
+  }
+}
+
+.error {
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.editorActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.grow {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------------ history */
+.history {
+  max-width: 1012px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.commits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.commit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.commit:first-child {
+  border-top: 0;
+}
+
+.commitMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.commitMsg {
+  font-weight: var(--fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latest {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+}
+
+.sha {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compareHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--fg-muted);
+}
+
+.diff {
+  height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}

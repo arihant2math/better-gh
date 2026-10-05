@@ -1,9 +1,9 @@
 # Package F3: issues-web (`web/`)
 
-Status: **complete**. Branch `bgh/issues-web` (contains `bgh/issues` and
-`bgh/sync`, merged in because the integration branch didn't have them yet).
-Verified against a real `bgh-server` + Postgres (seeded through the REST API
-and git push) and in mock mode.
+Status: **complete**. Branch `bgh/issues-web`, merged with the integration
+branch (all packages, incl. accounts' `/_bgh/auth` + CSRF). Verified against
+a real `bgh-server` + Postgres (seeded through the REST API and git push,
+signed in through the login form) and in mock mode.
 
 ## What's in the UI
 
@@ -50,13 +50,16 @@ a locked issue). Mock state version bumped to 4.
   `docs/packages/issues.md`, `docs/FRONTEND.md`.
 * Tests: `crates/bgh-issues/tests/web_client.rs` (viewer reactions, sync
   row fields in deltas and bootstrap, partial event data == deltas).
-* Cross-package test fixes needed once `bgh-issues` and `bgh-sync`/`bgh-repos`
-  are merged together: the default-labels listener writes `label` sync
-  actions (no tx) right after repo creation, which broke exact delta-stream
-  assertions. `bgh-sync` test fixtures now wait for and drop default labels
-  (`drop_default_labels`, no-op without bgh-issues); `bgh-repos`
-  `create_and_get_repository` and `bgh-sync` middleware/bootstrap tests
-  ignore `label` rows. `cargo test --workspace` is green.
+* `bgh-sync` bootstrap shape test expects the new issue fields.
+  (The default-labels test interference I hit before the integration pass
+  was fixed the same way on the integration branch; I took its version.)
+  `cargo test --workspace`: everything I touch is green; 3 bgh-accounts
+  rate-limit tests (`users::authenticated_user_and_patch`,
+  `users::api_root_and_rate_limit`,
+  `sso_avatars_ratelimit::rate_limits_are_enforced`) fail on the merged
+  integration branch itself (`GET /rate_limit` → 404 “Rate limiting is not
+  enabled.” from bgh-admin, no `X-RateLimit-*` headers) — unrelated to this
+  package's diff (no accounts/admin/config changes here).
 
 Shared web changes: `ui/Menu.tsx` (`SelectPanel` `onCreate`/`createLabel`/
 `footer`; filter input focused in an effect — `autoFocus` ran while the
@@ -82,7 +85,8 @@ array fields), `app/TopBar.tsx` breadcrumbs for labels/milestones/new issue,
   reason/unlock, unpin/pin, sub-issue add/reorder/remove, label
   create/rename/delete, milestone create/close/delete, issue form → markdown
   body + template labels, transfer — each checked in the UI and then on the
-  server via REST. All 52 checks pass (repeatable on the same data).
+  server via REST. All 52 checks pass on the integrated server (real login,
+  CSRF enforced), repeatable on the same data.
 * `scripts/smoke.mjs` (mock) extended: showcase timeline, reactions, `⇧L`
   lock, `Alt+↓` reorder, label create + rollback on 422, milestone create,
   issue form submit. `scripts/screenshots.mjs` adds showcase, labels,
@@ -94,12 +98,9 @@ array fields), `app/TopBar.tsx` breadcrumbs for labels/milestones/new issue,
   (no package provides attachments). The editor intercepts pasted/dropped
   files and explains that uploads aren’t supported (link an image URL
   instead). Needs a `POST /_bgh/uploads` (or similar) + storage.
-* **Web sign-in/boot:** the integration branch has no `/_bgh/boot` or
-  `/_bgh/auth/*` endpoints yet, and `bgh/accounts` uses different paths
-  (`/_bgh/session`, `/_bgh/signup`) than SYNC_PROTOCOL.md §9–10 /
-  `web/src/app/session.ts`. Until that is reconciled the real-backend smoke
-  test mints a session row directly and stubs `/_bgh/boot` (only when the
-  server 404s).
+* `real-smoke.mjs` signs in through the login form; on a server without
+  `/_bgh/auth` it falls back to minting a session row and stubbing
+  `/_bgh/boot`.
 * The issue body has no author association in the sync model, so its header
   shows “Author” only.
 * Sub-issue children in other repos render from REST (title/state) and

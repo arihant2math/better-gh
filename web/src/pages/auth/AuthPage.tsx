@@ -13,6 +13,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const signup = mode === 'signup';
   const { config } = getBoot();
@@ -22,7 +24,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
     setError(null);
     try {
       if (signup) await session.signup({ login, email, password });
-      else await session.login(login, password);
+      else if (twoFactorToken) await session.verifyTwoFactor(twoFactorToken, code);
+      else {
+        const step = await session.login(login, password);
+        if (step) {
+          setTwoFactorToken(step.twoFactorToken);
+          return;
+        }
+      }
       const ret = new URLSearchParams(location.search).get('return_to');
       navigate(ret && ret.startsWith('/') && !ret.startsWith('//') ? ret : '/', { replace: true });
     } catch (e) {
@@ -51,28 +60,47 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
             void submit();
           }}
         >
-          <Field label={signup ? 'Username' : 'Username or email address'} htmlFor="login">
-            <Input id="login" size="lg" autoFocus autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} required />
-          </Field>
+          {!twoFactorToken && (
+            <Field label={signup ? 'Username' : 'Username or email address'} htmlFor="login">
+              <Input id="login" size="lg" autoFocus autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} required />
+            </Field>
+          )}
+          {twoFactorToken ? (
+            <Field label="Authentication code" htmlFor="otp" hint="Open your authenticator app, or use a recovery code." error={error}>
+              <Input
+                id="otp"
+                size="lg"
+                autoFocus
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                invalid={!!error}
+                required
+              />
+            </Field>
+          ) : null}
           {signup && (
             <Field label="Email" htmlFor="email">
               <Input id="email" size="lg" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </Field>
           )}
-          <Field label="Password" htmlFor="password" hint={signup ? 'At least 8 characters.' : undefined} error={error}>
-            <Input
-              id="password"
-              size="lg"
-              type="password"
-              autoComplete={signup ? 'new-password' : 'current-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              invalid={!!error}
-              required
-            />
-          </Field>
+          {!twoFactorToken && (
+            <Field label="Password" htmlFor="password" hint={signup ? 'At least 8 characters.' : undefined} error={error}>
+              <Input
+                id="password"
+                size="lg"
+                type="password"
+                autoComplete={signup ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                invalid={!!error}
+                required
+              />
+            </Field>
+          )}
           <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            {signup ? 'Create account' : 'Sign in'}
+            {signup ? 'Create account' : twoFactorToken ? 'Verify' : 'Sign in'}
           </Button>
         </form>
         <p className={styles.switch}>

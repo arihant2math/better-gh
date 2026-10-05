@@ -297,6 +297,15 @@ pub struct OrganizationFull {
     pub members_can_create_repositories: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub two_factor_requirement_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub members_can_create_public_repositories: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub members_can_create_private_repositories: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub members_can_fork_private_repositories: Option<bool>,
+    /// `all` | `private` | `none` (legacy summary of the three flags above).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub members_allowed_repository_creation_type: Option<String>,
 }
 
 impl OrganizationFull {
@@ -341,6 +350,26 @@ impl OrganizationFull {
                 .then(|| settings.default_repository_permission.clone()),
             members_can_create_repositories: mv(settings.members_can_create_repositories),
             two_factor_requirement_enabled: mv(settings.two_factor_requirement_enabled),
+            members_can_create_public_repositories: mv(
+                settings.members_can_create_public_repositories
+            ),
+            members_can_create_private_repositories: mv(
+                settings.members_can_create_private_repositories
+            ),
+            members_can_fork_private_repositories: mv(
+                settings.members_can_fork_private_repositories
+            ),
+            members_allowed_repository_creation_type: member_view.then(|| {
+                match (
+                    settings.members_can_create_repositories,
+                    settings.members_can_create_public_repositories,
+                ) {
+                    (false, _) => "none",
+                    (true, true) => "all",
+                    (true, false) => "private",
+                }
+                .to_string()
+            }),
         }
     }
 }

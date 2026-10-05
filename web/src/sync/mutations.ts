@@ -244,10 +244,9 @@ export function toggleReaction(target: { issue: Issue } | { comment: Comment }, 
   const row = isIssue ? target.issue : target.comment;
   const subject: ReactionSubject = isIssue ? { kind: 'issue', id: row.id } : { kind: 'comment', id: row.id };
   const on = !viewerReactions(subject).includes(content);
-  const counts = { ...(row.reactions ?? {}) };
-  const n = Math.max(0, (counts[content] ?? 0) + (on ? 1 : -1));
-  if (n) counts[content] = n;
-  else delete counts[content];
+  const n = Math.max(0, (row.reactions?.[content] ?? 0) + (on ? 1 : -1));
+  // $merge composes with concurrent reactions to other contents.
+  const counts = { $merge: { [content]: n || null } };
   const r = repoOf(row.repoId);
   const base = `/repos/${enc(r.owner)}/${enc(r.name)}/issues/${isIssue ? target.issue.number : `comments/${row.id}`}/reactions`;
   setViewerReaction(subject, content, on);
@@ -429,10 +428,10 @@ export function mergePull(pr: Issue, method: 'merge' | 'squash' | 'rebase' = 'me
 
 export function setDraft(pr: Issue, draft: boolean) {
   const r = repoOf(pr.repoId);
+  // GraphQL-only on GitHub; bgh exposes private endpoints (docs/packages/pulls.md).
   return commit(draft ? 'Convert to draft' : 'Ready for review', [ops.update('issue', pr.id, { draft })], {
-    method: 'PATCH',
-    path: `/api/v3/repos/${enc(r.owner)}/${enc(r.name)}/pulls/${pr.number}`,
-    body: { draft },
+    method: 'POST',
+    path: `/_bgh/repos/${enc(r.owner)}/${enc(r.name)}/pulls/${pr.number}/${draft ? 'convert_to_draft' : 'ready_for_review'}`,
   });
 }
 

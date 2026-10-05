@@ -188,6 +188,11 @@ tx.sync_model(SyncModel::Label, label.id, SyncAction::Insert).await?; // last: s
 tx.commit().await?;   // commit → publish sync deltas to Redis → emit events
 ```
 
+* Audit every security-relevant write (`audit::log`, or
+  `audit::log_with_ip(.., Some(&bgh_core::auth::client_ip(&state.config, &headers, &extensions)))`
+  when the request is at hand).
+* Site-wide behaviour switches come from `bgh_core::settings::load(&state)`
+  (typed, cached); never read `site_settings` directly.
 * Every synced model change records a sync action **in the same
   transaction** — through the helpers of section 8a, never hand-built JSON.
 * Dropping a `Tx` without `commit()` rolls back and discards all side effects.
@@ -286,6 +291,12 @@ pub async fn reindex_repo(state: AppState, job: ReindexRepo) -> anyhow::Result<(
 Handlers must be idempotent and tolerate deleted rows (return `Ok(())`).
 Errors retry with backoff; panics and timeouts (10 min) count as failures.
 Example: `bgh_repos::jobs::post_receive`.
+
+Long-running services (listeners on other ports, e.g. the SSH server)
+register with `reg.service("name", |state, shutdown| async move { ... })`;
+`bgh serve` starts them (`registry::spawn_services`) and cancels
+`shutdown` on exit. The test harness does **not** start services; tests
+start what they need (e.g. `bgh_repos::ssh::spawn(state, "127.0.0.1:0", token)`).
 
 ## 10. Events
 

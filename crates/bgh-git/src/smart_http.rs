@@ -327,6 +327,85 @@ pub struct ReceivePackOutcome {
     pub rejected: Option<String>,
 }
 
+/// Push checks that need the pushed objects. They run in a `pre-receive`
+/// hook while the new objects are still quarantined
+/// (`GIT_QUARANTINE_PATH`), so a rejected push leaves nothing behind.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PushPolicy {
+    /// Refs (full names) that may only move fast-forward.
+    pub no_force_push: Vec<String>,
+    /// Refs whose newly pushed commits must not include merge commits.
+    pub linear_history: Vec<String>,
+}
+
+impl PushPolicy {
+    pub fn is_empty(&self) -> bool {
+        self.no_force_push.is_empty() && self.linear_history.is_empty()
+    }
+}
+
+/// The `pre-receive` hook enforcing [`PushPolicy`] (refs are passed in
+/// `BGH_NO_FF_REFS` / `BGH_LINEAR_REFS`, space separated).
+pub const PRE_RECEIVE_HOOK: &str = r#"#!/bin/sh
+# Installed by Better GitHub: branch protection checks needing the pushed objects.
+z=0000000000000000000000000000000000000000
+status=0
+while read old new ref; do
+  [ "$new" = "$z" ] && continue
+  case " $BGH_NO_FF_REFS " in
+    *" $ref "*)
+      if [ "$old" != "$z" ] && ! git merge-base --is-ancestor "$old" "$new" 2>/dev/null; then
+        echo "error: GH006: Protected branch update failed for $ref." >&2
+        echo "error: Cannot force-push to this branch" >&2
+        status=1
+      fi;;
+  esac
+  case " $BGH_LINEAR_REFS " in
+    *" $ref "*)
+      if [ "$old" = "$z" ]; then
+        merges=$(git rev-list --min-parents=2 --max-count=1 "$new" --not --all)
+      else
+        merges=$(git rev-list --min-parents=2 --max-count=1 "$old..$new")
+      fi
+      if [ -n "$merges" ]; then
+        echo "error: GH006: Protected branch update failed for $ref." >&2
+        echo "error: This branch must not contain merge commits." >&2
+        status=1
+      fi;;
+  esac
+done
+exit $status
+"#;
+
+/// Write the hook into `{store.root}/.bgh-hooks` (once per process and
+/// whenever it is missing or outdated); returns the hooks directory.
+pub async fn ensure_hooks(store: &RepoStore) -> GitResult<std::path::PathBuf> {
+    let dir = store.root.join(".bgh-hooks");
+    let hook = dir.join("pre-receive");
+    let current = tokio::fs::read_to_string(&hook).await.ok();
+    if current.as_deref() != Some(PRE_RECEIVE_HOOK) {
+        tokio::fs::create_dir_all(&dir).await?;
+        let tmp = dir.join(format!("pre-receive.{}", bgh_core::crypto::random_token(8)));
+        tokio::fs::write(&tmp, PRE_RECEIVE_HOOK).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).await?;
+        }
+        tokio::fs::rename(&tmp, &hook).await?;
+    }
+    Ok(dir)
+}
+
+/// Transport-independent result of [`receive_pack_stream`].
+pub struct PushResult {
+    /// Bytes to send back to the git client (report-status etc.).
+    pub output: Bytes,
+    pub applied: Vec<RefUpdate>,
+    pub requested: Vec<RefUpdate>,
+    pub rejected: Option<String>,
+}
+
 /// `POST git-receive-pack`.
 ///
 /// `authorize` receives the requested ref updates before any data reaches
@@ -343,27 +422,120 @@ where
     F: FnOnce(Vec<RefUpdate>) -> Fut,
     Fut: Future<Output = Result<(), String>>,
 {
-    let dir = store.git_dir(repo_id)?;
-    let mut reader = body_reader(headers, body);
-    let cmds = read_push_commands(&mut reader).await?;
-    const CT: &str = "application/x-git-receive-pack-result";
+    receive_pack_with_policy(store, repo_id, headers, body, |updates| {
+        let fut = authorize(updates);
+        async move { fut.await.map(|()| PushPolicy::default()) }
+    })
+    .await
+}
 
-    if let Err(reason) = authorize(cmds.updates.clone()).await {
-        // Consume the pack so the client sees our report instead of EPIPE.
-        let _ = tokio::io::copy(&mut reader, &mut tokio::io::sink()).await;
-        return Ok(ReceivePackOutcome {
-            response: response(
-                StatusCode::OK,
-                CT,
-                Body::from(rejection_report(&cmds, &reason)),
-            ),
+/// Like [`receive_pack`], but `authorize` may also return a [`PushPolicy`]
+/// that is enforced by a `pre-receive` hook once the pack is received
+/// (force-push and linear-history checks).
+pub async fn receive_pack_with_policy<F, Fut>(
+    store: &RepoStore,
+    repo_id: i64,
+    headers: &HeaderMap,
+    body: Body,
+    authorize: F,
+) -> GitResult<ReceivePackOutcome>
+where
+    F: FnOnce(Vec<RefUpdate>) -> Fut,
+    Fut: Future<Output = Result<PushPolicy, String>>,
+{
+    store.git_dir(repo_id)?;
+    let reader = body_reader(headers, body);
+    let r = receive_pack_stream_with_policy(store, repo_id, reader, authorize).await?;
+    Ok(ReceivePackOutcome {
+        response: response(
+            StatusCode::OK,
+            "application/x-git-receive-pack-result",
+            Body::from(r.output),
+        ),
+        applied: r.applied,
+        requested: r.requested,
+        rejected: r.rejected,
+    })
+}
+
+/// The receive-pack request half shared by HTTP and SSH: read the ref
+/// update commands from `reader`, authorize them, then feed commands and
+/// pack to `git receive-pack --stateless-rpc` and collect its report.
+///
+/// git exits once it has read the pack (which is self-delimiting), so the
+/// reader does not need to reach EOF (SSH clients keep the channel open).
+pub async fn receive_pack_stream<R, F, Fut>(
+    store: &RepoStore,
+    repo_id: i64,
+    reader: R,
+    authorize: F,
+) -> GitResult<PushResult>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    F: FnOnce(Vec<RefUpdate>) -> Fut,
+    Fut: Future<Output = Result<(), String>>,
+{
+    receive_pack_stream_with_policy(store, repo_id, reader, |updates| {
+        let fut = authorize(updates);
+        async move { fut.await.map(|()| PushPolicy::default()) }
+    })
+    .await
+}
+
+/// [`receive_pack_stream`] with a [`PushPolicy`] (see
+/// [`receive_pack_with_policy`]).
+pub async fn receive_pack_stream_with_policy<R, F, Fut>(
+    store: &RepoStore,
+    repo_id: i64,
+    mut reader: R,
+    authorize: F,
+) -> GitResult<PushResult>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    F: FnOnce(Vec<RefUpdate>) -> Fut,
+    Fut: Future<Output = Result<PushPolicy, String>>,
+{
+    let dir = store.git_dir(repo_id)?;
+    let cmds = read_push_commands(&mut reader).await?;
+    if cmds.updates.is_empty() {
+        // Nothing to update (e.g. "Everything up-to-date" over SSH).
+        return Ok(PushResult {
+            output: Bytes::new(),
             applied: vec![],
-            requested: cmds.updates,
-            rejected: Some(reason),
+            requested: vec![],
+            rejected: None,
         });
     }
 
+    let policy = match authorize(cmds.updates.clone()).await {
+        Ok(policy) => policy,
+        Err(reason) => {
+            // Consume the pack so the client sees our report instead of EPIPE
+            // (until EOF, or until the client goes quiet).
+            let mut buf = vec![0u8; 64 * 1024];
+            let idle = std::time::Duration::from_secs(10);
+            while let Ok(Ok(n)) = tokio::time::timeout(idle, reader.read(&mut buf)).await {
+                if n == 0 {
+                    break;
+                }
+            }
+            return Ok(PushResult {
+                output: rejection_report(&cmds, &reason),
+                applied: vec![],
+                requested: cmds.updates,
+                rejected: Some(reason),
+            });
+        }
+    };
+
     let mut c = cmd::git(&store.git_bin, None);
+    if !policy.is_empty() {
+        let hooks = ensure_hooks(store).await?;
+        c.arg("-c")
+            .arg(format!("core.hooksPath={}", hooks.display()))
+            .env("BGH_NO_FF_REFS", policy.no_force_push.join(" "))
+            .env("BGH_LINEAR_REFS", policy.linear_history.join(" "));
+    }
     c.arg("receive-pack")
         .arg("--stateless-rpc")
         .arg(&dir)
@@ -398,7 +570,8 @@ where
         s
     });
     let status = child.wait().await?;
-    let _ = writer.await;
+    // git has read everything it needs; don't wait for the client to close.
+    writer.abort();
     let out = out_task.await.unwrap_or_default();
     let err = err_task.await.unwrap_or_default();
     if !status.success() {
@@ -429,12 +602,96 @@ where
         .map_err(|e| GitError::Object(e.to_string()))??
     };
 
-    Ok(ReceivePackOutcome {
-        response: response(StatusCode::OK, CT, Body::from(out)),
+    Ok(PushResult {
+        output: Bytes::from(out),
         applied,
         requested: cmds.updates,
         rejected: None,
     })
+}
+
+/// Raw ref advertisement of `git <service> --advertise-refs` (no smart-HTTP
+/// `# service=` header), as sent first on an SSH connection.
+pub async fn advertise_refs(
+    store: &RepoStore,
+    repo_id: i64,
+    service: Service,
+    protocol: Option<&str>,
+) -> GitResult<Vec<u8>> {
+    let dir = store.git_dir(repo_id)?;
+    let mut envs: Vec<(&str, &str)> = Vec::new();
+    if let Some(p) = protocol {
+        envs.push(("GIT_PROTOCOL", p));
+    }
+    let dir_s = dir.to_string_lossy().to_string();
+    cmd::run(
+        &store.git_bin,
+        None,
+        &[
+            service.command(),
+            "--stateless-rpc",
+            "--advertise-refs",
+            &dir_s,
+        ],
+        &envs,
+        None,
+    )
+    .await
+}
+
+/// Validate a `GIT_PROTOCOL` value received from a client (SSH env request).
+pub fn valid_protocol(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 256
+        && v.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"=:._-".contains(&b))
+}
+
+/// Run `git upload-pack` (full duplex, not stateless) between `input` and
+/// `output`, as for git over SSH. Returns git's exit code.
+pub async fn upload_pack_duplex<R, W, E>(
+    store: &RepoStore,
+    repo_id: i64,
+    protocol: Option<&str>,
+    mut input: R,
+    mut output: W,
+    mut errors: E,
+) -> GitResult<i32>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    W: tokio::io::AsyncWrite + Send + Unpin,
+    E: tokio::io::AsyncWrite + Send + Unpin,
+{
+    let dir = store.git_dir(repo_id)?;
+    let mut c = cmd::git(&store.git_bin, None);
+    c.arg("upload-pack")
+        .arg(&dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(p) = protocol.filter(|p| valid_protocol(p)) {
+        c.env("GIT_PROTOCOL", p);
+    }
+    let mut child = c.spawn()?;
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = child.stdout.take().expect("stdout");
+    let mut stderr = child.stderr.take().expect("stderr");
+    let feeder = tokio::spawn(async move {
+        let _ = tokio::io::copy(&mut input, &mut stdin).await;
+        let _ = stdin.shutdown().await;
+    });
+    let (out, err) = tokio::join!(
+        tokio::io::copy(&mut stdout, &mut output),
+        tokio::io::copy(&mut stderr, &mut errors)
+    );
+    let _ = output.flush().await;
+    let _ = errors.flush().await;
+    let status = child.wait().await?;
+    feeder.abort();
+    if let Err(e) = out.and(err) {
+        tracing::debug!(?e, "upload-pack: copying output failed");
+    }
+    Ok(status.code().unwrap_or(1))
 }
 
 #[cfg(test)]

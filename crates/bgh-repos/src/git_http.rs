@@ -4,6 +4,9 @@
 //! `Authorization: token|Bearer`. Anonymous callers that need credentials
 //! (private repo, or any push) get `401` + `WWW-Authenticate: Basic` so git
 //! prompts; authenticated callers without access get 404 (read) / 403 (write).
+//!
+//! Wiki repositories (`{repo}.wiki.git` / `{repo}.wiki`) can't be routed
+//! separately by axum, so each handler delegates them to `bgh_wiki::git`.
 
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -12,11 +15,11 @@ use axum::response::{IntoResponse, Response};
 use bgh_core::auth::{self, AuthOptions};
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
-use bgh_git::smart_http::{self, Service};
+use bgh_git::smart_http::{self, PushPolicy, Service};
 use serde::Deserialize;
 
 use crate::jobs::PostReceive;
-use crate::protection;
+use crate::protection::{self, Actor, RepoRules};
 
 const REALM: &str = "Basic realm=\"Better GitHub\"";
 
@@ -87,6 +90,10 @@ pub async fn info_refs(
     Query(q): Query<InfoRefsQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::info_refs(&state, &owner, &repo, q.service.as_deref(), &headers)
+            .await;
+    }
     let service = q
         .service
         .as_deref()
@@ -104,6 +111,9 @@ pub async fn upload_pack(
     Path((owner, repo)): Path<(String, String)>,
     req: Request,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::upload_pack(&state, &owner, &repo, req).await;
+    }
     let (parts, body) = req.into_parts();
     let (access, _) =
         git_access(&state, &parts.headers, &owner, &repo, Service::UploadPack).await?;
@@ -119,20 +129,34 @@ pub async fn receive_pack(
     Path((owner, repo)): Path<(String, String)>,
     req: Request,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::receive_pack(&state, &owner, &repo, req).await;
+    }
     let (parts, body): (_, Body) = req.into_parts();
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;
     let pusher = auth.ok_or_else(|| challenge("Authentication required."))?;
-    let rules = protection::load_rules(&state, access.repo.id).await?;
+    bgh_core::settings::check_push_quota(&state, &access.repo).await?;
+    let rules = RepoRules::load(&state.db, &access.repo).await?;
+    let actor = if rules.is_empty() {
+        None
+    } else {
+        Some(Actor::load(&state, &access, &pusher.user).await?)
+    };
 
-    let outcome = smart_http::receive_pack(
+    let outcome = smart_http::receive_pack_with_policy(
         &crate::store(&state),
         access.repo.id,
         &parts.headers,
         body,
         |updates| {
-            let result = protection::check_push(&rules, &access, &pusher, &updates);
-            async move { result }
+            let (state, rules) = (&state, &rules);
+            async move {
+                match &actor {
+                    None => Ok(PushPolicy::default()),
+                    Some(actor) => protection::authorize_push(state, rules, actor, &updates).await,
+                }
+            }
         },
     )
     .await?;

@@ -116,7 +116,8 @@ export function lockIssue(issue: Issue, reason?: string) {
 ```
 
 * `ops.update(model, id, patch)` — arrays can use `{ $add: [...], $remove: [...] }`
-  so concurrent edits compose; `ops.insert(model, row)` with `tempId()` for
+  so concurrent edits compose; object fields (e.g. `projectItem.values`) can use
+  `{ $merge: { key: value } }` (a `null` value removes the key); `ops.insert(model, row)` with `tempId()` for
   creates; `ops.delete(model, id)`.
 * Returns `{ tx, done }`. You usually ignore `done`; failures roll back and
   toast automatically. Await `done` only for follow-ups (e.g. navigate to a
@@ -201,5 +202,14 @@ Against the real backend (bgh-server on :3000 + `npm run dev`): seed it with
 `node web/scripts/seed-real.mjs` (accounts via `bgh admin`, then REST + git
 push), then `node web/scripts/real-smoke.mjs http://localhost:5173` drives
 the issues UI and verifies every write through REST. Both need
-`DATABASE_URL` and `BGH_BIN`; the smoke test signs in by minting a session
-row and stubs `/_bgh/boot` while the server doesn't serve it.
+`DATABASE_URL` and `BGH_BIN`; the smoke test signs in as `ada` through the
+login form.
+
+## Feature-local sync code
+
+Synced models used only by lazy pages may keep their selectors and mutations
+next to the feature instead of in `sync/selectors.ts` / `sync/mutations.ts`
+(which load on first paint). Projects do this in `sync/projects.ts`. Child
+models whose scope depends on a parent row (project fields/views/items) get
+their scope through the optional `lookup` argument of the schema's `scope`
+function.

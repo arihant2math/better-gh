@@ -18,6 +18,7 @@ import type {
   ViewerRepo,
 } from '../sync/models';
 import { MODEL_NAMES } from '../sync/schema';
+import { seedProjects } from './projects';
 import { Rng, fakeSha, iso } from './rng';
 
 export type Tables = { [M in ModelName]: Map<ID, ModelMap[M]> };
@@ -443,7 +444,9 @@ export function seed(now = Date.now()): MockDb {
   }
 
   showcase(t, viewer, now, id, nextNumber);
-  return { viewerId: viewer.id, tables: t, nextId, nextNumber, viewerReactions: {} };
+  const db: MockDb = { viewerId: viewer.id, tables: t, nextId, nextNumber, viewerReactions: {} };
+  seedProjects(db, now);
+  return db;
 }
 
 /**

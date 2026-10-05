@@ -95,7 +95,8 @@ async fn serves_web_client_with_spa_fallback() {
     for path in ["/", "/alice/repo/issues/1"] {
         let res = app.get(path).send().await;
         res.assert_status(200);
-        assert_eq!(res.header("cache-control"), Some("no-cache"));
+        // The app shell carries per-viewer boot data.
+        assert_eq!(res.header("cache-control"), Some("no-cache, private"));
         assert!(res.text().contains("id=app"));
     }
 

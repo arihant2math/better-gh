@@ -6,9 +6,9 @@
 //   DATABASE_URL=postgres://… BGH_BIN=target/debug/bgh \
 //     node web/scripts/real-smoke.mjs [webUrl=http://localhost:5173] [apiUrl=http://localhost:3000] [shotsDir]
 //
-// The web URL is `npm run dev` (proxying to bgh-server). Signing in: a session
-// row is minted directly in Postgres for `ada` (cookie `bgh_session`), and
-// `/_bgh/boot` is stubbed only while the server doesn't serve it yet.
+// The web URL is `npm run dev` (proxying to bgh-server). Signs in as `ada`
+// (password `password123`, from seed-real.mjs) through the login form; on a
+// server without `/_bgh/auth` it mints a session row and stubs `/_bgh/boot`.
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -27,7 +27,7 @@ const apiBase = process.argv[3] ?? 'http://localhost:3000';
 const shots = process.argv[4];
 if (shots) mkdirSync(shots, { recursive: true });
 const db = process.env.DATABASE_URL;
-if (!db) throw new Error('DATABASE_URL is required (to mint a session)');
+if (!db) throw new Error('DATABASE_URL is required (pins are checked in SQL)');
 const bin = process.env.BGH_BIN ?? 'target/debug/bgh';
 const token = process.env.BGH_TOKEN ?? execFileSync(bin, ['admin', 'create-token', '--user', 'ada', '--scopes', 'repo', '--name', 'real-smoke'], { encoding: 'utf8' }).trim().split(/\s+/).pop();
 
@@ -65,25 +65,36 @@ async function eventually(fn, ms = 6000) {
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
-const sess = `smoke${randomBytes(16).toString('hex')}`;
-const viewerId = Number(psql(`INSERT INTO sessions (token_hash, user_id, expires_at) SELECT '${createHash('sha256').update(sess).digest('hex')}', id, now() + interval '1 day' FROM users WHERE login = 'ada' RETURNING user_id`).split('\n')[0]);
-await ctx.addCookies([{ name: 'bgh_session', value: sess, domain: new URL(web).hostname, path: '/' }]);
-const boot = () => ({
-  user: { id: viewerId, login: 'ada', name: null, avatarUrl: '' },
-  csrf: 'smoke',
-  config: { siteName: 'Better GitHub', signupEnabled: true, version: 'dev' },
-  ts: new Date().toISOString().replace(/\.\d+Z/, 'Z'),
-});
-await ctx.addInitScript((b) => {
-  if (!window.__BGH_BOOT__) window.__BGH_BOOT__ = b;
-}, boot());
-await ctx.route('**/_bgh/boot', async (route) => {
-  const res = await route.fetch().catch(() => null);
-  if (res && res.ok()) return route.fulfill({ response: res });
-  return route.fulfill({ json: boot() });
-});
+
+/** Sign in as ada through the real login form; falls back to minting a session (servers without /_bgh/auth). */
+async function signIn(page) {
+  const probe = await fetch(`${apiBase}/_bgh/boot`).catch(() => null);
+  if (probe && probe.ok) {
+    await page.goto(`${web}/`);
+    await page.getByLabel('Username or email address').fill('ada');
+    await page.getByLabel('Password').fill('password123');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForSelector('[aria-label=Sidebar]', { timeout: 15000 });
+    return 'login form';
+  }
+  const sess = `smoke${randomBytes(16).toString('hex')}`;
+  const viewerId = Number(psql(`INSERT INTO sessions (token_hash, user_id, expires_at) SELECT '${createHash('sha256').update(sess).digest('hex')}', id, now() + interval '1 day' FROM users WHERE login = 'ada' RETURNING user_id`).split('\n')[0]);
+  await ctx.addCookies([{ name: 'bgh_session', value: sess, domain: new URL(web).hostname, path: '/' }]);
+  const boot = () => ({
+    user: { id: viewerId, login: 'ada', name: null, avatarUrl: '' },
+    csrf: 'smoke',
+    config: { siteName: 'Better GitHub', signupEnabled: true, version: 'dev' },
+    ts: new Date().toISOString().replace(/\.\d+Z/, 'Z'),
+  });
+  await ctx.addInitScript((b) => {
+    if (!window.__BGH_BOOT__) window.__BGH_BOOT__ = b;
+  }, boot());
+  await ctx.route('**/_bgh/boot', (route) => route.fulfill({ json: boot() }));
+  return 'minted session';
+}
 
 const page = await ctx.newPage();
+console.log(`signed in via ${await signIn(page)}`);
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 const go = async (path) => {

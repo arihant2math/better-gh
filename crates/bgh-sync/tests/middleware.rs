@@ -19,8 +19,8 @@ async fn client_tx_is_recorded_and_sync_id_returned() {
         .send()
         .await;
     res.assert_status(201);
-    // bgh-issues' default labels are written by an event listener after the
-    // request (no tx), so leave them out.
+    // Default labels are added afterwards by a bgh-issues event listener (in
+    // their own transaction, no client tx): ignore those rows.
     let max = scalar(
         &app,
         "SELECT max(id) FROM sync_actions WHERE model <> 'label'",

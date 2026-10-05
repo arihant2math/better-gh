@@ -340,6 +340,8 @@ pub async fn delete(
     access.require(Permission::Write)?;
     access.require_not_archived()?;
     let m = find(&state.db, access.repo.id, number).await?;
+    // GitHub REST JSON as it was before deletion (webhook payloads).
+    let milestone = serde_json::to_value(render(&state, &access, m.clone()).await?)?;
     let mut tx = Tx::begin(&state).await?;
     let issue_ids: Vec<i64> = sqlx::query_scalar(
         "UPDATE issues SET milestone_id = NULL WHERE milestone_id = $1 RETURNING id",
@@ -369,6 +371,7 @@ pub async fn delete(
         number: m.number,
         title: m.title.clone(),
         actor_id: auth.user.id,
+        milestone,
     });
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

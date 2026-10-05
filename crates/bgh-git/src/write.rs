@@ -85,7 +85,7 @@ fn validate_path(path: &str) -> GitResult<()> {
         || path
             .split('/')
             .any(|c| c.is_empty() || c == "." || c == ".." || c == ".git")
-        || path.contains('\0');
+        || path.contains(['\0', '\n']);
     if bad {
         Err(GitError::InvalidInput(format!("invalid path {path:?}")))
     } else {
@@ -150,12 +150,15 @@ pub async fn commit_changes(
                     .await?;
                 }
                 FileChange::Delete { path } => {
+                    // `--force-remove` needs a work tree; an `--index-info`
+                    // line with mode 0 removes the entry in a bare repo.
+                    let line = format!("0 {ZERO_SHA}\t{path}\n");
                     cmd::run(
                         bin,
                         Some(&dir),
-                        &["update-index", "--force-remove", "--", path],
+                        &["update-index", "--index-info"],
                         &idx_env,
-                        None,
+                        Some(line.as_bytes()),
                     )
                     .await?;
                 }
