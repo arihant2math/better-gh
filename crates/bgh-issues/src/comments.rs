@@ -282,6 +282,7 @@ pub async fn update(
         issue_id: c.issue_id,
         comment_id: c.id,
         actor_id: auth.user.id,
+        changes: serde_json::json!({ "body": { "from": old.body } }),
     });
     tx.commit().await?;
     let mut out = json::comments(&state, fmt, &[c], &json::repo_map(&access)).await?;
@@ -298,6 +299,18 @@ pub async fn delete(
     access.require_not_archived()?;
     let c = find(&state.db, access.repo.id, id).await?;
     require_comment_owner(&access, &c, &auth.user)?;
+    // Webhook `deleted` payloads carry the full comment: snapshot it first.
+    let snapshot = json::comments(
+        &state,
+        BodyFormat::default(),
+        std::slice::from_ref(&c),
+        &json::repo_map(&access),
+    )
+    .await?
+    .pop()
+    .map(serde_json::to_value)
+    .transpose()?
+    .unwrap_or_default();
     let mut tx = Tx::begin(&state).await?;
     service::lock_issue(&mut tx, c.issue_id).await?;
     sqlx::query("DELETE FROM comments WHERE id = $1")
@@ -320,6 +333,7 @@ pub async fn delete(
         issue_id: c.issue_id,
         comment_id: c.id,
         actor_id: auth.user.id,
+        comment: snapshot,
     });
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

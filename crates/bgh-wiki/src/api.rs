@@ -330,6 +330,39 @@ async fn commit(
     })
 }
 
+/// Announce a page write (GitHub's `gollum` webhook, activity `GollumEvent`).
+/// The write is a git commit, not a database transaction, so the event is
+/// emitted directly (still durable through the outbox writer).
+fn gollum(
+    state: &AppState,
+    w: &WikiAccess,
+    user: &db::User,
+    action: &str,
+    slug: &str,
+    sha: &str,
+    summary: Option<&str>,
+) {
+    let html_url = format!(
+        "{}/wiki/{}",
+        state
+            .urls
+            .repo_html(&w.access.owner.login, &w.access.repo.name),
+        bgh_core::urls::encode_path(slug)
+    );
+    state.events.emit(Event::WikiPagesUpdated {
+        repo_id: w.repo_id(),
+        actor_id: user.id,
+        pages: serde_json::json!([{
+            "page_name": slug,
+            "title": pages::title_of(slug),
+            "summary": summary,
+            "action": action,
+            "sha": sha,
+            "html_url": html_url,
+        }]),
+    });
+}
+
 struct LoadedPage {
     pages: Vec<PageFile>,
     page: PageFile,
@@ -535,11 +568,13 @@ pub async fn create_page(
     if pages::find(&tip.pages, &slug).is_some() {
         return Err(already_exists());
     }
+    let summary = body.message.clone().filter(|m| !m.trim().is_empty());
     let message = message_or(body.message, || {
         format!("Created {} (markdown)", pages::title_of(&slug))
     });
     let changes = [FileChange::write(format!("{slug}.md"), content)];
     let sha = commit(&state, &w, &tip, &changes, &message, user).await?;
+    gollum(&state, &w, user, "created", &slug, &sha, summary.as_deref());
     let page = page_json(&state, &w, Some(sha), slug).await?;
     Ok((StatusCode::CREATED, Json(page)))
 }
@@ -624,10 +659,20 @@ pub async fn update_page(
         });
     }
     changes.push(FileChange::write(new_path, content));
+    let summary = body.message.clone().filter(|m| !m.trim().is_empty());
     let message = message_or(body.message, || {
         format!("Updated {} ({})", pages::title_of(&target), page.format)
     });
     let sha = commit(&state, &w, &tip, &changes, &message, user).await?;
+    gollum(
+        &state,
+        &w,
+        user,
+        "edited",
+        &target,
+        &sha,
+        summary.as_deref(),
+    );
     Ok(Json(page_json(&state, &w, Some(sha), target).await?))
 }
 
@@ -655,13 +700,23 @@ pub async fn delete_page(
     let page = pages::find(&tip.pages, &slug)
         .cloned()
         .ok_or(ApiError::NotFound)?;
+    let summary = body.message.clone().filter(|m| !m.trim().is_empty());
     let message = message_or(body.message, || {
         format!("Destroyed {} ({})", page.title(), page.format)
     });
     let changes = [FileChange::Delete {
         path: page.path.clone(),
     }];
-    commit(&state, &w, &tip, &changes, &message, user).await?;
+    let sha = commit(&state, &w, &tip, &changes, &message, user).await?;
+    gollum(
+        &state,
+        &w,
+        user,
+        "deleted",
+        &page.slug,
+        &sha,
+        summary.as_deref(),
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -833,10 +888,20 @@ pub async fn revert_page(
         });
     }
     changes.push(FileChange::write(old.path.clone(), old_data));
+    let summary = body.message.clone().filter(|m| !m.trim().is_empty());
     let message = message_or(body.message, || {
         format!("Reverted {} to {}", old.title(), &reverted[..7])
     });
     let sha = commit(&state, &w, &tip, &changes, &message, user).await?;
+    gollum(
+        &state,
+        &w,
+        user,
+        "edited",
+        &old.slug,
+        &sha,
+        summary.as_deref(),
+    );
     Ok(Json(page_json(&state, &w, Some(sha), old.slug).await?))
 }
 
