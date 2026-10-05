@@ -176,6 +176,15 @@
   margin-top: 10px;
 }
 
+.opStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 0;
+  font-size: 13px;
+}
+
 .opButtons {
   display: flex;
   flex-wrap: wrap;

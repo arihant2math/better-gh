@@ -21,6 +21,7 @@ import {
   LinkExternalIcon,
   LockIcon,
   PencilIcon,
+  RepoForkedIcon,
   RepoIcon,
   SyncIcon,
   ToolsIcon,
@@ -32,10 +33,13 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
 import { DetailSkeleton, MAINTENANCE_OPS, NotFound, VisibilityPill, isNotFound, isValidLogin, modalOpen, usePrompt } from './detail';
+import { NetworkRole } from './GitMaintenancePage';
 import {
   deleteRepo,
+  detachFork,
   getRepo,
   listMaintenance,
+  pruneNow,
   runMaintenance,
   transferRepo,
   updateRepo,
@@ -321,7 +325,7 @@ function RepoDetailView({ owner, name, data }: { owner: string; name: string; da
             />
           </Panel>
 
-          <MaintenancePanel owner={owner} name={name} onFinished={() => void refresh(key, () => getRepo(owner, name)).catch(() => undefined)} />
+          <MaintenancePanel owner={owner} name={name} detail={data} onFinished={() => void refresh(key, () => getRepo(owner, name)).catch(() => undefined)} />
         </div>
 
         <div className={styles.stack}>
@@ -591,7 +595,7 @@ function runDuration(run: MaintenanceRun): string {
   return formatDuration((end - new Date(run.started_at).getTime()) / 1000);
 }
 
-function MaintenancePanel({ owner, name, onFinished }: { owner: string; name: string; onFinished: () => void }) {
+function MaintenancePanel({ owner, name, detail, onFinished }: { owner: string; name: string; detail: RepoDetail; onFinished: () => void }) {
   const key = runsKey(owner, name);
   const loader = () => listMaintenance(owner, name);
   const { data: runs, error, loading } = useResource(key, loader, { ttlMs: POLL_MS });
@@ -612,6 +616,47 @@ function MaintenancePanel({ owner, name, onFinished }: { owner: string; name: st
     const id = setInterval(() => void refresh(key, () => listMaintenance(owner, name)).catch(() => undefined), POLL_MS);
     return () => clearInterval(id);
   }, [active, key, owner, name]);
+
+  const confirm = useConfirm();
+  const network = detail.network ?? { has_alternates: false, has_dependents: false };
+  const status = detail.git_maintenance ?? null;
+  const inNetwork = !!detail.parent || network.has_alternates;
+  const prepend = (run: MaintenanceRun) => mutate<MaintenanceRun[]>(key, (prev) => [run, ...(prev ?? []).filter((x) => x.id !== run.id)]);
+
+  const prune = () =>
+    confirm({
+      title: 'Prune unreachable objects now?',
+      body: (
+        <>
+          Deletes every object no ref of <strong>{`${owner}/${name}`}</strong> reaches, skipping the grace period. Objects of a push in progress can be lost. The run is recorded
+          in the audit log.
+        </>
+      ),
+      confirmText: name,
+      confirmLabel: 'Prune now',
+      danger: true,
+      onConfirm: async () => {
+        prepend(await pruneNow(owner, name));
+        toast({ kind: 'success', title: 'Scheduled prune' });
+      },
+    });
+
+  const detach = () =>
+    confirm({
+      title: 'Leave the fork network?',
+      body: (
+        <>
+          <strong>{`${owner}/${name}`}</strong> stops being a fork{detail.parent ? <> of {detail.parent}</> : null}: it copies every object it borrows and no longer shares
+          storage. Its own forks follow it. This can’t be undone.
+        </>
+      ),
+      confirmLabel: 'Leave fork network',
+      danger: true,
+      onConfirm: async () => {
+        prepend(await detachFork(owner, name));
+        toast({ kind: 'success', title: 'Leaving the fork network' });
+      },
+    });
 
   const start = async (op: MaintenanceOp) => {
     setPending(op);
@@ -636,13 +681,47 @@ function MaintenancePanel({ owner, name, onFinished }: { owner: string; name: st
         </Button>
       }
     >
+      <div className={d.opStatus}>
+        <NetworkRole hasAlternates={network.has_alternates} hasDependents={network.has_dependents} />
+        {status ? (
+          <span className={styles.subtle} title={status.error ?? undefined}>
+            Scheduled: {status.status}
+            {status.last_run_at && (
+              <>
+                {' '}
+                <RelativeTime date={status.last_run_at} />
+              </>
+            )}
+            {' · '}
+            {formatCount(status.pack_count)} packs · {formatCount(status.loose_count)} loose
+          </span>
+        ) : (
+          <span className={styles.subtle}>Not yet picked up by scheduled maintenance</span>
+        )}
+      </div>
       <div className={d.opButtons}>
         {MAINTENANCE_OPS.map((op) => (
           <Button key={op.id} size="sm" leadingIcon={ToolsIcon} title={op.description} loading={pending === op.id} disabled={pending !== null} onClick={() => void start(op.id)}>
             {op.label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant="danger"
+          leadingIcon={TrashIcon}
+          disabled={network.has_dependents || pending !== null}
+          title={network.has_dependents ? 'Forks borrow objects from this repository; pruning is not allowed.' : 'Delete unreachable objects now, without the grace period.'}
+          onClick={prune}
+        >
+          Prune now…
+        </Button>
+        {inNetwork && (
+          <Button size="sm" leadingIcon={RepoForkedIcon} disabled={pending !== null} onClick={detach} title="Make this repository self-contained and detach it from its parent.">
+            Leave fork network…
+          </Button>
+        )}
       </div>
+      {confirm.dialog}
       {!runs ? (
         loading ? (
           <div className={d.emptyRow}>

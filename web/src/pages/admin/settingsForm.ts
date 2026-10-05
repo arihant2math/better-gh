@@ -7,7 +7,8 @@
 import { fromLocalInput, toLocalInput } from '../../components/admin/format';
 import { REDACTED, type OidcProvider, type SiteSettings, type Visibility, type patchSettings } from './api';
 
-export type SectionKey = keyof SiteSettings;
+/** Sections of the settings page (`git_maintenance` has its own page). */
+export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
 
 export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'signup', title: 'Sign-up', anchor: 'signup' },

@@ -260,6 +260,13 @@ pub async fn dissociate(state: &AppState, repo_id: i64) -> anyhow::Result<()> {
             .await;
     lock.release().await;
     res?;
+    // A full repack happened: refresh the recorded state.
+    let dir = store.path(repo_id);
+    let stats = bgh_git::maintenance::object_stats(&store.git_bin, &dir)
+        .await
+        .unwrap_or_default();
+    let role = network_role(state, repo_id).await?;
+    record(state, repo_id, "succeeded", None, stats, role, true).await?;
     Ok(())
 }
 
