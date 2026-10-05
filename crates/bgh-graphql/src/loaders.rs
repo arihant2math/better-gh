@@ -72,6 +72,7 @@ pub struct Loaders {
     pub release_assets: DataLoader<ReleaseAssetsLoader>,
     pub review_comments: DataLoader<ReviewCommentsLoader>,
     pub closing_issues: DataLoader<ClosingIssuesLoader>,
+    pub closed_by_pulls: DataLoader<ClosedByPullsLoader>,
     pub associations: DataLoader<AssociationLoader>,
     pub git_refs: DataLoader<crate::model::git::RefLoader>,
     pub commits: DataLoader<crate::model::git::CommitLoader>,
@@ -108,7 +109,14 @@ impl Loaders {
             latest_release: DataLoader::new(LatestReleaseLoader(s()), tokio::spawn),
             release_assets: DataLoader::new(ReleaseAssetsLoader(s()), tokio::spawn),
             review_comments: DataLoader::new(ReviewCommentsLoader(s()), tokio::spawn),
-            closing_issues: DataLoader::new(ClosingIssuesLoader(s()), tokio::spawn),
+            closing_issues: DataLoader::new(
+                ClosingIssuesLoader { state: s(), viewer },
+                tokio::spawn,
+            ),
+            closed_by_pulls: DataLoader::new(
+                ClosedByPullsLoader { state: s(), viewer },
+                tokio::spawn,
+            ),
             associations: DataLoader::new(AssociationLoader(s()), tokio::spawn),
             git_refs: DataLoader::new(crate::model::git::RefLoader(s()), tokio::spawn),
             commits: DataLoader::new(crate::model::git::CommitLoader(s()), tokio::spawn),
@@ -346,75 +354,89 @@ impl Loader<i64> for MilestoneLoader {
     }
 }
 
-/// Issues a pull request closes (closing keywords in its body).
-pub struct ClosingIssuesLoader(AppState);
+/// Issues a pull request closes on merge (`issue_pr_links`: closing
+/// keywords in its body and manual links), readable by the viewer.
+pub struct ClosingIssuesLoader {
+    state: AppState,
+    viewer: Option<i64>,
+}
+
+/// Pull requests that close an issue on merge, readable by the viewer.
+pub struct ClosedByPullsLoader {
+    state: AppState,
+    viewer: Option<i64>,
+}
+
+/// `(key, linked issue)` pairs of `issue_pr_links`, keyed by `key_col`
+/// (`pull_id` or `issue_id`), dropping rows in repositories the viewer
+/// can't read.
+async fn linked_issues(
+    state: &AppState,
+    viewer: Option<i64>,
+    keys: &[i64],
+    key_col: &str,
+    other_col: &str,
+) -> Result<HashMap<i64, Arc<Vec<db::Issue>>>, Arc<ApiError>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        key: i64,
+        #[sqlx(flatten)]
+        issue: db::Issue,
+    }
+    let rows: Vec<Row> = sqlx::query_as(&format!(
+        "SELECT k.{key_col} AS key, {} FROM issue_pr_links k
+           JOIN issues i ON i.id = k.{other_col}
+          WHERE k.{key_col} = ANY($1)
+          ORDER BY k.created_at, i.id",
+        db::prefixed("i", db::Issue::COLUMNS)
+    ))
+    .bind(keys)
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+    let mut repo_ids: Vec<i64> = rows.iter().map(|r| r.issue.repo_id).collect();
+    repo_ids.sort_unstable();
+    repo_ids.dedup();
+    let repos: Vec<db::Repository> = sqlx::query_as(&format!(
+        "SELECT {} FROM repositories WHERE id = ANY($1)",
+        db::Repository::COLUMNS
+    ))
+    .bind(&repo_ids)
+    .fetch_all(&state.db)
+    .await
+    .map_err(db_err)?;
+    let perms = bgh_core::perms::repo_permissions(&state.db, viewer, &repos)
+        .await
+        .map_err(db_err)?;
+    let mut out: HashMap<i64, Vec<db::Issue>> = keys.iter().map(|k| (*k, vec![])).collect();
+    for r in rows {
+        if perms
+            .get(&r.issue.repo_id)
+            .is_some_and(|p| *p >= Permission::Read)
+            && let Some(v) = out.get_mut(&r.key)
+        {
+            v.push(r.issue);
+        }
+    }
+    Ok(out.into_iter().map(|(k, v)| (k, Arc::new(v))).collect())
+}
 
 impl Loader<i64> for ClosingIssuesLoader {
     type Value = Arc<Vec<db::Issue>>;
     type Error = Arc<ApiError>;
 
     async fn load(&self, keys: &[i64]) -> LResult<i64, Self::Value> {
-        // Parse closing keywords (`fixes #12`) from PR bodies; same-repo only.
-        let prs: Vec<(i64, i64, Option<String>)> =
-            sqlx::query_as("SELECT id, repo_id, body FROM issues WHERE id = ANY($1)")
-                .bind(keys)
-                .fetch_all(&self.0.db)
-                .await
-                .map_err(db_err)?;
-        let mut wanted: Vec<(i64, i64, i64)> = vec![];
-        for (id, repo_id, body) in &prs {
-            for n in closing_numbers(body.as_deref().unwrap_or("")) {
-                wanted.push((*id, *repo_id, n));
-            }
-        }
-        let mut out: HashMap<i64, Vec<db::Issue>> = keys.iter().map(|k| (*k, vec![])).collect();
-        if !wanted.is_empty() {
-            let repo_ids: Vec<i64> = wanted.iter().map(|w| w.1).collect();
-            let numbers: Vec<i64> = wanted.iter().map(|w| w.2).collect();
-            let rows: Vec<db::Issue> = sqlx::query_as(&format!(
-                "SELECT {} FROM issues i
-                  WHERE NOT i.is_pull_request
-                    AND (i.repo_id, i.number) IN (SELECT * FROM unnest($1::bigint[], $2::bigint[]))",
-                db::prefixed("i", db::Issue::COLUMNS)
-            ))
-            .bind(&repo_ids)
-            .bind(&numbers)
-            .fetch_all(&self.0.db)
-            .await
-            .map_err(db_err)?;
-            for (pr, repo_id, n) in wanted {
-                if let Some(i) = rows.iter().find(|i| i.repo_id == repo_id && i.number == n)
-                    && let Some(v) = out.get_mut(&pr)
-                    && !v.iter().any(|x| x.id == i.id)
-                {
-                    v.push(i.clone());
-                }
-            }
-        }
-        Ok(out.into_iter().map(|(k, v)| (k, Arc::new(v))).collect())
+        linked_issues(&self.state, self.viewer, keys, "pull_id", "issue_id").await
     }
 }
 
-/// `#n` references preceded by a GitHub closing keyword.
-pub fn closing_numbers(body: &str) -> Vec<i64> {
-    const KEYWORDS: &[&str] = &[
-        "close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved",
-    ];
-    let words: Vec<&str> = body.split_whitespace().collect();
-    let mut out = vec![];
-    for pair in words.windows(2) {
-        let kw = pair[0].trim_end_matches(':').to_ascii_lowercase();
-        if KEYWORDS.contains(&kw.as_str())
-            && let Some(n) = pair[1]
-                .trim_end_matches(|c: char| !c.is_ascii_digit())
-                .strip_prefix('#')
-                .and_then(|n| n.parse::<i64>().ok())
-            && !out.contains(&n)
-        {
-            out.push(n);
-        }
+impl Loader<i64> for ClosedByPullsLoader {
+    type Value = Arc<Vec<db::Issue>>;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[i64]) -> LResult<i64, Self::Value> {
+        linked_issues(&self.state, self.viewer, keys, "issue_id", "pull_id").await
     }
-    out
 }
 
 // ---------------------------------------------------------------------------

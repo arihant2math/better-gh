@@ -759,6 +759,69 @@ export class MockServer implements Transport {
     };
     R('PUT', '/_bgh/repos/:owner/:repo/issues/:number/pin', (ctx) => pin(ctx, true));
     R('DELETE', '/_bgh/repos/:owner/:repo/issues/:number/pin', (ctx) => pin(ctx, false));
+    // ---------------- issue ↔ pull request links (P4; all mock links are manual)
+    const linkItem = (i: Issue) => {
+      const r = this.db.tables.repo.get(i.repoId)!;
+      return {
+        id: i.id,
+        repoId: i.repoId,
+        repository: `${r.owner}/${r.name}`,
+        number: i.number,
+        title: i.title,
+        state: i.state,
+        stateReason: i.stateReason,
+        isPr: i.isPr,
+        draft: !!i.draft,
+        merged: !!i.merged,
+        htmlUrl: `/${r.owner}/${r.name}/${i.isPr ? 'pull' : 'issues'}/${i.number}`,
+        source: 'manual',
+        createdAt: i.createdAt,
+      };
+    };
+    const setLink = (issue: Issue, pr: Issue, on: boolean) => {
+      const has = (issue.linkedPullIds ?? []).includes(pr.id);
+      if (has === on) return false;
+      const without = <T,>(xs: T[] | undefined, x: T) => (xs ?? []).filter((y) => y !== x);
+      this.put('issue', { ...issue, linkedPullIds: on ? [...(issue.linkedPullIds ?? []), pr.id] : without(issue.linkedPullIds, pr.id) });
+      this.put('issue', { ...pr, closingIssueIds: on ? [...(pr.closingIssueIds ?? []), issue.id] : without(pr.closingIssueIds, issue.id) });
+      const src = (x: Issue) => {
+        const r = this.db.tables.repo.get(x.repoId)!;
+        return { sourceIssueId: x.id, sourceNumber: x.number, sourceRepository: `${r.owner}/${r.name}`, sourceIsPr: x.isPr };
+      };
+      this.event(issue, on ? 'connected' : 'disconnected', src(pr));
+      this.event(pr, on ? 'connected' : 'disconnected', src(issue));
+      return true;
+    };
+    R('GET', '/_bgh/repos/:owner/:repo/issues/:number/links', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, here] = r;
+      const ids = (here.isPr ? here.closingIssueIds : here.linkedPullIds) ?? [];
+      const links = ids.map((id) => this.db.tables.issue.get(id)).filter((i): i is Issue => !!i).map(linkItem);
+      return { status: 200, body: { links, branches: [] } };
+    });
+    R('POST', '/_bgh/repos/:owner/:repo/issues/:number/links', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [repo, here] = r;
+      const [o, n] = String(ctx.body.repository ?? `${repo.owner}/${repo.name}`).split('/');
+      const otherRepo = this.repo(o ?? '', n ?? '');
+      const there = otherRepo && this.issue(otherRepo, Number(ctx.body.number));
+      if (!there) return { status: 404, body: { message: 'Not Found' } };
+      if (there.isPr === here.isPr) return { status: 422, body: { message: 'An issue can only be linked to a pull request' } };
+      const [issue, pr] = here.isPr ? [there, here] : [here, there];
+      const created = setLink(issue, pr, true);
+      return { status: created ? 201 : 200, body: linkItem(there) };
+    });
+    R('DELETE', '/_bgh/repos/:owner/:repo/issues/:number/links/:id', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, here] = r;
+      const there = this.db.tables.issue.get(Number(ctx.m[4]));
+      if (!there) return { status: 404, body: { message: 'Not Found' } };
+      const [issue, pr] = here.isPr ? [there, here] : [here, there];
+      return setLink(issue, pr, false) ? { status: 204 } : { status: 404, body: { message: 'Not Found' } };
+    });
     R('POST', '/api/v3/repos/:owner/:repo/issues/:number/transfer', (ctx) => {
       const r = issueOr404(ctx);
       if (isResp(r)) return r;
@@ -1022,6 +1085,16 @@ export class MockServer implements Transport {
       this.event(pr, 'merged', { commitId: sha });
       this.put('issue', { ...pr, merged: true, mergedAt: now, mergedById: this.db.viewerId, state: 'closed', closedAt: now, updatedAt: now, mergeable: null });
       this.bumpCounts(repo, pr, -1);
+      // Linked issues close when merging into the default branch (P4).
+      if (!pr.baseRef || pr.baseRef === repo.defaultBranch) {
+        for (const id of pr.closingIssueIds ?? []) {
+          const issue = this.db.tables.issue.get(id);
+          if (!issue || issue.state !== 'open') continue;
+          this.put('issue', { ...issue, state: 'closed', stateReason: 'completed', closedAt: now, updatedAt: now });
+          this.bumpCounts(this.db.tables.repo.get(issue.repoId)!, issue, -1);
+          this.event(issue, 'closed', { stateReason: 'completed', commitId: sha, sourceIssueId: pr.id, sourceNumber: pr.number, sourceRepository: `${repo.owner}/${repo.name}`, sourceIsPr: true });
+        }
+      }
       return { status: 200, body: { sha, merged: true, message: 'Pull Request successfully merged' } };
     });
     for (const [action, draft] of [['ready_for_review', false], ['convert_to_draft', true]] as const) {

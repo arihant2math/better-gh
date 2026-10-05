@@ -12,6 +12,7 @@ import type {
   FilePatch,
   HighlightedBlob,
   History,
+  IssueLinks,
   MergeUpstreamResult,
   RestCheckRun,
   LastCommits,
@@ -263,3 +264,8 @@ export const browseKeys = {
   blob: (owner: string, repo: string, ref: string, path: string) => `blob:${owner}/${repo}@${ref}:${path}`,
   lastCommit: (owner: string, repo: string, ref: string, path: string) => `last-commit:${owner}/${repo}@${ref}:${path}`,
 };
+
+/** Linked pull requests (of an issue) or issues (of a PR), plus linked branches. */
+export function getIssueLinks(owner: string, repo: string, number: number): Promise<IssueLinks> {
+  return api.get<IssueLinks>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/links`);
+}

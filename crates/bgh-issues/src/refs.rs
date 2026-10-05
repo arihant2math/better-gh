@@ -236,21 +236,96 @@ const CLOSING: [&str; 9] = [
 /// Issue numbers in a commit message preceded by a closing keyword
 /// (`Fixes #12`, `closes: #3`), same-repository references only.
 pub fn closing_refs(message: &str) -> Vec<i64> {
-    let mut out = Vec::new();
-    let words: Vec<&str> = message.split_whitespace().collect();
+    closing_issue_refs(message, "")
+        .into_iter()
+        .filter(|r| r.owner.is_none())
+        .map(|r| r.number)
+        .collect()
+}
+
+/// Issues referenced with a closing keyword (close(s|d), fix(es|ed),
+/// resolve(s|d), case-insensitive, optional `:`), in order of appearance,
+/// deduplicated. Reference forms: `#12`, `owner/repo#12` and full issue
+/// URLs on this instance (`{base_url}/owner/repo/issues/12`). Fenced code
+/// blocks and inline code spans are ignored.
+pub fn closing_issue_refs(text: &str, base_url: &str) -> Vec<IssueRef> {
+    let mut out: Vec<IssueRef> = Vec::new();
+    let mut words: Vec<&str> = Vec::new();
+    let mut fenced = false;
+    for line in text.lines() {
+        let t = line.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced {
+            continue;
+        }
+        // Odd segments between backticks are inline code.
+        for (i, part) in line.split('`').enumerate() {
+            if i % 2 == 0 {
+                words.extend(part.split_whitespace());
+            }
+        }
+    }
+    let base = base_url.trim_end_matches('/');
     for w in words.windows(2) {
         let kw = w[0].trim_end_matches(':').to_ascii_lowercase();
         if !CLOSING.contains(&kw.as_str()) {
             continue;
         }
-        let target = w[1].trim_end_matches(['.', ',', ';', ')', '!']);
-        if let Some(n) = target.strip_prefix('#').and_then(|n| n.parse::<i64>().ok())
-            && !out.contains(&n)
+        let target = w[1]
+            .trim_start_matches(['(', '<', '['])
+            .trim_end_matches(['.', ',', ';', ':', ')', '!', '?', '>', ']']);
+        if let Some(r) = parse_closing_target(target, base)
+            && !out.contains(&r)
         {
-            out.push(n);
+            out.push(r);
         }
     }
     out
+}
+
+fn parse_closing_target(target: &str, base: &str) -> Option<IssueRef> {
+    let valid_name = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    };
+    if !base.is_empty()
+        && let Some(rest) = target.strip_prefix(base)
+    {
+        let rest = rest.split(['#', '?']).next().unwrap_or("");
+        let parts: Vec<&str> = rest.trim_start_matches('/').split('/').collect();
+        if parts.len() == 4 && parts[2] == "issues" && valid_name(parts[0]) && valid_name(parts[1])
+        {
+            let number = parts[3].parse::<i64>().ok().filter(|n| *n > 0)?;
+            return Some(IssueRef {
+                owner: Some(parts[0].to_string()),
+                repo: Some(parts[1].to_string()),
+                number,
+            });
+        }
+        return None;
+    }
+    let (path, num) = target.split_once('#')?;
+    let number = num.parse::<i64>().ok().filter(|n| *n > 0)?;
+    if path.is_empty() {
+        return Some(IssueRef {
+            owner: None,
+            repo: None,
+            number,
+        });
+    }
+    let (owner, repo) = path.split_once('/')?;
+    if !valid_name(owner) || !valid_name(repo) {
+        return None;
+    }
+    Some(IssueRef {
+        owner: Some(owner.to_string()),
+        repo: Some(repo.to_string()),
+        number,
+    })
 }
 
 /// Listener for [`Event::Push`]: `referenced` events for issues mentioned
@@ -410,5 +485,32 @@ mod tests {
             vec![12, 3]
         );
         assert!(super::closing_refs("refs #5").is_empty());
+    }
+
+    #[test]
+    fn closing_reference_forms() {
+        use bgh_core::markdown::IssueRef;
+        let r = |o: Option<&str>, n: Option<&str>, number| IssueRef {
+            owner: o.map(String::from),
+            repo: n.map(String::from),
+            number,
+        };
+        let refs = super::closing_issue_refs(
+            "Fixes #12, closes other/repo#3, resolves https://h.test/o/r/issues/4.\n\
+             Resolved: #12 FIXED #5 fix https://h.test/o/r/pull/6 close https://elsewhere/o/r/issues/7\n\
+             `fixes #8` and\n```\ncloses #9\n```\nCloses (#10)",
+            "https://h.test/",
+        );
+        assert_eq!(
+            refs,
+            vec![
+                r(None, None, 12),
+                r(Some("other"), Some("repo"), 3),
+                r(Some("o"), Some("r"), 4),
+                r(None, None, 5),
+                r(None, None, 10),
+            ]
+        );
+        assert!(super::closing_issue_refs("fixes #0 closes a b/c#x", "").is_empty());
     }
 }
