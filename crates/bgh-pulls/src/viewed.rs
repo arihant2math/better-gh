@@ -122,7 +122,7 @@ pub async fn states(
 }
 
 /// Mark `path` viewed for `user` at `blob_sha` (default: the file's blob in
-/// the current PR diff; 422 when the path is not part of it).
+/// the current PR diff). The path must be part of the PR diff (422).
 pub async fn mark(
     state: &AppState,
     access: &RepoAccess,
@@ -131,6 +131,12 @@ pub async fn mark(
     path: &str,
     blob_sha: Option<&str>,
 ) -> ApiResult<ViewedFile> {
+    let current = current_blobs(state, pull)
+        .await?
+        .remove(path)
+        .ok_or_else(|| {
+            ApiError::unprocessable(format!("{path} is not part of the pull request diff"))
+        })?;
     let blob = match blob_sha.filter(|s| !s.is_empty()) {
         Some(s) if bgh_git::is_sha(s) => s.to_ascii_lowercase(),
         Some(_) => {
@@ -139,12 +145,7 @@ pub async fn mark(
                 "blob_sha",
             )));
         }
-        None => current_blobs(state, pull)
-            .await?
-            .remove(path)
-            .ok_or_else(|| {
-                ApiError::unprocessable(format!("{path} is not part of the pull request diff"))
-            })?,
+        None => current,
     };
     let mut tx = Tx::begin(state).await?;
     let row: Upserted = sqlx::query_as(&format!(
@@ -252,10 +253,14 @@ pub async fn put(
         body.blob_sha.as_deref(),
     )
     .await?;
+    let current = current_blobs(&state, &pull).await?;
     Ok(axum::Json(ViewedJson {
+        state: ViewedState::of(
+            Some(&row.blob_sha),
+            current.get(&row.path).map_or("", String::as_str),
+        ),
         path: row.path,
         blob_sha: row.blob_sha,
-        state: ViewedState::Viewed,
     }))
 }
 
