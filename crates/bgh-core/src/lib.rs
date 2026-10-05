@@ -34,6 +34,7 @@ pub mod secretbox;
 pub mod settings;
 pub mod ssrf;
 pub mod state;
+pub mod sudo;
 pub mod sync;
 pub mod time;
 pub mod token_permissions;

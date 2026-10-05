@@ -418,7 +418,7 @@ export class MockServer implements Transport {
       if (pw === 'wrong') return { status: 422, body: { message: 'Incorrect username or password.' } };
       if (pw === 'throttle') return { status: 429, body: { message: 'Too many failed login attempts. Please try again later.' } };
       if (pw === '2fa' && ctx.body.otp !== '123456')
-        return { status: 401, body: { message: 'Two-factor authentication required.', twoFactorRequired: true, twoFactorToken: 'mock-2fa-token' } };
+        return { status: 401, body: { message: 'Two-factor authentication required.', twoFactorRequired: true, twoFactorToken: 'mock-2fa-token', twoFactorMethods: ['totp', 'recovery_code'] } };
       this.signedIn = true;
       this.scheduleSave();
       return { status: 200, body: this.boot() };

@@ -5,13 +5,19 @@ import { returnTo } from '../../app/App';
 import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
-import { getBoot, isMockMode } from '../../boot';
+import { passkeySignIn, securityKeyTwoFactor, webauthnError } from '../../api/webauthn';
+import { getBoot, isMockMode, type BootData } from '../../boot';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
-import { ArrowLeftIcon, DeviceMobileIcon, ShieldLockIcon } from '../../ui/icons';
+import { ArrowLeftIcon, DeviceMobileIcon, KeyIcon, ShieldLockIcon } from '../../ui/icons';
 import { AuthLayout, authStyles as styles, Divider, Flash, messageOf, statusOf } from './AuthPage';
 import { TwoFactorForm, WrongCode } from './TwoFactorForm';
+
+/** WebAuthn is usable here (not in mock mode: there is no authenticator to verify). */
+function passkeysAvailable(): boolean {
+  return !isMockMode() && typeof window.PublicKeyCredential === 'function';
+}
 
 interface Errors {
   login?: string;
@@ -43,6 +49,8 @@ function Login({ search }: { search: string }) {
   const [notice, setNotice] = useState<Notice>(() => initialNotice(search));
   const [busy, setBusy] = useState(false);
   const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  const [twoFactorMethods, setTwoFactorMethods] = useState<string[]>([]);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [ssoBusy, setSsoBusy] = useState<string | null>(null);
   const [site, setSite] = useState<PublicSiteInfo | null>(null);
@@ -86,6 +94,7 @@ function Login({ search }: { search: string }) {
       const step = await session.login(login.trim(), password);
       if (step) {
         setTwoFactorToken(step.twoFactorToken);
+        setTwoFactorMethods(step.methods);
         return;
       }
       done();
@@ -117,6 +126,35 @@ function Login({ search }: { search: string }) {
         return;
       }
       throw new Error(messageOf(e), { cause: e });
+    }
+  };
+
+  const securityKey = async () => {
+    try {
+      session.adopt(await securityKeyTwoFactor<BootData>(twoFactorToken!));
+      done();
+    } catch (e) {
+      const status = statusOf(e);
+      if (status === 401 || status === 429) {
+        setTwoFactorToken(null);
+        setPassword('');
+        setNotice({ tone: status === 429 ? 'warning' : 'danger', text: messageOf(e) });
+        return;
+      }
+      throw new Error(status ? messageOf(e) : webauthnError(e), { cause: e });
+    }
+  };
+
+  const passkey = async () => {
+    setPasskeyBusy(true);
+    setNotice(null);
+    try {
+      session.adopt(await passkeySignIn<BootData>());
+      done();
+    } catch (e) {
+      setNotice({ tone: 'danger', text: statusOf(e) ? messageOf(e) : webauthnError(e) });
+    } finally {
+      setPasskeyBusy(false);
     }
   };
 
@@ -157,6 +195,7 @@ function Login({ search }: { search: string }) {
       >
         <TwoFactorForm
           verify={verify}
+          securityKey={twoFactorMethods.includes('webauthn') && passkeysAvailable() ? securityKey : undefined}
           footer={
             <div className={`${styles.small} ${styles.centered}`}>
               <button
@@ -279,6 +318,14 @@ function Login({ search }: { search: string }) {
           Sign in
         </Button>
         </form>
+      )}
+      {passkeysAvailable() && (
+        <>
+          <Divider />
+          <Button size="lg" block leadingIcon={KeyIcon} loading={passkeyBusy} onClick={() => void passkey()} data-testid="passkey-sign-in">
+            Sign in with a passkey
+          </Button>
+        </>
       )}
       {providers.length > 0 && (
         <>

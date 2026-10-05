@@ -13,6 +13,7 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'teams', label: 'Teams', icon: PeopleIcon, keys: 'g t' },
   { id: 'outside-collaborators', label: 'Outside collaborators', icon: PersonAddIcon, keys: 'g c' },
   { id: 'invitations', label: 'Invitations', icon: MailIcon, keys: 'g v' },
+  { id: 'security', label: 'Authentication security', icon: ShieldLockIcon, keys: 'g y', group: 'Security' },
   { id: 'audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a', group: 'Archive' },
   { id: 'hooks', label: 'Webhooks', icon: WebhookIcon, keys: 'g w', group: 'Code, planning, and automation' },
   { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },

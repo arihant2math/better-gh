@@ -65,21 +65,49 @@ async fn regenerate_codes(tx: &mut Tx, user_id: i64) -> ApiResult<Vec<String>> {
     Ok(codes)
 }
 
+/// The TOTP secret of a `user_two_factor` row: decrypted from
+/// `totp_secret_enc`, or the legacy plaintext column (which is then
+/// encrypted in `tx`, see `security::encrypt_legacy_totp`).
+pub async fn stored_secret(
+    state: &AppState,
+    tx: &mut Tx,
+    user_id: i64,
+    plain: Option<String>,
+    sealed: Option<Vec<u8>>,
+) -> ApiResult<String> {
+    if let Some(sealed) = sealed {
+        return bgh_core::secretbox::open(state, &sealed);
+    }
+    let plain = plain.ok_or_else(|| ApiError::internal(anyhow::anyhow!("TOTP secret missing")))?;
+    sqlx::query(
+        "UPDATE user_two_factor SET totp_secret_enc = $2, totp_secret = NULL WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(bgh_core::secretbox::seal(state, &plain)?)
+    .execute(&mut **tx)
+    .await?;
+    Ok(plain)
+}
+
+/// `(totp_secret, totp_secret_enc, …)` columns of a locked row.
+type SecretRow = (Option<String>, Option<Vec<u8>>, i64);
+
 /// Check a second factor for `user_id`: a TOTP code (replays rejected) or
 /// an unused recovery code (consumed). `Ok(false)` when wrong.
 pub async fn verify_second_factor(state: &AppState, user_id: i64, code: &str) -> ApiResult<bool> {
     let code = code.trim();
     let mut tx = Tx::begin(state).await?;
-    let row: Option<(String, i64)> = sqlx::query_as(
-        "SELECT totp_secret, last_used_step FROM user_two_factor
+    let row: Option<SecretRow> = sqlx::query_as(
+        "SELECT totp_secret, totp_secret_enc, last_used_step FROM user_two_factor
           WHERE user_id = $1 AND enabled_at IS NOT NULL FOR UPDATE",
     )
     .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((secret, last_step)) = row else {
+    let Some((plain, sealed, last_step)) = row else {
         return Ok(false);
     };
+    let secret = stored_secret(state, &mut tx, user_id, plain, sealed).await?;
     let now = chrono::Utc::now().timestamp();
     if let Some(step) = totp::verify(&secret, code, now, last_step) {
         sqlx::query("UPDATE user_two_factor SET last_used_step = $2 WHERE user_id = $1")
@@ -111,6 +139,8 @@ pub async fn verify_second_factor(state: &AppState, user_id: i64, code: &str) ->
         tx.commit().await?;
         return Ok(true);
     }
+    // Keep a lazy re-encryption of a legacy secret.
+    tx.commit().await?;
     Ok(false)
 }
 
@@ -119,6 +149,11 @@ pub struct TwoFactorStatus {
     pub enabled: bool,
     pub enabled_at: Option<Timestamp>,
     pub recovery_codes_remaining: i64,
+    /// Registered WebAuthn security keys / passkeys.
+    pub security_keys: i64,
+    pub passkeys: i64,
+    /// The site requires 2FA for every account.
+    pub required_by_site: bool,
 }
 
 /// `GET /_bgh/user/two_factor`
@@ -139,10 +174,17 @@ pub async fn status(
     .bind(auth.user.id)
     .fetch_one(&state.db)
     .await?;
+    let (security_keys, passkeys) = crate::webauthn::counts(&state.db, auth.user.id).await?;
     Ok(Json(TwoFactorStatus {
         enabled: enabled_at.is_some(),
         enabled_at: ts(enabled_at),
         recovery_codes_remaining: if enabled_at.is_some() { remaining } else { 0 },
+        security_keys,
+        passkeys,
+        required_by_site: bgh_core::settings::load(&state)
+            .await?
+            .auth_providers
+            .require_2fa,
     }))
 }
 
@@ -166,12 +208,12 @@ pub async fn start_totp(
     }
     let secret = totp::new_secret();
     sqlx::query(
-        "INSERT INTO user_two_factor (user_id, totp_secret) VALUES ($1, $2)
-         ON CONFLICT (user_id) DO UPDATE SET totp_secret = EXCLUDED.totp_secret,
-             last_used_step = 0, created_at = now()",
+        "INSERT INTO user_two_factor (user_id, totp_secret, totp_secret_enc) VALUES ($1, NULL, $2)
+         ON CONFLICT (user_id) DO UPDATE SET totp_secret = NULL,
+             totp_secret_enc = EXCLUDED.totp_secret_enc, last_used_step = 0, created_at = now()",
     )
     .bind(auth.user.id)
-    .bind(&secret)
+    .bind(bgh_core::secretbox::seal(&state, &secret)?)
     .execute(&state.db)
     .await?;
     Ok((
@@ -202,19 +244,27 @@ pub async fn enable_totp(
 ) -> ApiResult<Json<RecoveryCodes>> {
     util::require_session(&auth)?;
     let mut tx = Tx::begin(&state).await?;
-    let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-        "SELECT totp_secret, enabled_at FROM user_two_factor WHERE user_id = $1 FOR UPDATE",
+    type Row = (
+        Option<String>,
+        Option<Vec<u8>>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    );
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT totp_secret, totp_secret_enc, enabled_at FROM user_two_factor
+          WHERE user_id = $1 FOR UPDATE",
     )
     .bind(auth.user.id)
     .fetch_optional(&mut *tx)
     .await?;
     let secret = match row {
-        Some((_, Some(_))) => {
+        Some((_, _, Some(_))) => {
             return Err(ApiError::conflict(
                 "Two-factor authentication is already enabled.",
             ));
         }
-        Some((secret, None)) => secret,
+        Some((plain, sealed, None)) => {
+            stored_secret(&state, &mut tx, auth.user.id, plain, sealed).await?
+        }
         None => {
             return Err(ApiError::unprocessable(
                 "Start two-factor setup before enabling it.",
@@ -266,7 +316,7 @@ pub struct PasswordBody {
 
 /// Re-authentication for sensitive changes (users without a password, e.g.
 /// SSO-only accounts, must give a second factor instead).
-async fn confirm_password(state: &AppState, user: &db::User, password: &str) -> ApiResult<()> {
+pub async fn confirm_password(state: &AppState, user: &db::User, password: &str) -> ApiResult<()> {
     let key = format!("sudo_fail:{}", user.id);
     if bgh_core::ratelimit::count(state, &key).await >= 10 {
         return Err(ApiError::Status(
@@ -295,6 +345,7 @@ pub async fn disable(
 ) -> ApiResult<StatusCode> {
     util::require_session(&auth)?;
     confirm_password(&state, &auth.user, &body.password).await?;
+    crate::security::check_two_factor_removable(&state, auth.user.id).await?;
     let mut tx = Tx::begin(&state).await?;
     sqlx::query("DELETE FROM user_two_factor WHERE user_id = $1")
         .bind(auth.user.id)
@@ -304,6 +355,13 @@ pub async fn disable(
         .bind(auth.user.id)
         .execute(&mut *tx)
         .await?;
+    // Security keys are second factors; passkeys stay (they sign in alone).
+    sqlx::query(
+        "DELETE FROM user_webauthn_credentials WHERE user_id = $1 AND kind = 'security_key'",
+    )
+    .bind(auth.user.id)
+    .execute(&mut *tx)
+    .await?;
     audit::log(
         &mut *tx,
         Some(&auth.user),

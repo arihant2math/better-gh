@@ -107,6 +107,7 @@ pub async fn create_token(
     Json(body): Json<CreateTokenBody>,
 ) -> ApiResult<(StatusCode, Json<TokenJson>)> {
     require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let mut scopes: Vec<String> = Vec::new();
     for s in body.scopes {
         if !KNOWN_SCOPES.contains(&s.as_str()) {

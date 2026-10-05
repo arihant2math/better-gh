@@ -210,6 +210,7 @@ export function registerRoutes(): void {
       title: (p) => `Outside collaborators · ${p.org}`,
     },
     { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
+    { path: '/organizations/:org/settings/security', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecurityPage'), title: (p) => `Authentication security · ${p.org}` },
     { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
     { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
     { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportPage'), title: (p) => `Import · ${p.org}` },

@@ -80,7 +80,8 @@ docker run -d --name bgh -p 3000:3000 -p 2222:2222 -v bgh-data:/data \
 
 ## Install (binary + systemd)
 
-Build a release binary with the web client embedded:
+Build a release binary with the web client embedded (needs `pkg-config`
+and the OpenSSL headers, e.g. `libssl-dev`, for WebAuthn):
 
 ```sh
 (cd web && npm ci && npm run build)       # -> web/dist
@@ -330,6 +331,13 @@ What to back up:
 3. Your configuration (`/etc/bgh/bgh.env` or `.env`).
 
 Redis holds only caches and pub/sub and needs no backup.
+
+The server key (`BGH_ACTIONS_SECRET_KEY`, or `actions/server.key` in the
+data directory) encrypts Actions secrets, mirror credentials and users'
+TOTP two-factor secrets: restoring the database without it locks every
+account with an authenticator app out (site admins can disable 2FA per
+user). WebAuthn security keys and passkeys are bound to the host of
+`BGH_BASE_URL`; changing the domain invalidates them.
 
 Take the database dump **first**, then copy the data directory. Git
 maintenance (the scheduled `repos.maintenance` service and the admin gc)

@@ -357,6 +357,9 @@ pub struct UpdateOrgBody {
     pub members_can_fork_private_repositories: Option<bool>,
     pub members_can_create_teams: Option<bool>,
     pub web_commit_signoff_required: Option<bool>,
+    /// Require 2FA of members and outside collaborators (P36): the owner
+    /// enabling it must have 2FA; non-compliant accounts are removed.
+    pub two_factor_requirement_enabled: Option<bool>,
 }
 
 /// `PATCH /orgs/{org}` (owners, `admin:org`) → organization-full.
@@ -404,6 +407,15 @@ pub async fn update_org(
         {
             errors.push(FieldError::invalid("Organization", field));
         }
+    }
+    let enable_2fa = body.two_factor_requirement_enabled == Some(true)
+        && !access.settings.two_factor_requirement_enabled;
+    if enable_2fa && !util::two_factor_enabled(&state.db, actor.id).await? {
+        errors.push(FieldError::custom(
+            "Organization",
+            "two_factor_requirement_enabled",
+            "You must enable two-factor authentication on your account before requiring it for the organization",
+        ));
     }
     if !errors.is_empty() {
         return Err(ApiError::validation(errors));
@@ -457,7 +469,8 @@ pub async fn update_org(
             members_can_fork_private_repositories = coalesce($12, members_can_fork_private_repositories),
             members_can_create_internal_repositories = coalesce($15, members_can_create_internal_repositories),
             members_can_create_teams = coalesce($13, members_can_create_teams),
-            web_commit_signoff_required = coalesce($14, web_commit_signoff_required)
+            web_commit_signoff_required = coalesce($14, web_commit_signoff_required),
+            two_factor_requirement_enabled = coalesce($16, two_factor_requirement_enabled)
           WHERE org_id = $1 RETURNING {}",
         db::OrgSettings::COLUMNS
     ))
@@ -476,6 +489,7 @@ pub async fn update_org(
     .bind(body.members_can_create_teams)
     .bind(body.web_commit_signoff_required)
     .bind(create_flags.3)
+    .bind(body.two_factor_requirement_enabled)
     .fetch_one(&mut *tx)
     .await?;
     tx.sync_model(SyncModel::Org, org.id, SyncAction::Update)
@@ -488,7 +502,26 @@ pub async fn update_org(
         json!({ "default_repository_permission": body.default_repository_permission }),
     )
     .await?;
+    if let Some(enabled) = body.two_factor_requirement_enabled
+        && enabled != access.settings.two_factor_requirement_enabled
+    {
+        audit::log(
+            &mut *tx,
+            Some(&actor),
+            if enabled {
+                "org.enable_two_factor_requirement"
+            } else {
+                "org.disable_two_factor_requirement"
+            },
+            audit::Target::Org(org.id),
+            json!({}),
+        )
+        .await?;
+    }
     tx.commit().await?;
+    if enable_2fa {
+        crate::org_two_factor::enforce(&state, &actor, &org).await?;
+    }
     Ok(Json(org_full(&state, &org, &settings, true).await?))
 }
 
@@ -1230,6 +1263,14 @@ pub async fn accept_membership(
             &state, &access, &auth.user, "active", role,
         )));
     }
+    if access.settings.two_factor_requirement_enabled
+        && !util::two_factor_enabled(&state.db, auth.user.id).await?
+    {
+        return Err(ApiError::forbidden(format!(
+            "The @{} organization requires two-factor authentication. Enable it before accepting the invitation.",
+            access.org.login
+        )));
+    }
     let mut tx = Tx::begin(&state).await?;
     let inv = pending_invitation(&mut *tx, access.org.id, auth.user.id)
         .await?
@@ -1237,15 +1278,24 @@ pub async fn accept_membership(
             ApiError::forbidden("You don't have a pending invitation to this organization.")
         })?;
     let role = invitation_member_role(&inv.role);
+    let mut team_ids = inv.team_ids.clone();
+    let reinstated =
+        crate::org_two_factor::take_removal(&mut tx, access.org.id, auth.user.id).await?;
+    if let Some(r) = &reinstated {
+        team_ids.extend(r.team_ids.iter().filter(|t| !inv.team_ids.contains(t)));
+    }
     add_member(
         &mut tx,
         &access.org,
         &auth.user,
         role,
-        &inv.team_ids,
+        &team_ids,
         inv.inviter_id.unwrap_or(auth.user.id),
     )
     .await?;
+    if let Some(r) = &reinstated {
+        crate::org_two_factor::restore_grants(&mut tx, access.org.id, auth.user.id, r).await?;
+    }
     sqlx::query(
         "DELETE FROM org_invitations i WHERE i.org_id = $1
            AND (i.invitee_id = $2 OR lower(i.email) IN
@@ -1354,6 +1404,15 @@ pub async fn create_invitation(
                 "OrganizationInvitation",
                 "invitee_id",
                 "Invitee is blocked by this organization",
+            )));
+        }
+        if access.settings.two_factor_requirement_enabled
+            && !util::two_factor_enabled(&mut **tx, uid).await?
+        {
+            return Err(ApiError::invalid_field(FieldError::custom(
+                "OrganizationInvitation",
+                "invitee_id",
+                "Invitee must enable two-factor authentication: this organization requires it",
             )));
         }
     }
