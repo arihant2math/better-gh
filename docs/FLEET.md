@@ -1,10 +1,6 @@
 # Phase 4 fleet (foreman-maintained, branch bgh/foreman only)
 
-Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 18:53 UTC (integration head 3a674e0).
-
-## Integration process (since 15:53 UTC)
-
-Workers no longer push to the integration branch. They mark `Integration: ready` in their status doc and push their own branch; the integrator session `session_0199JgoqhKWUQwuSikBwmDCv` (branch `bgh/integrator`, log `docs/INTEGRATION_LOG.md`) lands batches of up to 4 with one gate run per batch. See docs/WORKER_GUIDE.md rule 14 + "Integration queue".
+Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 19:24 UTC (integration head 98abd45). They mark `Integration: ready` in their status doc and push their own branch; the integrator session `session_0199JgoqhKWUQwuSikBwmDCv` (branch `bgh/integrator`, log `docs/INTEGRATION_LOG.md`) lands batches of up to 4 with one gate run per batch. See docs/WORKER_GUIDE.md rule 14 + "Integration queue".
 
 ## Standing launch notes
 
