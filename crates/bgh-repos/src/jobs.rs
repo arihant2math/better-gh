@@ -59,6 +59,17 @@ fn choose_default(current: &str, branches: &[String], pushed: &[RefUpdate]) -> O
 /// Post-receive: update `pushed_at`/size, initialize the default branch on
 /// first push, record a sync action and emit [`Event::Push`].
 pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<()> {
+    process_ref_updates(&state, job, None).await
+}
+
+/// [`post_receive`] for refs fetched from a remote (`origin` is
+/// [`PushEvent::ORIGIN_MIRROR`] or [`PushEvent::ORIGIN_IMPORT`]).
+pub(crate) async fn process_ref_updates(
+    state: &AppState,
+    job: PostReceive,
+    origin: Option<&str>,
+) -> anyhow::Result<()> {
+    let state = state.clone();
     let Some(repo) = db::Repository::find(&state.db, job.repo_id).await? else {
         return Ok(()); // deleted meanwhile
     };
@@ -104,6 +115,7 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
         repo_id: repo.id,
         pusher_id: job.pusher_id,
         updates: job.updates,
+        origin: origin.map(str::to_string),
     }));
     tx.commit().await?;
     Ok(())
@@ -118,12 +130,26 @@ pub async fn delete_storage(state: AppState, job: DeleteStorage) -> anyhow::Resu
         return Ok(());
     }
     let store = crate::store(&state);
+    // Forks borrow from the deleted repository (`clone --shared`); make
+    // them (and their own forks, deepest first) self-contained, each
+    // verified with `fsck --connectivity-only`. Database forks first, then
+    // anything else on disk still pointing at this repository.
     for fork in &job.forks {
-        // Direct forks borrow from the deleted repository (`clone --shared`).
-        if let Ok(git) = store.cli(*fork) {
-            git.dissociate().await?;
+        if store.exists(*fork) {
+            crate::maintenance::dissociate(&state, *fork).await?;
         }
     }
+    let lock = crate::maintenance::lock_repo(&state, job.repo_id, true).await?;
+    let res = bgh_git::maintenance::dissociate_dependents(
+        &store.git_bin,
+        &store.root,
+        &store.path(job.repo_id),
+    )
+    .await;
+    if let Some(lock) = lock {
+        lock.release().await;
+    }
+    res?;
     store.delete(job.repo_id).await?;
     Ok(())
 }

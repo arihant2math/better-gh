@@ -49,6 +49,7 @@ pub async fn write_ref(
     force: bool,
 ) -> ApiResult<RefUpdate> {
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     if bgh_git::storage::is_hidden_ref(refname) {
         // Server-only namespaces (`refs/pull/*`, `refs/bgh/*`).
         return Err(ApiError::unprocessable(format!(

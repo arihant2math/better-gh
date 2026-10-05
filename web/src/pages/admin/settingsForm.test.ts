@@ -19,6 +19,17 @@ const settings: SiteSettings = {
   smtp: { enabled: false, host: '', port: 587, username: null, password: null, from: '', tls: 'starttls' },
   maintenance: { enabled: false, message: null, scheduled_at: null },
   git: { fsck_on_push: true, max_object_size_mb: 100, warn_object_size_mb: null, max_push_size_mb: 2048 },
+  git_maintenance: {
+    enabled: true,
+    prune_grace_days: 14,
+    interval_hours: 24,
+    full_interval_days: 7,
+    loose_objects_threshold: 1000,
+    pack_count_threshold: 16,
+    max_repos_per_pass: 20,
+    archive_cache_max_age_days: 7,
+    archive_cache_max_size_mb: 2048,
+  },
   actions: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
 };
 

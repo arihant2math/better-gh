@@ -890,6 +890,7 @@ async fn put_file(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let path = normalize(&path);
     valid_path(&path)?;
     crate::workflow_scope::check_path(&state, &auth, &path).await?;
@@ -982,6 +983,7 @@ async fn delete_file(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let path = normalize(&path);
     valid_path(&path)?;
     crate::workflow_scope::check_path(&state, &auth, &path).await?;

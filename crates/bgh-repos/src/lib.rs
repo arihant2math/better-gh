@@ -23,12 +23,14 @@ pub mod git_http;
 pub mod gitdb;
 pub mod gitjson;
 pub mod identity;
+pub mod import;
 pub mod jobs;
 pub mod json;
 pub mod keys;
 pub mod lfs;
 pub mod maintenance;
 pub mod media;
+pub mod mirrors;
 pub mod protection;
 pub mod protection_api;
 pub mod refs;
@@ -101,9 +103,12 @@ pub fn web_router() -> Router<AppState> {
         .merge(browse::web_router())
         .merge(download::web_router())
         .merge(lfs::web_router())
+        .merge(import::web_routes())
+        .merge(mirrors::web_routes())
 }
 
-/// Job handlers: post-receive processing, storage cleanup, languages.
+/// Job handlers: post-receive processing, storage cleanup, languages;
+/// services: SSH and scheduled git maintenance.
 pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
@@ -111,7 +116,12 @@ pub fn register(reg: &mut Registry) {
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
     reg.job(maintenance::pack_refs);
+    reg.job(maintenance::run_pass_job);
     reg.on_event("repos.pack_refs", maintenance::on_event);
     reg.service("ssh", ssh::service);
+    reg.service("repos.maintenance", maintenance::service);
     reg.service("repos.config_upgrade", maintenance::config_upgrade_service);
+    reg.job(import::run_import_job);
+    reg.job(mirrors::sync_job);
+    reg.service("repos.mirrors", mirrors::service);
 }

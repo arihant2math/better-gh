@@ -351,6 +351,7 @@ pub async fn create(
             repo_id: access.repo.id,
             pusher_id: Some(auth.user.id),
             updates: vec![update],
+            origin: None,
         }));
     }
     tx.emit(Event::ReleaseCreated {
@@ -481,6 +482,7 @@ pub async fn update(
             repo_id: access.repo.id,
             pusher_id: Some(auth.user.id),
             updates: vec![update],
+            origin: None,
         }));
     }
     tx.emit(Event::ReleaseUpdated {

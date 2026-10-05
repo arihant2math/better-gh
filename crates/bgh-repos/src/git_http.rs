@@ -92,8 +92,29 @@ async fn git_access(
             other => other,
         })?;
         access.require_not_archived()?;
+        access.require_not_mirror()?;
+        crate::import::require_not_importing(state, access.repo.id).await?;
     }
     Ok((access, auth))
+}
+
+/// git shows the `text/plain` error body of a failed ref advertisement to
+/// the user (`remote: …`) but not JSON ones, so `info/refs` refusals
+/// (archived, mirror, importing, permission) are sent as plain text.
+fn git_response(result: ApiResult<Response>) -> Response {
+    match result {
+        Ok(r) => r,
+        Err(ApiError::Forbidden(message)) => (
+            axum::http::StatusCode::FORBIDDEN,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
+            format!("{message}\n"),
+        )
+            .into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 /// Site-wide push limits for `repo` (settings `git.*` and the storage
@@ -146,6 +167,16 @@ pub async fn info_refs(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
     Query(q): Query<InfoRefsQuery>,
+    headers: HeaderMap,
+) -> Response {
+    git_response(info_refs_inner(state, owner, repo, q, headers).await)
+}
+
+async fn info_refs_inner(
+    state: AppState,
+    owner: String,
+    repo: String,
+    q: InfoRefsQuery,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     if bgh_wiki::git::wiki_repo_name(&repo).is_some() {

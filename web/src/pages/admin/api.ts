@@ -195,7 +195,7 @@ export interface AdminRepo {
   html_url: string;
 }
 
-export type MaintenanceOp = 'gc' | 'repack' | 'fsck' | 'recalculate_size' | 'recalculate_languages';
+export type MaintenanceOp = 'gc' | 'repack' | 'fsck' | 'recalculate_size' | 'recalculate_languages' | 'prune' | 'dissociate';
 
 export interface RepoDetail {
   repository: AdminRepo;
@@ -207,6 +207,10 @@ export interface RepoDetail {
   pulls_count: number;
   hooks_count: number;
   maintenance: { id: number; operation: MaintenanceOp; status: string; created_at: string; finished_at: string | null }[];
+  /** Scheduled maintenance state (`null` before the first run). */
+  git_maintenance?: GitMaintenanceStatus | null;
+  /** Fork-network role on disk: borrows objects / others borrow from it. */
+  network?: { has_alternates: boolean; has_dependents: boolean };
 }
 
 export interface MaintenanceRun {
@@ -243,7 +247,55 @@ export const deleteRepo = (owner: string, repo: string) => api.delete<null>(repo
 export const runMaintenance = (owner: string, repo: string, operation: MaintenanceOp) =>
   api.post<MaintenanceRun>(`${repoBase(owner, repo)}/maintenance`, { operation });
 export const listMaintenance = (owner: string, repo: string) => api.get<MaintenanceRun[]>(`${repoBase(owner, repo)}/maintenance`);
+export const pruneNow = (owner: string, repo: string) =>
+  api.post<MaintenanceRun>(`${repoBase(owner, repo)}/maintenance`, { operation: 'prune', force: true });
+export const detachFork = (owner: string, repo: string) => api.post<MaintenanceRun>(`${repoBase(owner, repo)}/detach`, {});
 export const runMaintenanceAll = (operation: MaintenanceOp) => api.post<{ operation: string; scheduled: number }>('/_bgh/admin/maintenance', { operation });
+
+// ------------------------------------------------------------------ scheduled git maintenance
+
+export type GitMaintenanceState = 'pending' | 'succeeded' | 'failed' | 'skipped';
+
+export interface GitMaintenanceStatus {
+  repository_id: number;
+  full_name: string;
+  status: GitMaintenanceState;
+  error: string | null;
+  last_run_at: string | null;
+  last_full_at: string | null;
+  pack_count: number;
+  loose_count: number;
+  has_alternates: boolean;
+  has_dependents: boolean;
+}
+
+export interface GitMaintenanceSettings {
+  enabled: boolean;
+  prune_grace_days: number;
+  interval_hours: number;
+  full_interval_days: number;
+  loose_objects_threshold: number;
+  pack_count_threshold: number;
+  max_repos_per_pass: number;
+  archive_cache_max_age_days: number;
+  archive_cache_max_size_mb: number;
+}
+
+export interface GitMaintenanceOverview {
+  settings: GitMaintenanceSettings;
+  repositories: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  never_run: number;
+  with_dependents: number;
+  last_run_at: string | null;
+}
+
+export const GIT_MAINTENANCE_KEY = 'admin:git-maintenance';
+export const getGitMaintenance = () => api.get<GitMaintenanceOverview>('/_bgh/admin/git-maintenance');
+export const gitMaintenanceReposPath = (status?: GitMaintenanceState) => `/_bgh/admin/git-maintenance/repos${qs({ per_page: 100, status })}`;
+export const runGitMaintenanceNow = () => api.post<{ queued: boolean }>('/_bgh/admin/git-maintenance/run', {});
 
 // ------------------------------------------------------------------ settings
 
@@ -277,6 +329,7 @@ export interface SiteSettings {
   auth_providers: { password_login: boolean; oidc: OidcProvider[] };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
+  git_maintenance: GitMaintenanceSettings;
   /** Push hardening; `null` disables a limit. */
   git: { fsck_on_push: boolean; max_object_size_mb: number | null; warn_object_size_mb: number | null; max_push_size_mb: number | null };
   actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };

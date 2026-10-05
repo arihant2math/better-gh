@@ -364,9 +364,20 @@ Site-level account changes also emit `UserAccountChanged` /
   bare, created with an empty template and server config: no auto-gc,
   `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
   (alternates). Repo deletion removes the row immediately; the
-  `repos.delete_storage` job first makes the direct forks self-contained
-  (`GitCli::dissociate`: `repack -a -d` + drop alternates), then removes
-  the directory. Repositories generated from templates copy (repack) only
+  `repos.delete_storage` job first makes the forks self-contained
+  (`bgh_git::maintenance::dissociate_network`: deepest forks first,
+  `repack -a -d --keep-unreachable`, drop alternates, verify with
+  `fsck --connectivity-only`), then removes the directory.
+* Object maintenance is fork-network aware (`bgh_git::maintenance::plan`):
+  repositories others borrow from (DB `parent_id`, or an alternates file
+  on disk pointing at them) repack with `--keep-unreachable` and are never
+  pruned; forks repack locally (`-l`, no bitmaps); everything else prunes
+  only after `git_maintenance.prune_grace_days`. Never `--prune` with an
+  immediate expiry (a unit test greps the crates). Runs hold a per-repo pg
+  advisory lock (`bgh_repos::maintenance::lock_repo`); the
+  `repos.maintenance` service (leader via advisory lock) schedules
+  commit-graph / geometric / full runs from `repo_maintenance` and prunes
+  the archive cache. Repositories generated from templates copy (repack) only
   the objects they reference. Renamed/transferred repositories keep their
   old `owner/name` in `repo_redirects`; `RepoAccess::load` follows it.
   Wikis live next to the
@@ -431,6 +442,17 @@ Site-level account changes also emit `UserAccountChanged` /
   `{data_dir}/lfs` and linked per repository in `lfs_objects`
   (`repositories.lfs_size` accounting), locks in `lfs_locks`; SSH
   `git-lfs-authenticate` issues `RemoteAuth` tokens (Redis, 1 h).
+* Imports and pull mirrors (`bgh_repos::import`, `bgh_repos::mirrors`,
+  `bgh_git::fetch`): `POST /_bgh/imports` creates the repository and a
+  `repo_imports` row; `repos.import` fetches all branches and tags (+ LFS)
+  from an `http(s)` URL with a locked-down git config (no redirects or
+  other protocols, credentials in a header, host pinned to SSRF-checked
+  addresses via `bgh_core::ssrf`, the webhook allow-list). Credentials are
+  sealed with `bgh_core::secretbox`. Mirrors (`repo_mirrors`,
+  `repositories.mirror_url`) are synced by the `repos.mirrors` service
+  with `--prune` and are read-only (`RepoAccess::require_not_mirror`);
+  fetched refs emit `Push` with `origin` `mirror`/`import` (Actions skips
+  them). Details: `docs/packages/p11-import-mirrors.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.
