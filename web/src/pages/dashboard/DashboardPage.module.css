@@ -1,0 +1,191 @@
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 40px;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+}
+
+@media (max-width: 960px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.greeting {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
+}
+
+.sub {
+  margin: 6px 0 28px;
+  color: var(--fg-muted);
+  font-size: var(--fs-base);
+}
+
+.section {
+  margin-bottom: 28px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sectionHeader h2 {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.count {
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.more {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+}
+
+.list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.issue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--fg);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.issue:first-child {
+  border-top: 0;
+}
+
+.issue:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.issueMain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.issueTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+
+.issueMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.labelDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.time {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-subtle);
+}
+
+.sideCol {
+  padding-top: 6px;
+}
+
+.inboxCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--accent-subtle), transparent 70%);
+  color: var(--fg);
+}
+
+.inboxCard:hover {
+  border-color: var(--border-strong);
+  text-decoration: none;
+}
+
+.inboxCard svg {
+  color: var(--accent-fg);
+}
+
+.repos {
+  display: flex;
+  flex-direction: column;
+}
+
+.repo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius);
+  color: var(--fg);
+}
+
+.repo:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.repo svg {
+  color: var(--fg-subtle);
+}
+
+.repoName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+
+.repoOwner {
+  color: var(--fg-subtle);
+  font-weight: 400;
+}
+
+.star {
+  color: #e3b341 !important;
+}
