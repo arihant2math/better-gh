@@ -496,3 +496,8 @@
     display: none;
   }
 }
+
+.logPane {
+  flex: 1;
+  min-height: 0;
+}

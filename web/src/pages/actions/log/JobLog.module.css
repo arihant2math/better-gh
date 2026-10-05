@@ -406,8 +406,9 @@
   color: var(--accent-fg);
 }
 
-.current {
+.current .num {
   box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent-fg);
 }
 
 .hit {

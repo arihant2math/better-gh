@@ -31,7 +31,7 @@ export default observer(function JobPage() {
   return (
     <RunShell data={attempt ? attemptData : data} jobId={jobId}>
       {job ? (
-        <JobLogView key={job.id} owner={owner} repo={repo} job={job} />
+        <JobLogView key={job.id} owner={owner} repo={repo} job={job} className={styles.logPane} />
       ) : (
         <div className={styles.summary}>
           <Skeleton width="40%" height={20} />

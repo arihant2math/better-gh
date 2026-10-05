@@ -141,9 +141,11 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
       jobLogStreamPath(job.id),
       {
         onReset: () => {
+          // Bump synchronously: batched with setPhase, so no render ever
+          // pairs the cleared log with a stale layout.
           log.reset();
           setPhase('streaming');
-          schedule();
+          bump();
         },
         onLog: (step, text) => {
           log.append(step, text);
@@ -287,7 +289,7 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
     }
   }, [matches, goTo]);
 
-  const step = (dir: 1 | -1) => {
+  const moveMatch = (dir: 1 | -1) => {
     if (!matches.total) return;
     goTo(cur < 0 ? (dir === 1 ? 0 : matches.total - 1) : (cur + dir + matches.total) % matches.total);
   };
@@ -482,7 +484,7 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                step(e.shiftKey ? -1 : 1);
+                moveMatch(e.shiftKey ? -1 : 1);
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 if (query) setQuery('');
@@ -499,8 +501,8 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
               )
             }
           />
-          <IconButton icon={ArrowUpIcon} label="Previous match" shortcut="⇧↵" size="sm" disabled={!matches.total} onClick={() => step(-1)} />
-          <IconButton icon={ArrowDownIcon} label="Next match" shortcut="↵" size="sm" disabled={!matches.total} onClick={() => step(1)} />
+          <IconButton icon={ArrowUpIcon} label="Previous match" shortcut="⇧↵" size="sm" disabled={!matches.total} onClick={() => moveMatch(-1)} />
+          <IconButton icon={ArrowDownIcon} label="Next match" shortcut="↵" size="sm" disabled={!matches.total} onClick={() => moveMatch(1)} />
         </div>
         <div className={styles.actions}>
           <IconButton
@@ -518,15 +520,16 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
             disabled={order.length === 0}
             onClick={toggleAll}
           />
-          <IconButton
-            icon={ArrowDownIcon}
-            label={follow ? 'Stop following log' : 'Follow log'}
-            size="sm"
-            aria-pressed={follow}
-            disabled={!live}
-            className={cx(follow && styles.pressed)}
-            onClick={toggleFollow}
-          />
+          {live && (
+            <IconButton
+              icon={ArrowDownIcon}
+              label={follow ? 'Stop following log' : 'Follow log'}
+              size="sm"
+              aria-pressed={follow}
+              className={cx(follow && styles.pressed)}
+              onClick={toggleFollow}
+            />
+          )}
           <Tooltip label="Download log">
             <a className={styles.download} href={jobLogUrl(owner, repo, job.id)} download aria-label="Download log">
               <DownloadIcon size={16} />
@@ -557,7 +560,8 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
                     </div>
                   );
                 }
-                const line = log.steps.get(r.step)!.lines[r.line]!;
+                const line = log.steps.get(r.step)?.lines[r.line];
+                if (!line) return null;
                 const n = r.line + 1;
                 return (
                   <LineRow
