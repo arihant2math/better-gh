@@ -718,6 +718,76 @@ fn parse_issue_ref(text: &str) -> Option<IssueRef> {
     })
 }
 
+/// Which attribute a URL passed to [`rewrite_urls`] came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UrlAttr {
+    /// `href` (links)
+    Href,
+    /// `src` (images, media)
+    Src,
+}
+
+/// Rewrite `href` / `src` attribute values in (sanitized) HTML, e.g. to
+/// resolve relative links in a rendered README against the repository.
+/// `f` receives the unescaped URL and returns a replacement, or `None` to
+/// keep it. Only attributes inside tags are touched (never text).
+pub fn rewrite_urls(html: &str, f: impl Fn(&str, UrlAttr) -> Option<String>) -> String {
+    let b = html.as_bytes();
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut i = 0;
+    let mut copied = 0;
+    let mut in_tag = false;
+    while i < b.len() {
+        let c = b[i];
+        if !in_tag {
+            if c == b'<' {
+                in_tag = true;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'>' => {
+                in_tag = false;
+                i += 1;
+            }
+            b'"' | b'\'' => {
+                // Quoted value not preceded by href=/src= (handled below).
+                let end = html[i + 1..].find(c as char).map_or(b.len(), |e| i + 1 + e);
+                i = end + 1;
+            }
+            b' ' | b'\t' | b'\n' => {
+                let rest = &html[i + 1..];
+                let attr = if rest.starts_with("href=\"") {
+                    Some((UrlAttr::Href, 6))
+                } else if rest.starts_with("src=\"") {
+                    Some((UrlAttr::Src, 5))
+                } else {
+                    None
+                };
+                match attr {
+                    Some((kind, len)) => {
+                        let start = i + 1 + len;
+                        let end = html[start..].find('"').map_or(b.len(), |e| start + e);
+                        let raw = &html[start..end];
+                        let value = raw.replace("&quot;", "\"").replace("&amp;", "&");
+                        if let Some(new) = f(&value, kind) {
+                            out.push_str(&html[copied..start]);
+                            out.push_str(&escape_html(&new));
+                            copied = end;
+                        }
+                        i = end + 1;
+                    }
+                    None => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    out.push_str(&html[copied.min(html.len())..]);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +923,23 @@ mod tests {
                 [Segment::Text(_), Segment::Link { .. }, Segment::Text(_)]
             ),
             "{segs:?}"
+        );
+    }
+
+    #[test]
+    fn rewrites_urls_in_tags_only() {
+        let html = "<p><a href=\"docs/a.md\">x</a> <img src=\"img.png\" alt=\"a src=&quot;q\"> src=\"text\"</p><a href=\"https://x.y/?a=1&amp;b=2\">y</a>";
+        let out = rewrite_urls(html, |u, kind| {
+            (!u.starts_with("https://")).then(|| {
+                format!(
+                    "/base/{}/{u}",
+                    if kind == UrlAttr::Src { "raw" } else { "blob" }
+                )
+            })
+        });
+        assert_eq!(
+            out,
+            "<p><a href=\"/base/blob/docs/a.md\">x</a> <img src=\"/base/raw/img.png\" alt=\"a src=&quot;q\"> src=\"text\"</p><a href=\"https://x.y/?a=1&amp;b=2\">y</a>"
         );
     }
 }

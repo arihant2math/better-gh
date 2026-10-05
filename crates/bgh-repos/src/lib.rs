@@ -11,11 +11,13 @@
 
 pub mod autolinks;
 pub mod branches;
+pub mod browse;
 pub mod cache;
 pub mod collaborators;
 pub mod commits;
 pub mod contents;
 pub mod create;
+pub mod download;
 pub mod forks;
 pub mod git_http;
 pub mod gitdb;
@@ -24,6 +26,7 @@ pub mod identity;
 pub mod jobs;
 pub mod json;
 pub mod keys;
+pub mod lfs;
 pub mod media;
 pub mod protection;
 pub mod protection_api;
@@ -31,6 +34,7 @@ pub mod refs;
 pub mod repos;
 pub mod rulesets;
 pub mod settings;
+pub mod ssh;
 pub mod stars;
 pub mod stats;
 pub mod watching;
@@ -77,6 +81,7 @@ pub fn router() -> Router<AppState> {
         .merge(branches::routes())
         .merge(protection_api::routes())
         .merge(rulesets::routes())
+        .merge(download::api_router())
 }
 
 /// Git smart-HTTP routes (absolute paths). `{repo}` may carry `.git`.
@@ -91,7 +96,9 @@ pub fn web_router() -> Router<AppState> {
             "/{owner}/{repo}/git-receive-pack",
             post(git_http::receive_pack),
         )
-        .merge(contents::web_routes())
+        .merge(browse::web_router())
+        .merge(download::web_router())
+        .merge(lfs::web_router())
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages.
@@ -99,4 +106,7 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
     reg.job(stats::compute_languages);
+    reg.job(lfs::gc::run);
+    reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
+    reg.service("ssh", ssh::service);
 }

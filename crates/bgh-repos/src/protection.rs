@@ -285,6 +285,17 @@ impl Actor {
         })
     }
 
+    /// A deploy key pushing with `access` (no user: never listed in
+    /// restrictions or bypass lists).
+    pub fn deploy_key(access: &RepoAccess) -> Self {
+        Self {
+            user_id: 0,
+            permission: access.permission,
+            team_ids: Vec::new(),
+            org_admin: false,
+        }
+    }
+
     fn listed_in(&self, v: Option<&Value>) -> bool {
         let Some(v) = v else { return false };
         let has = |k: &str, id: i64| {

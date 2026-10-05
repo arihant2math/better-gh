@@ -287,6 +287,12 @@ pub fn register(reg: &mut Registry) {
     reg.job(engine::advance_run_job);
     reg.job(engine::cancel_run_job);
     reg.on_event("actions.trigger", trigger::on_event);
-    reg.service("actions.maintenance", services::maintenance);
-    reg.service("actions.builtin_runner", services::builtin_runner);
+    reg.service("actions.maintenance", |s, c| async move {
+        services::maintenance(s, c).await;
+        Ok(())
+    });
+    reg.service("actions.builtin_runner", |s, c| async move {
+        services::builtin_runner(s, c).await;
+        Ok(())
+    });
 }

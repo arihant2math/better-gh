@@ -86,7 +86,12 @@ hex = "0.4"
 # content
 comrak = { version = "0.55", default-features = false }
 ammonia = "4"
-gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
+gix = { version = "0.88", default-features = false, features = ["revision", "sha1", "parallel"] }
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-fancy"] }
+two-face = { version = "0.4", default-features = false, features = ["syntect-fancy"] }
+
+# ssh
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2"] }
 
 # mail / http clients (accounts, notify webhooks)
 lettre = { version = "0.11", default-features = false, features = [

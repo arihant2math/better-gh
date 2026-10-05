@@ -36,12 +36,15 @@ pub struct AppFactory {
     pub register: fn(&mut Registry),
 }
 
-type ServiceFn = Arc<dyn Fn(AppState, CancellationToken) -> BoxFuture<'static, ()> + Send + Sync>;
+type ServiceFn = Arc<
+    dyn Fn(AppState, CancellationToken) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+>;
 
-/// A named long-running background task (e.g. the built-in CI runner or a
-/// scheduler), started by the server binary next to the job workers. The
-/// task must return once its `CancellationToken` is cancelled. Not started
-/// by the test harness (tests drive the work deterministically).
+/// A named long-running background task (e.g. the built-in CI runner, a
+/// scheduler or the SSH server), started by the server binary next to the
+/// job workers. The task must return once its `CancellationToken` is
+/// cancelled; an error is logged. Not started by the test harness (tests
+/// drive the work deterministically or start what they need explicitly).
 #[derive(Clone)]
 pub struct Service {
     pub name: &'static str,
@@ -98,7 +101,7 @@ impl Registry {
     pub fn service<F, Fut>(&mut self, name: &'static str, run: F) -> &mut Self
     where
         F: Fn(AppState, CancellationToken) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
         self.services.push(Service {
             name,
@@ -116,9 +119,15 @@ pub fn spawn_services(
 ) -> Vec<JoinHandle<()>> {
     services
         .iter()
+        .cloned()
         .map(|svc| {
             tracing::info!(service = svc.name, "starting service");
-            tokio::spawn((svc.run)(state.clone(), shutdown.clone()))
+            let fut = (svc.run)(state.clone(), shutdown.clone());
+            tokio::spawn(async move {
+                if let Err(err) = fut.await {
+                    tracing::error!(service = svc.name, ?err, "service failed");
+                }
+            })
         })
         .collect()
 }
