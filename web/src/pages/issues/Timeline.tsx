@@ -320,6 +320,8 @@ const EVENT_ICONS: Partial<Record<IssueEvent['event'], Icon>> = {
   ready_for_review: EyeIcon,
   convert_to_draft: GitPullRequestDraftIcon,
   head_ref_force_pushed: FileDiffIcon,
+  connected: LinkIcon,
+  disconnected: LinkIcon,
 };
 
 const LOCK_REASONS: Record<string, string> = { 'off-topic': 'off-topic', 'too heated': 'too heated', resolved: 'resolved', spam: 'spam' };
@@ -442,12 +444,31 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
       const v = closedVisual(d.stateReason);
       icon = v.icon;
       cls = v.cls;
+      if (d.sourceIsPr) {
+        // Closed by merging a linked pull request.
+        text = <>{v.text} in</>;
+        extra = <IssueRef id={d.sourceIssueId} number={d.sourceNumber} repository={d.sourceRepository} isPr current={repo} />;
+        break;
+      }
       text = (
         <>
           {v.text}
           {d.commitId && <> in {sha(d.commitId)}</>}
         </>
       );
+      break;
+    }
+    case 'connected':
+    case 'disconnected': {
+      // Shown on both sides: the source is the PR on an issue, the issue on a PR.
+      const onIssue = d.sourceIsPr ?? !s.get('issue', event.issueId)?.isPr;
+      text =
+        event.event === 'connected' ? (
+          <>{onIssue ? 'linked a pull request that will close this issue' : 'linked an issue that may be closed by this pull request'}</>
+        ) : (
+          <>{onIssue ? 'removed a link to a pull request' : 'removed a link to an issue'}</>
+        );
+      extra = <IssueRef id={d.sourceIssueId} number={d.sourceNumber} repository={d.sourceRepository} isPr={onIssue} current={repo} />;
       break;
     }
     case 'reopened':
