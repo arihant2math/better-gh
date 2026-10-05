@@ -47,6 +47,8 @@ function settingsRoutes() {
   return out;
 }
 
+const AliasPage = () => import('../pages/repo/AliasPage');
+const RepoPeoplePage = () => import('../pages/repo/RepoPeoplePage');
 const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 const AdminLayout = () => import('../pages/admin/AdminLayout');
 const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout');
@@ -189,6 +191,11 @@ export function registerRoutes(): void {
     { path: '/orgs/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
+    // Organization `html_url`s (teams, people, repositories) — package P12.
+    { path: '/orgs/:org/teams/:team', load: () => import('../pages/orgsettings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
+    { path: '/orgs/:org/teams', load: AliasPage, title: (p) => `Teams · ${p.org}` },
+    { path: '/orgs/:org/people', load: AliasPage, title: (p) => `People · ${p.org}` },
+    { path: '/orgs/:org/repositories', load: AliasPage, title: (p) => `Repositories · ${p.org}` },
     // Organization Actions settings (before `/:owner/...` patterns).
     { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
     { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
@@ -300,6 +307,13 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/environments', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Environments · ${p.owner}/${p.repo}` },
+    // Header counters, check-run and label/search `html_url`s (package P12).
+    { path: '/:owner/:repo/stargazers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Stargazers · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/watchers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Watchers · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/forks', layout: RepoLayout, load: () => import('../pages/repo/ForksPage'), title: (p) => `Forks · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/runs/:id', layout: RepoLayout, load: () => import('../pages/repo/CheckRunPage'), title: (p) => `Check run ${p.id} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/labels/:name', layout: RepoLayout, load: AliasPage, title: (p) => `${p.name} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/search', layout: RepoLayout, load: AliasPage, title: (p) => `Search · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);
