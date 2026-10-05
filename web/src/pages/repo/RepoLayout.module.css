@@ -1,0 +1,83 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  flex-shrink: 0;
+  padding: 14px 16px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  flex-wrap: wrap;
+}
+
+.repoIcon {
+  color: var(--fg-subtle);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-lg);
+  font-weight: 450;
+}
+
+.owner {
+  color: var(--fg-muted);
+}
+
+.name {
+  color: var(--fg);
+  font-weight: var(--fw-semibold);
+}
+
+.slash {
+  color: var(--fg-faint);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.count {
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.starred svg {
+  color: #e3b341 !important;
+}
+
+.tabs {
+  margin: 8px -8px 0;
+}
+
+.body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.loading {
+  display: grid;
+  place-items: center;
+  height: 240px;
+  color: var(--fg-subtle);
+}
