@@ -414,6 +414,37 @@ impl Default for GitMaintenanceSettings {
     }
 }
 
+/// Data retention (`admin.retention` service; expired sessions are always
+/// deleted). A window of 0 keeps those rows forever.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RetentionSettings {
+    /// Run the retention service (hourly).
+    pub enabled: bool,
+    /// Notification threads not updated for this many days are deleted
+    /// (GitHub keeps about five months).
+    pub notifications_days: u32,
+    /// Webhook deliveries older than this lose their request/response
+    /// bodies (redelivery needs them).
+    pub webhook_payload_days: u32,
+    /// Webhook delivery metadata older than this is deleted.
+    pub webhook_delivery_days: u32,
+    /// Events API / activity rows older than this are deleted.
+    pub activity_days: u32,
+}
+
+impl Default for RetentionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            notifications_days: 150,
+            webhook_payload_days: 30,
+            webhook_delivery_days: 90,
+            activity_days: 90,
+        }
+    }
+}
+
 /// All site settings, with defaults for anything not stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -428,6 +459,7 @@ pub struct SiteSettings {
     pub maintenance: MaintenanceSettings,
     pub git_maintenance: GitMaintenanceSettings,
     pub git: GitSettings,
+    pub retention: RetentionSettings,
     pub actions: ActionsSettings,
     pub privacy: PrivacySettings,
 }
@@ -444,6 +476,7 @@ pub const SECTIONS: &[&str] = &[
     "maintenance",
     "git_maintenance",
     "git",
+    "retention",
     "actions",
     "privacy",
 ];
@@ -563,6 +596,7 @@ impl SiteSettings {
             "maintenance" => self.maintenance = serde_json::from_value(section)?,
             "git_maintenance" => self.git_maintenance = serde_json::from_value(section)?,
             "git" => self.git = serde_json::from_value(section)?,
+            "retention" => self.retention = serde_json::from_value(section)?,
             "actions" => {
                 let a: ActionsSettings = serde_json::from_value(section)?;
                 if !matches!(a.default_workflow_permissions.as_str(), "read" | "write") {

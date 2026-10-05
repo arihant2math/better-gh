@@ -22,6 +22,7 @@ pub mod node_id;
 pub mod outbox;
 pub mod pagination;
 pub mod perms;
+pub mod polling;
 pub mod privacy;
 pub mod ratelimit;
 pub mod registry;

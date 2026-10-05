@@ -5,6 +5,7 @@
 
 use axum::extract::State;
 use bgh_core::perms::{self, ReadableRepos};
+use bgh_core::polling::Polled;
 use bgh_core::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -123,22 +124,34 @@ async fn render(state: &AppState, rows: Vec<EventRow>) -> ApiResult<Vec<EventJso
         .collect())
 }
 
+/// A timeline page with GitHub's polling headers: `X-Poll-Interval` and
+/// `Last-Modified` (newest event on the page); `If-Modified-Since` → 304
+/// through the `polling::conditional` route layer.
+pub type Timeline = Polled<Page<EventJson>>;
+
 /// A page of a timeline (capped at [`MAX_EVENTS`]).
-async fn page(state: &AppState, p: &Pagination, cond: Conds) -> ApiResult<Page<EventJson>> {
+async fn page(state: &AppState, p: &Pagination, cond: Conds) -> ApiResult<Timeline> {
     let offset = p.offset();
     if offset >= MAX_EVENTS {
-        return Ok(Page {
-            items: vec![],
-            link: p.link_header(false, None),
+        return Ok(Polled {
+            body: Page {
+                items: vec![],
+                link: p.link_header(false, None),
+            },
+            last_modified: None,
         });
     }
     let limit = p.limit().min(MAX_EVENTS - offset);
     let mut rows = fetch(state, &cond.to_sql(), limit + 1, offset).await?;
     let has_next = rows.len() as i64 > limit && offset + limit < MAX_EVENTS;
     rows.truncate(limit as usize);
-    Ok(Page {
-        items: render(state, rows).await?,
-        link: p.link_header(has_next, None),
+    let last_modified = rows.iter().map(|r| r.created_at).max();
+    Ok(Polled {
+        body: Page {
+            items: render(state, rows).await?,
+            link: p.link_header(has_next, None),
+        },
+        last_modified,
     })
 }
 
@@ -149,10 +162,7 @@ fn public_only() -> Sql {
 }
 
 /// `GET /events`: public events.
-pub async fn public_events(
-    State(state): State<AppState>,
-    p: Pagination,
-) -> ApiResult<Page<EventJson>> {
+pub async fn public_events(State(state): State<AppState>, p: Pagination) -> ApiResult<Timeline> {
     let mut c = Conds::default();
     c.push(public_only());
     page(&state, &p, c).await
@@ -164,7 +174,7 @@ pub async fn repo_events(
     auth: MaybeUser,
     p: Pagination,
     Path((owner, repo)): Path<(String, String)>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     let mut c = Conds::default();
     c.with(|s| {
@@ -179,7 +189,7 @@ pub async fn network_events(
     auth: MaybeUser,
     p: Pagination,
     Path((owner, repo)): Path<(String, String)>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     let root = access.repo.source_id.unwrap_or(access.repo.id);
     let readable_set = perms::readable_repos(&state.db, auth.as_ref()).await?;
@@ -207,7 +217,7 @@ pub async fn org_events(
     State(state): State<AppState>,
     p: Pagination,
     Path(org): Path<String>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let org = find_org(&state, &org).await?;
     let mut c = Conds::default();
     c.with(|s| {
@@ -245,7 +255,7 @@ pub async fn user_events(
     auth: MaybeUser,
     p: Pagination,
     Path(username): Path<String>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let user = find_user(&state, &username).await?;
     let mut c = Conds::default();
     c.with(|s| {
@@ -260,7 +270,7 @@ pub async fn user_public_events(
     State(state): State<AppState>,
     p: Pagination,
     Path(username): Path<String>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let user = find_user(&state, &username).await?;
     let mut c = Conds::default();
     c.with(|s| {
@@ -277,7 +287,7 @@ pub async fn user_org_events(
     auth: RequireUser,
     p: Pagination,
     Path((username, org)): Path<(String, String)>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let user = find_user(&state, &username).await?;
     if user.id != auth.user.id {
         return Err(ApiError::NotFound);
@@ -312,7 +322,7 @@ pub async fn received_events(
     auth: MaybeUser,
     p: Pagination,
     Path(username): Path<String>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let user = find_user(&state, &username).await?;
     let mut c = Conds::default();
     c.push(received(user.id));
@@ -325,7 +335,7 @@ pub async fn received_public_events(
     State(state): State<AppState>,
     p: Pagination,
     Path(username): Path<String>,
-) -> ApiResult<Page<EventJson>> {
+) -> ApiResult<Timeline> {
     let user = find_user(&state, &username).await?;
     let mut c = Conds::default();
     c.push(received(user.id));
