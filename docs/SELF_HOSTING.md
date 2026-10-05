@@ -325,6 +325,11 @@ used entries are evicted beyond it, and entries unused for
 run against hosts it considers GHES; the native `upload-artifact` /
 `download-artifact` handling covers those actions.
 
+Jobs with `permissions: id-token: write` can request OpenID Connect
+tokens (issuer `https://<host>/_services/token`) for keyless AWS, GCP and
+Azure authentication; signing keys live in `{BGH_DATA_DIR}/actions/oidc/`.
+See [ACTIONS_OIDC.md](ACTIONS_OIDC.md) for the cloud trust setup.
+
 ## Backup and restore
 
 What to back up:

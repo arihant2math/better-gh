@@ -45,7 +45,9 @@ reqwest.workspace = true
 hmac.workspace = true
 async-trait.workspace = true
 tempfile.workspace = true
+rsa.workspace = true
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
+jsonwebtoken = "9"

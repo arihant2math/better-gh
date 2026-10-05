@@ -82,6 +82,10 @@ pub struct JobSpec {
     /// in when the job is acquired; see [`crate::runtime`]).
     #[serde(default)]
     pub runtime_token: String,
+    /// `ACTIONS_ID_TOKEN_REQUEST_URL` when the token has `id-token: write`
+    /// (see [`crate::oidc`]); filled in when the job is acquired.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token_request_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

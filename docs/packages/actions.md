@@ -175,7 +175,8 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).
-* Usage/billing, OIDC tokens not implemented.
+* Usage/billing not implemented. OIDC id-tokens: see
+  `docs/packages/p28-actions-oidc.md` and `docs/ACTIONS_OIDC.md`.
 * Runner: upload-artifact ignores `overwrite`/`compression-level`/`pattern`;
   checkout ignores `submodules`/`lfs`; masking does not cover encoded forms
   of secrets; docker actions ignore `pre-entrypoint`; `docker login` for

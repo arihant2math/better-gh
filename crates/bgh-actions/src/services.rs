@@ -30,6 +30,9 @@ pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
         if let Err(err) = crate::cache::expire(&state).await {
             tracing::warn!(?err, "expiring actions caches failed");
         }
+        if let Err(err) = crate::oidc::rotate(&state, false).await {
+            tracing::warn!(?err, "rotating the OIDC signing key failed");
+        }
     }
 }
 
