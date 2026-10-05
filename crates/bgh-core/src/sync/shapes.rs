@@ -153,61 +153,100 @@ pub struct Row {
 // SQL
 // ---------------------------------------------------------------------------
 
-const ISSUE_KEYS: &str = "
-    'id', i.id, 'repoId', i.repo_id, 'number', i.number, 'title', i.title,
-    'state', i.state,
-    'stateReason', CASE i.state_reason WHEN 'duplicate' THEN 'not_planned' ELSE i.state_reason END,
-    'authorId', i.author_id,
-    'assigneeIds', coalesce((SELECT array_agg(a.user_id ORDER BY a.created_at, a.user_id)
-                               FROM issue_assignees a WHERE a.issue_id = i.id), '{}'),
-    'labelIds', coalesce((SELECT array_agg(il.label_id ORDER BY il.label_id)
-                            FROM issue_labels il WHERE il.issue_id = i.id), '{}'),
-    'milestoneId', i.milestone_id, 'comments', i.comments_count, 'locked', i.locked,
-    'reactions', coalesce((SELECT json_object_agg(x.content, x.n) FROM
-                             (SELECT content, count(*) AS n FROM reactions
-                               WHERE subject_type = 'issue' AND subject_id = i.id GROUP BY content) x), '{}'),
-    'createdAt', bgh_ts(i.created_at), 'updatedAt', bgh_ts(i.updated_at),
-    'closedAt', bgh_ts(i.closed_at), 'isPr', i.is_pull_request";
+/// Issue columns (aliases are the JSON keys; `row_to_json` is about twice
+/// as fast as `json_build_object` for wide rows). `i` = issue row, `aa`,
+/// `la`, `ra` = pre-aggregated assignees, labels, reactions.
+const ISSUE_COLS: &str = r#"
+    i.id AS "id", i.repo_id AS "repoId", i.number AS "number", i.title AS "title",
+    i.state AS "state",
+    CASE i.state_reason WHEN 'duplicate' THEN 'not_planned' ELSE i.state_reason END AS "stateReason",
+    i.author_id AS "authorId", coalesce(aa.ids, '{}') AS "assigneeIds",
+    coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
+    i.comments_count AS "comments", i.locked AS "locked",
+    coalesce(ra.r, '{}') AS "reactions",
+    bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
+    bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
 
-const PR_KEYS: &str = "
-    'draft', p.draft, 'merged', p.merged, 'mergedAt', bgh_ts(p.merged_at),
-    'mergedById', p.merged_by_id, 'headRef', p.head_ref, 'headRepoId', p.head_repo_id,
-    'headSha', p.head_sha, 'baseRef', p.base_ref, 'baseSha', p.base_sha,
-    'mergeable', p.mergeable,
-    'mergeableState', CASE p.mergeable_state WHEN 'has_hooks' THEN 'clean'
-                                             WHEN 'draft' THEN 'blocked'
-                                             ELSE p.mergeable_state END,
-    'reviewDecision', coalesce(
-        (SELECT CASE WHEN bool_or(d.state = 'CHANGES_REQUESTED') THEN 'changes_requested'
-                     WHEN bool_or(d.state = 'APPROVED') THEN 'approved' END
-           FROM (SELECT DISTINCT ON (rv.user_id) rv.state FROM pr_reviews rv
-                  WHERE rv.pull_id = i.id
-                    AND rv.state IN ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED')
-                  ORDER BY rv.user_id, rv.submitted_at DESC NULLS LAST, rv.id DESC) d),
-        CASE WHEN EXISTS (SELECT 1 FROM pr_requested_reviewers q WHERE q.pull_id = i.id)
-             THEN 'review_required' END),
-    'requestedReviewerIds', coalesce((SELECT array_agg(q.user_id ORDER BY q.id) FROM pr_requested_reviewers q
-                                        WHERE q.pull_id = i.id AND q.user_id IS NOT NULL), '{}'),
-    'requestedTeamIds', coalesce((SELECT array_agg(q.team_id ORDER BY q.id) FROM pr_requested_reviewers q
-                                    WHERE q.pull_id = i.id AND q.team_id IS NOT NULL), '{}'),
-    'checks', (SELECT CASE WHEN count(*) = 0 THEN NULL
-                           WHEN bool_or(c.s NOT IN ('success', 'neutral', 'skipped', 'pending')) THEN 'failure'
-                           WHEN bool_or(c.s = 'pending') THEN 'pending'
-                           WHEN bool_and(c.s IN ('neutral', 'skipped')) THEN 'neutral'
-                           ELSE 'success' END
-                 FROM ((SELECT DISTINCT ON (cr.name)
-                               CASE WHEN cr.status <> 'completed' THEN 'pending'
-                                    ELSE coalesce(cr.conclusion, 'neutral') END AS s
-                          FROM check_runs cr
-                         WHERE cr.repo_id = i.repo_id AND cr.head_sha = p.head_sha
-                         ORDER BY cr.name, cr.id DESC)
-                       UNION ALL
-                       (SELECT DISTINCT ON (cs.context) cs.state AS s
-                          FROM commit_statuses cs
-                         WHERE cs.repo_id = i.repo_id AND cs.sha = p.head_sha
-                         ORDER BY cs.context, cs.id DESC)) c),
-    'additions', p.additions, 'deletions', p.deletions,
-    'changedFiles', p.changed_files, 'commits', p.commits";
+/// Pull request columns (`p` = pull_requests, `rq` = requested reviewers,
+/// `rd` = review decision, `ck` = combined checks).
+const PR_COLS: &str = r#"
+    p.draft AS "draft", p.merged AS "merged", bgh_ts(p.merged_at) AS "mergedAt",
+    p.merged_by_id AS "mergedById", p.head_ref AS "headRef", p.head_repo_id AS "headRepoId",
+    p.head_sha AS "headSha", p.base_ref AS "baseRef", p.base_sha AS "baseSha",
+    p.mergeable AS "mergeable",
+    CASE p.mergeable_state WHEN 'has_hooks' THEN 'clean' WHEN 'draft' THEN 'blocked'
+                           ELSE p.mergeable_state END AS "mergeableState",
+    coalesce(rd.decision, CASE WHEN rq.pull_id IS NOT NULL THEN 'review_required' END) AS "reviewDecision",
+    coalesce(rq.users, '{}') AS "requestedReviewerIds",
+    coalesce(rq.teams, '{}') AS "requestedTeamIds",
+    ck.checks AS "checks",
+    p.additions AS "additions", p.deletions AS "deletions",
+    p.changed_files AS "changedFiles", p.commits AS "commits""#;
+
+/// Issue/PR select. `fi` / `fx` are the filter predicate on the issue
+/// aliases `i` / `x`. Child rows are aggregated once per set (hash joins),
+/// the issue JSON and the PR JSON are built with `row_to_json` and spliced
+/// (`{..issue..,..pr..}`) for pull requests.
+fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
+    let body = if body { r#", i.body AS "body""# } else { "" };
+    format!(
+        r#"SELECT 'repo:' || i.repo_id AS scope, i.id,
+       CASE WHEN p.issue_id IS NULL THEN b.j ELSE left(b.j, -1) || ',' || substr(pj.j, 2) END AS j
+  FROM issues i
+  LEFT JOIN (SELECT a.issue_id, array_agg(a.user_id ORDER BY a.created_at, a.user_id) AS ids
+               FROM issue_assignees a JOIN issues x ON x.id = a.issue_id
+              WHERE {fx} GROUP BY a.issue_id) aa ON aa.issue_id = i.id
+  LEFT JOIN (SELECT l.issue_id, array_agg(l.label_id ORDER BY l.label_id) AS ids
+               FROM issue_labels l JOIN issues x ON x.id = l.issue_id
+              WHERE {fx} GROUP BY l.issue_id) la ON la.issue_id = i.id
+  LEFT JOIN (SELECT z.subject_id, json_object_agg(z.content, z.n) AS r
+               FROM (SELECT e.subject_id, e.content, count(*) AS n
+                       FROM reactions e JOIN issues x ON x.id = e.subject_id
+                      WHERE e.subject_type = 'issue' AND {fx}
+                      GROUP BY e.subject_id, e.content) z
+              GROUP BY z.subject_id) ra ON ra.subject_id = i.id
+  LEFT JOIN pull_requests p ON p.issue_id = i.id
+  LEFT JOIN (SELECT q.pull_id,
+                    array_agg(q.user_id ORDER BY q.id) FILTER (WHERE q.user_id IS NOT NULL) AS users,
+                    array_agg(q.team_id ORDER BY q.id) FILTER (WHERE q.team_id IS NOT NULL) AS teams
+               FROM pr_requested_reviewers q JOIN issues x ON x.id = q.pull_id
+              WHERE {fx} GROUP BY q.pull_id) rq ON rq.pull_id = i.id
+  LEFT JOIN (SELECT z.pull_id,
+                    CASE WHEN bool_or(z.state = 'CHANGES_REQUESTED') THEN 'changes_requested'
+                         WHEN bool_or(z.state = 'APPROVED') THEN 'approved' END AS decision
+               FROM (SELECT DISTINCT ON (v.pull_id, v.user_id) v.pull_id, v.state
+                       FROM pr_reviews v JOIN issues x ON x.id = v.pull_id
+                      WHERE {fx} AND v.state IN ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED')
+                      ORDER BY v.pull_id, v.user_id, v.submitted_at DESC NULLS LAST, v.id DESC) z
+              GROUP BY z.pull_id) rd ON rd.pull_id = i.id
+  LEFT JOIN (SELECT c.repo_id, c.sha,
+                    CASE WHEN bool_or(c.s NOT IN ('success', 'neutral', 'skipped', 'pending')) THEN 'failure'
+                         WHEN bool_or(c.s = 'pending') THEN 'pending'
+                         WHEN bool_and(c.s IN ('neutral', 'skipped')) THEN 'neutral'
+                         ELSE 'success' END AS checks
+               FROM ((SELECT DISTINCT ON (cr.repo_id, cr.head_sha, cr.name)
+                             cr.repo_id, cr.head_sha AS sha,
+                             CASE WHEN cr.status <> 'completed' THEN 'pending'
+                                  ELSE coalesce(cr.conclusion, 'neutral') END AS s
+                        FROM check_runs cr
+                        JOIN pull_requests px ON px.repo_id = cr.repo_id AND px.head_sha = cr.head_sha
+                        JOIN issues x ON x.id = px.issue_id
+                       WHERE {fx}
+                       ORDER BY cr.repo_id, cr.head_sha, cr.name, cr.id DESC)
+                     UNION ALL
+                     (SELECT DISTINCT ON (cs.repo_id, cs.sha, cs.context) cs.repo_id, cs.sha, cs.state
+                        FROM commit_statuses cs
+                        JOIN pull_requests px ON px.repo_id = cs.repo_id AND px.head_sha = cs.sha
+                        JOIN issues x ON x.id = px.issue_id
+                       WHERE {fx}
+                       ORDER BY cs.repo_id, cs.sha, cs.context, cs.id DESC)) c
+              GROUP BY c.repo_id, c.sha) ck ON ck.repo_id = i.repo_id AND ck.sha = p.head_sha
+  CROSS JOIN LATERAL (SELECT row_to_json(ij)::text AS j FROM (SELECT {ISSUE_COLS}{body}) ij) b
+  LEFT JOIN LATERAL (SELECT row_to_json(pr)::text AS j FROM (SELECT {PR_COLS}) pr
+                      WHERE p.issue_id IS NOT NULL) pj ON true
+ WHERE {fi}"#
+    )
+}
 
 /// `(scope, id, j)` select for `model`; `$1` is the filter's id array and
 /// `$2` the viewer id (may be NULL).
@@ -298,14 +337,11 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
             col("m", filter, &[("ids", "id"), ("repos", "repo_id")])?
         ),
         Model::Issue => {
-            let body = if opts.issue_body { ", 'body', i.body" } else { "" };
-            format!(
-                "SELECT 'repo:' || i.repo_id AS scope, i.id, (CASE WHEN p.issue_id IS NULL
-                     THEN json_build_object({ISSUE_KEYS}{body})
-                     ELSE json_build_object({ISSUE_KEYS}{body}, {PR_KEYS}) END)::text AS j
-                   FROM issues i LEFT JOIN pull_requests p ON p.issue_id = i.id
-                  WHERE {}",
-                col("i", filter, &[("ids", "id"), ("repos", "repo_id")])?
+            let map = [("ids", "id"), ("repos", "repo_id")];
+            issue_sql(
+                &col("i", filter, &map)?,
+                &col("x", filter, &map)?,
+                opts.issue_body,
             )
         }
         Model::Comment => format!(
@@ -449,7 +485,7 @@ pub async fn load_joined(
     }
     let sql = select_sql(model, &filter, opts).ok_or_else(|| unsupported(model, &filter))?;
     sqlx::query_as(&format!(
-        "SELECT coalesce(string_agg(s.j, ',' ORDER BY s.id), ''), count(*) FROM ({sql}) s"
+        "SELECT coalesce(string_agg(s.j, ','), ''), count(*) FROM ({sql}) s"
     ))
     .bind(filter.ids())
     .bind(opts.viewer)

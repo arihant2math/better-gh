@@ -618,28 +618,49 @@ async fn bootstrap_is_compressed() {
     let app = bgh_server::test_app().await;
     let ada = app.create_user("ada").await;
     let repo = repo_id(&app, &ada, "api", false).await;
-    for n in 1..=50 {
-        issue(&app, repo, n, ada.id, &format!("Issue number {n}")).await;
+    // Small documents go through the generic compression layer, large ones
+    // (>= 64 KiB) are compressed by the handler.
+    for (n, count) in [(1, 20), (2, 400)] {
+        exec(
+            &app,
+            &format!(
+                "DELETE FROM issues; INSERT INTO issues (repo_id, number, title, author_id)
+                 SELECT {repo}, g, 'Issue number ' || g || ' {n}', {} FROM generate_series(1, {count}) g",
+                ada.id
+            ),
+        )
+        .await;
+        let res = app
+            .get("/_bgh/sync/bootstrap")
+            .auth(&ada)
+            .header("accept-encoding", "gzip")
+            .send()
+            .await;
+        res.assert_status(200);
+        assert_eq!(res.header("content-encoding"), Some("gzip"));
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(&res.body[..])
+            .read_to_string(&mut text)
+            .unwrap();
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(rows(&body, "issue").len(), count);
+
+        let res = app
+            .get("/_bgh/sync/bootstrap")
+            .auth(&ada)
+            .header("accept-encoding", "gzip, deflate, br")
+            .send()
+            .await;
+        assert_eq!(res.header("content-encoding"), Some("br"));
+        let mut text = String::new();
+        brotli::Decompressor::new(&res.body[..], 4096)
+            .read_to_string(&mut text)
+            .unwrap();
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(rows(&body, "issue").len(), count);
+
+        let res = app.get("/_bgh/sync/bootstrap").auth(&ada).send().await;
+        assert!(res.header("content-encoding").is_none());
+        assert_eq!(rows(&res.json(), "issue").len(), count);
     }
-    let res = app
-        .get("/_bgh/sync/bootstrap")
-        .auth(&ada)
-        .header("accept-encoding", "gzip")
-        .send()
-        .await;
-    res.assert_status(200);
-    assert_eq!(res.header("content-encoding"), Some("gzip"));
-    let mut text = String::new();
-    flate2::read::GzDecoder::new(&res.body[..])
-        .read_to_string(&mut text)
-        .unwrap();
-    let body: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(rows(&body, "issue").len(), 50);
-    let res = app
-        .get("/_bgh/sync/bootstrap")
-        .auth(&ada)
-        .header("accept-encoding", "br")
-        .send()
-        .await;
-    assert_eq!(res.header("content-encoding"), Some("br"));
 }

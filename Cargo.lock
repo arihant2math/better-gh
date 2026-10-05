@@ -512,6 +512,7 @@ dependencies = [
  "base64",
  "bgh-core",
  "bgh-server",
+ "brotli",
  "chrono",
  "flate2",
  "futures",

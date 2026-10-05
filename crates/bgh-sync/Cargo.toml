@@ -21,10 +21,11 @@ base64.workspace = true
 http.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+brotli = "9"
+flate2 = "1"
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
 tokio.workspace = true
 tokio-tungstenite = "0.29"
-flate2 = "1"

@@ -24,6 +24,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS org_members_id_key ON org_members (id);
 CREATE INDEX IF NOT EXISTS pr_requested_reviewers_pull_idx ON pr_requested_reviewers (pull_id);
 
 -- Sync timestamp format (`2024-01-01T00:00:00Z`), same as the REST API.
+-- STABLE (like to_char) so the planner inlines it.
 CREATE OR REPLACE FUNCTION bgh_ts(t TIMESTAMPTZ) RETURNS TEXT
-    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    LANGUAGE sql STABLE PARALLEL SAFE
     AS $$ SELECT to_char(t AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') $$;
