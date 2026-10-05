@@ -1,6 +1,10 @@
 # P26 actions-triggers — status
 
-**In progress: self-integration pending.** Branch `bgh/p26-actions-triggers`.
+**Done.** Self-integrated (fast-forward) into `claude/sleepy-cray-9jj0t3`
+with the full gate green (fmt, clippy, `cargo test --workspace`, web
+typecheck/lint/test/build, `api-smoke.sh`, `gh-compat.sh` incl. the new
+`repository_dispatch` cases, `actions-e2e.sh` Playwright run).
+Branch `bgh/p26-actions-triggers`.
 Scope: `docs/PHASE4_PLAN.md` §P26 (plus the §5 Actions quick fixes moved
 into P26: badge.svg and the stuck check re-run). Migration range 3800–3899
 (used: `3800_actions_triggers.sql`).
@@ -129,13 +133,16 @@ group.
 
 ## Known gaps
 
-* `deployment` / `deployment_status`, `merge_group`, `discussion*`,
+* `merge_group`, `discussion*`,
   `registry_package`, `branch_protection_rule`, `status`, `page_build`,
   `project*` triggers are still not fired (P19/P20/P39/P56 add the
   domain features; each needs one `map_event` arm).
-* The GITHUB_TOKEN loop guard (events caused by a job token don't start
-  workflows) belongs to P8; `workflow_run` / `repository_dispatch` are the
-  documented exceptions on GitHub.
+* P8's job-token loop guard (`trigger::on_event`) lets
+  `repository_dispatch`, `workflow_dispatch` and `workflow_run` through, as
+  on GitHub (`workflow_run` chains are bounded by depth instead).
+* `deployment` / `deployment_status` triggers: P19's `DeploymentCreated` /
+  `DeploymentStatusCreated` landed during this package; mapping them is one
+  `map_event` arm, left to P20 (environment protection).
 * `release` `published` for a non-draft create is followed by GitHub's
   `released`; only the events bgh-releases emits are mapped.
 * Badge text width is approximated (no font metrics).
