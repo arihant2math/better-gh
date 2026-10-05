@@ -7,3 +7,4 @@ batch landed on `claude/sleepy-cray-9jj0t3` (see `docs/WORKER_GUIDE.md`,
 | Time (UTC) | Packages | Result | Pushed commit | Tests |
 |---|---|---|---|---|
 | 2026-10-05 16:00 | — | queue opened at `fc37a0d`; no branch marked ready | — | — |
+| 2026-10-05 16:20 | P18 metadata-import, P24 rulesets-ui | green (P24: additive conflicts in routes.ts, mock/code.ts, OrgSettingsLayout.tsx resolved; Rulesets nav kept in its group) | `ce257f2` | rust 967 passed / 12 ignored; web 407 passed |
