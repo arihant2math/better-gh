@@ -55,6 +55,7 @@ CREATE TABLE actions_runs (
     workflow_def         JSONB NOT NULL,
     inputs               JSONB,
     concurrency_group    TEXT,
+    cancel_requested     BOOLEAN NOT NULL DEFAULT false,
     run_started_at       TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()

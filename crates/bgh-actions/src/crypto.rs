@@ -102,8 +102,8 @@ fn write_private(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
 
 /// Server key for `state`, loaded once per data dir.
 pub fn server_key(state: &AppState) -> ApiResult<ServerKey> {
-    static KEYS: OnceLock<std::sync::Mutex<Vec<(PathBuf, Option<String>, ServerKey)>>> =
-        OnceLock::new();
+    type Cache = std::sync::Mutex<Vec<(PathBuf, Option<String>, ServerKey)>>;
+    static KEYS: OnceLock<Cache> = OnceLock::new();
     let cache = KEYS.get_or_init(Default::default);
     let mut cache = cache.lock().expect("key cache");
     let dir = state.config.data_dir.clone();

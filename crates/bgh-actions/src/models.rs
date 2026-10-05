@@ -50,6 +50,7 @@ pub struct RunRow {
     pub workflow_def: Value,
     pub inputs: Option<Value>,
     pub concurrency_group: Option<String>,
+    pub cancel_requested: bool,
     pub run_started_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -59,7 +60,7 @@ impl RunRow {
     pub const COLUMNS: &'static str = "id, repo_id, workflow_id, run_number, run_attempt, name, \
         display_title, event, status, conclusion, ref, head_branch, head_sha, head_repo_id, \
         actor_id, triggering_actor_id, check_suite_id, pull_request_ids, event_payload, \
-        workflow_yaml, workflow_def, inputs, concurrency_group, run_started_at, created_at, \
+        workflow_yaml, workflow_def, inputs, concurrency_group, cancel_requested, run_started_at, created_at, \
         updated_at";
 
     pub async fn find(db: impl sqlx::PgExecutor<'_>, id: i64) -> Result<Option<Self>, sqlx::Error> {
