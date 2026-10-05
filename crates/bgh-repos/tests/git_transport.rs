@@ -95,8 +95,9 @@ async fn push_then_clone_roundtrip() {
     )
     .await);
 
-    // The post-receive job was enqueued before `git push` returned.
-    assert_eq!(app.drain_jobs().await, 1);
+    // The post-receive job was enqueued before `git push` returned (it
+    // then queues the languages computation for the default branch).
+    assert_eq!(app.drain_jobs().await, 2);
     let res = app.get("/api/v3/repos/alice/demo").send().await;
     let v = res.json();
     assert!(v["pushed_at"].is_string(), "pushed_at set: {v}");
@@ -317,8 +318,8 @@ async fn transport_authorization() {
     assert!(!out.ok);
     assert_eq!(
         app.drain_jobs().await,
-        1,
-        "only the first successful push enqueued work"
+        2,
+        "only the first successful push enqueued work (post-receive + languages)"
     );
 }
 
@@ -405,5 +406,9 @@ async fn branch_protection_rejects_direct_pushes() {
     )
     .await;
     assert!(!out.ok);
-    assert!(out.stderr.contains("cannot delete"), "{}", out.stderr);
+    assert!(
+        out.stderr.to_lowercase().contains("cannot delete"),
+        "{}",
+        out.stderr
+    );
 }

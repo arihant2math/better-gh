@@ -11,6 +11,7 @@ pub mod error;
 pub mod events;
 pub mod extract;
 pub mod jobs;
+pub mod mail;
 pub mod markdown;
 pub mod models;
 pub mod node_id;
@@ -47,5 +48,6 @@ pub mod prelude {
     pub use crate::registry::Registry;
     pub use crate::state::AppState;
     pub use crate::sync::SyncAction;
+    pub use crate::sync::shapes::Model as SyncModel;
     pub use crate::time::Timestamp;
 }

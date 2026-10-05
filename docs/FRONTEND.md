@@ -116,7 +116,8 @@ export function lockIssue(issue: Issue, reason?: string) {
 ```
 
 * `ops.update(model, id, patch)` — arrays can use `{ $add: [...], $remove: [...] }`
-  so concurrent edits compose; `ops.insert(model, row)` with `tempId()` for
+  so concurrent edits compose; object fields (e.g. `projectItem.values`) can use
+  `{ $merge: { key: value } }` (a `null` value removes the key); `ops.insert(model, row)` with `tempId()` for
   creates; `ops.delete(model, id)`.
 * Returns `{ tx, done }`. You usually ignore `done`; failures roll back and
   toast automatically. Await `done` only for follow-ups (e.g. navigate to a
@@ -225,3 +226,12 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimisti
 BGH_BACKEND=http://localhost:3000 npx vite --port 5174 &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/admin-smoke.mjs http://localhost:5174 /tmp/admin-shots
 ```
+
+## Feature-local sync code
+
+Synced models used only by lazy pages may keep their selectors and mutations
+next to the feature instead of in `sync/selectors.ts` / `sync/mutations.ts`
+(which load on first paint). Projects do this in `sync/projects.ts`. Child
+models whose scope depends on a parent row (project fields/views/items) get
+their scope through the optional `lookup` argument of the schema's `scope`
+function.

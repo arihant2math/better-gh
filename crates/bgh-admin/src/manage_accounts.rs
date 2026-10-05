@@ -98,7 +98,7 @@ const ACCOUNT_SELECT: &str = "
            act.last_active_at,
            coalesce(rs.repos_count, 0) AS repos_count,
            coalesce(rs.disk_usage_kb, 0) AS disk_usage_kb,
-           EXISTS (SELECT 1 FROM user_two_factor t WHERE t.user_id = u.id) AS two_factor_enabled,
+           EXISTS (SELECT 1 FROM user_two_factor t WHERE t.user_id = u.id AND t.enabled_at IS NOT NULL) AS two_factor_enabled,
            CASE WHEN u.type = 'Organization'
                 THEN (SELECT count(*) FROM org_members m WHERE m.org_id = u.id) END AS members_count
       FROM users u

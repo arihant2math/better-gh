@@ -68,6 +68,16 @@ impl Pagination {
         }
     }
 
+    /// Use a different default (and cap) for `per_page`, for endpoints
+    /// whose GitHub default differs from 30 (e.g. notifications: 50/50).
+    pub fn with_default_per_page(mut self, default: u32, max: u32) -> Self {
+        if !self.per_page_explicit {
+            self.per_page = default;
+        }
+        self.per_page = self.per_page.clamp(1, max);
+        self
+    }
+
     /// SQL `LIMIT` for a plain page.
     pub fn limit(&self) -> i64 {
         i64::from(self.per_page)

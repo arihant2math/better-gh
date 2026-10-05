@@ -9,13 +9,23 @@ publish.workspace = true
 [dependencies]
 bgh-core.workspace = true
 axum.workspace = true
+tokio.workspace = true
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+redis.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+base64.workspace = true
+http.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+brotli = "9"
+flate2 = "1"
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
 tokio.workspace = true
+tokio-tungstenite = "0.29"

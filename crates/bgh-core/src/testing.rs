@@ -288,6 +288,12 @@ impl TestApp {
         config.job_workers = 0;
         config.signup_enabled = true;
         config.db_max_connections = 5;
+        // In-process requests have no client IP, so every anonymous request
+        // of a test shares one bucket; keep it well above GitHub's 60/h.
+        config.rate_limit_anonymous = 5000;
+        // Tests stand in for a reverse proxy: `X-Forwarded-For` names the
+        // client (audit IPs, per-IP rate-limit buckets).
+        config.trust_proxy = true;
         tweak(&mut config);
 
         let pool = PgPoolOptions::new()
@@ -531,8 +537,20 @@ impl TestRequest<'_> {
     }
 
     /// `Cookie: ...` (see [`TestApp::session_cookie`]).
+    /// `Cookie` header. For a `bgh_session` cookie the matching
+    /// `X-CSRF-Token` is added too, like the web client does; send a raw
+    /// `.header("cookie", ..)` to test CSRF rejection.
     pub fn cookie(self, cookie: &str) -> Self {
-        self.header("cookie", cookie)
+        let csrf = cookie
+            .split(';')
+            .filter_map(|p| p.trim().split_once('='))
+            .find(|(k, _)| *k == crate::auth::SESSION_COOKIE)
+            .map(|(_, v)| crate::auth::csrf_token(v));
+        let req = self.header("cookie", cookie);
+        match csrf {
+            Some(t) => req.header(crate::auth::CSRF_HEADER, &t),
+            None => req,
+        }
     }
 
     pub fn json(mut self, body: &impl Serialize) -> Self {

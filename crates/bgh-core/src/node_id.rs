@@ -39,6 +39,12 @@ pub enum NodeType {
     DeployKey,
     Notification,
     IssueEvent,
+    OrganizationInvitation,
+    PullRequestReviewThread,
+    Workflow,
+    WorkflowRun,
+    Artifact,
+    Environment,
 }
 
 impl NodeType {
@@ -71,6 +77,12 @@ impl NodeType {
         Self::DeployKey,
         Self::Notification,
         Self::IssueEvent,
+        Self::OrganizationInvitation,
+        Self::PullRequestReviewThread,
+        Self::Workflow,
+        Self::WorkflowRun,
+        Self::Artifact,
+        Self::Environment,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -103,6 +115,12 @@ impl NodeType {
             Self::DeployKey => "DeployKey",
             Self::Notification => "Notification",
             Self::IssueEvent => "IssueEvent",
+            Self::OrganizationInvitation => "OrganizationInvitation",
+            Self::PullRequestReviewThread => "PullRequestReviewThread",
+            Self::Workflow => "Workflow",
+            Self::WorkflowRun => "WorkflowRun",
+            Self::Artifact => "Artifact",
+            Self::Environment => "Environment",
         }
     }
 

@@ -8,7 +8,6 @@ use bgh_core::audit::Target;
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use bgh_repos::jobs::DeleteStorage;
-use bgh_repos::json::repo_sync_json;
 use serde_json::json;
 
 use crate::common::{self, account_target, log, login_taken, repo_target};
@@ -127,14 +126,8 @@ pub async fn rename_account(
     .fetch_all(&mut *tx)
     .await?;
     for repo in &repos {
-        tx.sync(
-            &sync::repo_scope(repo.id),
-            "repository",
-            repo.id,
-            SyncAction::Update,
-            &repo_sync_json(repo, &renamed.login),
-        )
-        .await?;
+        tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Update)
+            .await?;
     }
     if renamed.is_org() {
         tx.sync(
@@ -215,14 +208,8 @@ pub async fn transfer_repo_in(
             .execute(&mut **tx)
             .await?;
     }
-    tx.sync(
-        &sync::repo_scope(moved.id),
-        "repository",
-        moved.id,
-        SyncAction::Update,
-        &repo_sync_json(&moved, &new_owner.login),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Repo, moved.id, SyncAction::Update)
+        .await?;
     Ok(moved)
 }
 
@@ -233,6 +220,12 @@ pub async fn delete_repo_in(
     owner: &db::User,
     repo: &db::Repository,
 ) -> ApiResult<()> {
+    // Direct forks borrow objects via alternates; the storage job makes them
+    // self-contained before removing the directory.
+    let forks: Vec<i64> = sqlx::query_scalar("SELECT id FROM repositories WHERE parent_id = $1")
+        .bind(repo.id)
+        .fetch_all(&mut **tx)
+        .await?;
     sqlx::query("DELETE FROM repositories WHERE id = $1")
         .bind(repo.id)
         .execute(&mut **tx)
@@ -245,15 +238,13 @@ pub async fn delete_repo_in(
         .execute(&mut **tx)
         .await?;
     }
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "repository",
-        repo.id,
-        SyncAction::Delete,
-        &json!({ "id": repo.id }),
-    )
+    tx.sync_delete(&sync::repo_scope(repo.id), SyncModel::Repo, repo.id)
+        .await?;
+    tx.enqueue(&DeleteStorage {
+        repo_id: repo.id,
+        forks,
+    })
     .await?;
-    tx.enqueue(&DeleteStorage { repo_id: repo.id }).await?;
     tx.emit(Event::RepositoryDeleted {
         repo_id: repo.id,
         owner_id: owner.id,

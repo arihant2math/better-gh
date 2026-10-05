@@ -9,6 +9,9 @@ use sha2::{Digest, Sha256};
 /// Prefix of personal access tokens (`bghp_…`).
 pub const PAT_PREFIX: &str = "bghp_";
 
+/// Prefix of OAuth app access tokens (`bgho_…`).
+pub const OAUTH_TOKEN_PREFIX: &str = "bgho_";
+
 /// Hash a password with Argon2id (PHC string format).
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
@@ -42,6 +45,17 @@ pub fn random_token(len: usize) -> String {
 /// New personal access token: `bghp_` + 40 alphanumerics.
 pub fn new_pat() -> String {
     format!("{PAT_PREFIX}{}", random_token(40))
+}
+
+/// New OAuth access token: `bgho_` + 40 alphanumerics.
+pub fn new_oauth_token() -> String {
+    format!("{OAUTH_TOKEN_PREFIX}{}", random_token(40))
+}
+
+/// Constant-time string comparison (for secrets compared in memory).
+pub fn constant_time_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// Hex SHA-256 of a secret. Tokens and session ids are stored only hashed.

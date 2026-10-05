@@ -14,9 +14,7 @@ use axum::http::{HeaderMap, StatusCode};
 use bgh_core::audit::Target;
 use bgh_core::jobs::JobPayload;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_core::time::ts;
-use bgh_repos::json::repo_sync_json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -333,18 +331,9 @@ async fn update_repo(
     .fetch_optional(&mut *tx)
     .await?;
     let Some(repo) = repo else { return Ok(()) };
-    let Some(owner) = db::User::find(&mut *tx, repo.owner_id).await? else {
-        return Ok(());
-    };
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "repository",
-        repo.id,
-        SyncAction::Update,
-        &repo_sync_json(&repo, &owner.login),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Update)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     tx.commit().await?;
     Ok(())
 }

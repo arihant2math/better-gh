@@ -75,7 +75,7 @@ pub async fn log(
         action,
         target,
         data,
-        bgh_core::auth::client_ip(headers).as_deref(),
+        bgh_core::auth::forwarded_ip(headers).as_deref(),
     )
     .await?;
     Ok(())

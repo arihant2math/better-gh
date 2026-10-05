@@ -4,9 +4,7 @@
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_core::time::ts;
-use bgh_repos::json::repo_sync_json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -361,14 +359,8 @@ pub async fn update(
         )
         .await?;
     }
-    tx.sync(
-        &sync::repo_scope(updated.id),
-        "repository",
-        updated.id,
-        SyncAction::Update,
-        &repo_sync_json(&updated, &owner.login),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Repo, updated.id, SyncAction::Update)
+        .await?;
     tx.emit(Event::RepositoryUpdated {
         repo_id: updated.id,
         actor_id: auth.user.id,

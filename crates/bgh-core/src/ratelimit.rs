@@ -6,12 +6,16 @@
 //! IP (`X-Forwarded-For`, else a shared bucket). Responses carry GitHub's
 //! `X-RateLimit-{Limit,Remaining,Used,Reset,Resource}` headers; exceeding
 //! the limit yields 403 "API rate limit exceeded".
+//!
+//! [`hit`] / [`count`] / [`clear`]: counters for throttling sensitive
+//! actions (failed logins, 2FA attempts, password reset mails).
 
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
+use redis::AsyncCommands;
 use serde::Serialize;
 
 use crate::auth::{self, AuthContext};
@@ -30,13 +34,10 @@ pub struct Quota {
     pub reset: i64,
 }
 
-fn bucket(ctx: Option<&AuthContext>, headers: &HeaderMap) -> String {
+fn bucket(ctx: Option<&AuthContext>, ip: &str) -> String {
     match ctx {
         Some(c) => format!("u:{}", c.user.id),
-        None => format!(
-            "ip:{}",
-            auth::client_ip(headers).unwrap_or_else(|| "-".into())
-        ),
+        None => format!("ip:{ip}"),
     }
 }
 
@@ -47,11 +48,12 @@ fn window() -> (i64, i64) {
 }
 
 /// Count one request (when `consume`) and return the caller's quota, or
-/// `None` when rate limiting is disabled.
+/// `None` when rate limiting is disabled. `ip` is the client IP
+/// ([`auth::client_ip`]), used to bucket anonymous callers.
 pub async fn quota(
     state: &AppState,
     ctx: Option<&AuthContext>,
-    headers: &HeaderMap,
+    ip: &str,
     consume: bool,
 ) -> Result<Option<Quota>, ApiError> {
     let s = settings::load(state).await?;
@@ -64,7 +66,7 @@ pub async fn quota(
         s.rate_limits.unauthenticated_per_hour
     };
     let (w, reset) = window();
-    let key = state.redis_key(&format!("ratelimit:{}:{w}", bucket(ctx, headers)));
+    let key = state.redis_key(&format!("ratelimit:{}:{w}", bucket(ctx, ip)));
     let mut redis = state.redis.clone();
     let used: i64 = if consume {
         let (n,): (i64,) = redis::pipe()
@@ -119,7 +121,8 @@ pub async fn rate_limit_middleware(
     let Ok(ctx) = auth::resolve_request(&state, &mut req).await else {
         return next.run(req).await;
     };
-    let q = match quota(&state, ctx.as_ref(), req.headers(), true).await {
+    let ip = auth::client_ip(&state.config, req.headers(), req.extensions());
+    let q = match quota(&state, ctx.as_ref(), &ip, true).await {
         Ok(Some(q)) => q,
         Ok(None) => return next.run(req).await,
         Err(err) => {
@@ -133,7 +136,7 @@ pub async fn rate_limit_middleware(
             Some(c) => format!("API rate limit exceeded for user ID {}.", c.user.id),
             None => format!(
                 "API rate limit exceeded for {}. (But here's the good news: Authenticated requests get a higher rate limit.)",
-                auth::client_ip(req.headers()).unwrap_or_else(|| "your IP".into())
+                ip
             ),
         };
         let mut resp = ApiError::Status(StatusCode::FORBIDDEN, message).into_response();
@@ -143,4 +146,43 @@ pub async fn rate_limit_middleware(
     let mut resp = next.run(req).await;
     set_headers(resp.headers_mut(), &q);
     resp
+}
+
+// ---------------------------------------------------------------------------
+// Throttling counters
+// ---------------------------------------------------------------------------
+
+/// Increment the counter `key` (expires `window_secs` after its first hit)
+/// and return the new count.
+pub async fn hit(state: &AppState, key: &str, window_secs: u64) -> redis::RedisResult<u64> {
+    let key = state.redis_key(&format!("throttle:{key}"));
+    let mut redis = state.redis.clone();
+    let (n,): (u64,) = redis::pipe()
+        .atomic()
+        .incr(&key, 1)
+        .cmd("EXPIRE")
+        .arg(&key)
+        .arg(window_secs)
+        .arg("NX")
+        .ignore()
+        .query_async(&mut redis)
+        .await?;
+    Ok(n)
+}
+
+/// Current value of the counter `key` (0 if unset or on Redis errors).
+pub async fn count(state: &AppState, key: &str) -> u64 {
+    let mut redis = state.redis.clone();
+    redis
+        .get::<_, Option<u64>>(state.redis_key(&format!("throttle:{key}")))
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0)
+}
+
+/// Reset the counter `key`.
+pub async fn clear(state: &AppState, key: &str) {
+    let mut redis = state.redis.clone();
+    let _: Result<(), _> = redis.del(state.redis_key(&format!("throttle:{key}"))).await;
 }

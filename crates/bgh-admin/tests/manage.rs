@@ -29,11 +29,13 @@ async fn lists_and_filters_users() {
         .execute(&app.state.db)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO user_two_factor (user_id) VALUES ($1)")
-        .bind(bob.id)
-        .execute(&app.state.db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO user_two_factor (user_id, totp_secret, enabled_at) VALUES ($1, 'abc', now())",
+    )
+    .bind(bob.id)
+    .execute(&app.state.db)
+    .await
+    .unwrap();
     sqlx::query("UPDATE users SET created_at = now() - interval '200 days' WHERE login = 'carol'")
         .execute(&app.state.db)
         .await
@@ -120,11 +122,13 @@ async fn user_details_and_actions() {
     .execute(&app.state.db)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO user_two_factor (user_id, secret) VALUES ($1, 'abc')")
-        .bind(alice.id)
-        .execute(&app.state.db)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO user_two_factor (user_id, totp_secret, enabled_at) VALUES ($1, 'abc', now())",
+    )
+    .bind(alice.id)
+    .execute(&app.state.db)
+    .await
+    .unwrap();
     let cookie = app.session_cookie(&alice).await;
 
     let res = app.get("/_bgh/admin/users/alice").auth(&admin).send().await;

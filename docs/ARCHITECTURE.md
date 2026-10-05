@@ -71,8 +71,9 @@ Each domain crate exposes exactly three functions, all already wired into
   `X-GitHub-Media-Type`).
 * `pub fn web_router() -> Router<AppState>`: routes with **absolute** paths
   (`/_bgh/...`, git transport, raw/archive downloads), merged at the root.
-* `pub fn register(reg: &mut bgh_core::Registry)`: background job handlers
-  and event listeners.
+* `pub fn register(reg: &mut bgh_core::Registry)`: background job handlers,
+  event listeners and long-running services (`reg.service`, started by the
+  `bgh` binary only, e.g. the built-in CI runner).
 
 Domain crates depend on `bgh-core` (and `bgh-git` when needed),
 **never on each other's internals** — shared logic that two domains need
@@ -94,7 +95,15 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 `BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
 `BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
-`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`.
+`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`, `BGH_SMTP_URL` (unset: mail is
+logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`, `BGH_RATE_LIMIT`
+(`5000`/h per user, `0` disables), `BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP),
+`BGH_TRUST_PROXY` (`false`; take client IPs from `X-Forwarded-For`), and
+`BGH_OIDC_*` for a single SSO provider (see `bgh_accounts::sso`; site
+setting `auth.oidc` overrides).
+(`BGH_RATE_LIMIT*` are read but the API rate limiter currently follows
+the `rate_limits` site setting below.) CI settings `BGH_ACTIONS_*`
+(see `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
@@ -196,8 +205,12 @@ and octokit-style raw requests.
   The first user account becomes site admin.
 * Sessions: random cookie `bgh_session` (HttpOnly, SameSite=Lax, Secure on
   https), stored as SHA-256 in `sessions`, cached in Redis for 5 min.
-  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry.
-  Basic auth with a password is accepted for git transport only.
+  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry;
+  OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
+  Basic auth with a password is accepted for git transport only, and never
+  for accounts with two-factor authentication.
+* API rate limits: `bgh_core::ratelimit::middleware` on `/api/v3`
+  (Redis fixed windows, `X-RateLimit-*` headers).
 
 ### Migrations
 
@@ -224,10 +237,15 @@ optimistic-mutation reconciliation) is specified normatively in
 [`docs/SYNC_PROTOCOL.md`](SYNC_PROTOCOL.md); this section is a summary.
 
 * Use `bgh_core::db::Tx` (a transaction that collects post-commit side
-  effects): `tx.sync(scope, model, id, action, &data)` records the row in
-  the transaction and publishes it after `tx.commit()`; `tx.emit(event)` and
-  `tx.enqueue(&job)` likewise. Published messages are the JSON of
-  `bgh_core::sync::SyncRecord` (`{"id","scope","model","mid","a","d"}`).
+  effects): `tx.sync_model(SyncModel::Issue, id, action)` (and
+  `sync_issue`, `sync_delete`, `sync_user`, `sync_viewer_repo`) loads the
+  row's compact client shape from `bgh_core::sync::shapes` — the single
+  place that builds them, shared with bootstrap and partial sync — records
+  it in the transaction and publishes it after `tx.commit()`;
+  `tx.emit(event)` and `tx.enqueue(&job)` likewise. Published messages are
+  the JSON of `bgh_core::sync::SyncRecord`
+  (`{"id","scope","model","mid","a","d","tx"}`). How domain crates must
+  record changes: BACKEND_PATTERNS.md §8a.
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
   JSONB, tx UUID NULL, created_at)` **in the same transaction** via
@@ -236,7 +254,22 @@ optimistic-mutation reconciliation) is specified normatively in
   the delta echoes it. `record` serializes writers with a transaction-scoped
   advisory lock so sync ids become visible in id order. After commit, call
   `bgh_core::sync::notify(&state, ...)` which publishes on the Redis channel
-  `sync:{scope}`.
+  `sync:{scope}`. The request context is a tokio task-local installed by
+  `bgh_sync::http_middleware` (mounted for every route), which also adds
+  `X-Bgh-Sync-Id` and implements `X-Client-Tx` idempotency in Redis.
+* Fan-out: one `PSUBSCRIBE {prefix}sync:*` connection per process
+  (`bgh_sync::hub`), multiplexed to all sockets through bounded queues
+  (slow sockets are closed with 1013 and resume). The hub delivers in id
+  order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
+  from `sync_actions`; a socket subscribing at hub position `L` replays
+  `(since, L]` from the log and receives `> L` live. Access changes
+  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
+  `membership`/`team`/`viewerRepo` deltas, sign-outs via
+  `sync:!access`) trigger permission rechecks and `revoke`s.
+* Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
+  actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
+  `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
+  latest action per row instead.
 * Scopes: `repo:{id}` (repo, issues + PR metadata, labels, milestones,
   comments, reviews, timeline events), `user:{id}` (notifications,
   viewer-specific repo data: permission/starred), `org:{id}` (org,
@@ -294,10 +327,20 @@ Site-level account changes also emit `UserAccountChanged` /
 * Storage: `bgh_git::RepoStore` (`{data_dir}/repos/{id % 256:02x}/{id}.git`,
   bare, created with an empty template and server config: no auto-gc,
   `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
-  (alternates) — a source repo with forks must be repacked into them
-  before deletion (TODO). Repo deletion removes the row immediately and
-  the directory in the `repos.delete_storage` job.
+  (alternates). Repo deletion removes the row immediately; the
+  `repos.delete_storage` job first makes the direct forks self-contained
+  (`GitCli::dissociate`: `repack -a -d` + drop alternates), then removes
+  the directory. Repositories generated from templates copy (repack) only
+  the objects they reference. Renamed/transferred repositories keep their
+  old `owner/name` in `repo_redirects`; `RepoAccess::load` follows it.
+  Wikis live next to the
+  repository as `{id}.wiki.git` (`RepoStore::wiki()`, owned by bgh-wiki;
+  bgh-repos' git routes delegate `{repo}.wiki(.git)` to `bgh_wiki::git`).
 * Reads via `gix` (fast, in-process): refs, trees, blobs, commits, log.
+  `bgh_git::ops::GitCli` wraps the CLI for filtered history, diffs with
+  patches, merge bases, `merge-tree`, object writes and batch
+  `cat-file`; `with_objects_of` exposes another repository's objects via
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES` (cross-fork compare/merge).
   gix is used for the object database and refs only; commit/tree/tag
   bytes are parsed by `bgh_git::objects` (stable across gix releases).
   gix is blocking: async code calls `store.read(repo_id, |r| ...)`, which
@@ -310,15 +353,43 @@ Site-level account changes also emit `UserAccountChanged` /
   (`/{owner}/{repo}[.git]/info/refs|git-upload-pack|git-receive-pack`),
   auth and permission checks live in `bgh-repos`. Ref updates are parsed
   from the receive-pack command list before forwarding and passed to an
-  authorize callback (branch protection: locked branches, deletions,
-  required PRs, push restrictions — force-push detection needs the objects
-  and is TODO). After git exits, refs are re-read to determine which
+  authorize callback (`bgh_repos::protection`: classic branch protection
+  and rulesets — locks, deletions, creations, required PRs, push
+  restrictions, required status checks from the database). Checks needing
+  the pushed objects (force pushes, linear history) run in a `pre-receive`
+  hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
+  `-c core.hooksPath`) while the objects are quarantined
+  (`GIT_QUARANTINE_PATH`), so rejected packs leave nothing behind. API ref
+  writes go through `bgh_repos::refs::write_ref` (same rules, verified
+  with `git merge-base --is-ancestor`). After git exits, refs are re-read to determine which
   updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config
   (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL=/dev/null`).
-* LFS batch API + object storage on disk.
-* Highlighted/rendered output cached in Redis keyed by blob SHA.
+* Repository handles: `RepoStore::open` serves cheap clones of cached
+  `gix::ThreadSafeRepository` handles (process-wide LRU of 256, keyed by
+  path; gix is built with `parallel`). `RepoStore::delete` evicts; call
+  `bgh_git::cache::evict` after repack/gc.
+* SSH: `bgh_repos::ssh` (russh) runs as the `ssh` service
+  (`Registry::service`, started by `bgh serve` only). Public-key auth
+  against `ssh_keys` / `deploy_keys` by OpenSSH `SHA256:` fingerprint;
+  upload-pack is full duplex, receive-pack reuses the smart-HTTP
+  pre-authorization path (`smart_http::receive_pack_stream`), so branch
+  protection and `repos.post_receive` are identical. Host key in
+  `{data_dir}/ssh/host_ed25519_key`.
+* LFS: batch API (basic transfer), objects content-addressed in
+  `{data_dir}/lfs` and linked per repository in `lfs_objects`
+  (`repositories.lfs_size` accounting), locks in `lfs_locks`; SSH
+  `git-lfs-authenticate` issues `RemoteAuth` tokens (Redis, 1 h).
+* Archives (`git archive`) stream while being teed into
+  `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
+  blobs via `git cat-file` and resolve LFS pointers.
+* Code browser endpoints (`/_bgh/repos/{o}/{r}/tree|tree-commits|blob|
+  blame|history|readme|refs`): see `bgh_repos::browse`. Highlighting is
+  syntect (class-based `hl-*` spans, CSS at `/_bgh/highlight.css`), cached
+  in Redis by blob SHA; last-commit maps, blame and history are cached by
+  commit + path. Full-SHA URLs are immutable (`private` for private
+  repositories).
 
 ## Web client (web/)
 

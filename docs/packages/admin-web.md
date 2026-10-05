@@ -1,14 +1,15 @@
 # F7 admin-web — status
 
-Branch `bgh/admin-web` (merged `origin/bgh/admin`). Web package; no new
+Branch `bgh/admin-web` (merged with the integration branch, which now
+contains admin, accounts, notify and sync). Web package; no new
 crates or migrations. **Status: complete** (gaps below need backend work).
 
 Verified with `npm run typecheck && npm run lint && npm test && npm run
-build` (bundle budget OK: initial JS 121.9 KB gzip, +3.1 KB over the base
+build` (bundle budget OK: initial JS 123.2 KB gzip, about +3 KB over the base
 for the route table, `app/site.ts` and the admin palette commands; every
 admin/org page is its own lazy chunk, largest 28 KB raw) and with Playwright
-against a real backend (`web/scripts/admin-smoke.mjs`: 23 checks, all
-passing; screenshots in light and dark mode).
+against a real backend (`web/scripts/admin-smoke.mjs`: 22 checks, all
+passing against the integrated server; screenshots in light and dark mode).
 
 ## What's built
 
@@ -87,20 +88,6 @@ passing; screenshots in light and dark mode).
   admins could not sign in through the web client to turn maintenance off
   (test in `bgh-admin/tests/settings.rs`).
 * Docs: `docs/FRONTEND.md` "Admin-style pages", `web/README.md`.
-
-## Notes for the integrator (found while testing a local merge of
-admin + sync + accounts + notify + repos-api + issues)
-
-* `user_two_factor` is created by both `0100_accounts.sql` and
-  `0800_admin.sql` with different columns → `migrate` fails. Keep
-  accounts' table; admin's 2FA queries should treat `enabled_at IS NOT
-  NULL` as enabled.
-* `bgh_core::ratelimit` and `auth::client_ip` exist on both admin and
-  accounts with different APIs; `/api/v3/rate_limit` is routed by both
-  (axum panics on the duplicate). `bgh-admin` test `settings::rate_limits`
-  expects rate limiting off by default while accounts enables it via
-  `BGH_RATE_LIMIT=5000`.
-* `mail.rs` is added by accounts and notify.
 
 ## Known gaps / TODO
 

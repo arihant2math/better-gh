@@ -103,3 +103,43 @@ pub(crate) async fn run(
     }
     Ok(out.stdout)
 }
+
+/// Raw result of a git invocation that may legitimately exit non-zero
+/// (e.g. `merge-tree` exits 1 on conflicts).
+pub(crate) struct RawOutput {
+    pub code: Option<i32>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Run git to completion and return its exit code and output without
+/// treating a non-zero exit as an error.
+pub(crate) async fn run_status(
+    bin: &str,
+    git_dir: Option<&Path>,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> GitResult<RawOutput> {
+    let mut c = git(bin, git_dir);
+    c.args(args)
+        .envs(envs.iter().copied())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let out = c.spawn()?.wait_with_output().await?;
+    Ok(RawOutput {
+        code: out.status.code(),
+        stdout: out.stdout,
+        stderr: out.stderr,
+    })
+}
+
+/// Spawn git with piped stdout for streaming its output.
+pub(crate) fn spawn_stdout(
+    bin: &str,
+    git_dir: &Path,
+    args: &[&str],
+) -> GitResult<tokio::process::Child> {
+    let mut c = git(bin, Some(git_dir));
+    c.args(args).stdout(Stdio::piped()).stderr(Stdio::null());
+    Ok(c.spawn()?)
+}

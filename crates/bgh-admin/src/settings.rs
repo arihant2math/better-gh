@@ -303,9 +303,10 @@ pub async fn delete_announcement(
 pub async fn rate_limit(
     State(state): State<AppState>,
     auth: MaybeUser,
-    headers: HeaderMap,
+    req: axum::extract::Request,
 ) -> ApiResult<Json<Value>> {
-    let q = bgh_core::ratelimit::quota(&state, auth.as_ref(), &headers, false)
+    let ip = bgh_core::auth::client_ip(&state.config, req.headers(), req.extensions());
+    let q = bgh_core::ratelimit::quota(&state, auth.as_ref(), &ip, false)
         .await?
         .ok_or_else(|| {
             ApiError::Status(
