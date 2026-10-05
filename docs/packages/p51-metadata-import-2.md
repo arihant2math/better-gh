@@ -111,8 +111,9 @@ resolve; it owns nothing). Audit: `org.mannequin_reclaim_invite`,
   Decline, a confirm dialog before moving, history with moved counts).
 * Dashboard banner (`pages/imports/ReclaimBanner.tsx`, dashboard chunk) for
   pending invitations.
-* All new pages are lazy route chunks. Initial JS 144.4 KB gzip (base
-  144.2 KB): the +0.2 KB are the three route-table entries themselves.
+* All new pages are lazy route chunks. Initial JS 144.6 KB gzip after
+  merging the integration branch; this package adds +0.2 KB, which is only
+  its three route-table entries (measured with and without them).
 * Mocks: `src/mock/extra/metadataImports.ts` (new steps, GitLab kind),
   `src/mock/extra/mannequins.ts` (two seeded mannequins; invite the
   viewer's own login to try accepting).
