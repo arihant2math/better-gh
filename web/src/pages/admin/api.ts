@@ -330,6 +330,8 @@ export interface SiteSettings {
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   git_maintenance: GitMaintenanceSettings;
+  /** Push hardening; `null` disables a limit. */
+  git: { fsck_on_push: boolean; max_object_size_mb: number | null; warn_object_size_mb: number | null; max_push_size_mb: number | null };
 }
 
 /** Placeholder the server returns for stored secrets; sending it back keeps them. */

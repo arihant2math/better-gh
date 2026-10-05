@@ -609,3 +609,60 @@ async fn host_key_is_persistent() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), first);
     stop.cancel();
 }
+
+#[tokio::test]
+async fn push_hardening_over_ssh() {
+    if !have_ssh() {
+        eprintln!("ssh not installed; skipping");
+        return;
+    }
+    let s = start().await;
+    let alice = s.app.create_user("alice").await;
+    s.app.create_repo(&alice, "hard").await;
+    let key = s.user_key(&alice).await;
+    let w = s.tmp.path().join("work");
+    let c1 = work_repo(&w).await;
+    let url = s.url("alice", "hard");
+    ok(s.git(&key, &w, &["push", &url, "main"]).await);
+
+    // refs/pull/* is server-only, alone or in a mirror push.
+    let out = s
+        .git(&key, &w, &["push", &url, "main:refs/pull/1/head"])
+        .await;
+    assert!(!out.ok);
+    assert!(
+        out.stderr.contains("deny updating a hidden ref"),
+        "{}",
+        out.stderr
+    );
+    ok(git(&w, &["update-ref", "refs/pull/2/head", &c1]).await);
+    ok(git(&w, &["branch", "feature"]).await);
+    let out = s.git(&key, &w, &["push", "--mirror", &url]).await;
+    assert!(!out.ok);
+    assert!(
+        out.stderr.contains("deny updating a hidden ref"),
+        "{}",
+        out.stderr
+    );
+    let refs = ok(s.git(&key, &w, &["ls-remote", &url]).await).stdout;
+    assert!(refs.contains("refs/heads/feature"), "{refs}");
+    assert!(!refs.contains("refs/pull/"), "{refs}");
+
+    // Oversize files are rejected with GH001.
+    std::fs::write(w.join("huge.bin"), vec![0u8; 101 * 1024 * 1024]).unwrap();
+    ok(git(&w, &["add", "huge.bin"]).await);
+    ok(git(&w, &["commit", "-q", "-m", "huge"]).await);
+    let out = s.git(&key, &w, &["push", &url, "main"]).await;
+    assert!(!out.ok);
+    assert!(
+        out.stderr
+            .contains("GH001: Large files detected. You may want to try Git Large File Storage"),
+        "{}",
+        out.stderr
+    );
+    let refs = ok(s
+        .git(&key, &w, &["ls-remote", &url, "refs/heads/main"])
+        .await)
+    .stdout;
+    assert!(refs.starts_with(&c1), "{refs}");
+}

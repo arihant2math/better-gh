@@ -1052,6 +1052,7 @@ export class MockServer implements Transport {
           mergeable_state: pr.mergeableState ?? 'unknown',
           protected: true,
           blockers,
+          requirements: blockers.map((message) => ({ message, source: 'branch protection rule "main"', source_type: 'branch_protection' as const })),
           approvals: pr.reviewDecision === 'approved' ? 1 : 0,
           required_approvals: 1,
           changes_requested: pr.reviewDecision === 'changes_requested',
