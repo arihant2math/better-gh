@@ -7,7 +7,7 @@ use bgh_core::error::unique_violation;
 use bgh_core::models::api::Repository;
 use bgh_core::perms::{self, RepoAccess};
 use bgh_core::prelude::*;
-use bgh_git::write::{self, CommitRequest, FileChange, Identity};
+use bgh_git::write::{self, CommitRequest, FileChange};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -108,26 +108,6 @@ fn wants_private(body: &CreateRepoBody) -> bool {
     }
 }
 
-async fn noreply_identity(state: &AppState, user: &db::User) -> ApiResult<Identity> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM user_emails WHERE user_id = $1 AND is_primary")
-            .bind(user.id)
-            .fetch_optional(&state.db)
-            .await?;
-    let email = email.unwrap_or_else(|| {
-        format!(
-            "{}+{}@users.noreply.{}",
-            user.id,
-            user.login,
-            state.config.hostname()
-        )
-    });
-    Ok(Identity::new(
-        user.name.clone().unwrap_or_else(|| user.login.clone()),
-        email,
-    ))
-}
-
 async fn create(
     state: &AppState,
     auth: &AuthContext,
@@ -209,6 +189,15 @@ async fn create(
         _ => e.into(),
     })?;
 
+    // A new repository takes over a redirect left by a rename/transfer.
+    sqlx::query(
+        "DELETE FROM repo_redirects WHERE lower(owner_login) = lower($1) AND lower(name) = lower($2)",
+    )
+    .bind(&owner.login)
+    .bind(&repo.name)
+    .execute(&mut *tx)
+    .await?;
+
     // The creator watches the new repository (like GitHub).
     sqlx::query("INSERT INTO watches (user_id, repo_id) VALUES ($1, $2)")
         .bind(auth.user.id)
@@ -270,7 +259,7 @@ async fn finish_create(
     auto_init: bool,
 ) -> ApiResult<db::Repository> {
     if auto_init {
-        let author = noreply_identity(state, &auth.user).await?;
+        let author = crate::identity::default_identity(state, &auth.user).await?;
         let mut readme = format!("# {}\n", repo.name);
         if let Some(d) = &repo.description {
             readme.push_str(&format!("\n{d}\n"));

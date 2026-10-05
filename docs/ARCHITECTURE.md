@@ -266,12 +266,20 @@ optimistic-mutation reconciliation) is specified normatively in
 * Storage: `bgh_git::RepoStore` (`{data_dir}/repos/{id % 256:02x}/{id}.git`,
   bare, created with an empty template and server config: no auto-gc,
   `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
-  (alternates) — a source repo with forks must be repacked into them
-  before deletion (TODO). Repo deletion removes the row immediately and
-  the directory in the `repos.delete_storage` job. Wikis live next to the
+  (alternates). Repo deletion removes the row immediately; the
+  `repos.delete_storage` job first makes the direct forks self-contained
+  (`GitCli::dissociate`: `repack -a -d` + drop alternates), then removes
+  the directory. Repositories generated from templates copy (repack) only
+  the objects they reference. Renamed/transferred repositories keep their
+  old `owner/name` in `repo_redirects`; `RepoAccess::load` follows it.
+  Wikis live next to the
   repository as `{id}.wiki.git` (`RepoStore::wiki()`, owned by bgh-wiki;
   bgh-repos' git routes delegate `{repo}.wiki(.git)` to `bgh_wiki::git`).
 * Reads via `gix` (fast, in-process): refs, trees, blobs, commits, log.
+  `bgh_git::ops::GitCli` wraps the CLI for filtered history, diffs with
+  patches, merge bases, `merge-tree`, object writes and batch
+  `cat-file`; `with_objects_of` exposes another repository's objects via
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES` (cross-fork compare/merge).
   gix is used for the object database and refs only; commit/tree/tag
   bytes are parsed by `bgh_git::objects` (stable across gix releases).
   gix is blocking: async code calls `store.read(repo_id, |r| ...)`, which
@@ -284,9 +292,15 @@ optimistic-mutation reconciliation) is specified normatively in
   (`/{owner}/{repo}[.git]/info/refs|git-upload-pack|git-receive-pack`),
   auth and permission checks live in `bgh-repos`. Ref updates are parsed
   from the receive-pack command list before forwarding and passed to an
-  authorize callback (branch protection: locked branches, deletions,
-  required PRs, push restrictions — force-push detection needs the objects
-  and is TODO). After git exits, refs are re-read to determine which
+  authorize callback (`bgh_repos::protection`: classic branch protection
+  and rulesets — locks, deletions, creations, required PRs, push
+  restrictions, required status checks from the database). Checks needing
+  the pushed objects (force pushes, linear history) run in a `pre-receive`
+  hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
+  `-c core.hooksPath`) while the objects are quarantined
+  (`GIT_QUARANTINE_PATH`), so rejected packs leave nothing behind. API ref
+  writes go through `bgh_repos::refs::write_ref` (same rules, verified
+  with `git merge-base --is-ancestor`). After git exits, refs are re-read to determine which
   updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config

@@ -183,7 +183,8 @@ pub type ScopeLoadFn = for<'c> fn(
     &'c mut PgConnection,
     &'c str,
     Option<i64>,
-) -> futures::future::BoxFuture<'c, Result<ScopeRows, sqlx::Error>>;
+)
+    -> futures::future::BoxFuture<'c, Result<ScopeRows, sqlx::Error>>;
 
 /// A crate that owns synced models outside `bgh-sync` (e.g. bgh-projects)
 /// registers one of these from its `register()` via

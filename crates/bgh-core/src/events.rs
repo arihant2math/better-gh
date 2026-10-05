@@ -385,6 +385,34 @@ pub enum Event {
         actor_id: i64,
         target_id: i64,
     },
+    /// A user starred (`starred: true`) or unstarred a repository.
+    RepositoryStarred {
+        repo_id: i64,
+        actor_id: i64,
+        starred: bool,
+    },
+    /// `fork_id` was created as a fork of `repo_id`.
+    RepositoryForked {
+        repo_id: i64,
+        fork_id: i64,
+        actor_id: i64,
+    },
+    RepositoryRenamed {
+        repo_id: i64,
+        actor_id: i64,
+        old_name: String,
+    },
+    RepositoryTransferred {
+        repo_id: i64,
+        actor_id: i64,
+        old_owner_id: i64,
+    },
+    /// A collaborator was added (invitation accepted or direct add).
+    CollaboratorAdded {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
 }
 
 impl Event {
@@ -447,6 +475,11 @@ impl Event {
             Self::TeamRepoAdded { .. } => "team_repo_added",
             Self::TeamRepoRemoved { .. } => "team_repo_removed",
             Self::UserFollowed { .. } => "user_followed",
+            Self::RepositoryStarred { .. } => "repository_starred",
+            Self::RepositoryForked { .. } => "repository_forked",
+            Self::RepositoryRenamed { .. } => "repository_renamed",
+            Self::RepositoryTransferred { .. } => "repository_transferred",
+            Self::CollaboratorAdded { .. } => "collaborator_added",
         }
     }
 
@@ -498,7 +531,12 @@ impl Event {
             | Self::ReactionDeleted { repo_id, .. }
             | Self::ReleasePublished { repo_id, .. }
             | Self::TeamRepoAdded { repo_id, .. }
-            | Self::TeamRepoRemoved { repo_id, .. } => Some(*repo_id),
+            | Self::TeamRepoRemoved { repo_id, .. }
+            | Self::RepositoryStarred { repo_id, .. }
+            | Self::RepositoryForked { repo_id, .. }
+            | Self::RepositoryRenamed { repo_id, .. }
+            | Self::RepositoryTransferred { repo_id, .. }
+            | Self::CollaboratorAdded { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -569,7 +607,12 @@ impl Event {
             | Self::TeamMemberRemoved { actor_id, .. }
             | Self::TeamRepoAdded { actor_id, .. }
             | Self::TeamRepoRemoved { actor_id, .. }
-            | Self::UserFollowed { actor_id, .. } => Some(*actor_id),
+            | Self::UserFollowed { actor_id, .. }
+            | Self::RepositoryStarred { actor_id, .. }
+            | Self::RepositoryForked { actor_id, .. }
+            | Self::RepositoryRenamed { actor_id, .. }
+            | Self::RepositoryTransferred { actor_id, .. }
+            | Self::CollaboratorAdded { actor_id, .. } => Some(*actor_id),
             Self::AccessChanged { .. } => None,
         }
     }

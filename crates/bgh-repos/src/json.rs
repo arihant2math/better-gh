@@ -20,8 +20,12 @@ pub async fn full_repo(
     if let Some(id) = repo.source_id.filter(|s| Some(*s) != repo.parent_id) {
         related.push(id);
     }
+    if let Some(id) = repo.template_repository_id {
+        related.push(id);
+    }
     let mut parent = None;
     let mut source = None;
+    let mut template_repository = None;
     let mut network_count = repo.forks_count;
     if !related.is_empty() {
         let rows: Vec<db::Repository> = sqlx::query_as(&format!(
@@ -38,11 +42,14 @@ pub async fn full_repo(
             if Some(m.id) == repo.parent_id {
                 parent = Some(m.clone());
             }
+            if Some(m.id) == repo.template_repository_id {
+                template_repository = Some(m.clone());
+            }
             if Some(m.id) == repo.source_id {
                 source = Some(m);
             }
         }
-        if source.is_none() {
+        if source.is_none() && repo.fork {
             source = parent.clone();
         }
     }
@@ -56,7 +63,7 @@ pub async fn full_repo(
             network_count,
             parent,
             source,
-            template_repository: None,
+            template_repository,
         },
     ))
 }
