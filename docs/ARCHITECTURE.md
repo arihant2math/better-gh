@@ -58,6 +58,8 @@ crates/
   bgh-actions/             CI: workflow parsing, runner orchestration
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
+  bgh-import/              metadata importer (GitHub/GHES issues, labels,
+                           milestones, releases, users/mannequins)
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -130,7 +132,10 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
 `bgh admin create-org --login --admin <user> [--name]`,
 `bgh admin create-token --user <login> [--scopes a,b] [--name]
-[--expires-in-days]` (prints a PAT), `bgh healthcheck` (probes `/healthz`
+[--expires-in-days]` (prints a PAT), `bgh import github --repo O/R --owner
+<login> [--api-url] [--user-map FILE] …` / `bgh import resume --id N`
+(metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
+the log), `bgh healthcheck` (probes `/healthz`
 on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
 reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
@@ -452,6 +457,19 @@ Site-level account changes also emit `UserAccountChanged` /
   with `--prune` and are read-only (`RepoAccess::require_not_mirror`);
   fetched refs emit `Push` with `origin` `mirror`/`import` (Actions skips
   them). Details: `docs/packages/p11-import-mirrors.md`.
+* Metadata imports (`bgh-import`, `/_bgh/metadata-imports`): a GitHub/GHES
+  repository's git (through the P11 import, push origin
+  `metadata-import`, which webhooks, notifications, activity and
+  commit-keyword closing skip), settings, labels, milestones and issues
+  with **original numbers**, comments, reactions, key events, releases with
+  assets and optionally teams. Writes go through internal insert APIs
+  (`bgh_issues::import`, `bgh_releases::import`) that keep source authors
+  and timestamps and emit no domain events (sync actions only). Each object
+  commits with its `import_mappings` row (resumable, idempotent); source
+  users map by verified email, then a login map, else to a non-login
+  **mannequin** (`users.mannequin`). The source client is SSRF-pinned, uses
+  conditional requests and backs off on rate limits. Details:
+  `docs/packages/p18-metadata-import.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.

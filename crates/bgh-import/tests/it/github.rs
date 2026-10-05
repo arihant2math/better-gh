@@ -749,14 +749,26 @@ async fn validation_and_permissions() {
         .await
         .assert_status(422);
     app.drain_jobs().await;
-    assert_eq!(
-        app.get(&format!("/_bgh/metadata-imports/{id}"))
-            .auth(&octo)
-            .send()
-            .await
-            .json()["status"],
-        "cancelled"
-    );
+    let cancelled = app
+        .get(&format!("/_bgh/metadata-imports/{id}"))
+        .auth(&octo)
+        .send()
+        .await
+        .json();
+    assert_eq!(cancelled["status"], "cancelled");
+    // The git step was cancelled with it ...
+    assert_eq!(cancelled["git"]["status"], "cancelled");
+
+    // ... and resuming runs both again to completion.
+    app.post(&format!("/_bgh/metadata-imports/{id}/resume"))
+        .auth(&octo)
+        .send()
+        .await
+        .assert_status(200);
+    let done = wait(app, &octo, id).await;
+    assert_eq!(done["status"], "complete", "{done:#}");
+    assert_eq!(done["git"]["status"], "complete");
+    assert_eq!(done["stats"]["issues"], 3);
 }
 
 #[tokio::test]

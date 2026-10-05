@@ -436,6 +436,18 @@ pub async fn cancel(
             "Only a queued or running import can be cancelled",
         ));
     }
+    // Stop the git step too (P11 kills a running fetch when its row
+    // leaves `importing`).
+    if let Some(repo_id) = row.repo_id {
+        sqlx::query(
+            "UPDATE repo_imports SET status = 'cancelled', phase = 'cancelled', updated_at = now(),
+                    completed_at = now()
+              WHERE repo_id = $1 AND status IN ('queued', 'importing')",
+        )
+        .bind(repo_id)
+        .execute(&state.db)
+        .await?;
+    }
     bgh_core::audit::log(
         &state.db,
         Some(&auth.user),
@@ -518,6 +530,31 @@ pub async fn resume_import(
         return Err(ApiError::unprocessable(
             "The import is already queued or running",
         ));
+    }
+    // A failed or cancelled git step runs again (with the new token).
+    let git_credentials = match token.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => Some(
+            bgh_repos::import::Credentials::from_parts(Some("x-access-token"), Some(t))
+                .expect("both parts")
+                .seal(state)?,
+        ),
+        None => None,
+    };
+    let git: Option<i64> = sqlx::query_scalar(
+        "UPDATE repo_imports
+            SET status = 'queued', phase = 'queued', error = NULL, objects_received = 0,
+                objects_total = 0, bytes_received = 0, lfs_received = 0, lfs_total = 0,
+                enc_credentials = COALESCE($2, enc_credentials), updated_at = now(),
+                completed_at = NULL
+          WHERE repo_id = $1 AND status IN ('failed', 'cancelled') RETURNING id",
+    )
+    .bind(row.repo_id)
+    .bind(&git_credentials)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(import_id) = git {
+        tx.enqueue(&bgh_repos::import::RunImport { import_id })
+            .await?;
     }
     tx.enqueue(&RunImport { import_id: row.id }).await?;
     bgh_core::audit::log(
