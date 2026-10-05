@@ -37,6 +37,7 @@ const Crumbs = observer(function Crumbs() {
   if (pathname === '/') parts.push({ to: '/', label: 'Home' });
   else if (top === 'notifications') parts.push({ to: '/notifications', label: 'Inbox' });
   else if (top === 'settings') parts.push({ to: '/settings', label: 'Settings' });
+  else if (top === 'search') parts.push({ to: pathname + window.location.search, label: 'Search' });
   else if (top === 'issues' && !p.owner) parts.push({ to: '/issues', label: 'My issues' });
   else if (top === 'pulls' && !p.owner) parts.push({ to: '/pulls', label: 'Reviews' });
   else if (p.owner) {

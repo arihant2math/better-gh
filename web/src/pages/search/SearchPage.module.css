@@ -335,6 +335,17 @@ a.subtle:hover {
 
 .codeLine:hover {
   background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.codeGap {
+  display: block;
+  width: 52px;
+  padding-right: 12px;
+  color: var(--fg-faint);
+  line-height: 14px;
+  text-align: right;
+  user-select: none;
 }
 
 .codeHit {

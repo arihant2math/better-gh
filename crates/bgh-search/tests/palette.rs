@@ -110,6 +110,58 @@ async fn palette_results() {
     assert_eq!(v["issues"].as_array().unwrap().len(), 1);
 }
 
+#[tokio::test]
+async fn palette_org_scope() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let bob = app.create_user("bob").await;
+    let a = create_repo(&app, &alice, json!({"name": "rocket-a"})).await;
+    let b = create_repo(&app, &bob, json!({"name": "rocket-b"})).await;
+    issue(&app, a, IssueSpec::new("Rocket launch alice", &alice)).await;
+    issue(&app, b, IssueSpec::new("Rocket launch bob", &bob)).await;
+
+    let full_names = |v: &serde_json::Value, key: &str, field: &str| -> Vec<String> {
+        v[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x[field].as_str().unwrap().to_string())
+            .collect()
+    };
+    let v = get_json(&app, "/_bgh/search?q=rocket", None).await;
+    assert_eq!(full_names(&v, "issues", "repo").len(), 2, "{v}");
+    assert_eq!(full_names(&v, "repos", "full_name").len(), 2, "{v}");
+
+    // Case-insensitive owner login; users are not scoped.
+    let v = get_json(&app, "/_bgh/search?q=rocket&org=Bob", None).await;
+    assert_eq!(
+        full_names(&v, "issues", "repo"),
+        vec!["bob/rocket-b"],
+        "{v}"
+    );
+    assert_eq!(full_names(&v, "repos", "full_name"), vec!["bob/rocket-b"]);
+    let v = get_json(&app, "/_bgh/search?q=al&org=bob", None).await;
+    assert_eq!(full_names(&v, "users", "login"), vec!["alice"]);
+
+    // Unknown login → empty issues/repos, not an error.
+    let v = get_json(&app, "/_bgh/search?q=rocket&org=nobody", None).await;
+    assert_eq!(v["issues"], json!([]));
+    assert_eq!(v["repos"], json!([]));
+
+    // `repo` wins over `org`.
+    let v = get_json(
+        &app,
+        "/_bgh/search?q=rocket&org=bob&repo=alice/rocket-a",
+        None,
+    )
+    .await;
+    assert_eq!(
+        full_names(&v, "issues", "repo"),
+        vec!["alice/rocket-a"],
+        "{v}"
+    );
+}
+
 /// Seeds 100k issues across 200 repositories (plus 2k users) and measures
 /// `/_bgh/search` latency. Run with:
 /// `cargo test -p bgh-search --release --test palette -- --ignored --nocapture`

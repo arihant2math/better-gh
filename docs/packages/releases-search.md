@@ -63,7 +63,7 @@ Behavior notes:
 | `/search/labels` | `repository_id` + `q`, trigram/similarity score; sort `created`, `updated` |
 | `/search/topics` | aggregated from readable repositories' topics; `repositories:` range |
 | `/search/code` | trigram index over default-branch blobs: substring (case-insensitive), `"phrases"`, `/regex/` (validated with the `regex` crate, run as Postgres `~*`), `NOT`/`-`, `OR`, `repo:`/`org:`/`user:`, `language:`, `path:` (substring, globs, `/anchored`, `/regex/`), `extension:`, `filename:`, `size:`, `in:file,path`, `fork:`, `is:`; `text_matches` fragments + `line_numbers` |
-| `/_bgh/search` (web) | palette: `{q, took_ms, issues[], repos[], users[]}`, prefix tsquery for issues, `owner/name` repo matching, `#n` with `repo=`; 3 queries in parallel |
+| `/_bgh/search` (web) | palette: `{q, took_ms, issues[], repos[], users[]}`, prefix tsquery for issues, `owner/name` repo matching, `#n` with `repo=`; `org=<login>` limits issues/repos to that owner (unknown → empty; `repo=` wins); 3 queries in parallel |
 
 Common: `{total_count, incomplete_results, items[] + score}` envelope,
 `Link` header (`last` capped to the 1000-result window), 422 for missing
@@ -135,7 +135,7 @@ with a payload snapshot; actor/org/repo name are rendered at read time.
 | `/users/{u}/events/public` | public |
 | `/users/{u}/events/orgs/{org}` | authenticated as `u` only; readable org repos |
 | `/users/{u}/received_events[/public]` | events of watched/starred repos and followed users (excluding `u`'s own) |
-| `/_bgh/feed?before=&limit=` (web) | received + own, readable, cursor pagination (`next_before`) |
+| `/_bgh/feed?before=&limit=&org=` (web) | received + own, readable, cursor pagination (`next_before`); `org=<login>` keeps events of repos owned by that account |
 
 Timelines are capped at 300 events (GitHub). Event mapping:
 

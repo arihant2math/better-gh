@@ -1,4 +1,4 @@
-//! `GET /_bgh/search?q=&limit=&repo=owner/name`: compact, prefix-matching
+//! `GET /_bgh/search?q=&limit=&repo=owner/name&org=login`: compact, prefix-matching
 //! results for the web command palette (issues/PRs, repositories, users),
 //! three index-backed queries run concurrently.
 
@@ -22,6 +22,9 @@ pub struct PaletteParams {
     pub limit: Option<i64>,
     /// Restrict issues to `owner/name`.
     pub repo: Option<String>,
+    /// Restrict issues and repositories to those owned by this org/user
+    /// login (ignored when `repo` is given).
+    pub org: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -106,6 +109,17 @@ pub async fn search(
         }
         None => None,
     };
+    // Owner scope; an unknown login maps to 0 (no such id) → empty results.
+    let scope_owner: Option<i64> = match params.org.as_deref().filter(|o| !o.is_empty()) {
+        Some(login) if scope_repo.is_none() => Some(
+            sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE lower(login) = lower($1)")
+                .bind(login)
+                .fetch_optional(&state.db)
+                .await?
+                .unwrap_or(0),
+        ),
+        _ => None,
+    };
     let lower = q.to_lowercase();
     let number: Option<i64> = lower.trim_start_matches('#').parse().ok();
     let tsq = prefix_tsquery(&q);
@@ -154,6 +168,9 @@ pub async fn search(
         if let Some(repo_id) = scope_repo {
             qb.push(" AND i.repo_id = ").push_bind(repo_id);
         }
+        if let Some(owner_id) = scope_owner {
+            qb.push(" AND r.owner_id = ").push_bind(owner_id);
+        }
         let by_number = number.filter(|_| scope_repo.is_some());
         qb.push(" AND (");
         match (&tsq, by_number) {
@@ -198,6 +215,7 @@ pub async fn search(
               WHERE ($1 OR r.visibility = 'public' OR r.id = ANY($2))
                 AND lower(r.name) LIKE $3
                 AND ($4::text IS NULL OR lower(o.login) = $4)
+                AND ($7::bigint IS NULL OR r.owner_id = $7)
               ORDER BY (lower(r.name) = $5) DESC, r.stargazers_count DESC, r.id
               LIMIT $6",
         )
@@ -207,6 +225,7 @@ pub async fn search(
         .bind(&owner_part)
         .bind(&name_part)
         .bind(limit)
+        .bind(scope_owner)
         .fetch_all(&state.db)
         .await
     };

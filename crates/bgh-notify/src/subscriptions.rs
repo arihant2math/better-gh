@@ -6,6 +6,8 @@
 //!   `ignored` = never notified; no row = participating/@mentions only.
 //! * `GET/PUT/DELETE /_bgh/repos/{owner}/{repo}/issues/{number}/subscription`
 //!   (web client's subscribe button; reason `manual`).
+//! * `GET/PUT /_bgh/repos/{owner}/{repo}/subscription` (web client's watch
+//!   menu: participating / all / ignore / custom with `watches.events`).
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -94,6 +96,8 @@ pub struct WatchRow {
     pub subscribed: bool,
     pub ignored: bool,
     pub created_at: DateTime<Utc>,
+    /// Custom watching: event categories ([`WATCH_EVENTS`]); NULL = all.
+    pub events: Option<Vec<String>>,
 }
 
 pub async fn watch_row(
@@ -102,7 +106,8 @@ pub async fn watch_row(
     repo_id: i64,
 ) -> ApiResult<Option<WatchRow>> {
     Ok(sqlx::query_as(
-        "SELECT subscribed, ignored, created_at FROM watches WHERE user_id = $1 AND repo_id = $2",
+        "SELECT subscribed, ignored, created_at, events FROM watches
+          WHERE user_id = $1 AND repo_id = $2",
     )
     .bind(user_id)
     .bind(repo_id)
@@ -294,12 +299,14 @@ pub struct RepoSubBody {
 
 /// Change a user's watch state for a repository, maintaining
 /// `repositories.watchers_count` and the viewer's `viewerRepo` sync row.
-/// `None` removes the watch (participating only).
+/// `None` removes the watch (participating only). `events` restricts
+/// watching to those categories (custom); `None` = all activity.
 pub async fn set_watch(
     state: &AppState,
     user_id: i64,
     repo_id: i64,
     new: Option<(bool, bool)>,
+    events: Option<&[String]>,
 ) -> ApiResult<Option<WatchRow>> {
     let mut tx = Tx::begin(state).await?;
     let old: Option<bool> = sqlx::query_scalar(
@@ -312,16 +319,18 @@ pub async fn set_watch(
     let row: Option<WatchRow> = match new {
         Some((subscribed, ignored)) => Some(
             sqlx::query_as(
-                "INSERT INTO watches (user_id, repo_id, subscribed, ignored)
-                 VALUES ($1, $2, $3, $4)
+                "INSERT INTO watches (user_id, repo_id, subscribed, ignored, events)
+                 VALUES ($1, $2, $3, $4, $5)
                  ON CONFLICT (user_id, repo_id) DO UPDATE
-                    SET subscribed = EXCLUDED.subscribed, ignored = EXCLUDED.ignored
-                 RETURNING subscribed, ignored, created_at",
+                    SET subscribed = EXCLUDED.subscribed, ignored = EXCLUDED.ignored,
+                        events = EXCLUDED.events
+                 RETURNING subscribed, ignored, created_at, events",
             )
             .bind(user_id)
             .bind(repo_id)
             .bind(subscribed)
             .bind(ignored)
+            .bind(events)
             .fetch_one(&mut *tx)
             .await?,
         ),
@@ -377,6 +386,7 @@ pub async fn set_repo_subscription(
         auth.id(),
         access.repo.id,
         Some((subscribed, ignored)),
+        None,
     )
     .await?
     .ok_or(ApiError::NotFound)?;
@@ -390,8 +400,127 @@ pub async fn delete_repo_subscription(
     Path((owner, repo)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
-    set_watch(&state, auth.id(), access.repo.id, None).await?;
+    set_watch(&state, auth.id(), access.repo.id, None, None).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Repository watch menu (web client)
+// ---------------------------------------------------------------------------
+
+/// Event categories a custom watch can select.
+pub const WATCH_EVENTS: &[&str] = &[
+    "issues",
+    "pulls",
+    "releases",
+    "discussions",
+    "security_alerts",
+];
+
+/// Watch category of a notification subject kind (`None`: never delivered
+/// to custom watchers).
+pub fn watch_category(subject_kind: &str) -> Option<&'static str> {
+    match subject_kind {
+        "Issue" => Some("issues"),
+        "PullRequest" => Some("pulls"),
+        "Release" => Some("releases"),
+        _ => None,
+    }
+}
+
+/// `{"state": "participating" | "all" | "ignore" | "custom", "events": [...]}`
+#[derive(Debug, Clone, Serialize)]
+pub struct WatchSettings {
+    pub state: &'static str,
+    /// Selected categories (`custom` only; empty otherwise).
+    pub events: Vec<String>,
+}
+
+fn watch_settings(w: Option<&WatchRow>) -> WatchSettings {
+    match w {
+        Some(w) if w.ignored => WatchSettings {
+            state: "ignore",
+            events: vec![],
+        },
+        Some(w) if w.subscribed => match &w.events {
+            Some(events) => WatchSettings {
+                state: "custom",
+                events: events.clone(),
+            },
+            None => WatchSettings {
+                state: "all",
+                events: vec![],
+            },
+        },
+        _ => WatchSettings {
+            state: "participating",
+            events: vec![],
+        },
+    }
+}
+
+/// `GET /_bgh/repos/{owner}/{repo}/subscription`
+pub async fn get_watch_settings(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo)): Path<(String, String)>,
+) -> ApiResult<Json<WatchSettings>> {
+    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
+    let w = watch_row(&state, auth.id(), access.repo.id).await?;
+    Ok(Json(watch_settings(w.as_ref())))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WatchSettingsBody {
+    pub state: String,
+    #[serde(default)]
+    pub events: Option<Vec<String>>,
+}
+
+/// `PUT /_bgh/repos/{owner}/{repo}/subscription` — same side effects as
+/// the REST `PUT`/`DELETE /repos/{owner}/{repo}/subscription` ([`set_watch`]).
+pub async fn put_watch_settings(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(body): Json<WatchSettingsBody>,
+) -> ApiResult<Json<WatchSettings>> {
+    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
+    let mut events: Vec<String> = vec![];
+    let new = match body.state.as_str() {
+        "participating" => None,
+        "all" => Some((true, false)),
+        "ignore" => Some((false, true)),
+        "custom" => {
+            for e in body.events.unwrap_or_default() {
+                if !WATCH_EVENTS.contains(&e.as_str()) {
+                    return Err(ApiError::invalid_field(FieldError::invalid(
+                        "Subscription",
+                        "events",
+                    )));
+                }
+                if !events.contains(&e) {
+                    events.push(e);
+                }
+            }
+            if events.is_empty() {
+                return Err(ApiError::invalid_field(FieldError::missing_field(
+                    "Subscription",
+                    "events",
+                )));
+            }
+            Some((true, false))
+        }
+        _ => {
+            return Err(ApiError::invalid_field(FieldError::invalid(
+                "Subscription",
+                "state",
+            )));
+        }
+    };
+    let custom = (body.state == "custom").then_some(events.as_slice());
+    let row = set_watch(&state, auth.id(), access.repo.id, new, custom).await?;
+    Ok(Json(watch_settings(row.as_ref())))
 }
 
 // ---------------------------------------------------------------------------

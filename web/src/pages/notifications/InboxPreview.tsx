@@ -5,9 +5,9 @@ import { useIssueDetails } from '../../sync/hooks';
 import type { Notification } from '../../sync/models';
 import { commentsForIssue, reviewsForIssue } from '../../sync/selectors';
 import { Avatar, LabelPill, StateBadge } from '../../ui/Badge';
-import { Button } from '../../ui/Button';
+import { Button, IconButton } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { BellIcon, CheckIcon, EyeIcon, GitPullRequestIcon, LinkExternalIcon } from '../../ui/icons';
+import { BellIcon, BellSlashIcon, CheckIcon, EyeIcon, GitPullRequestIcon, LinkExternalIcon } from '../../ui/icons';
 import { Markdown } from '../../ui/Markdown';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { isSubscribed, loadThreadSubscription } from './actions';
@@ -50,12 +50,14 @@ export const InboxPreview = observer(function InboxPreview({ n, onDone, onOpen, 
         {repo ? `${repo.owner}/${repo.name}` : ''} · {REASON_LABELS[n.reason]} · <RelativeTime date={n.updatedAt} />
       </span>
       <span style={{ flex: 1 }} />
-      <Button size="sm" variant="ghost" leadingIcon={EyeIcon} kbd="W" onClick={onWatch} disabled={!repo}>
-        Watch
-      </Button>
-      <Button size="sm" variant="ghost" leadingIcon={BellIcon} kbd="S" onClick={onToggleSubscription} aria-pressed={subscribed}>
-        {subscribed ? 'Unsubscribe' : 'Subscribe'}
-      </Button>
+      <IconButton icon={EyeIcon} size="sm" label="Watch settings" shortcut="W" onClick={onWatch} disabled={!repo} />
+      <IconButton
+        icon={subscribed ? BellSlashIcon : BellIcon}
+        size="sm"
+        label={subscribed ? 'Unsubscribe from this thread' : 'Subscribe to this thread'}
+        shortcut="S"
+        onClick={onToggleSubscription}
+      />
       <Button size="sm" kbd="U" onClick={onToggleRead}>
         {n.unread ? 'Read' : 'Unread'}
       </Button>

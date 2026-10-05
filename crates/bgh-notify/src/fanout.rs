@@ -147,10 +147,14 @@ pub async fn deliver(state: &AppState, act: &Activity) -> ApiResult<Delivered> {
 
     let mut candidates: HashMap<i64, Reason> = HashMap::new();
     if act.notify_watchers {
+        // Custom watchers (`events` set) only hear about their categories.
         let watchers: Vec<i64> = sqlx::query_scalar(
-            "SELECT user_id FROM watches WHERE repo_id = $1 AND subscribed AND NOT ignored",
+            "SELECT user_id FROM watches
+              WHERE repo_id = $1 AND subscribed AND NOT ignored
+                AND (events IS NULL OR $2 = ANY(events))",
         )
         .bind(act.repo.id)
+        .bind(crate::subscriptions::watch_category(act.subject.kind))
         .fetch_all(&mut *tx)
         .await?;
         for u in watchers

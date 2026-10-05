@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { ApiError } from '../../api/client';
 import { Link, navigate, setQuery, useQuery } from '../../router';
 import {
@@ -530,10 +530,17 @@ function CodeResult({ c, href }: { c: SearchCodeItem; href: string }) {
       {lines.length > 0 && (
         <pre className={styles.codeBody}>
           {lines.map((l, idx) => (
-            <Link key={`${l.number}-${idx}`} to={`${base}#L${l.number}`} className={cx(styles.codeLine, l.ranges.length > 0 && styles.codeHit)}>
-              <span className={styles.lineNo}>{l.number}</span>
-              <code>{l.ranges.length ? highlightRanges(l.text, l.ranges, styles.mark) : l.text || ' '}</code>
-            </Link>
+            <Fragment key={`${l.number}-${idx}`}>
+              {idx > 0 && l.number > lines[idx - 1]!.number + 1 && (
+                <span className={styles.codeGap} aria-hidden>
+                  ⋯
+                </span>
+              )}
+              <Link to={`${base}#L${l.number}`} className={cx(styles.codeLine, l.ranges.length > 0 && styles.codeHit)}>
+                <span className={styles.lineNo}>{l.number}</span>
+                <code>{l.ranges.length ? highlightRanges(l.text, l.ranges, styles.mark) : l.text || ' '}</code>
+              </Link>
+            </Fragment>
           ))}
         </pre>
       )}

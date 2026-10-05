@@ -559,6 +559,202 @@ async fn repository_watching() {
 }
 
 #[tokio::test]
+async fn custom_repository_watching() {
+    let w = world().await;
+    let path = "/_bgh/repos/alice/hello/subscription";
+    let rest = "/api/v3/repos/alice/hello/subscription";
+    let watchers = |app: &TestApp| {
+        let db = app.state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT watchers_count FROM repositories WHERE name = 'hello'",
+            )
+            .fetch_one(&db)
+            .await
+            .unwrap()
+        }
+    };
+    let viewer_repo = |app: &TestApp, user_id: i64| {
+        let db = app.state.db.clone();
+        async move {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'viewerRepo'
+                  ORDER BY id DESC LIMIT 1",
+            )
+            .bind(format!("user:{user_id}"))
+            .fetch_one(&db)
+            .await
+            .unwrap()
+        }
+    };
+
+    // Auth required; defaults.
+    w.app.get(path).send().await.assert_status(401);
+    let v = w.app.get(path).auth(&w.carol).send().await.json();
+    assert_eq!(v, json!({"state": "participating", "events": []}));
+    let v = w.app.get(path).auth(&w.bob).send().await.json();
+    assert_eq!(v, json!({"state": "all", "events": []}));
+
+    // Custom: subscribed (counts as a watcher), viewerRepo `subscribed`.
+    let before = watchers(&w.app).await;
+    let res = w
+        .app
+        .put(path)
+        .auth(&w.carol)
+        .json(&json!({"state": "custom", "events": ["releases", "pulls", "releases"]}))
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(
+        res.json(),
+        json!({"state": "custom", "events": ["releases", "pulls"]})
+    );
+    let v = w.app.get(path).auth(&w.carol).send().await.json();
+    assert_eq!(
+        v,
+        json!({"state": "custom", "events": ["releases", "pulls"]})
+    );
+    assert_eq!(watchers(&w.app).await, before + 1);
+    let vr = viewer_repo(&w.app, w.carol.id).await;
+    assert_eq!(vr["watching"], "subscribed");
+    assert_eq!(vr["id"], w.repo_id);
+    let v = w.app.get(rest).auth(&w.carol).send().await.json();
+    assert_eq!(v["subscribed"], true);
+
+    // Validation: unknown / empty events, unknown state.
+    for body in [
+        json!({"state": "custom", "events": ["issues", "wiki"]}),
+        json!({"state": "custom", "events": []}),
+        json!({"state": "custom"}),
+        json!({"state": "sometimes"}),
+        json!({}),
+    ] {
+        w.app
+            .put(path)
+            .auth(&w.carol)
+            .json(&body)
+            .send()
+            .await
+            .assert_status(422);
+    }
+    let v = w.app.get(path).auth(&w.carol).send().await.json();
+    assert_eq!(v["state"], "custom", "unchanged after rejected writes");
+
+    // Ignore / all / participating.
+    let v = w
+        .app
+        .put(path)
+        .auth(&w.carol)
+        .json(&json!({"state": "ignore", "events": ["issues"]}))
+        .send()
+        .await
+        .json();
+    assert_eq!(v, json!({"state": "ignore", "events": []}));
+    assert_eq!(watchers(&w.app).await, before);
+    assert_eq!(viewer_repo(&w.app, w.carol.id).await["watching"], "ignored");
+    let v = w
+        .app
+        .put(path)
+        .auth(&w.carol)
+        .json(&json!({"state": "all"}))
+        .send()
+        .await
+        .json();
+    assert_eq!(v, json!({"state": "all", "events": []}));
+    assert_eq!(watchers(&w.app).await, before + 1);
+    let v = w
+        .app
+        .put(path)
+        .auth(&w.carol)
+        .json(&json!({"state": "participating"}))
+        .send()
+        .await
+        .json();
+    assert_eq!(v, json!({"state": "participating", "events": []}));
+    assert_eq!(watchers(&w.app).await, before);
+    assert_eq!(
+        viewer_repo(&w.app, w.carol.id).await["watching"],
+        "participating"
+    );
+    w.app
+        .get(rest)
+        .auth(&w.carol)
+        .send()
+        .await
+        .assert_status(404);
+
+    // The REST PUT resets custom events to all activity.
+    w.app
+        .put(path)
+        .auth(&w.carol)
+        .json(&json!({"state": "custom", "events": ["issues"]}))
+        .send()
+        .await
+        .assert_status(200);
+    w.app
+        .put(rest)
+        .auth(&w.carol)
+        .json(&json!({"subscribed": true}))
+        .send()
+        .await
+        .assert_status(200);
+    let v = w.app.get(path).auth(&w.carol).send().await.json();
+    assert_eq!(v, json!({"state": "all", "events": []}));
+
+    // Private repo without read access: 404 for both methods.
+    w.app.create_private_repo(&w.alice, "private").await;
+    let private = "/_bgh/repos/alice/private/subscription";
+    w.app
+        .get(private)
+        .auth(&w.carol)
+        .send()
+        .await
+        .assert_status(404);
+    w.app
+        .put(private)
+        .auth(&w.carol)
+        .json(&json!({"state": "all"}))
+        .send()
+        .await
+        .assert_status(404);
+    // The owner can read it (creating a repository watches it).
+    let v = w.app.get(private).auth(&w.alice).send().await.json();
+    assert_eq!(v["state"], "all");
+}
+
+#[tokio::test]
+async fn custom_watchers_only_get_their_categories() {
+    let w = world().await;
+    let dave = w.app.create_user("dave").await;
+    let path = "/_bgh/repos/alice/hello/subscription";
+    for (user, events) in [(&w.carol, json!(["releases"])), (&dave, json!(["issues"]))] {
+        w.app
+            .put(path)
+            .auth(user)
+            .json(&json!({"state": "custom", "events": events}))
+            .send()
+            .await
+            .assert_status(200);
+    }
+    open_issue(&w, &w.alice, "Custom watching", "body").await;
+    assert!(
+        list(&w, &w.carol, "?all=true").await.is_empty(),
+        "releases-only watcher gets no issue notification"
+    );
+    let n = list(&w, &dave, "").await;
+    assert_eq!(n.len(), 1);
+    assert_eq!(n[0]["reason"], "subscribed");
+    assert_eq!(n[0]["subject"]["type"], "Issue");
+    assert_eq!(list(&w, &w.bob, "").await.len(), 1, "all-activity watcher");
+
+    // Direct reasons still reach custom watchers.
+    open_issue(&w, &w.alice, "Ping", "hey @carol").await;
+    let n = list(&w, &w.carol, "").await;
+    assert_eq!(n.len(), 1);
+    assert_eq!(n[0]["reason"], "mention");
+}
+
+#[tokio::test]
 async fn pull_request_reasons() {
     let w = world().await;
     let (pull_id, number) =

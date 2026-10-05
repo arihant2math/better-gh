@@ -520,7 +520,6 @@
 .previewActions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
   min-height: 48px;
   padding: 6px 16px 6px 32px;
@@ -529,8 +528,16 @@
 }
 
 .previewRepo {
+  min-width: 0;
+  overflow: hidden;
   color: var(--fg-subtle);
   font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewActions > button {
+  flex: none;
 }
 
 .previewTitle {
