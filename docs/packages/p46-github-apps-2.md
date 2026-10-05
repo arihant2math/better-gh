@@ -1,5 +1,5 @@
 Integration: ready
-GitHub Apps part 2: app webhooks + installation events, /app/hook/*, manifest flow, user-to-server tokens with refresh, real-app check attribution, web Advanced tab / client secrets / manifest page; full gate green after merging the integration branch.
+GitHub Apps part 2: app webhooks + installation events, /app/hook/*, manifest flow, user-to-server tokens with refresh, real-app check attribution, web Advanced tab / client secrets / manifest page. Re-merged with P47 (fine-grained PATs) and batch 8: auth/perms/token_permissions/crypto combine both token kinds (distinct `app:` / `fgpat:` scopes; org PAT policies don't apply to kind `app`); full gate green.
 
 # P46 — GitHub Apps, part 2: app webhooks, installation events, manifest flow, user-to-server tokens, checks attribution
 
