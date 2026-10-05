@@ -61,10 +61,11 @@ export class ApiClient {
     const cached = method === 'GET' ? this.etags.get(cacheKey) : undefined;
     if (cached) headers['If-None-Match'] = cached.etag;
 
-    // `no-store`: the server sends `Cache-Control: private, max-age=60` (like
-    // GitHub), and the browser cache would otherwise serve stale lists right
-    // after a write to a sibling URL; revalidation is done here via ETags.
-    const res = await transport().fetch(path, { method, headers, body, signal: opts.signal, cache: 'no-store' });
+    // Responses carry `max-age` (REST 60 s like GitHub, ref-based `/_bgh` 30 s):
+    // always revalidate so the browser's HTTP cache can't serve data we just
+    // changed. ETags make that a cheap 304; immutable SHA-addressed data is
+    // kept by the in-memory resource cache and never refetched anyway.
+    const res = await transport().fetch(path, { method, headers, body, signal: opts.signal, cache: 'no-cache' });
 
     if (res.status === 304 && cached) {
       // Refresh LRU position.

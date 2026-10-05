@@ -11,8 +11,10 @@ import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, repoFiles, type MockFile } from './content';
 import { branchNames, pullDiffText, registerPullRoutes, type PullHost } from './pulls';
+import { PASS_STATUS } from './pass';
 import { Rng, fakeSha, iso } from './rng';
 import { installExtraMocks } from './extra';
+import { installCodeRoutes } from './code';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
@@ -137,7 +139,8 @@ export class MockServer implements Transport {
         return json(400, { message: 'Problems parsing JSON' });
       }
     }
-    const route = this.routes.find((r) => r.method === method && r.re.test(url.pathname));
+    const candidates = this.routes.filter((r) => r.method === method && r.re.test(url.pathname));
+    const route = candidates[0];
     if (!route) return json(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest' });
     const isAuthRoute = route.public || url.pathname.startsWith('/_bgh/auth') || url.pathname === '/_bgh/boot';
     if (!this.signedIn && !isAuthRoute) return json(401, { message: 'Requires authentication' });
@@ -150,12 +153,15 @@ export class MockServer implements Transport {
       raw: init.body ?? null,
     };
     const isMutation = method !== 'GET' && !isAuthRoute;
-    let resp: Resp;
-    if (isMutation) {
-      resp = await this.mutation(ctx, () => route.handler(ctx));
-    } else {
-      resp = await route.handler(ctx);
-    }
+    const run = async (): Promise<Resp> => {
+      for (const r of candidates) {
+        ctx.m = url.pathname.match(r.re)!;
+        const out = await r.handler(ctx);
+        if (out.status !== PASS_STATUS) return out;
+      }
+      return { status: 404, body: { message: 'Not Found', documentation_url: 'https://docs.github.com/rest' } };
+    };
+    const resp = isMutation ? await this.mutation(ctx, run) : await run();
     const h = new Headers(resp.headers);
     if (resp.text !== undefined) {
       if (!h.has('content-type')) h.set('content-type', 'text/plain; charset=utf-8');
@@ -385,6 +391,8 @@ export class MockServer implements Transport {
       );
       this.routes.push({ method, re, handler });
     };
+    // Code tab (mock/code.ts) first: it supersedes the simple browse routes below.
+    installCodeRoutes(R, this);
     const repoOr404 = (ctx: Ctx): Repo | Resp => this.repo(decodeURIComponent(ctx.m[1]!), decodeURIComponent(ctx.m[2]!)) ?? { status: 404, body: { message: 'Not Found' } };
     const issueOr404 = (ctx: Ctx): [Repo, Issue] | Resp => {
       const repo = repoOr404(ctx);

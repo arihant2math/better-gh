@@ -5,7 +5,8 @@
  */
 import { prefetch as prefetchResource } from '../api/cache';
 import { prefetchProfile } from '../api/profile';
-import { browseKeys, getBlob, getIssueTemplates, getTree, isSha, listPullCommits, listPullFiles } from '../api/endpoints';
+import { browseKeys, getBlob, getIssueTemplates, getRefs, getTree, isSha, listPullCommits, listPullFiles } from '../api/endpoints';
+import { fetchRef, resolveTarget, type CodeTarget } from '../pages/code/util';
 import type { ComponentType } from 'react';
 import { defineRoutes, type Params, type RouteDef } from '../router';
 import { hasSync, sync } from '../sync';
@@ -52,6 +53,17 @@ const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout')
 const ProjectsListPage = () => import('../pages/projects/ProjectsListPage');
 const ProjectPage = () => import('../pages/projects/ProjectPage');
 const WikiPage = () => import('../pages/wiki/WikiPage');
+const CodePage = () => import('../pages/code/CodePage');
+const CommitsPage = () => import('../pages/commits/CommitsPage');
+const BranchesPage = () => import('../pages/branches/BranchesPage');
+const ReleasePage = () => import('../pages/releases/ReleasePage');
+const ReleaseEditPage = () => import('../pages/releases/ReleaseEditPage');
+const EditPage = () => import('../pages/code/edit/EditPage');
+
+/** Code-tab data prefetch (lazy module so the API wrappers stay out of the initial bundle). */
+function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags' | 'releases' | 'release') {
+  return (p: Params) => void import('../pages/code/prefetch').then((m) => m.prefetchCodeRoute(kind, p)).catch(() => undefined);
+}
 
 function prefetchProject(p: Params) {
   void import('../pages/projects/data').then((m) => m.prefetchProject(p.owner!, Number(p.number)));
@@ -91,21 +103,24 @@ function prefetchTemplates(p: Params) {
   prefetchResource(`issue-templates:${p.owner}/${p.repo}`.toLowerCase(), () => getIssueTemplates(p.owner!, p.repo!), { ttlMs: 60_000 });
 }
 
-function codeTarget(p: Params): { owner: string; repo: string; ref: string; path: string } | null {
+function codeTarget(p: Params): CodeTarget | null {
   const ref = p.ref ?? (hasSync() ? repoByName(p.owner!, p.repo!)?.defaultBranch : undefined);
-  return ref ? { owner: p.owner!, repo: p.repo!, ref, path: (p['*'] ?? '').replace(/\/$/, '') } : null;
+  return ref ? resolveTarget(p.owner!, p.repo!, ref, p['*'] ?? '') : null;
 }
 
 function prefetchCode(p: Params) {
+  prefetchResource(browseKeys.refs(p.owner!, p.repo!), () => getRefs(p.owner!, p.repo!));
   const t = codeTarget(p);
   if (!t) return;
-  prefetchResource(browseKeys.tree(t.owner, t.repo, t.ref, t.path), () => getTree(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
+  const ref = fetchRef(t);
+  prefetchResource(browseKeys.tree(t.owner, t.repo, ref, t.path), () => getTree(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
 }
 
 function prefetchBlobView(p: Params) {
   const t = codeTarget(p);
   if (!t) return;
-  prefetchResource(browseKeys.blob(t.owner, t.repo, t.ref, t.path), () => getBlob(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
+  const ref = fetchRef(t);
+  prefetchResource(browseKeys.blob(t.owner, t.repo, ref, t.path), () => getBlob(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
 }
 
 export function registerRoutes(): void {
@@ -163,12 +178,29 @@ export function registerRoutes(): void {
     {
       path: '/:owner/:repo',
       layout: RepoLayout,
-      load: () => import('../pages/code/CodePage'),
+      load: CodePage,
       prefetch: (p) => prefetchCode({ ...p, '*': '' }),
       title: (p) => `${p.owner}/${p.repo}`,
     },
-    { path: '/:owner/:repo/tree/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchCode, title: (p) => `${p.owner}/${p.repo}` },
-    { path: '/:owner/:repo/blob/:ref/*', layout: RepoLayout, load: () => import('../pages/code/CodePage'), prefetch: prefetchBlobView, title: (p) => `${p['*']} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/tree/:ref/*', layout: RepoLayout, load: CodePage, prefetch: prefetchCode, title: (p) => `${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/blob/:ref/*', layout: RepoLayout, load: CodePage, prefetch: prefetchBlobView, title: (p) => `${p['*']} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/blame/:ref/*', layout: RepoLayout, load: CodePage, prefetch: codePrefetch('blame'), title: (p) => `Blame ${p['*']} · ${p.owner}/${p.repo}` },
+    // Code tab: history, commits, branches, tags, releases, editing (package F2).
+    { path: '/:owner/:repo/commits', layout: RepoLayout, load: CommitsPage, prefetch: codePrefetch('commits'), title: (p) => `Commits · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/commits/:ref/*', layout: RepoLayout, load: CommitsPage, prefetch: codePrefetch('commits'), title: (p) => `${p['*'] ? `History for ${p['*']}` : `Commits · ${p.ref}`} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/commit/:sha', layout: RepoLayout, load: () => import('../pages/commits/CommitPage'), prefetch: codePrefetch('commit'), title: (p) => `${p.sha!.slice(0, 7)} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/branches', layout: RepoLayout, load: BranchesPage, prefetch: codePrefetch('branches'), title: (p) => `Branches · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/branches/:view', layout: RepoLayout, load: BranchesPage, prefetch: codePrefetch('branches'), title: (p) => `Branches · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/tags', layout: RepoLayout, load: () => import('../pages/branches/TagsPage'), prefetch: codePrefetch('tags'), title: (p) => `Tags · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/releases', layout: RepoLayout, load: () => import('../pages/releases/ReleasesPage'), prefetch: codePrefetch('releases'), title: (p) => `Releases · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/releases/new', layout: RepoLayout, load: ReleaseEditPage, title: (p) => `New release · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/releases/edit/:tag', layout: RepoLayout, load: ReleaseEditPage, prefetch: codePrefetch('release'), title: (p) => `Edit ${p.tag} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/releases/latest', layout: RepoLayout, load: ReleasePage, prefetch: codePrefetch('release'), title: (p) => `Latest release · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/releases/tag/:tag', layout: RepoLayout, load: ReleasePage, prefetch: codePrefetch('release'), title: (p) => `Release ${p.tag} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/edit/:ref/*', layout: RepoLayout, load: EditPage, prefetch: prefetchBlobView, title: (p) => `Editing ${p['*']} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/new/:ref/*', layout: RepoLayout, load: EditPage, title: (p) => `New file · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/delete/:ref/*', layout: RepoLayout, load: EditPage, prefetch: prefetchBlobView, title: (p) => `Delete ${p['*']} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/upload/:ref/*', layout: RepoLayout, load: () => import('../pages/code/edit/UploadPage'), title: (p) => `Upload files · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/issues', layout: RepoLayout, load: () => import('../pages/issues/IssueListPage'), title: (p) => `Issues · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/issues/new/choose',
