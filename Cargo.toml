@@ -26,6 +26,7 @@ bgh-graphql = { path = "crates/bgh-graphql" }
 bgh-actions = { path = "crates/bgh-actions" }
 bgh-projects = { path = "crates/bgh-projects" }
 bgh-wiki = { path = "crates/bgh-wiki" }
+bgh-packages = { path = "crates/bgh-packages" }
 bgh-server = { path = "crates/bgh-server" }
 
 # web / async
