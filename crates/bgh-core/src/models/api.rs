@@ -551,7 +551,8 @@ impl RepoLinks {
     }
 }
 
-/// `license-simple` (repositories carry `license: null` until detected).
+/// `license-simple` (repositories carry `license: null` until detected;
+/// built by [`crate::licenses::simple`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LicenseSimple {
     pub key: String,
@@ -682,7 +683,10 @@ impl MinimalRepository {
             merge_commit_message: repo.merge_commit_message.clone(),
             allow_forking: repo.allow_forking,
             web_commit_signoff_required: repo.web_commit_signoff_required,
-            license: None,
+            license: repo
+                .license_spdx_id
+                .as_deref()
+                .map(|spdx| crate::licenses::simple(urls, spdx)),
             forks: repo.forks_count,
             open_issues: repo.open_issues_count,
             watchers: repo.stargazers_count,

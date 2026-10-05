@@ -499,6 +499,7 @@ pub async fn generate(
     });
     if !tips.is_empty() {
         crate::stats::enqueue_languages(&mut tx, new.id).await?;
+        crate::licenses::enqueue_detect(&mut tx, new.id).await?;
     }
     if let Err(e) = tx.commit().await {
         let _ = store.delete(new.id).await;

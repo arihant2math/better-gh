@@ -21,6 +21,7 @@ pub mod download;
 pub mod forks;
 pub mod git_http;
 pub mod gitdb;
+pub mod gitignore;
 pub mod gitjson;
 pub mod identity;
 pub mod import;
@@ -28,6 +29,7 @@ pub mod jobs;
 pub mod json;
 pub mod keys;
 pub mod lfs;
+pub mod licenses;
 pub mod maintenance;
 pub mod media;
 pub mod mirrors;
@@ -35,6 +37,7 @@ pub mod protection;
 pub mod protection_api;
 pub mod refs;
 pub mod repos;
+pub mod repositories;
 pub mod rulesets;
 pub mod settings;
 pub mod ssh;
@@ -86,6 +89,9 @@ pub fn router() -> Router<AppState> {
         .merge(protection_api::routes())
         .merge(rulesets::routes())
         .merge(download::api_router())
+        .merge(licenses::routes())
+        .merge(gitignore::routes())
+        .merge(repositories::routes())
 }
 
 /// Git smart-HTTP routes (absolute paths). `{repo}` may carry `.git`.
@@ -124,4 +130,6 @@ pub fn register(reg: &mut Registry) {
     reg.job(import::run_import_job);
     reg.job(mirrors::sync_job);
     reg.service("repos.mirrors", mirrors::service);
+    reg.job(licenses::detect_job);
+    reg.service("repos.license_backfill", licenses::backfill_service);
 }

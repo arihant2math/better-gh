@@ -4,6 +4,7 @@
 //!   `since`, `until`, pagination)
 //! * `GET /repos/{o}/{r}/commits/{ref}` (files + stats; `.diff`, `.patch`,
 //!   `.sha` media types)
+//! * `GET /repos/{o}/{r}/commits/{sha}/branches-where-head`
 //! * `GET /repos/{o}/{r}/compare/{base}...{head}` (`owner:ref` and
 //!   `owner:repo:ref` for cross-fork comparisons; `.diff`/`.patch`)
 //!
@@ -32,6 +33,10 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/repos/{owner}/{repo}/commits", get(list_commits))
         .route("/repos/{owner}/{repo}/commits/{reference}", get(get_commit))
+        .route(
+            "/repos/{owner}/{repo}/commits/{reference}/branches-where-head",
+            get(crate::branches::where_head),
+        )
         .route("/repos/{owner}/{repo}/compare/{*basehead}", get(compare))
 }
 

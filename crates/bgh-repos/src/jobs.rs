@@ -110,6 +110,7 @@ pub(crate) async fn process_ref_updates(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     if default_moved {
         crate::stats::enqueue_languages(&mut tx, repo.id).await?;
+        crate::licenses::enqueue_detect(&mut tx, repo.id).await?;
     }
     tx.emit(Event::Push(PushEvent {
         repo_id: repo.id,

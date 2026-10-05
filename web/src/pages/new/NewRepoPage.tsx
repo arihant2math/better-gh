@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { invalidate, useResource } from '../../api/cache';
-import { createRepo, generateRepo, getOrg, listAccessibleRepos, profileKeys, repoExists, type RestRepo } from '../../api/profile';
+import { createRepo, generateRepo, getOrg, listAccessibleRepos, listGitignoreTemplates, listLicenses, listOrgTeams, profileKeys, repoExists, type RestRepo } from '../../api/profile';
 import { session } from '../../app/session';
 import { apiFieldErrors, Banner, ButtonRow, Checkbox, FormStack, PageHeader, RadioCards, Section, useDebounced, type FieldErrors } from '../../components/settings/kit';
 import { Link, navigate, useQuery } from '../../router';
@@ -35,6 +35,9 @@ export default observer(function NewRepoPage() {
   const [description, setDescription] = useState('');
   const [chosenVisibility, setVisibility] = useState<Visibility>('public');
   const [readme, setReadme] = useState(false);
+  const [gitignore, setGitignore] = useState('');
+  const [license, setLicense] = useState('');
+  const [teamId, setTeamId] = useState('');
   const [includeAllBranches, setIncludeAllBranches] = useState(false);
   const [template, setTemplate] = useState(() => {
     const o = query.get('template_owner');
@@ -49,7 +52,7 @@ export default observer(function NewRepoPage() {
   const formRef = useRef<HTMLFormElement>(null);
   const ownerBtn = useRef<HTMLButtonElement>(null);
   const [ownerMenu, setOwnerMenu] = useState(false);
-  const ids = { name: useId(), desc: useId(), template: useId(), gitignore: useId(), license: useId() };
+  const ids = { name: useId(), desc: useId(), template: useId(), gitignore: useId(), license: useId(), team: useId() };
 
   // Templates the viewer can see (`is_template` on /user/repos).
   const accessible = useResource('profile:accessible-repos', listAccessibleRepos);
@@ -73,6 +76,20 @@ export default observer(function NewRepoPage() {
     !!policy &&
     ((visibility === 'public' && policy.members_can_create_public_repositories === false) || (visibility !== 'public' && policy.members_can_create_private_repositories === false));
 
+
+  // Template lists (loaded once the "Initialize" section shows; the built-in lists cover the wait).
+  const initOpen = !template;
+  const gitignoreList = useResource(initOpen ? profileKeys.gitignoreTemplates : null, listGitignoreTemplates, { immutable: true });
+  const licenseList = useResource(initOpen ? profileKeys.licenses : null, listLicenses, { immutable: true });
+  const gitignoreOptions = gitignoreList.data ?? GITIGNORE_TEMPLATES;
+  const licenseOptions = useMemo(() => licenseList.data?.map((l) => ({ id: l.key, label: l.name })) ?? LICENSE_TEMPLATES, [licenseList.data]);
+  const gitignoreValue = gitignoreOptions.includes(gitignore) ? gitignore : '';
+  const licenseValue = licenseOptions.some((l) => l.id === license) ? license : '';
+
+  // Organization owners can grant a team access right away (`team_id`).
+  const teamsList = useResource(initOpen && owner?.isOrg && owner.role === 'admin' ? profileKeys.teams(owner.login) : null, () => listOrgTeams(owner!.login));
+  const teams = owner?.isOrg && owner.role === 'admin' ? (teamsList.data ?? []) : [];
+  const teamValue = teams.some((t) => String(t.id) === teamId) ? teamId : '';
 
   const name = normalizeRepoName(rawName);
   const nameErr = repoNameError(name);
@@ -125,6 +142,9 @@ export default observer(function NewRepoPage() {
           description: description.trim() || undefined,
           visibility,
           auto_init: readme,
+          gitignore_template: gitignoreValue || undefined,
+          license_template: licenseValue || undefined,
+          team_id: teamValue ? Number(teamValue) : undefined,
         });
       }
       invalidate('profile:repos:');
@@ -320,21 +340,21 @@ export default observer(function NewRepoPage() {
           <Section title="Initialize this repository with">
             <FormStack wide>
               <Checkbox checked={readme} onChange={setReadme} label="Add a README file" description="This is where you can write a long description for your project." />
-              <div className={styles.unsupported}>
-                <Field label="Add .gitignore" htmlFor={ids.gitignore} hint="Not supported by this server yet.">
-                  <Select id={ids.gitignore} disabled value="">
+              <div className={styles.templates}>
+                <Field label="Add .gitignore" htmlFor={ids.gitignore} hint="Choose which files not to track from a list of templates." error={errors.gitignore_template}>
+                  <Select id={ids.gitignore} value={gitignoreValue} onChange={(e) => setGitignore(e.target.value)}>
                     <option value="">.gitignore template: None</option>
-                    {GITIGNORE_TEMPLATES.map((t) => (
+                    {gitignoreOptions.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
                     ))}
                   </Select>
                 </Field>
-                <Field label="Choose a license" htmlFor={ids.license} hint="Not supported by this server yet.">
-                  <Select id={ids.license} disabled value="">
+                <Field label="Choose a license" htmlFor={ids.license} hint="A license tells others what they can and can’t do with your code." error={errors.license_template}>
+                  <Select id={ids.license} value={licenseValue} onChange={(e) => setLicense(e.target.value)}>
                     <option value="">License: None</option>
-                    {LICENSE_TEMPLATES.map((l) => (
+                    {licenseOptions.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.label}
                       </option>
@@ -342,6 +362,18 @@ export default observer(function NewRepoPage() {
                   </Select>
                 </Field>
               </div>
+              {teams.length > 0 && (
+                <Field label="Grant access to a team (optional)" htmlFor={ids.team} hint="The team gets read access; change it later in the repository settings." error={errors.team_id}>
+                  <Select id={ids.team} value={teamValue} onChange={(e) => setTeamId(e.target.value)}>
+                    <option value="">No team</option>
+                    {teams.map((t) => (
+                      <option key={t.id} value={String(t.id)}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
             </FormStack>
           </Section>
         )}

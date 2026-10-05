@@ -39,6 +39,54 @@ pub struct CreateRepoBody {
     pub allow_update_branch: Option<bool>,
     pub delete_branch_on_merge: Option<bool>,
     pub use_squash_pr_title_as_default: Option<bool>,
+    /// `.gitignore` template name (`GET /gitignore/templates`); implies an
+    /// initial commit.
+    pub gitignore_template: Option<String>,
+    /// License key (`GET /licenses`); implies an initial commit.
+    pub license_template: Option<String>,
+    /// Organization team granted access (its default permission).
+    pub team_id: Option<i64>,
+}
+
+/// Initial files requested by `auto_init` / the templates.
+#[derive(Debug, Default)]
+struct InitFiles {
+    readme: bool,
+    gitignore: Option<&'static str>,
+    license: Option<&'static bgh_core::licenses::License>,
+}
+
+impl InitFiles {
+    fn from_body(body: &CreateRepoBody) -> ApiResult<Self> {
+        let gitignore = match body.gitignore_template.as_deref().filter(|s| !s.is_empty()) {
+            None => None,
+            Some(name) => Some(
+                crate::gitignore::find(name)
+                    .ok_or_else(|| {
+                        ApiError::invalid_field(FieldError::invalid(
+                            "Repository",
+                            "gitignore_template",
+                        ))
+                    })?
+                    .1,
+            ),
+        };
+        let license = match body.license_template.as_deref().filter(|s| !s.is_empty()) {
+            None => None,
+            Some(key) => Some(bgh_core::licenses::find(key).ok_or_else(|| {
+                ApiError::invalid_field(FieldError::invalid("Repository", "license_template"))
+            })?),
+        };
+        Ok(Self {
+            readme: body.auto_init.unwrap_or(false),
+            gitignore,
+            license,
+        })
+    }
+
+    fn any(&self) -> bool {
+        self.readme || self.gitignore.is_some() || self.license.is_some()
+    }
 }
 
 /// GitHub repository name rules: `[A-Za-z0-9._-]{1,100}`, not `.`/`..`,
@@ -177,6 +225,24 @@ pub(crate) async fn create_with(
         }
     };
 
+    let mut init = InitFiles::from_body(&body)?;
+    if import.is_some() {
+        init = InitFiles::default();
+    }
+    let team = match body.team_id {
+        None => None,
+        Some(id) => Some(
+            sqlx::query_as::<_, (i64, String)>(
+                "SELECT id, permission FROM teams WHERE id = $1 AND org_id = $2",
+            )
+            .bind(id)
+            .bind(owner.id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::invalid_field(FieldError::invalid("Repository", "team_id")))?,
+        ),
+    };
+
     let mut tx = Tx::begin(state).await?;
     let repo: db::Repository = sqlx::query_as(&format!(
         "INSERT INTO repositories (
@@ -254,16 +320,7 @@ pub(crate) async fn create_with(
     let store = crate::store(state);
     store.init(repo.id, &repo.default_branch).await?;
     let repo_id = repo.id;
-    let finished = finish_create(
-        state,
-        auth,
-        &store,
-        tx,
-        repo,
-        body.auto_init.unwrap_or(false) && import.is_none(),
-        import,
-    )
-    .await;
+    let finished = finish_create(state, auth, &owner, &store, tx, repo, init, team, import).await;
     let repo = match finished {
         Ok(repo) => repo,
         Err(e) => {
@@ -282,20 +339,40 @@ pub(crate) async fn create_with(
 
 /// Steps after the git repository exists on disk; any error makes the
 /// caller remove the directory (the transaction rolls back on drop).
+#[allow(clippy::too_many_arguments)]
 async fn finish_create(
     state: &AppState,
     auth: &AuthContext,
+    owner: &db::User,
     store: &bgh_git::RepoStore,
     mut tx: Tx,
     mut repo: db::Repository,
-    auto_init: bool,
+    init: InitFiles,
+    team: Option<(i64, String)>,
     import: Option<crate::import::NewImport>,
 ) -> ApiResult<db::Repository> {
-    if auto_init {
+    if init.any() {
         let author = crate::identity::default_identity(state, &auth.user).await?;
-        let mut readme = format!("# {}\n", repo.name);
-        if let Some(d) = &repo.description {
-            readme.push_str(&format!("\n{d}\n"));
+        let mut changes = Vec::new();
+        if init.readme {
+            let mut readme = format!("# {}\n", repo.name);
+            if let Some(d) = &repo.description {
+                readme.push_str(&format!("\n{d}\n"));
+            }
+            changes.push(FileChange::write("README.md", readme));
+        }
+        if let Some(source) = init.gitignore {
+            changes.push(FileChange::write(".gitignore", source));
+        }
+        if let Some(license) = init.license {
+            use chrono::Datelike;
+            let fullname = owner.name.as_deref().filter(|n| !n.is_empty());
+            let text = bgh_core::licenses::render(
+                license,
+                chrono::Utc::now().year(),
+                fullname.unwrap_or(&owner.login),
+            );
+            changes.push(FileChange::write("LICENSE", text));
         }
         write::commit_changes(
             store,
@@ -303,20 +380,27 @@ async fn finish_create(
             CommitRequest {
                 branch: &repo.default_branch,
                 parent: None,
-                changes: &[FileChange::write("README.md", readme)],
+                changes: &changes,
                 message: "Initial commit",
                 author: &author,
                 committer: None,
             },
         )
         .await?;
+        // The template's license is known; detection fills in the blob.
         repo = sqlx::query_as(&format!(
-            "UPDATE repositories SET pushed_at = now() WHERE id = $1 RETURNING {}",
+            "UPDATE repositories SET pushed_at = now(), license_spdx_id = $2,
+                    license_blob_sha = CASE WHEN $2 IS NULL THEN '' END
+              WHERE id = $1 RETURNING {}",
             db::Repository::COLUMNS
         ))
         .bind(repo.id)
+        .bind(init.license.map(|l| l.spdx_id.as_str()))
         .fetch_one(&mut *tx)
         .await?;
+        if init.license.is_some() {
+            crate::licenses::enqueue_detect(&mut tx, repo.id).await?;
+        }
     }
     bgh_core::labels::create_defaults(&mut tx, repo.id).await?;
     if let Some(import) = import {
@@ -329,6 +413,25 @@ async fn finish_create(
         repo_id: repo.id,
         actor_id: auth.user.id,
     });
+    if let Some((team_id, permission)) = &team {
+        sqlx::query(
+            "INSERT INTO team_repos (team_id, repo_id, permission) VALUES ($1, $2, $3)
+             ON CONFLICT (team_id, repo_id) DO NOTHING",
+        )
+        .bind(team_id)
+        .bind(repo.id)
+        .bind(permission)
+        .execute(&mut *tx)
+        .await?;
+        tx.sync_model(SyncModel::Team, *team_id, SyncAction::Update)
+            .await?;
+        tx.emit(Event::TeamRepoAdded {
+            org_id: owner.id,
+            team_id: *team_id,
+            repo_id: repo.id,
+            actor_id: auth.user.id,
+        });
+    }
     tx.commit().await?;
     Ok(repo)
 }
