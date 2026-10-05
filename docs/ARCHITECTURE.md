@@ -56,6 +56,8 @@ crates/
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
   bgh-graphql/             GitHub GraphQL v4 subset (for `gh` CLI, etc.)
   bgh-actions/             CI: workflow parsing, runner orchestration
+  bgh-packages/            container registry (OCI distribution `/v2/`),
+                           GitHub Packages REST, package GC
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -147,6 +149,7 @@ reverse proxies, backups): `docs/SELF_HOSTING.md`.
 | `/_bgh/...`      | Private web-client endpoints (bootstrap, sync WS, rendered views, login) |
 | `/{owner}/{repo}.git/...` and `/{owner}/{repo}/info/refs` etc. | git smart HTTP |
 | `/{owner}/{repo}/raw/...`, `/{owner}/{repo}/archive/...` | raw files, archives |
+| `/v2/...`        | OCI container registry (Docker token auth at `/v2/token`; see `docs/packages/p15-container-registry.md`) |
 | everything else  | SPA `index.html` (client-side routing)               |
 
 SSH: built-in SSH server (russh) on a configurable port for git only.
