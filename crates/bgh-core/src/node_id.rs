@@ -45,6 +45,8 @@ pub enum NodeType {
     WorkflowRun,
     Artifact,
     Environment,
+    Deployment,
+    DeploymentStatus,
 }
 
 impl NodeType {
@@ -83,6 +85,8 @@ impl NodeType {
         Self::WorkflowRun,
         Self::Artifact,
         Self::Environment,
+        Self::Deployment,
+        Self::DeploymentStatus,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -121,6 +125,8 @@ impl NodeType {
             Self::WorkflowRun => "WorkflowRun",
             Self::Artifact => "Artifact",
             Self::Environment => "Environment",
+            Self::Deployment => "Deployment",
+            Self::DeploymentStatus => "DeploymentStatus",
         }
     }
 

@@ -706,6 +706,24 @@ pub enum Event {
         #[serde(default)]
         workflow_job: serde_json::Value,
     },
+    /// A deployment was created (`POST /repos/{o}/{r}/deployments`, or an
+    /// Actions job with `environment:`). Webhook `deployment` created.
+    DeploymentCreated {
+        repo_id: i64,
+        deployment_id: i64,
+        actor_id: Option<i64>,
+    },
+    /// A deployment status was created (by the API, or `inactive` by
+    /// `auto_inactive`). `state` is the new status' state. Webhook
+    /// `deployment_status` created; `success` adds `deployed` events to the
+    /// pull requests whose head is the deployed commit.
+    DeploymentStatusCreated {
+        repo_id: i64,
+        deployment_id: i64,
+        status_id: i64,
+        state: String,
+        actor_id: Option<i64>,
+    },
     /// A browser session ended (logout or revocation): sync sockets of
     /// that session (or of every session of the user when `session_id` is
     /// `None`) must close with code 4001.
@@ -826,6 +844,8 @@ impl Event {
             Self::GlobalHookPing { .. } => "global_hook_ping",
             Self::WorkflowJobUpdated { .. } => "workflow_job_updated",
             Self::SessionEnded { .. } => "session_ended",
+            Self::DeploymentCreated { .. } => "deployment_created",
+            Self::DeploymentStatusCreated { .. } => "deployment_status_created",
         }
     }
 
@@ -922,7 +942,9 @@ impl Event {
             | Self::CheckSuiteUpdated { repo_id, .. }
             | Self::WorkflowRunUpdated { repo_id, .. }
             | Self::ReleaseUpdated { repo_id, .. }
-            | Self::WorkflowJobUpdated { repo_id, .. } => Some(*repo_id),
+            | Self::WorkflowJobUpdated { repo_id, .. }
+            | Self::DeploymentCreated { repo_id, .. }
+            | Self::DeploymentStatusCreated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -954,7 +976,9 @@ impl Event {
             | Self::CheckRunUpdated { actor_id, .. }
             | Self::CheckSuiteUpdated { actor_id, .. }
             | Self::WorkflowRunUpdated { actor_id, .. }
-            | Self::CommitStatusCreated { actor_id, .. } => *actor_id,
+            | Self::CommitStatusCreated { actor_id, .. }
+            | Self::DeploymentCreated { actor_id, .. }
+            | Self::DeploymentStatusCreated { actor_id, .. } => *actor_id,
             Self::CheckSuiteCompleted { .. }
             | Self::AccessChanged { .. }
             | Self::WorkflowJobUpdated { .. } => None,
