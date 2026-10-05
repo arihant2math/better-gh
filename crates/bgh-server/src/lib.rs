@@ -148,6 +148,11 @@ pub fn app(state: AppState) -> Router {
             state.clone(),
             bgh_core::ratelimit::root_middleware,
         ))
+        // GitHub App JWTs may only call the app endpoints.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::apps::middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             (spa_files, state.clone()),
             web::spa_pages,

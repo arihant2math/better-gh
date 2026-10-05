@@ -6,6 +6,10 @@
 //!    [`AuthOptions::allow_password`] is set (git transport)
 //! 3. `bgh_session` cookie (web client)
 //!
+//! GitHub App credentials: `Bearer <jwt>` authenticates an app
+//! ([`AuthMethod::App`]), `bghs_…` installation tokens are access tokens of
+//! the app's bot user (see [`crate::apps`]).
+//!
 //! Handlers use the extractors [`MaybeUser`], [`RequireUser`] and
 //! [`RequireSiteAdmin`]. Resolution happens once per request and is cached in
 //! the request extensions.
@@ -36,9 +40,17 @@ const SESSION_CACHE_TTL_SECS: u64 = 300;
 /// How the caller authenticated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthMethod {
-    Session { session_id: i64 },
-    Token { token_id: i64 },
+    Session {
+        session_id: i64,
+    },
+    Token {
+        token_id: i64,
+    },
     Password,
+    /// A GitHub App JWT; the context's user is the app's bot.
+    App {
+        app_id: i64,
+    },
 }
 
 /// The authenticated caller.
@@ -110,8 +122,12 @@ impl AuthContext {
         }
     }
 
-    /// Value for the `X-OAuth-Scopes` response header.
+    /// Value for the `X-OAuth-Scopes` response header (none for GitHub App
+    /// credentials, whose scopes are internal).
     pub fn scopes_header(&self) -> Option<String> {
+        if crate::apps::is_integration(self) {
+            return None;
+        }
         self.scopes.as_ref().map(|s| s.join(", "))
     }
 }
@@ -169,6 +185,9 @@ async fn token_auth(state: &AppState, token: &str) -> ApiResult<AuthContext> {
     if token.is_empty() {
         return Err(ApiError::bad_credentials());
     }
+    if crate::apps::looks_like_jwt(token) {
+        return crate::apps::jwt_auth(state, token).await;
+    }
     let hash = crypto::sha256_hex(token);
     let row: Option<TokenRow> = sqlx::query_as(&format!(
         "SELECT t.id AS token_id, t.scopes, t.expires_at, t.last_used_at, {}
@@ -216,7 +235,10 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     let (login, secret) = decoded
         .split_once(':')
         .ok_or_else(ApiError::bad_credentials)?;
-    if secret.starts_with(crypto::PAT_PREFIX) || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX) {
+    if secret.starts_with(crypto::PAT_PREFIX)
+        || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX)
+        || secret.starts_with(crypto::INSTALLATION_TOKEN_PREFIX)
+    {
         // Like GitHub, the username is ignored for token auth.
         return token_auth(state, secret).await;
     }
