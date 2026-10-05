@@ -10,6 +10,7 @@ mod bench;
 mod branches;
 mod browse;
 mod collaborators;
+mod commit_comments;
 mod commits;
 mod contents;
 mod download;

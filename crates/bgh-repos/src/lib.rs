@@ -14,6 +14,7 @@ pub mod branches;
 pub mod browse;
 pub mod cache;
 pub mod collaborators;
+pub mod commit_comments;
 pub mod commits;
 pub mod contents;
 pub mod create;
@@ -85,6 +86,7 @@ pub fn router() -> Router<AppState> {
         .merge(contents::routes())
         .merge(gitdb::routes())
         .merge(commits::routes())
+        .merge(commit_comments::routes())
         .merge(branches::routes())
         .merge(protection_api::routes())
         .merge(rulesets::routes())

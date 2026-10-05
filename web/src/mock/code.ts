@@ -10,6 +10,7 @@ import { blobSha, highlight, languageOf } from './content';
 import { installContentsRoutes } from './contents';
 import { repoLicense } from './extra/licenses';
 import { gitFor, splitLines, type MockCommit, type MockGit } from './git';
+import { installCommitCommentRoutes } from './commitComments';
 import { installReleaseRoutes } from './releases';
 import { fakeSha } from './rng';
 import { pass } from './pass';
@@ -112,6 +113,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
   };
   shared = { repoOf, target, brief, rest, user: restUser, canWrite };
   installReleaseRoutes(R, s);
+  installCommitCommentRoutes(R, s);
   installContentsRoutes(R, s);
 
   // ---------------------------------------------------------- browse helpers

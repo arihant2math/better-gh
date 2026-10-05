@@ -479,7 +479,8 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'subjectId', n.subject_id, 'title', n.subject_title, 'reason', n.reason,
                  'unread', n.unread, 'updatedAt', bgh_ts(n.updated_at),
                  'lastReadAt', bgh_ts(n.last_read_at))::text AS j
-               FROM notifications n WHERE {} AND NOT n.done",
+               FROM notifications n WHERE {} AND NOT n.done
+                AND bgh_can_read_repo(n.user_id, n.repo_id)",
             col("n", filter, &[("ids", "id"), ("users", "user_id")])?
         ),
         Model::ReviewComment => format!(

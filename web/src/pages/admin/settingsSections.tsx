@@ -9,7 +9,7 @@ import { MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { Tooltip } from '../../ui/Tooltip';
 import { fromLocalInput } from '../../components/admin/format';
-import { domainError, emptyOidc, oidcErrors, type Errors, type Limit, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
+import { domainError, emptyOidc, oidcErrors, type Errors, type Limit, type OidcForm, type RetentionWindow, type SecretForm, type SettingsForm } from './settingsForm';
 import s from './settings.module.css';
 
 interface Props<K extends keyof SettingsForm> {
@@ -194,14 +194,32 @@ export function RepositoriesSection({ value, onChange, errors }: Props<'reposito
 }
 
 /** Switch plus megabyte input for an optional limit. */
-function LimitField({ id, toggle, label, description, value, onChange, error }: { id: string; toggle: string; label: string; description: string; value: Limit; onChange: (v: Limit) => void; error?: string }) {
+function LimitField({
+  id,
+  toggle,
+  label,
+  description,
+  value,
+  onChange,
+  error,
+  unit = 'MB',
+}: {
+  id: string;
+  toggle: string;
+  label: string;
+  description: string;
+  value: Limit;
+  onChange: (v: Limit) => void;
+  error?: string;
+  unit?: string;
+}) {
   return (
     <div>
       <Switch checked={value.on} onChange={(on) => onChange({ ...value, on })} label={toggle} description={description} />
       {value.on && (
         <div className={s.narrow} style={{ marginTop: 8 }}>
           <Field label={label} htmlFor={id} error={error}>
-            <Input id={id} inputMode="numeric" value={value.mb} trailing="MB" invalid={!!error} onChange={(e) => onChange({ ...value, mb: positiveInput(e.target.value) })} />
+            <Input id={id} inputMode="numeric" value={value.mb} trailing={unit} invalid={!!error} onChange={(e) => onChange({ ...value, mb: positiveInput(e.target.value) })} />
           </Field>
         </div>
       )}
@@ -245,6 +263,60 @@ export function GitSection({ value, onChange, errors }: Props<'git'>) {
         onChange={(max_push) => onChange({ max_push })}
         error={errors['git.max_push']}
       />
+    </div>
+  );
+}
+
+const RETENTION_FIELDS: { key: RetentionWindow; toggle: string; label: string; description: string }[] = [
+  {
+    key: 'notifications_days',
+    toggle: 'Expire notifications',
+    label: 'Delete notifications older than',
+    description: 'Inbox threads without activity for this long are removed (GitHub keeps about five months).',
+  },
+  {
+    key: 'webhook_payload_days',
+    toggle: 'Drop webhook payloads',
+    label: 'Drop delivery payloads after',
+    description: 'Request and response bodies are removed; the delivery log keeps the status. Deliveries without a payload can’t be redelivered.',
+  },
+  {
+    key: 'webhook_delivery_days',
+    toggle: 'Expire webhook deliveries',
+    label: 'Delete deliveries older than',
+    description: 'Removes the whole entry from the delivery log.',
+  },
+  {
+    key: 'activity_days',
+    toggle: 'Expire activity',
+    label: 'Delete activity older than',
+    description: 'Events API and dashboard feed entries.',
+  },
+];
+
+export function RetentionSection({ value, onChange, errors }: Props<'retention'>) {
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.enabled}
+        onChange={(enabled) => onChange({ enabled })}
+        label="Run retention hourly"
+        description="Deletes expired sessions and everything older than the windows below. Windows that are turned off keep data forever."
+      />
+      {value.enabled &&
+        RETENTION_FIELDS.map((f) => (
+          <LimitField
+            key={f.key}
+            id={`set-retention-${f.key}`}
+            toggle={f.toggle}
+            label={f.label}
+            unit="days"
+            description={f.description}
+            value={value[f.key]}
+            onChange={(v) => onChange({ [f.key]: v })}
+            error={errors[`retention.${f.key}`]}
+          />
+        ))}
     </div>
   );
 }
