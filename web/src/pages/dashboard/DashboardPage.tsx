@@ -15,6 +15,7 @@ import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
+import { InvitationsBanner } from '../invitations/InvitationsBanner';
 import { issueHref } from '../issues/IssueRow';
 import styles from './DashboardPage.module.css';
 import { dayLabel, feedFor, groupFeed, type FeedGroup } from './feed';
@@ -223,9 +224,14 @@ export default observer(function DashboardPage() {
 
   if (s.count('repo') === 0) {
     return (
-      <EmptyState icon={RepoIcon} title="No repositories yet">
-        Create a repository or ask to be added to an organization.
-      </EmptyState>
+      <>
+        <div className={styles.emptyInvites}>
+          <InvitationsBanner />
+        </div>
+        <EmptyState icon={RepoIcon} title="No repositories yet">
+          Create a repository or ask to be added to an organization.
+        </EmptyState>
+      </>
     );
   }
 
@@ -237,6 +243,7 @@ export default observer(function DashboardPage() {
         </h1>
         <ContextSwitcher value={ctx} />
       </div>
+      <InvitationsBanner />
       <p className={styles.sub}>
         {side.assigned} open issue{side.assigned === 1 ? '' : 's'} assigned to you, {side.reviews} review request{side.reviews === 1 ? '' : 's'}
         {side.unread ? `, ${side.unread} unread notification${side.unread === 1 ? '' : 's'}` : ''}.

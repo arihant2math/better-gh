@@ -251,6 +251,11 @@ pub fn web_router() -> Router<AppState> {
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
         .route("/_bgh/orgs", post(orgs::web_create_org))
+        .route(
+            "/_bgh/orgs/{org}/invitation",
+            get(orgs::viewer_invitation).delete(orgs::decline_invitation),
+        )
+        .route("/_bgh/user/organizations", get(orgs::viewer_organizations))
         // avatars
         .route("/avatars/u/{id}", get(avatars::serve))
         .route(

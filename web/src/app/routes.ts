@@ -31,6 +31,7 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   blocked: { title: 'Blocked users', load: () => import('../pages/settings/sections/BlockedSettings') },
   applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
   developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
+  organizations: { title: 'Organizations', load: () => import('../pages/settings/sections/OrganizationSettings') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
   local: { title: 'Local data & sync', load: () => import('../pages/settings/sections/LocalDataSettings') },
 };
@@ -182,6 +183,9 @@ export function registerRoutes(): void {
       const q = new URLSearchParams(window.location.search).get('q');
       return q ? `${q} · Search` : 'Search';
     } },
+    // Invitations (no repo layout: a private repo isn't visible before accepting).
+    { path: '/orgs/:org/invitation', load: () => import('../pages/invitations/OrgInvitationPage'), title: (p) => `Invitation · ${p.org}` },
+    { path: '/:owner/:repo/invitations', load: () => import('../pages/invitations/RepoInvitationPage'), title: (p) => `Invitation · ${p.owner}/${p.repo}` },
     // Projects (owner level). Before `/:owner/...` patterns.
     { path: '/orgs/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
     { path: '/users/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
