@@ -10,8 +10,9 @@ import type { Membership, Org, Team } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Box, EmptyState, Skeleton } from '../../ui/EmptyState';
-import { BookIcon, GearIcon, LinkIcon, LocationIcon, MailIcon, PeopleIcon, PlusIcon, RepoIcon, VerifiedIcon, TableIcon } from '../../ui/icons';
+import { BookIcon, GearIcon, LinkIcon, LocationIcon, MailIcon, PackageIcon, PeopleIcon, PlusIcon, RepoIcon, VerifiedIcon, TableIcon } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
+import { PackageList } from '../packages/PackageList';
 import { useOwnerRepos, type ReposState } from './profileData';
 import styles from './ProfilePage.module.css';
 import { RepoCard, RepoList } from './RepoList';
@@ -19,7 +20,7 @@ import { languageColor, languagesOf, popular } from './repoList';
 import { blogHref } from './UserProfile';
 import { personFromRest, UserList, type PersonItem } from './UserList';
 
-export type OrgTab = 'overview' | 'repositories' | 'people' | 'teams';
+export type OrgTab = 'overview' | 'repositories' | 'packages' | 'people' | 'teams';
 
 /** Organization profile: header + Overview / Repositories / People / Teams. */
 export const OrgProfile = observer(function OrgProfile({ login, synced }: { login: string; synced: Org | undefined }) {
@@ -34,7 +35,7 @@ export const OrgProfile = observer(function OrgProfile({ login, synced }: { logi
   const mine = memberships.find((m) => m.userId === viewerId);
   const isMember = !!mine;
   const isOwner = mine?.role === 'admin';
-  const tab: OrgTab = (['overview', 'repositories', 'people', 'teams'] as const).includes(tabParam) && (tabParam !== 'teams' || isMember) ? tabParam : 'overview';
+  const tab: OrgTab = (['overview', 'repositories', 'packages', 'people', 'teams'] as const).includes(tabParam) && (tabParam !== 'teams' || isMember) ? tabParam : 'overview';
   const repos = useOwnerRepos(orgLogin, orgId, 'org');
   const members = useResource(profileKeys.members(orgLogin), () => listOrgMembers(orgLogin));
   const storeTeams: Team[] = orgId ? s.byIndex('team', 'orgId', orgId) : [];
@@ -97,7 +98,8 @@ export const OrgProfile = observer(function OrgProfile({ login, synced }: { logi
         items={[
           { id: 'overview', label: 'Overview', icon: BookIcon, href: base },
           { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.items.length || (o ? o.public_repos + (o.total_private_repos ?? 0) : undefined), href: `${base}?tab=repositories` },
-              { id: 'projects', label: 'Projects', icon: TableIcon, href: `/orgs${base}/projects` },
+          { id: 'packages', label: 'Packages', icon: PackageIcon, href: `${base}?tab=packages` },
+          { id: 'projects', label: 'Projects', icon: TableIcon, href: `/orgs${base}/projects` },
           { id: 'people', label: 'People', icon: PeopleIcon, count: people?.length, href: `${base}?tab=people` },
           ...(isMember ? [{ id: 'teams', label: 'Teams', icon: PeopleIcon, count: teamRows.length, href: `${base}?tab=teams` }] : []),
         ]}
@@ -113,6 +115,7 @@ export const OrgProfile = observer(function OrgProfile({ login, synced }: { logi
           emptyBody={isMember ? <Link to={`/new?owner=${encodeURIComponent(orgLogin)}`}>Create a new repository</Link> : undefined}
         />
       )}
+      {tab === 'packages' && <PackageList owner={orgLogin} />}
       {tab === 'people' && (
         <section aria-label="People">
           <div className={styles.sectionHead}>

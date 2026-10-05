@@ -9,6 +9,7 @@ import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
+import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
 import { installUploadMocks } from './uploads';
@@ -23,4 +24,5 @@ export function installExtraMocks(server: MockServer): void {
   installInvitationMocks(server);
   installUploadMocks(server);
   installImportMocks(server);
+  installPackageMocks(server);
 }

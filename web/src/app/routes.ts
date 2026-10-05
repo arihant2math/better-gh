@@ -66,6 +66,20 @@ function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags'
   return (p: Params) => void import('../pages/code/prefetch').then((m) => m.prefetchCodeRoute(kind, p)).catch(() => undefined);
 }
 
+const PackagesPage = () => import('../pages/packages/PackagesPage');
+const PackagePage = () => import('../pages/packages/PackagePage');
+
+/** Packages data prefetch (lazy module: keeps the API wrappers out of the initial bundle). */
+function prefetchPackages(p: Params) {
+  void import('../api/packages')
+    .then((m) => {
+      const name = p['*'];
+      if (name) prefetchResource(m.packageKeys.detail(p.owner!, p.type!, name), () => m.getPackage(p.owner!, p.type!, name));
+      else prefetchResource(m.packageKeys.owner(p.owner!), () => m.listOwnerPackages(p.owner!));
+    })
+    .catch(() => undefined);
+}
+
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
@@ -194,6 +208,11 @@ export function registerRoutes(): void {
     { path: '/orgs/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
+    // Packages / container registry (GitHub's URLs; names may contain `/`, encoded as %2F).
+    { path: '/orgs/:owner/packages', load: PackagesPage, prefetch: prefetchPackages, title: (p) => `Packages · ${p.owner}` },
+    { path: '/users/:owner/packages', load: PackagesPage, prefetch: prefetchPackages, title: (p) => `Packages · ${p.owner}` },
+    { path: '/orgs/:owner/packages/:type/package/*', load: PackagePage, prefetch: prefetchPackages, title: (p) => `${p['*']} · ${p.owner}` },
+    { path: '/users/:owner/packages/:type/package/*', load: PackagePage, prefetch: prefetchPackages, title: (p) => `${p['*']} · ${p.owner}` },
     // Organization Actions settings (before `/:owner/...` patterns).
     { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
     { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
