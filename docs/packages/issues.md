@@ -83,6 +83,12 @@ when the open-issue count changes. Reactions have no model of their own: the
 reacted issue/comment row is re-synced. Transfers send `D` in the old scope
 and `I` (issue + comments) in the new one.
 
+Shape builders live in `bgh_issues::json` (`label_sync_json`,
+`milestone_sync_json`, `comment_sync_json`, `event_sync_json`) and
+`bgh_issues::service` (`issue_sync_json`, `sync_comment`,
+`sync_repo_open_issues`); swap them for B8's shared helpers (`bgh/sync`)
+once those land on the integration branch.
+
 Additive protocol changes made here (documented in `SYNC_PROTOCOL.md` and
 `web/src/sync/models.ts`): `Issue.activeLockReason?`, `Issue.parentId?`,
 `Issue.pinned?`, `stateReason` may be `duplicate`; extra `IssueEvent` types
