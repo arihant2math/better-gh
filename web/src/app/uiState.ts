@@ -9,6 +9,8 @@ class UiState {
   paletteMode: 'all' | 'commands' = 'all';
   helpOpen = false;
   newIssueRepoId: number | null = null;
+  /** Repository whose watch settings dialog is open. */
+  watchRepoId: number | null = null;
   sidebarCollapsed = false;
 
   constructor() {
@@ -39,6 +41,14 @@ class UiState {
 
   closeNewIssue() {
     this.newIssueRepoId = null;
+  }
+
+  openWatch(repoId: number) {
+    this.watchRepoId = repoId;
+  }
+
+  closeWatch() {
+    this.watchRepoId = null;
   }
 
   toggleSidebar() {

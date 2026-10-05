@@ -11,6 +11,7 @@ import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
 import { Rng, fakeSha, iso } from './rng';
+import { installInboxSearchRoutes } from './inboxSearch';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
@@ -708,6 +709,7 @@ export class MockServer implements Transport {
     // ---------------- projects + wiki (private endpoints)
     installProjectRoutes(R, this);
     installWikiRoutes(R, this);
+    installInboxSearchRoutes(R, this);
   }
 
   userByLogin(login: string): User | undefined {

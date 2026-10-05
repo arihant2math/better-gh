@@ -21,10 +21,11 @@ import {
   SortDescIcon,
   XIcon,
 } from '../../ui/icons';
-import { Input } from '../../ui/Input';
 import { Menu, SelectPanel } from '../../ui/Menu';
 import { toast } from '../../ui/Toast';
 import { VirtualList } from '../../ui/VirtualList';
+import { QueryInput } from '../../search/QueryInput';
+import { storeValueSource } from '../../search/storeSource';
 import { applyFilter, parseQuery, serializeQuery, SORTS, type FilterContext, type IssueFilter } from './filters';
 import styles from './IssueList.module.css';
 import { IssueRow, issueHref } from './IssueRow';
@@ -54,6 +55,7 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const anchorIndex = useRef<number | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const valueSource = useMemo(() => storeValueSource(repo), [repo]);
 
   const viewer = session.user!;
   const ctx: FilterContext = useMemo(
@@ -161,23 +163,24 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
     <div className={styles.page}>
       {header}
       <div className={styles.toolbar}>
-        <Input
-          ref={searchRef}
+        <QueryInput
+          inputRef={searchRef}
           className={styles.search}
           leadingIcon={SearchIcon}
+          set={kind === 'pr' ? 'pull-list' : 'issue-list'}
+          source={valueSource}
           value={draft ?? query}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={setDraft}
           onBlur={() => setDraft(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              setQuery({ q: (draft ?? query).trim() === defaultQuery ? null : (draft ?? query).trim() });
-              setDraft(null);
-              setActive(0);
-              (e.target as HTMLInputElement).blur();
-            } else if (e.key === 'Escape') {
-              setDraft(null);
-              (e.target as HTMLInputElement).blur();
-            }
+          onSubmit={(value) => {
+            setQuery({ q: value === defaultQuery ? null : value });
+            setDraft(null);
+            setActive(0);
+            searchRef.current?.blur();
+          }}
+          onCancel={() => {
+            setDraft(null);
+            searchRef.current?.blur();
           }}
           aria-label="Filter"
           trailing={query !== defaultQuery && <IconButton icon={XIcon} label="Clear filter" size="sm" onClick={() => setQuery({ q: null })} />}

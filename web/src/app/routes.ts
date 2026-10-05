@@ -52,6 +52,10 @@ export function registerRoutes(): void {
     { path: '/notifications', load: () => import('../pages/notifications/NotificationsPage'), title: () => 'Inbox' },
     { path: '/issues', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'My issues' },
     { path: '/pulls', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'Reviews' },
+    { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
+      const q = new URLSearchParams(window.location.search).get('q');
+      return q ? `${q} · Search` : 'Search';
+    } },
     { path: '/settings', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
     { path: '/settings/:section', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
     // Projects (owner level). Before `/:owner/...` patterns.
