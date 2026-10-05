@@ -271,6 +271,9 @@ async fn external_runner_over_http() {
             name: "ext".into(),
             labels: vec!["gpu".into()],
             ephemeral: false,
+            os: None,
+            arch: None,
+            runner_group: None,
         },
     )
     .await

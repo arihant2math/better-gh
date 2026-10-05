@@ -907,3 +907,16 @@ export function ActionsSection({ value, onChange }: Props<'actions'>) {
     </div>
   );
 }
+
+export function MarkdownSection({ value, onChange }: Props<'markdown'>) {
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.image_proxy}
+        onChange={(image_proxy) => onChange({ image_proxy })}
+        label="Proxy external images"
+        description="Images from other hosts in issues, comments and READMEs load through this server (/_bgh/camo), so viewers' IP addresses and read times aren't exposed to those hosts."
+      />
+    </div>
+  );
+}

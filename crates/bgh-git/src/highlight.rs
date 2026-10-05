@@ -202,6 +202,23 @@ impl LineBuf {
     }
 }
 
+/// Highlight a Markdown fenced code block by its info-string language
+/// (`rust`, `ts`, `Python`...); plain text when no grammar matches.
+pub fn highlight_lang(lang: &str, text: &str) -> Highlighted {
+    let ext = SYNTAXES
+        .find_syntax_by_token(lang.trim())
+        .filter(|s| s.name != "Plain Text")
+        .and_then(|s| s.file_extensions.first());
+    match ext {
+        Some(ext) => highlight(&format!("snippet.{ext}"), text),
+        None => Highlighted {
+            language: None,
+            lines: plain(text),
+            highlighted: false,
+        },
+    }
+}
+
 /// Highlight `text` (the contents of `path`).
 pub fn highlight(path: &str, text: &str) -> Highlighted {
     let syntax = find_syntax(path, text);

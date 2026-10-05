@@ -19,6 +19,7 @@ import {
   SyncIcon,
   ToolsIcon,
   WebhookIcon,
+  WorkflowIcon,
   type Icon,
 } from '../../ui/icons';
 import { settingsDirty } from './settingsState';
@@ -36,6 +37,7 @@ const NAV: { to: string; label: string; icon: Icon; keys: string; group?: string
   { to: '/site-admin/jobs', label: 'Background jobs', icon: StackIcon, keys: 'g j' },
   { to: '/site-admin/maintenance', label: 'Git maintenance', icon: ToolsIcon, keys: 'g m' },
   { to: '/site-admin/hooks', label: 'Global webhooks', icon: WebhookIcon, keys: 'g w' },
+  { to: '/site-admin/actions/runners', label: 'Runners', icon: WorkflowIcon, keys: 'g n' },
 ];
 
 function current(pathname: string): string {

@@ -148,6 +148,7 @@ const AdminCommands = observer(function AdminCommands() {
       { id: 'admin.audit', title: 'Site admin: Audit log', group: 'Site admin', icon: ServerIcon, run: go('/site-admin/audit-log') },
       { id: 'admin.jobs', title: 'Site admin: Background jobs', group: 'Site admin', icon: ServerIcon, keywords: 'queue', run: go('/site-admin/jobs') },
       { id: 'admin.hooks', title: 'Site admin: Global webhooks', group: 'Site admin', icon: ServerIcon, run: go('/site-admin/hooks') },
+      { id: 'admin.runners', title: 'Site admin: Runners', group: 'Site admin', icon: ServerIcon, keywords: 'actions self-hosted queue runner groups', run: go('/site-admin/actions/runners') },
     ]);
   }, [admin]);
   return null;

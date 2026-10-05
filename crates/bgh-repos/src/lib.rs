@@ -122,6 +122,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
         .merge(traffic::web_routes())
+        .merge(autolinks::web_routes())
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;
