@@ -6,6 +6,7 @@
  */
 import { installDeploymentMocks } from '../deployments';
 import type { MockServer } from '../server';
+import { installAppsMocks } from './apps';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
@@ -29,4 +30,5 @@ export function installExtraMocks(server: MockServer): void {
   installMetadataImportMocks(server);
   installDeploymentMocks(server);
   installPackageMocks(server);
+  installAppsMocks(server);
 }

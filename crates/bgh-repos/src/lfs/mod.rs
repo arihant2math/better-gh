@@ -284,6 +284,7 @@ pub async fn authorize(
         if write && auth.is_none() {
             return Err(challenge("Authentication required."));
         }
+        bgh_core::apps::check_git(auth.as_ref(), &access.repo, write)?;
         LfsAccess {
             access,
             user: auth,
