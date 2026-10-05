@@ -415,6 +415,7 @@ async fn add(
             repo_id,
             user_id: user.id,
             actor_id: auth.user.id,
+            permission: role.as_str().to_string(),
         });
         tx.commit().await?;
         return Ok(StatusCode::NO_CONTENT.into_response());
@@ -774,6 +775,7 @@ async fn accept_invitation(
         repo_id: repo.id,
         user_id: auth.user.id,
         actor_id: auth.user.id,
+        permission: inv.permission.clone(),
     });
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

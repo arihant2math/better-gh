@@ -293,6 +293,61 @@ pub fn sanitize(html: &str) -> String {
     SANITIZER.clean(html).to_string()
 }
 
+/// `@user` and `@org/team` mentions found in GFM text (outside code spans,
+/// code blocks and links), deduplicated case-insensitively, in order of
+/// first appearance. Logins are returned as written; resolve them with a
+/// case-insensitive lookup.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Mentions {
+    pub users: Vec<String>,
+    /// `(org, team_slug)` pairs.
+    pub teams: Vec<(String, String)>,
+}
+
+/// Extract mentions from `text` (see [`Mentions`]).
+pub fn mentions(text: &str) -> Mentions {
+    let mut out = Mentions::default();
+    if !text.contains('@') {
+        return out;
+    }
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    let ctx = RenderContext::new("");
+    for node in root.descendants() {
+        let NodeValue::Text(t) = &node.data.borrow().value else {
+            continue;
+        };
+        if inside_link_or_code(node) {
+            continue;
+        }
+        for seg in scan(t, &ctx) {
+            let Segment::Link { text, class, .. } = seg else {
+                continue;
+            };
+            let name = text.trim_start_matches('@');
+            match class {
+                "user-mention" => {
+                    if !out.users.iter().any(|u| u.eq_ignore_ascii_case(name)) {
+                        out.users.push(name.to_string());
+                    }
+                }
+                "team-mention" => {
+                    if let Some((org, team)) = name.split_once('/') {
+                        let dup = out.teams.iter().any(|(o, t)| {
+                            o.eq_ignore_ascii_case(org) && t.eq_ignore_ascii_case(team)
+                        });
+                        if !dup {
+                            out.teams.push((org.to_string(), team.to_string()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
 fn inside_link_or_code<'a>(node: &'a AstNode<'a>) -> bool {
     let mut cur = node.parent();
     while let Some(n) = cur {
@@ -777,6 +832,16 @@ mod tests {
     fn no_repo_means_no_issue_links() {
         let html = render("see #12", &RenderContext::new("http://h"));
         assert!(!html.contains("issue-link"), "{html}");
+    }
+
+    #[test]
+    fn extracts_mentions() {
+        let m = mentions(
+            "hi @alice and @Bob, cc @acme/core `@notme` @alice\n\n```\n@code\n```\nmail a@b.com [@link](http://x)",
+        );
+        assert_eq!(m.users, vec!["alice".to_string(), "Bob".to_string()]);
+        assert_eq!(m.teams, vec![("acme".to_string(), "core".to_string())]);
+        assert_eq!(mentions("no mentions"), Mentions::default());
     }
 
     #[test]

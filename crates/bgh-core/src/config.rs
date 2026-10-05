@@ -62,6 +62,12 @@ pub struct Config {
     /// `BGH_TRUST_PROXY` (default false): take the client IP from
     /// `X-Forwarded-For` / `X-Real-IP` (set when behind a reverse proxy).
     pub trust_proxy: bool,
+    /// `BGH_WEBHOOK_ALLOWED_HOSTS` (comma separated, default empty): hosts,
+    /// IPs or CIDR ranges webhooks may target even though they resolve to
+    /// private/loopback addresses. `*` allows everything.
+    pub webhook_allowed_hosts: Vec<String>,
+    /// `BGH_WEBHOOK_TIMEOUT_SECS` (default 10): per-delivery HTTP timeout.
+    pub webhook_timeout_secs: u64,
 }
 
 impl Default for Config {
@@ -88,6 +94,8 @@ impl Default for Config {
             rate_limit_authenticated: 5000,
             rate_limit_anonymous: 60,
             trust_proxy: false,
+            webhook_allowed_hosts: Vec::new(),
+            webhook_timeout_secs: 10,
         }
     }
 }
@@ -176,6 +184,19 @@ impl Config {
                 d.rate_limit_anonymous,
             )?,
             trust_proxy: boolean("BGH_TRUST_PROXY", d.trust_proxy)?,
+            webhook_allowed_hosts: parse("BGH_WEBHOOK_ALLOWED_HOSTS")?
+                .map(|v| {
+                    v.split(',')
+                        .map(|h| h.trim().to_string())
+                        .filter(|h| !h.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            webhook_timeout_secs: typed(
+                "BGH_WEBHOOK_TIMEOUT_SECS",
+                parse("BGH_WEBHOOK_TIMEOUT_SECS")?,
+                d.webhook_timeout_secs,
+            )?,
         })
     }
 

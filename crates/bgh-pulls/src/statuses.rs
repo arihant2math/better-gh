@@ -151,7 +151,7 @@ pub async fn create_status(
         repo_id,
         status_id: row.id,
         sha: sha.to_string(),
-        actor_id,
+        actor_id: Some(actor_id),
     });
     tx.commit().await?;
     Ok(row)

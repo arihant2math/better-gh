@@ -343,6 +343,7 @@ pub async fn delete(
         label_id: label.id,
         name: label.name.clone(),
         actor_id: auth.user.id,
+        label: serde_json::to_value(render(&access, &state, &label))?,
     });
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
