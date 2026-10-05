@@ -4,7 +4,7 @@ import { mutate, refresh, useResource } from '../../api/cache';
 import { StatTile } from '../../components/admin/charts';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount, formatDateTime } from '../../components/admin/format';
+import { formatCount, formatDateTime, plural } from '../../components/admin/format';
 import { Drawer, JsonView, KeyValue, PageHeader, Panel, StatusPill, errorMessage, useConfirm, type PillStatus } from '../../components/admin/kit';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { setQuery, useQuery } from '../../router';
@@ -201,7 +201,7 @@ export default function JobsPage() {
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
           {list.items.length > PAGE && auto ? 'List auto-refresh paused while scrolled · ' : ''}
-          {list.done ? `${formatCount(list.items.length)} jobs` : list.items.length ? `${formatCount(list.items.length)}+ jobs` : ''}
+          {list.done ? `${plural(list.items.length, 'job')}` : list.items.length ? `${formatCount(list.items.length)}+ jobs` : ''}
         </span>
       </div>
       <DataTable

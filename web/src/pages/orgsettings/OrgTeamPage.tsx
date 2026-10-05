@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { invalidate, mutate, refresh, useResource } from '../../api/cache';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount } from '../../components/admin/format';
+import { plural } from '../../components/admin/format';
 import { ErrorState, PageHeader, Panel, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { Link, navigate, useParams, useQuery } from '../../router';
@@ -241,7 +241,7 @@ function MembersTab({ org, slug, canManage, me, onChange }: { org: string; slug:
       <div className={styles.toolbar}>
         <SearchInput label="Find a member" placeholder="Find a member…" value={q} onChange={setQ} />
         <span className={styles.toolbarSpacer} />
-        <span className={styles.meta}>{all.done ? `${formatCount(all.items.length)} members` : ''}</span>
+        <span className={styles.meta}>{all.done ? `${plural(all.items.length, 'member')}` : ''}</span>
         {canManage && (
           <Button size="sm" variant="primary" leadingIcon={PersonAddIcon} kbd="A" onClick={() => setAdding(true)}>
             Add a member
@@ -507,7 +507,7 @@ function ReposTab({ org, slug, canManage, onChange }: { org: string; slug: strin
       <div className={styles.toolbar}>
         <SearchInput label="Find a repository" placeholder="Find a repository…" value={q} onChange={setQ} />
         <span className={styles.toolbarSpacer} />
-        <span className={styles.meta}>{list.done ? `${formatCount(list.items.length)} repositories` : ''}</span>
+        <span className={styles.meta}>{list.done ? `${plural(list.items.length, 'repository')}` : ''}</span>
         {canManage && (
           <Button size="sm" variant="primary" leadingIcon={PlusIcon} kbd="A" onClick={() => setAdding(true)}>
             Add repository

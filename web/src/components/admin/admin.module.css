@@ -119,7 +119,7 @@
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
   gap: 10px;
 }
 
@@ -353,6 +353,7 @@
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   white-space: nowrap;
+  justify-self: start;
 }
 
 .pill[data-status='ok'] {

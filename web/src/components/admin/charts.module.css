@@ -188,6 +188,15 @@
   background: var(--bg-muted);
 }
 
+.stackRest {
+  border-radius: 0 4px 4px 0;
+  background: var(--bg-muted);
+}
+
+.swatchRest {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
 .dim {
   opacity: 0.35;
 }

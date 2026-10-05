@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { downloadText, toCsv } from '../../components/admin/csv';
-import { formatCount, formatDateTime } from '../../components/admin/format';
+import { formatCount, formatDateTime, plural } from '../../components/admin/format';
 import { CopyButton, Drawer, JsonView, KeyValue, PageHeader, SearchInput, errorMessage } from '../../components/admin/kit';
 import { Link, setQuery, useQuery } from '../../router';
 import { Avatar } from '../../ui/Badge';
@@ -165,7 +165,7 @@ export default function AuditLogPage() {
 
   const exportLoaded = () => {
     downloadText(csvName(), toCsv(list.entries, CSV_COLUMNS));
-    toast({ kind: 'success', title: `Exported ${formatCount(list.entries.length)} entries` });
+    toast({ kind: 'success', title: `Exported ${plural(list.entries.length, 'entry')}` });
   };
   const exportAll = async () => {
     abort.current = { aborted: false };
@@ -176,7 +176,7 @@ export default function AuditLogPage() {
       downloadText(csvName(), toCsv(entries, CSV_COLUMNS));
       toast({
         kind: 'success',
-        title: `Exported ${formatCount(entries.length)} entries`,
+        title: `Exported ${plural(entries.length, 'entry')}`,
         description: truncated ? `Stopped at ${formatCount(EXPORT_LIMIT)}; narrow the filters to export the rest.` : undefined,
       });
     } catch (err) {
@@ -261,7 +261,7 @@ export default function AuditLogPage() {
         />
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
-          {list.entries.length > 0 ? (list.done ? `${formatCount(list.entries.length)} entries` : `${formatCount(list.entries.length)}+ entries`) : ''}
+          {list.entries.length > 0 ? (list.done ? `${plural(list.entries.length, 'entry')}` : `${formatCount(list.entries.length)}+ entries`) : ''}
         </span>
       </div>
       <div className={a.filters} role="group" aria-label="Filters">

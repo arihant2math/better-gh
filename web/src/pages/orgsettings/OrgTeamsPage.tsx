@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { refresh, useResource } from '../../api/cache';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount } from '../../components/admin/format';
+import { formatCount, plural } from '../../components/admin/format';
 import { PageHeader, SearchInput, errorMessage } from '../../components/admin/kit';
 import { setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -76,7 +76,7 @@ export default function OrgTeamsPage() {
         <SearchInput label="Find a team" placeholder="Find a team…" value={q} onChange={(v) => setQuery({ q: v || null })} />
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
-          {teams.data ? (q ? `${formatCount(rows.length)} of ${formatCount(teams.data.length)}` : `${formatCount(teams.data.length)} teams`) : ''}
+          {teams.data ? (q ? `${formatCount(rows.length)} of ${formatCount(teams.data.length)}` : `${plural(teams.data.length, 'team')}`) : ''}
         </span>
       </div>
       <DataTable

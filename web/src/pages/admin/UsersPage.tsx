@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount, formatKb } from '../../components/admin/format';
+import { formatCount, formatKb, plural } from '../../components/admin/format';
 import { PageHeader, SearchInput, StatusPill, errorMessage } from '../../components/admin/kit';
 import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
 import { navigate, setQuery, useQuery } from '../../router';
@@ -92,7 +92,7 @@ export default function UsersPage() {
         <Tabs size="sm" items={FILTERS} value={filter} onChange={(id) => setQuery({ filter: id })} />
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
-          {list.done ? `${formatCount(list.items.length)} users` : list.totalUpperBound ? `${formatCount(list.items.length)} of ~${formatCount(list.totalUpperBound)}` : ''}
+          {list.done ? `${plural(list.items.length, 'user')}` : list.totalUpperBound ? `${formatCount(list.items.length)} of ~${formatCount(list.totalUpperBound)}` : ''}
         </span>
       </div>
       <DataTable

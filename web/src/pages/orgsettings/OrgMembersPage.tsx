@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount } from '../../components/admin/format';
+import { formatCount, plural } from '../../components/admin/format';
 import { Drawer, PageHeader, RadioCards, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
 import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
 import { Link, setQuery, useParams, useQuery } from '../../router';
@@ -180,7 +180,7 @@ export default function OrgMembersPage() {
         />
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
-          {loading ? 'Loading…' : q ? `${formatCount(rows.length)} of ${formatCount(total)}` : `${formatCount(total)} members`}
+          {loading ? 'Loading…' : q ? `${formatCount(rows.length)} of ${formatCount(total)}` : `${plural(total, 'member')}`}
         </span>
       </div>
       <DataTable

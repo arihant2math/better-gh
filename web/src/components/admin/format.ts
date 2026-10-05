@@ -63,3 +63,10 @@ export function fromLocalInput(v: string): string | null {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+const IRREGULAR: Record<string, string> = { repository: 'repositories', entry: 'entries' };
+
+/** `1 member` / `3 members` (count formatted with `formatCount`). */
+export function plural(n: number, word: string, many = IRREGULAR[word] ?? `${word}s`): string {
+  return `${formatCount(n)} ${n === 1 ? word : many}`;
+}

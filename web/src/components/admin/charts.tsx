@@ -133,9 +133,24 @@ export interface Segment {
 }
 
 /** Part-to-whole: one horizontal stacked bar + legend with values. */
-export function StackedBar({ segments, format = (n: number) => n.toLocaleString(), label }: { segments: Segment[]; format?: (n: number) => string; label: string }) {
+export function StackedBar({
+  segments,
+  format = (n: number) => n.toLocaleString(),
+  label,
+  total: totalProp,
+  remainderLabel,
+}: {
+  segments: Segment[];
+  format?: (n: number) => string;
+  label: string;
+  /** Whole the segments are part of; the rest is drawn as empty track (and listed as `remainderLabel`). */
+  total?: number;
+  remainderLabel?: string;
+}) {
   const [hover, setHover] = useState<number | null>(null);
-  const total = segments.reduce((s, x) => s + Math.max(0, x.value), 0);
+  const sum = segments.reduce((s, x) => s + Math.max(0, x.value), 0);
+  const total = Math.max(sum, totalProp ?? 0);
+  const remainder = total - sum;
   const id = useId();
   return (
     <figure className={styles.stack} aria-labelledby={id}>
@@ -161,6 +176,7 @@ export function StackedBar({ segments, format = (n: number) => n.toLocaleString(
               );
             })
         )}
+        {total > 0 && remainder > 0 && <div className={styles.stackRest} style={{ flexGrow: remainder }} />}
         {hover !== null && segments[hover] && (
           <div className={styles.tooltip} role="tooltip" style={{ left: '50%' }}>
             <strong>{format(segments[hover].value)}</strong>
@@ -178,6 +194,13 @@ export function StackedBar({ segments, format = (n: number) => n.toLocaleString(
             <span className={styles.legendValue}>{format(s.value)}</span>
           </li>
         ))}
+        {remainderLabel && remainder > 0 && (
+          <li>
+            <span className={cx(styles.swatch, styles.swatchRest)} />
+            <span className={styles.legendLabel}>{remainderLabel}</span>
+            <span className={styles.legendValue}>{format(remainder)}</span>
+          </li>
+        )}
       </ul>
     </figure>
   );

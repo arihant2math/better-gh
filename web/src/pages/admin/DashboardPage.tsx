@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { refresh, useResource } from '../../api/cache';
 import styles from '../../components/admin/admin.module.css';
 import { BarList, Meter, Sparkline, StackedBar, StatTile, type Severity } from '../../components/admin/charts';
-import { formatBytes, formatCount, formatDuration, formatMs } from '../../components/admin/format';
+import { formatBytes, formatCount, formatDuration, formatMs, plural } from '../../components/admin/format';
 import { ErrorState, PageHeader, Panel, StatusPill, type PillStatus } from '../../components/admin/kit';
 import { Link } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -104,8 +104,8 @@ export default function DashboardPage() {
         <section className={styles.kpis} aria-label="Instance statistics">
           {s ? (
             <>
-              <StatTile label="Users" value={formatCount(s.users.total_users)} sub={`${formatCount(s.users.admin_users)} admins · ${formatCount(s.users.suspended_users)} suspended`} href="/site-admin/users" />
-              <StatTile label="Organizations" value={formatCount(s.orgs.total_orgs)} sub={`${formatCount(s.orgs.total_teams)} teams`} href="/site-admin/orgs" />
+              <StatTile label="Users" value={formatCount(s.users.total_users)} sub={`${formatCount(s.users.admin_users)} ${s.users.admin_users === 1 ? 'admin' : 'admins'} · ${formatCount(s.users.suspended_users)} suspended`} href="/site-admin/users" />
+              <StatTile label="Organizations" value={formatCount(s.orgs.total_orgs)} sub={`${plural(s.orgs.total_teams, 'team')}`} href="/site-admin/orgs" />
               <StatTile label="Repositories" value={formatCount(s.repos.total_repos)} sub={`${formatCount(s.repos.fork_repos)} forks`} href="/site-admin/repos" />
               <StatTile label="Pushes" value={formatCount(s.repos.total_pushes)} sub="since install" />
               <StatTile label="Open issues" value={formatCount(s.issues.open_issues)} sub={`of ${formatCount(s.issues.total_issues)}`} />
@@ -194,15 +194,18 @@ export default function DashboardPage() {
                   <StackedBar
                     label="Data volume usage"
                     format={(n) => formatBytes(n)}
+                    total={fs.total_bytes}
+                    remainderLabel="Unused"
                     segments={[
-                      { label: 'Repositories', value: h.storage.repositories_bytes, slot: 1 },
-                      { label: 'Database', value: h.database.size_bytes ?? 0, slot: 2 },
-                      { label: 'Free', value: fs.available_bytes, slot: 'muted' },
+                      { label: 'Repositories', value: Math.min(h.storage.repositories_bytes, fs.used_bytes), slot: 1 },
+                      { label: 'Other', value: Math.max(0, fs.used_bytes - h.storage.repositories_bytes), slot: 'muted' },
                     ]}
                   />
-                  <p className={styles.subtle} style={{ margin: 0 }}>
-                    The database may live on another volume; its size is shown for scale.
-                  </p>
+                  {h.database.size_bytes != null && (
+                    <p className={styles.subtle} style={{ margin: 0 }}>
+                      Database size: {formatBytes(h.database.size_bytes)} (may live on another volume).
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className={styles.muted}>Filesystem usage is unavailable for {h.storage.data_dir}.</p>

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
-import { formatCount, formatKb } from '../../components/admin/format';
+import { formatCount, formatKb, plural } from '../../components/admin/format';
 import { PageHeader, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { setQuery, useQuery } from '../../router';
@@ -105,7 +105,7 @@ export default function ReposPage() {
       danger: op.id === 'gc' || op.id === 'repack',
       onConfirm: async () => {
         const r = await runMaintenanceAll(op.id);
-        toast({ kind: 'success', title: `Scheduled ${op.label.toLowerCase()} for ${formatCount(r.scheduled)} repositories` });
+        toast({ kind: 'success', title: `Scheduled ${op.label.toLowerCase()} for ${plural(r.scheduled, 'repository')}` });
       },
     });
 
@@ -158,7 +158,7 @@ export default function ReposPage() {
         })}
         <span className={styles.toolbarSpacer} />
         <span className={styles.meta} aria-live="polite">
-          {list.done ? `${formatCount(list.items.length)} repositories` : list.totalUpperBound ? `${formatCount(list.items.length)} of ~${formatCount(list.totalUpperBound)}` : ''}
+          {list.done ? `${plural(list.items.length, 'repository')}` : list.totalUpperBound ? `${formatCount(list.items.length)} of ~${formatCount(list.totalUpperBound)}` : ''}
         </span>
       </div>
       <DataTable
