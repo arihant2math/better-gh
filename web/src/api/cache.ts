@@ -99,6 +99,15 @@ export function peek<T>(key: string): T | undefined {
   return e?.status === 'ok' ? e.value : undefined;
 }
 
+/**
+ * Refetch `key` now, keeping the current value visible and notifying mounted
+ * `useResource` hooks when the new value arrives (live updates).
+ */
+export function refresh<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions = {}): Promise<T> {
+  const e = entries.get(key) as Entry<T> | undefined;
+  return start(key, loader, opts, e).promise;
+}
+
 export function invalidate(prefix: string): void {
   for (const k of [...entries.keys()]) if (k.startsWith(prefix) && !entries.get(k)!.immutable) entries.delete(k);
 }

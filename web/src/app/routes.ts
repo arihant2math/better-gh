@@ -14,6 +14,14 @@ const RepoLayout = () => import('../pages/repo/RepoLayout');
 const ProjectsListPage = () => import('../pages/projects/ProjectsListPage');
 const ProjectPage = () => import('../pages/projects/ProjectPage');
 const WikiPage = () => import('../pages/wiki/WikiPage');
+const RunsPage = () => import('../pages/actions/RunsPage');
+const RunPage = () => import('../pages/actions/RunPage');
+const JobPage = () => import('../pages/actions/JobPage');
+const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
+
+function prefetchActions(p: Params) {
+  void import('../pages/actions/data').then((m) => m.prefetchActions(p));
+}
 
 function prefetchProject(p: Params) {
   void import('../pages/projects/data').then((m) => m.prefetchProject(p.owner!, Number(p.number)));
@@ -61,6 +69,10 @@ export function registerRoutes(): void {
     { path: '/orgs/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
+    // Organization Actions settings (before `/:owner/...` patterns).
+    { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
+    { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runners', load: ActionsSettingsPage, title: (p) => `Runners · ${p.org}` },
     { path: '/:owner', load: () => import('../pages/profile/ProfilePage'), title: (p) => p.owner! },
     {
       path: '/:owner/:repo',
@@ -106,6 +118,17 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/wiki/:slug', layout: RepoLayout, load: WikiPage, prefetch: prefetchWiki, title: (p) => `${p.slug!.replace(/-/g, ' ')} · Wiki · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/wiki/:slug/edit', layout: RepoLayout, load: () => import('../pages/wiki/WikiEditPage'), title: (p) => `Edit ${p.slug} · Wiki · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/wiki/:slug/history', layout: RepoLayout, load: () => import('../pages/wiki/WikiHistoryPage'), title: (p) => `History of ${p.slug} · Wiki · ${p.owner}/${p.repo}` },
+    // Actions: specific paths before `/:owner/:repo/:tab`.
+    { path: '/:owner/:repo/actions', layout: RepoLayout, load: RunsPage, prefetch: prefetchActions, title: (p) => `Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/workflows/:workflow', layout: RepoLayout, load: RunsPage, prefetch: prefetchActions, title: (p) => `${p.workflow} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/runs/:run', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/runs/:run/attempts/:attempt', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/runs/:run/job/:job', layout: RepoLayout, load: JobPage, prefetch: prefetchActions, title: (p) => `Job ${p.job} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/secrets/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/environments', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Environments · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);
