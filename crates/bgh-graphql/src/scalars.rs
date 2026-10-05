@@ -5,13 +5,15 @@ use async_graphql::{InputValueError, InputValueResult, Scalar, ScalarType, Value
 use chrono::{DateTime as ChronoDateTime, SecondsFormat, Utc};
 
 macro_rules! string_scalar {
-    ($(#[$doc:meta])* $name:ident) => {
+    ($(#[$doc:meta])* $name:ident = $gql:literal) => {
         $(#[$doc])*
         #[allow(clippy::upper_case_acronyms)] // GitHub's scalar names
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub struct $name(pub String);
 
-        #[Scalar]
+        // Explicit name: GitHub's acronyms (`URI`, `HTML`) must not be
+        // re-cased.
+        #[Scalar(name = $gql)]
         impl ScalarType for $name {
             fn parse(value: Value) -> InputValueResult<Self> {
                 match value {
@@ -41,23 +43,27 @@ macro_rules! string_scalar {
 
 string_scalar!(
     /// An RFC 3986, RFC 3987, and RFC 6570 (level 4) compliant URI string.
-    URI
+    URI = "URI"
 );
 string_scalar!(
     /// A string containing HTML code.
-    HTML
+    HTML = "HTML"
 );
 string_scalar!(
     /// A Git object ID.
-    GitObjectID
+    GitObjectID = "GitObjectID"
 );
 string_scalar!(
     /// Git SSH string
-    GitSSHRemote
+    GitSSHRemote = "GitSSHRemote"
 );
 string_scalar!(
     /// A string containing a Git timestamp.
-    GitTimestamp
+    GitTimestamp = "GitTimestamp"
+);
+string_scalar!(
+    /// An ISO-8601 encoded date string (`2024-01-31`).
+    Date = "Date"
 );
 
 /// An ISO-8601 encoded UTC date string (`2024-01-01T00:00:00Z`).

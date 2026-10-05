@@ -253,7 +253,7 @@ Details:
 
 * Project collaborators / per-project roles beyond owner membership.
 * Converting a draft into an issue (needs the issues create service from B3).
-* GitHub REST/GraphQL Projects v2 API (classic REST projects were sunset by GitHub; skipped).
+* ~~GitHub REST/GraphQL Projects v2 API~~: done in P13 (`docs/packages/p13-projects-api.md`).
 * Items removed by DB cascade when an issue/repo is deleted are not recorded as sync deletes;
   the client cascades `issue` deletes to `projectItem`.
 * Mock backend applies only the `item_added` workflow.

@@ -103,7 +103,7 @@ pub async fn list_for_repo(
     })))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateBody {
     pub owner: Option<String>,
@@ -119,6 +119,16 @@ pub async fn create(
     auth: RequireUser,
     Json(body): Json<CreateBody>,
 ) -> ApiResult<impl IntoResponse> {
+    let project = create_project(&state, &auth, body).await?;
+    Ok((StatusCode::CREATED, Json(project.sync_json())))
+}
+
+/// Create a project (with its default fields, view and workflows).
+pub async fn create_project(
+    state: &AppState,
+    auth: &AuthContext,
+    body: CreateBody,
+) -> ApiResult<ProjectRow> {
     auth.require_scope("project")?;
     let owner_login = body
         .owner
@@ -127,7 +137,7 @@ pub async fn create(
     let owner = db::User::find_by_login(&state.db, &owner_login)
         .await?
         .ok_or_else(|| ApiError::invalid_field(FieldError::invalid("Project", "owner")))?;
-    match owner_role(&state, Some(&auth), &owner).await? {
+    match owner_role(state, Some(auth), &owner).await? {
         Some(r) if r >= Role::Write => {}
         _ => {
             return Err(ApiError::forbidden(
@@ -136,7 +146,7 @@ pub async fn create(
         }
     }
     let scope = owner_scope(owner.id, owner.is_org());
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let number: i64 = sqlx::query_scalar(
         "INSERT INTO project_counters (owner_id, next_number) VALUES ($1, 2)
          ON CONFLICT (owner_id) DO UPDATE SET next_number = project_counters.next_number + 1
@@ -182,7 +192,7 @@ pub async fn create(
     )
     .await?;
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(project.sync_json())))
+    Ok(project)
 }
 
 /// `GET /_bgh/projects/{id}`
@@ -291,7 +301,18 @@ pub async fn update(
     Path(id): Path<i64>,
     Json(body): Json<UpdateBody>,
 ) -> ApiResult<Json<Value>> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    let project = update_project(&state, &auth, id, body).await?;
+    Ok(Json(project.sync_json()))
+}
+
+/// Update a project's title, descriptions, visibility or closed state.
+pub async fn update_project(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    body: UpdateBody,
+) -> ApiResult<ProjectRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     if body.public.is_some() || body.closed.is_some() {
         access.require(Role::Admin)?;
@@ -308,7 +329,7 @@ pub async fn update(
             "shortDescription",
         )));
     }
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     sqlx::query(
         "UPDATE projects SET
             title = COALESCE($2, title),
@@ -344,7 +365,7 @@ pub async fn update(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(project.sync_json()))
+    Ok(project)
 }
 
 /// `DELETE /_bgh/projects/{id}`
@@ -353,10 +374,20 @@ pub async fn delete(
     auth: RequireUser,
     Path(id): Path<i64>,
 ) -> ApiResult<StatusCode> {
-    let access = ProjectAccess::load(&state, Some(&auth), id).await?;
+    delete_project(&state, &auth, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete a project (admin). Returns the deleted row.
+pub async fn delete_project(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+) -> ApiResult<ProjectRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Admin)?;
     let scope = access.scope();
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     // Children are removed by cascade; record their deletes so clients that
     // don't cascade locally stay consistent.
     for (model, table) in [
@@ -401,7 +432,7 @@ pub async fn delete(
     )
     .await?;
     tx.commit().await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(access.project)
 }
 
 /// `PUT /_bgh/projects/{id}/repos/{repo_id}`: link a repository (requires
@@ -430,6 +461,22 @@ async fn set_link(
     repo_id: i64,
     link: bool,
 ) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        link_repo_row(state, auth, id, repo_id, link)
+            .await?
+            .sync_json(),
+    ))
+}
+
+/// Link (`link = true`, needs write access to the repository) or unlink a
+/// repository.
+pub async fn link_repo_row(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    repo_id: i64,
+    link: bool,
+) -> ApiResult<ProjectRow> {
     let access = ProjectAccess::load(state, Some(auth), id).await?;
     access.require(Role::Write)?;
     let repo = db::Repository::find(&state.db, repo_id)
@@ -461,5 +508,50 @@ async fn set_link(
     }
     let project = service::touch_project(&mut tx, &access.scope(), id).await?;
     tx.commit().await?;
-    Ok(Json(project.sync_json()))
+    Ok(project)
+}
+
+/// Link or unlink a team of the owning organization (project write access).
+pub async fn link_team_row(
+    state: &AppState,
+    auth: &AuthContext,
+    id: i64,
+    team_id: i64,
+    link: bool,
+) -> ApiResult<ProjectRow> {
+    let access = ProjectAccess::load(state, Some(auth), id).await?;
+    access.require(Role::Write)?;
+    let same_org: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1 AND org_id = $2)")
+            .bind(team_id)
+            .bind(access.owner.id)
+            .fetch_one(&state.db)
+            .await?;
+    if !same_org {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "Project",
+            "teamId",
+            "the team must belong to the project's organization",
+        )));
+    }
+    let mut tx = Tx::begin(state).await?;
+    if link {
+        sqlx::query(
+            "INSERT INTO project_linked_teams (project_id, team_id) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(id)
+        .bind(team_id)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query("DELETE FROM project_linked_teams WHERE project_id = $1 AND team_id = $2")
+            .bind(id)
+            .bind(team_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let project = service::touch_project(&mut tx, &access.scope(), id).await?;
+    tx.commit().await?;
+    Ok(project)
 }
