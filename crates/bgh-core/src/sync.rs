@@ -1,0 +1,120 @@
+//! Local-first sync log.
+//!
+//! Every mutation of a synced model appends a row to `sync_actions` in the
+//! same transaction ([`record`]); after commit the rows are published on the
+//! Redis channel `{prefix}sync:{scope}` ([`notify`]). Prefer
+//! [`crate::db::Tx::sync`], which does both at the right time.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::PgConnection;
+
+use crate::state::AppState;
+
+/// Insert / Update / Delete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SyncAction {
+    #[serde(rename = "I")]
+    Insert,
+    #[serde(rename = "U")]
+    Update,
+    #[serde(rename = "D")]
+    Delete,
+}
+
+impl SyncAction {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Insert => "I",
+            Self::Update => "U",
+            Self::Delete => "D",
+        }
+    }
+}
+
+/// `repo:{id}` — issues, PR metadata, labels, milestones, comments, refs.
+pub fn repo_scope(repo_id: i64) -> String {
+    format!("repo:{repo_id}")
+}
+
+/// `user:{id}` — notifications, preferences.
+pub fn user_scope(user_id: i64) -> String {
+    format!("user:{user_id}")
+}
+
+/// `org:{id}` — members, teams.
+pub fn org_scope(org_id: i64) -> String {
+    format!("org:{org_id}")
+}
+
+/// A recorded sync action; also the wire format published to Redis and
+/// streamed to clients (`{"id","scope","model","mid","a","d"}`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyncRecord {
+    pub id: i64,
+    pub scope: String,
+    pub model: String,
+    #[serde(rename = "mid")]
+    pub model_id: i64,
+    #[serde(rename = "a")]
+    pub action: SyncAction,
+    #[serde(rename = "d")]
+    pub data: Value,
+}
+
+/// Append to `sync_actions`. Call inside the transaction that performs the
+/// change (`&mut *tx`).
+pub async fn record(
+    conn: &mut PgConnection,
+    scope: &str,
+    model: &str,
+    model_id: i64,
+    action: SyncAction,
+    data: &Value,
+) -> Result<SyncRecord, sqlx::Error> {
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO sync_actions (scope, model, model_id, action, data)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    )
+    .bind(scope)
+    .bind(model)
+    .bind(model_id)
+    .bind(action.code())
+    .bind(data)
+    .fetch_one(conn)
+    .await?;
+    Ok(SyncRecord {
+        id,
+        scope: scope.to_string(),
+        model: model.to_string(),
+        model_id,
+        action,
+        data: data.clone(),
+    })
+}
+
+/// Redis channel for a scope.
+pub fn channel(state: &AppState, scope: &str) -> String {
+    state.redis_key(&format!("sync:{scope}"))
+}
+
+/// Publish committed records to Redis. Failures are logged, not returned:
+/// clients recover from `sync_actions` on reconnect.
+pub async fn notify(state: &AppState, records: &[SyncRecord]) {
+    if records.is_empty() {
+        return;
+    }
+    let mut pipe = redis::pipe();
+    for rec in records {
+        match serde_json::to_string(rec) {
+            Ok(msg) => {
+                pipe.publish(channel(state, &rec.scope), msg).ignore();
+            }
+            Err(err) => tracing::error!(?err, "serializing sync record"),
+        }
+    }
+    let mut conn = state.redis.clone();
+    if let Err(err) = pipe.query_async::<()>(&mut conn).await {
+        tracing::warn!(?err, "publishing sync records to redis");
+    }
+}

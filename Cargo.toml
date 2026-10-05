@@ -1,0 +1,100 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+rust-version = "1.88"
+
+[workspace.dependencies]
+# internal crates
+bgh-core = { path = "crates/bgh-core" }
+bgh-git = { path = "crates/bgh-git" }
+bgh-accounts = { path = "crates/bgh-accounts" }
+bgh-repos = { path = "crates/bgh-repos" }
+bgh-issues = { path = "crates/bgh-issues" }
+bgh-pulls = { path = "crates/bgh-pulls" }
+bgh-notify = { path = "crates/bgh-notify" }
+bgh-releases = { path = "crates/bgh-releases" }
+bgh-search = { path = "crates/bgh-search" }
+bgh-admin = { path = "crates/bgh-admin" }
+bgh-sync = { path = "crates/bgh-sync" }
+bgh-graphql = { path = "crates/bgh-graphql" }
+bgh-actions = { path = "crates/bgh-actions" }
+bgh-server = { path = "crates/bgh-server" }
+
+# web / async
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+tokio = { version = "1.47", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = [
+    "compression-br",
+    "compression-gzip",
+    "trace",
+    "cors",
+    "fs",
+    "request-id",
+    "set-header",
+    "util",
+] }
+http = "1"
+http-body-util = "0.1"
+bytes = "1"
+futures = "0.3"
+async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+async-trait = "0.1"
+
+# storage
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "postgres",
+    "runtime-tokio",
+    "tls-rustls",
+    "chrono",
+    "json",
+    "uuid",
+    "migrate",
+    "macros",
+] }
+redis = { version = "0.32", default-features = false, features = ["tokio-comp", "connection-manager", "aio"] }
+
+# serialization / utils
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# crypto
+argon2 = "0.5"
+rand = "0.9"
+base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+
+# content
+comrak = { version = "0.55", default-features = false }
+ammonia = "4"
+gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
+
+# testing
+tempfile = "3"
+
+[profile.dev]
+# Faster builds; enough debuginfo for backtraces.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
