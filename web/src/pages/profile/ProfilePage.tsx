@@ -1,12 +1,14 @@
 import { observer } from 'mobx-react-lite';
 import { NotFound } from '../../app/NotFound';
+import { session } from '../../app/session';
+import { site } from '../../app/site';
 import { Link, setQuery, useQuery, useParams } from '../../router';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
 import { orgByLogin, reposForOwner, userByLogin } from '../../sync/selectors';
 import { Avatar, Tag } from '../../ui/Badge';
 import { EmptyState } from '../../ui/EmptyState';
-import { LockIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon } from '../../ui/icons';
+import { GearIcon, LockIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import styles from './ProfilePage.module.css';
@@ -77,6 +79,11 @@ export default observer(function ProfilePage() {
             </div>
           )}
         </div>
+        {org && (site.viewerSiteAdmin || members.some((m) => m.userId === session.user?.id && m.role === 'admin')) && (
+          <Link to={`/organizations/${encodeURIComponent(org.login)}/settings/profile`} className={styles.settingsLink}>
+            <GearIcon size={16} /> Settings
+          </Link>
+        )}
       </header>
       {org && (
         <div className={styles.tabs}>

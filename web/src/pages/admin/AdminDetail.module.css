@@ -1,0 +1,248 @@
+/* Detail pages of site admin (user, organization, repository). */
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: normal;
+  letter-spacing: 0;
+}
+
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+  color: var(--fg);
+}
+
+.callout svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.calloutDanger {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: var(--danger-subtle);
+}
+
+.calloutDanger svg {
+  color: var(--danger);
+}
+
+.secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+}
+
+.secret code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.scopes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scopes legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: var(--fw-medium);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.check span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.check small {
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+}
+
+.rowMeta {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.listLink {
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+
+.listLink:hover {
+  color: var(--accent);
+}
+
+.scrollList {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.emptyRow {
+  padding: 12px 14px;
+  color: var(--fg-subtle);
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.quotaMeters {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.quotaForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.quotaActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.opButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.run {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.run:last-child {
+  border-bottom: 0;
+}
+
+.run summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.run summary::-webkit-details-marker {
+  display: none;
+}
+
+.run summary:hover {
+  background: var(--bg-hover);
+}
+
+.run summary > svg {
+  flex-shrink: 0;
+  color: var(--fg-subtle);
+  transition: transform var(--dur) var(--ease);
+}
+
+.run[open] summary > svg {
+  transform: rotate(90deg);
+}
+
+.runOp {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.runOutput {
+  max-height: 320px;
+  margin: 0 14px 12px;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.runEmptyOutput {
+  margin: 0 14px 12px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}

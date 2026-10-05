@@ -152,3 +152,29 @@ export function useResource<T>(
     loading: !!key && entry?.status === 'pending',
   };
 }
+
+/**
+ * Refetch `key` now, keeping the current value visible until the new one
+ * arrives; mounted `useResource` readers re-render when it settles.
+ */
+export function refresh<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions = {}): Promise<T> {
+  const e = entries.get(key) as Entry<T> | undefined;
+  return start(key, loader, opts, e).promise;
+}
+
+/** Replace a cached value locally (e.g. with a mutation's response) and notify readers. */
+export function mutate<T>(key: string, update: (prev: T | undefined) => T): void {
+  const e = entries.get(key) as Entry<T> | undefined;
+  const value = update(e?.status === 'ok' ? e.value : undefined);
+  if (!e) {
+    const entry: Entry<T> = { status: 'ok', value, promise: Promise.resolve(value), fetchedAt: Date.now(), immutable: false, listeners: new Set() };
+    touch(key, entry as Entry);
+    return;
+  }
+  e.status = 'ok';
+  e.value = value;
+  e.error = undefined;
+  e.promise = Promise.resolve(value);
+  e.fetchedAt = Date.now();
+  e.listeners.forEach((l) => l());
+}

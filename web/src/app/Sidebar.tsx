@@ -14,11 +14,13 @@ import {
   LockIcon,
   MoonIcon,
   RepoIcon,
+  ServerIcon,
   SignOutIcon,
   SunIcon,
 } from '../ui/icons';
 import { Menu } from '../ui/Menu';
 import { session } from './session';
+import { site } from './site';
 import styles from './Shell.module.css';
 import { theme } from './theme';
 
@@ -125,6 +127,7 @@ export const Sidebar = observer(function Sidebar() {
           { header: `Signed in as ${user.login}`, id: 'h' },
           { id: 'profile', label: 'Your profile', onSelect: () => navigate(`/${user.login}`) },
           { id: 'settings', label: 'Settings', icon: GearIcon, onSelect: () => navigate('/settings') },
+          ...(site.viewerSiteAdmin ? [{ id: 'site-admin', label: 'Site admin', icon: ServerIcon, onSelect: () => navigate('/site-admin') }] : []),
           {
             id: 'theme',
             label: theme.resolved === 'dark' ? 'Light theme' : 'Dark theme',

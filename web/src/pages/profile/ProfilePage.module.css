@@ -140,3 +140,22 @@
   color: var(--fg-subtle);
   font-size: var(--fs-sm);
 }
+
+.settingsLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  height: var(--control-h);
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+
+.settingsLink:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}

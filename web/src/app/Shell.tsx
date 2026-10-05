@@ -11,6 +11,7 @@ import {
   IssueOpenedIcon,
   MoonIcon,
   PlusIcon,
+  ServerIcon,
   SidebarCollapseIcon,
   SignOutIcon,
   CodeIcon,
@@ -21,6 +22,8 @@ import { NewIssueDialog } from './NewIssueDialog';
 import { session } from './session';
 import styles from './Shell.module.css';
 import { ShortcutHelp } from './ShortcutHelp';
+import { SiteBanners } from './SiteBanners';
+import { site } from './site';
 import { Sidebar } from './Sidebar';
 import { theme } from './theme';
 import { TopBar } from './TopBar';
@@ -85,17 +88,43 @@ function GlobalShortcuts() {
   return null;
 }
 
+/** Palette commands for site admins (registered once the viewer is known to be one). */
+const AdminCommands = observer(function AdminCommands() {
+  const admin = site.viewerSiteAdmin === true;
+  useEffect(() => {
+    if (!admin) return;
+    const go = (path: string) => () => navigate(path);
+    return commands.register([
+      { id: 'admin.dashboard', title: 'Site admin: Dashboard', group: 'Site admin', icon: ServerIcon, keywords: 'health stats', run: go('/site-admin') },
+      { id: 'admin.users', title: 'Site admin: Users', group: 'Site admin', icon: ServerIcon, keywords: 'accounts suspend', run: go('/site-admin/users') },
+      { id: 'admin.orgs', title: 'Site admin: Organizations', group: 'Site admin', icon: ServerIcon, run: go('/site-admin/orgs') },
+      { id: 'admin.repos', title: 'Site admin: Repositories', group: 'Site admin', icon: ServerIcon, keywords: 'maintenance gc', run: go('/site-admin/repos') },
+      { id: 'admin.settings', title: 'Site admin: Site settings', group: 'Site admin', icon: ServerIcon, keywords: 'announcement maintenance smtp oidc signup', run: go('/site-admin/settings') },
+      { id: 'admin.audit', title: 'Site admin: Audit log', group: 'Site admin', icon: ServerIcon, run: go('/site-admin/audit-log') },
+      { id: 'admin.jobs', title: 'Site admin: Background jobs', group: 'Site admin', icon: ServerIcon, keywords: 'queue', run: go('/site-admin/jobs') },
+      { id: 'admin.hooks', title: 'Site admin: Global webhooks', group: 'Site admin', icon: ServerIcon, run: go('/site-admin/hooks') },
+    ]);
+  }, [admin]);
+  return null;
+});
+
 export const Shell = observer(function Shell({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<HTMLElement | null>(null);
   useScrollContainer(content);
+  useEffect(() => {
+    site.start();
+    return () => site.stop();
+  }, []);
   return (
     <div className={styles.shell} data-sidebar={ui.sidebarCollapsed ? 'collapsed' : 'open'}>
       <a href="#content" className={styles.skip}>
         Skip to content
       </a>
       <GlobalShortcuts />
+      <AdminCommands />
       <Sidebar />
       <div className={styles.main}>
+        <SiteBanners />
         <TopBar />
         <main id="content" ref={setContent} className={styles.content} tabIndex={-1}>
           {session.ready ? (
