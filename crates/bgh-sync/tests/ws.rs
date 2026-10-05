@@ -464,3 +464,82 @@ async fn many_sockets_share_one_hub() {
         assert_eq!(d[0]["mid"], l);
     }
 }
+
+async fn connect_cookie(app: &TestApp, cookie: &str) -> Ws {
+    let mut req = format!("ws://{}/_bgh/sync/ws", app.addr)
+        .into_client_request()
+        .unwrap();
+    req.headers_mut().insert("cookie", cookie.parse().unwrap());
+    tokio_tungstenite::connect_async(req).await.unwrap().0
+}
+
+#[tokio::test]
+async fn sign_out_closes_that_sessions_sockets() {
+    let app = bgh_server::test_app().await;
+    let ada = app.create_user("ada").await;
+    let laptop = app.session_cookie(&ada).await;
+    let phone = app.session_cookie(&ada).await;
+    let mut ws_laptop = connect_cookie(&app, &laptop).await;
+    let mut ws_phone = connect_cookie(&app, &phone).await;
+    let mut ws_token = connect(&app, Some(&ada), "").await;
+    for ws in [&mut ws_laptop, &mut ws_phone, &mut ws_token] {
+        assert_eq!(next(ws).await["t"], "hello");
+    }
+    let token = laptop.split_once('=').unwrap().1;
+    bgh_core::auth::destroy_session(&app.state, token)
+        .await
+        .unwrap();
+    match next_frame(&mut ws_laptop).await {
+        Frame::Close(code) => assert_eq!(code, Some(4001)),
+        Frame::Json(v) => panic!("unexpected {v}"),
+    }
+    assert_quiet(&mut ws_phone).await;
+    assert_quiet(&mut ws_token).await;
+
+    // All sessions (password change, suspension): every cookie socket closes.
+    bgh_core::auth::destroy_user_sessions(&app.state, ada.id)
+        .await
+        .unwrap();
+    match next_frame(&mut ws_phone).await {
+        Frame::Close(code) => assert_eq!(code, Some(4001)),
+        Frame::Json(v) => panic!("unexpected {v}"),
+    }
+}
+
+#[tokio::test]
+async fn slow_consumers_are_dropped() {
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    let app = bgh_server::test_app().await;
+    let ada = app.create_user("ada").await;
+    let repo = repo_id(&app, &ada, "api", false).await;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        "authorization",
+        format!("token {}", ada.token).parse().unwrap(),
+    );
+    let auth = bgh_core::auth::authenticate(&app.state, &headers, Default::default())
+        .await
+        .unwrap()
+        .unwrap();
+    let hub = bgh_sync::hub::Hub::get(&app.state).await.unwrap();
+    let conn = hub.register(Arc::new(auth));
+    hub.subscribe(conn.id, &[format!("repo:{repo}")]);
+    // Never read: one hub message per coalescing window until the queue
+    // overflows.
+    for n in 0..bgh_sync::hub::QUEUE + 5 {
+        add_label(&app, repo, &format!("l{n}")).await;
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        if conn.overflow.load(Ordering::SeqCst) {
+            break;
+        }
+    }
+    for _ in 0..100 {
+        if conn.overflow.load(Ordering::SeqCst) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(conn.overflow.load(Ordering::SeqCst), "slow socket flagged");
+    assert_eq!(hub.connections(), 0, "and unregistered");
+}

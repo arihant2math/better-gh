@@ -268,6 +268,10 @@ impl Session {
                     .send_json(json!({"t": "revoke", "scope": scope, "reason": "forbidden"}))
                     .await
             }
+            HubMsg::Close { code, reason } => {
+                socket.close(code, reason).await;
+                Err(Closed)
+            }
         }
     }
 
@@ -345,7 +349,9 @@ impl Session {
                     self.send_items(socket, now.into_iter()).await?;
                     later.extend(after.into_iter().cloned());
                 }
-                Ok(msg @ HubMsg::Revoke(_)) => self.on_hub(socket, msg).await?,
+                Ok(msg @ (HubMsg::Revoke(_) | HubMsg::Close { .. })) => {
+                    self.on_hub(socket, msg).await?
+                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return self.slow(socket).await,
             }

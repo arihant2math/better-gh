@@ -67,6 +67,7 @@ async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
             repo_id: *repo_id,
             org_id: *org_id,
             user_id: *user_id,
+            ..Default::default()
         },
         _ => return Ok(()),
     };
