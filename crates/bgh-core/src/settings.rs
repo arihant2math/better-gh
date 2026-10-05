@@ -9,7 +9,7 @@
 //!
 //! Storage: one `site_settings` row per section (`signup`, `repositories`,
 //! `organizations`, `announcement`, `rate_limits`, `auth_providers`, `smtp`,
-//! `maintenance`), each a JSON object. Missing rows or fields take the
+//! `maintenance`, `git`), each a JSON object. Missing rows or fields take the
 //! defaults below, so new fields never need a migration.
 //!
 //! Also here: the maintenance-mode middleware (503 for everyone but site
@@ -97,6 +97,32 @@ impl Default for RepositorySettings {
         Self {
             default_visibility: "public".into(),
             max_repo_size_mb: None,
+        }
+    }
+}
+
+/// Push hardening (`git` section): receive-side fsck and size limits.
+/// `None` disables a limit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GitSettings {
+    /// Check pushed objects with `git fsck` rules (`receive.fsckObjects`).
+    pub fsck_on_push: bool,
+    /// Pushes containing a file larger than this are rejected (GH001).
+    pub max_object_size_mb: Option<i64>,
+    /// Pushes containing a file larger than this get a warning.
+    pub warn_object_size_mb: Option<i64>,
+    /// Largest pack one push may send (`receive.maxInputSize`).
+    pub max_push_size_mb: Option<i64>,
+}
+
+impl Default for GitSettings {
+    fn default() -> Self {
+        Self {
+            fsck_on_push: true,
+            max_object_size_mb: Some(100),
+            warn_object_size_mb: Some(50),
+            max_push_size_mb: Some(2048),
         }
     }
 }
@@ -281,6 +307,7 @@ pub struct SiteSettings {
     pub auth_providers: AuthProviderSettings,
     pub smtp: SmtpSettings,
     pub maintenance: MaintenanceSettings,
+    pub git: GitSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -293,6 +320,7 @@ pub const SECTIONS: &[&str] = &[
     "auth_providers",
     "smtp",
     "maintenance",
+    "git",
 ];
 
 impl SiteSettings {
@@ -371,6 +399,7 @@ impl SiteSettings {
             "auth_providers" => self.auth_providers = serde_json::from_value(section)?,
             "smtp" => self.smtp = serde_json::from_value(section)?,
             "maintenance" => self.maintenance = serde_json::from_value(section)?,
+            "git" => self.git = serde_json::from_value(section)?,
             _ => {}
         }
         Ok(())
@@ -504,33 +533,89 @@ pub async fn storage_limits_kb(
     Ok((repo_mb.map(|m| m * 1024), total_mb.map(|m| m * 1024)))
 }
 
-/// 403 when a push into `repo` must be refused because the repository or
-/// its owner is over quota (sizes as recorded after the last push).
-pub async fn check_push_quota(state: &AppState, repo: &db::Repository) -> ApiResult<()> {
+/// Storage left under the tightest applicable quota (see
+/// [`quota_headroom`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuotaHeadroom {
+    /// Limit minus usage, in KB (negative when already over).
+    pub remaining_kb: i64,
+    pub limit_kb: i64,
+    /// Whether the per-repository limit (rather than the owner's total) is
+    /// the binding one.
+    pub per_repo: bool,
+}
+
+impl QuotaHeadroom {
+    /// GitHub-style message for a refused push or upload.
+    pub fn message(&self) -> String {
+        if self.per_repo {
+            format!(
+                "Repository is over its size limit ({} MB).",
+                self.limit_kb / 1024
+            )
+        } else {
+            format!(
+                "The repository owner is over its storage quota ({} MB).",
+                self.limit_kb / 1024
+            )
+        }
+    }
+}
+
+/// Remaining storage for `repo` (git objects as recorded after the last
+/// push plus LFS objects), or `None` when no quota applies.
+pub async fn quota_headroom(
+    state: &AppState,
+    repo: &db::Repository,
+) -> ApiResult<Option<QuotaHeadroom>> {
     let (per_repo, total) = storage_limits_kb(state, repo.owner_id).await?;
-    if let Some(limit) = per_repo
-        && repo.size > limit
-    {
-        return Err(ApiError::forbidden(format!(
-            "Repository is over its size limit ({} MB).",
-            limit / 1024
-        )));
+    let mut best: Option<QuotaHeadroom> = None;
+    if let Some(limit) = per_repo {
+        let used: i64 = sqlx::query_scalar(
+            "SELECT (size + lfs_size / 1024)::bigint FROM repositories WHERE id = $1",
+        )
+        .bind(repo.id)
+        .fetch_optional(&state.db)
+        .await?
+        .unwrap_or(repo.size);
+        best = Some(QuotaHeadroom {
+            remaining_kb: limit - used,
+            limit_kb: limit,
+            per_repo: true,
+        });
     }
     if let Some(limit) = total {
         let used: i64 = sqlx::query_scalar(
-            "SELECT coalesce(sum(size), 0)::bigint FROM repositories WHERE owner_id = $1",
+            "SELECT coalesce(sum(size + lfs_size / 1024), 0)::bigint
+               FROM repositories WHERE owner_id = $1",
         )
         .bind(repo.owner_id)
         .fetch_one(&state.db)
         .await?;
-        if used > limit {
-            return Err(ApiError::forbidden(format!(
-                "The repository owner is over its storage quota ({} MB).",
-                limit / 1024
-            )));
+        let h = QuotaHeadroom {
+            remaining_kb: limit - used,
+            limit_kb: limit,
+            per_repo: false,
+        };
+        if best
+            .as_ref()
+            .is_none_or(|b| h.remaining_kb < b.remaining_kb)
+        {
+            best = Some(h);
         }
     }
-    Ok(())
+    Ok(best)
+}
+
+/// 403 when a push into `repo` must be refused because the repository or
+/// its owner is already over quota (git and LFS storage). Pushes that would
+/// cross the limit are caught later, in the pre-receive hook, by comparing
+/// the quarantined objects with [`quota_headroom`].
+pub async fn check_push_quota(state: &AppState, repo: &db::Repository) -> ApiResult<()> {
+    match quota_headroom(state, repo).await? {
+        Some(h) if h.remaining_kb < 0 => Err(ApiError::forbidden(h.message())),
+        _ => Ok(()),
+    }
 }
 
 /// 403 when storing `add_bytes` more for `owner_id` (user attachments)

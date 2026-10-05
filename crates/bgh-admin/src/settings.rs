@@ -80,6 +80,25 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     if s.repositories.max_repo_size_mb.is_some_and(|m| m <= 0) {
         return Err(bad("repositories.max_repo_size_mb"));
     }
+    let g = &s.git;
+    for (field, v) in [
+        ("git.max_object_size_mb", g.max_object_size_mb),
+        ("git.warn_object_size_mb", g.warn_object_size_mb),
+        ("git.max_push_size_mb", g.max_push_size_mb),
+    ] {
+        if v.is_some_and(|m| m <= 0) {
+            return Err(bad(field));
+        }
+    }
+    if let (Some(warn), Some(max)) = (g.warn_object_size_mb, g.max_object_size_mb)
+        && warn >= max
+    {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "git.warn_object_size_mb",
+            "the warning size must be below the maximum file size",
+        )));
+    }
     let r = &s.rate_limits;
     if [
         r.authenticated_per_hour,

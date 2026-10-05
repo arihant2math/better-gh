@@ -110,9 +110,12 @@ Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
 cached 5 s per process): sign-up policy (`open|invite|closed` + allowed
 email domains), default repository visibility, max repository size and
-per-owner `storage_quotas` (checked on push), organization creation
-policy, announcement banner, API rate limits, auth providers (password
-login, OIDC), SMTP, maintenance mode. Their defaults come from the
+per-owner `storage_quotas` (git + LFS storage; checked on push, in the
+pre-receive hook against the quarantined objects, and on LFS uploads with
+507), organization creation policy, announcement banner, API rate limits,
+auth providers (password login, OIDC), SMTP, maintenance mode, and push
+hardening (`git`: `fsck_on_push`, `max_object_size_mb` (GH001),
+`warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`). Their defaults come from the
 environment where one exists (`SiteSettings::defaults(&config)`:
 `BGH_RATE_LIMIT*` → `rate_limits`, `BGH_OIDC_*` → `auth_providers.oidc`);
 stored fields override them field by field. SMTP is a transport choice
@@ -367,10 +370,19 @@ Site-level account changes also emit `UserAccountChanged` /
   authorize callback (`bgh_repos::protection`: classic branch protection
   and rulesets — locks, deletions, creations, required PRs, push
   restrictions, required status checks from the database). Checks needing
-  the pushed objects (force pushes, linear history) run in a `pre-receive`
-  hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
-  `-c core.hooksPath`) while the objects are quarantined
-  (`GIT_QUARANTINE_PATH`), so rejected packs leave nothing behind. API ref
+  the pushed objects (force pushes, linear history, blob size limits with
+  GitHub's GH001 text, quarantine size vs. remaining quota) run in a
+  `pre-receive` hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
+  `-c core.hooksPath`, inputs in `PushPolicy`/`PushLimits`) while the
+  objects are quarantined (`GIT_QUARANTINE_PATH`), so rejected packs leave
+  nothing behind. `refs/pull/*` and `refs/bgh/*` are server-only:
+  `receive.hideRefs` (repo config and `-c` on every receive-pack) rejects
+  them per ref ("deny updating a hidden ref"), pushes touching only them
+  are refused before git runs, and `write_ref` answers 422; internal
+  writers (`bgh_git::merge::force_ref`/`fetch_ref`) bypass receive-pack.
+  Every repository's config (`storage::REPO_CONFIG`, stamped
+  `bgh.configVersion`) enables `receive.fsckObjects`; the
+  `repos.config_upgrade` service rewrites older configs at startup. API ref
   writes go through `bgh_repos::refs::write_ref` (same rules, verified
   with `git merge-base --is-ancestor`). PR merges, `mergeable_state`,
   auto-merge and the merge box share one evaluator
