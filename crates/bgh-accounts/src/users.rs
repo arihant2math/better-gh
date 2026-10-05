@@ -217,9 +217,10 @@ pub struct ListUsersQuery {
 /// `since`-based `Link` pagination like GitHub.
 pub async fn list_users(
     State(state): State<AppState>,
-    _auth: MaybeUser,
+    auth: MaybeUser,
     Query(q): Query<ListUsersQuery>,
 ) -> ApiResult<Response> {
+    bgh_core::privacy::require_directory_access(&state, auth.as_ref()).await?;
     let per_page = q.per_page.unwrap_or(30).clamp(1, 100);
     let since = q.since.unwrap_or(0);
     let rows: Vec<db::User> = sqlx::query_as(&format!(

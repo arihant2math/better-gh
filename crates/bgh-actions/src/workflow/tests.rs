@@ -452,8 +452,8 @@ jobs:
     assert!(call.is_reusable_call());
     assert_eq!(call.runs_on, serde_json::Value::Null);
     assert!(call.steps.is_empty());
-    assert_eq!(call.with["retries"], "3");
-    assert_eq!(call.with["verbose"], "true");
+    assert_eq!(call.with["retries"], json!(3));
+    assert_eq!(call.with["verbose"], json!(true));
     assert_eq!(call.secrets, Some(json!("inherit")));
     assert_eq!(
         wf.jobs["local"].secrets,

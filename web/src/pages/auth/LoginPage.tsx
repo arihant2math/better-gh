@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth';
 import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
+import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
+import type { PublicSiteInfo } from '../../app/site';
 import { getBoot, isMockMode } from '../../boot';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
@@ -43,6 +45,7 @@ function Login({ search }: { search: string }) {
   const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [ssoBusy, setSsoBusy] = useState<string | null>(null);
+  const [privateMode, setPrivateMode] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
   const loginRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +53,11 @@ function Login({ search }: { search: string }) {
     let live = true;
     listSsoProviders().then(
       (p) => live && setProviders(p),
+      () => undefined,
+    );
+    // Private mode (`/_bgh/site` stays public): explain why sign-in is needed.
+    api.get<PublicSiteInfo>('/_bgh/site').then(
+      (info) => live && setPrivateMode(!!info?.private_mode),
       () => undefined,
     );
     return () => {
@@ -60,6 +68,7 @@ function Login({ search }: { search: string }) {
   // Captured at render: once the session flips, App itself redirects and the
   // URL loses its `return_to`.
   const target = returnTo(search);
+  const invite = invitationTarget(target);
   const done = () => navigate(target, { replace: true });
 
   const submit = async () => {
@@ -163,7 +172,15 @@ function Login({ search }: { search: string }) {
   return (
     <AuthLayout
       title={`Sign in to ${config.siteName}`}
-      banner={notice && <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Flash>}
+      banner={
+        notice ? (
+          <Flash tone={notice.tone} onDismiss={() => setNotice(null)}>
+            {notice.text}
+          </Flash>
+        ) : (
+          invite && <Flash>Sign in{config.signupEnabled ? ' or create an account' : ''} to accept your invitation to {invitationTargetLabel(invite)}.</Flash>
+        )
+      }
       below={
         config.signupEnabled ? (
           <>
@@ -172,6 +189,11 @@ function Login({ search }: { search: string }) {
         ) : undefined
       }
     >
+      {privateMode && (
+        <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }} data-testid="private-mode-note">
+          {config.siteName} is private. Sign in to see its repositories, people and organizations.
+        </p>
+      )}
       {isMockMode() && (
         <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }}>
           Any credentials work. Passwords <code>wrong</code>, <code>throttle</code> and <code>2fa</code> (code <code>123456</code>) try the other paths.

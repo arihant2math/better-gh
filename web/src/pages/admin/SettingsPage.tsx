@@ -29,6 +29,7 @@ import {
   GitSection,
   MaintenanceSection,
   OrganizationsSection,
+  PrivacySection,
   RateLimitsSection,
   RepositoriesSection,
   RetentionSection,
@@ -194,6 +195,8 @@ export default function SettingsPage() {
         return <SignupSection value={draft.signup} onChange={update('signup')} errors={errors} />;
       case 'repositories':
         return <RepositoriesSection value={draft.repositories} onChange={update('repositories')} errors={errors} />;
+      case 'privacy':
+        return <PrivacySection value={draft.privacy} onChange={update('privacy')} errors={errors} />;
       case 'organizations':
         return <OrganizationsSection value={draft.organizations} onChange={update('organizations')} errors={errors} />;
       case 'announcement':

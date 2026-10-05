@@ -13,6 +13,7 @@ pub mod keys;
 pub mod meta;
 pub mod oauth;
 pub mod orgs;
+pub mod root;
 pub mod session;
 pub mod social;
 pub mod sso;
@@ -35,6 +36,12 @@ pub use users::{NewAccount, create_user};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(meta::root))
+        .route("/markdown", post(root::render))
+        .route("/markdown/raw", post(root::render_raw))
+        .route("/emojis", get(root::emojis))
+        .route("/zen", get(root::zen))
+        .route("/octocat", get(root::octocat))
+        .route("/versions", get(root::versions))
         // users
         .route(
             "/user",
@@ -251,6 +258,7 @@ pub fn web_router() -> Router<AppState> {
         // `GET /api/v3/` (trailing slash, as requested by `gh`); the nested
         // API router only matches `/api/v3`.
         .route("/api/v3/", get(meta::root))
+        .route("/_bgh/emoji/{file}", get(root::emoji_image))
         .route("/_bgh/boot", get(boot::get_boot))
         .route("/_bgh/auth/login", post(boot::login))
         .route("/_bgh/auth/2fa", post(boot::two_factor))
@@ -302,6 +310,11 @@ pub fn web_router() -> Router<AppState> {
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
         .route("/_bgh/orgs", post(orgs::web_create_org))
+        .route(
+            "/_bgh/orgs/{org}/invitation",
+            get(orgs::viewer_invitation).delete(orgs::decline_invitation),
+        )
+        .route("/_bgh/user/organizations", get(orgs::viewer_organizations))
         // avatars
         .route("/avatars/u/{id}", get(avatars::serve))
         .route(

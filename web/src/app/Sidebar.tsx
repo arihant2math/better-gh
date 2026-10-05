@@ -13,6 +13,7 @@ import {
   IssueOpenedIcon,
   LockIcon,
   MoonIcon,
+  OrganizationIcon,
   RepoIcon,
   ServerIcon,
   SignOutIcon,
@@ -63,7 +64,7 @@ const RepoGroup = observer(function RepoGroup({ title, repos, groupKey }: { titl
           const current = pathname === base || pathname.startsWith(`${base}/`);
           return (
             <Link key={r.id} to={base} className={styles.repoItem} aria-current={current ? 'page' : undefined}>
-              {r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
+              {r.visibility === 'internal' ? <OrganizationIcon size={14} /> : r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
               <span className={styles.navLabel}>{r.name}</span>
             </Link>
           );
