@@ -8,7 +8,20 @@ use crate::cmd;
 use crate::read::GitRepo;
 use crate::{GitError, GitResult};
 
+/// Version stamped into every repository's config as `bgh.configVersion`;
+/// bump it whenever [`REPO_CONFIG`] changes so [`RepoStore::upgrade_config`]
+/// rewrites existing repositories (1 = configs written before the stamp).
+pub const CONFIG_VERSION: u32 = 2;
+
 /// Settings appended to every repository's `config`.
+///
+/// * `receive.hideRefs`: `refs/pull/*` (PR heads and test merges) and
+///   `refs/bgh/*` are written by the server only; pushes to them fail with
+///   `deny updating a hidden ref`.
+/// * `receive.fsckObjects`: reject malformed objects, malicious
+///   `.gitmodules` and symlinks into `.git` (site setting
+///   `git.fsck_on_push` overrides it per push with `-c`). Common harmless
+///   defects in old history are downgraded to warnings.
 const REPO_CONFIG: &str = "\
 [core]
 \tlogAllRefUpdates = false
@@ -16,12 +29,138 @@ const REPO_CONFIG: &str = "\
 \tadvertisePushOptions = true
 \tautogc = false
 \tunpackLimit = 100
+\tfsckObjects = true
+\thideRefs = refs/pull/
+\thideRefs = refs/bgh/
+[receive \"fsck\"]
+\tzeroPaddedFilemode = ignore
+\tbadTimezone = ignore
+\tmissingSpaceBeforeDate = ignore
 [uploadpack]
 \tallowFilter = true
 \tallowReachableSHA1InWant = true
 [gc]
 \tauto = 0
+[bgh]
+\tconfigVersion = 2
 ";
+
+/// Ref namespaces only the server may write (see [`REPO_CONFIG`]).
+pub const HIDDEN_REF_PREFIXES: &[&str] = &["refs/pull/", "refs/bgh/"];
+
+/// Whether `refname` is in a namespace pushes and the refs API may not
+/// touch.
+pub fn is_hidden_ref(refname: &str) -> bool {
+    HIDDEN_REF_PREFIXES.iter().any(|p| refname.starts_with(p))
+}
+
+/// `(section, subsection)` of a config section header line
+/// (`[core]`, `[receive "fsck"]`, legacy `[branch.main]`). Section names
+/// are case-insensitive, subsections case-sensitive (legacy ones aren't).
+fn config_header(line: &str) -> Option<(String, Option<String>)> {
+    let inner = line.trim().strip_prefix('[')?;
+    let inner = &inner[..inner.find(']')?];
+    Some(match inner.split_once('"') {
+        Some((name, rest)) => {
+            let sub = rest.rsplit_once('"').map_or(rest, |(s, _)| s);
+            (
+                name.trim().to_ascii_lowercase(),
+                Some(sub.replace("\\", "")),
+            )
+        }
+        None => match inner.split_once('.') {
+            Some((name, sub)) => (name.to_ascii_lowercase(), Some(sub.to_ascii_lowercase())),
+            None => (inner.trim().to_ascii_lowercase(), None),
+        },
+    })
+}
+
+/// Lower-cased variable name of a config entry line (`None` for blank and
+/// comment lines).
+fn config_key(line: &str) -> Option<String> {
+    let t = line.trim_start();
+    if t.is_empty() || t.starts_with('#') || t.starts_with(';') || t.starts_with('[') {
+        return None;
+    }
+    let end = t
+        .find(|c: char| c == '=' || c.is_whitespace())
+        .unwrap_or(t.len());
+    Some(t[..end].to_ascii_lowercase())
+}
+
+type ConfigKey = (String, Option<String>, String);
+
+/// `(section, subsection, key)` of every entry of `text`.
+fn config_entries(text: &str) -> Vec<ConfigKey> {
+    let mut section = None;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if let Some(h) = config_header(line) {
+            section = Some(h);
+        } else if let (Some((s, sub)), Some(k)) = (&section, config_key(line)) {
+            out.push((s.clone(), sub.clone(), k));
+        }
+    }
+    out
+}
+
+/// `bgh.configVersion` of a config file's text (1 when absent).
+pub fn config_version(text: &str) -> u32 {
+    let mut in_bgh = false;
+    let mut version = 1;
+    for line in text.lines() {
+        if let Some((s, sub)) = config_header(line) {
+            in_bgh = s == "bgh" && sub.is_none();
+        } else if in_bgh && config_key(line).as_deref() == Some("configversion") {
+            version = line
+                .split_once('=')
+                .and_then(|(_, v)| v.trim().parse().ok())
+                .unwrap_or(1);
+        }
+    }
+    version
+}
+
+/// `existing` with every variable [`REPO_CONFIG`] sets removed (sections
+/// left empty by that dropped), then [`REPO_CONFIG`] appended. Idempotent;
+/// everything else (`core.bare`, alternates-related settings, user
+/// additions) is kept verbatim.
+pub fn rewrite_config(existing: &str) -> String {
+    let managed = config_entries(REPO_CONFIG);
+    let mut out = String::with_capacity(existing.len() + REPO_CONFIG.len());
+    // (header line, kept lines, whether anything was dropped)
+    let mut sections: Vec<(Option<&str>, Vec<&str>, bool)> = vec![(None, vec![], false)];
+    let mut current: Option<(String, Option<String>)> = None;
+    for line in existing.lines() {
+        if let Some(h) = config_header(line) {
+            current = Some(h);
+            sections.push((Some(line), vec![], false));
+            continue;
+        }
+        let last = sections.last_mut().expect("at least one section");
+        let drop = match (&current, config_key(line)) {
+            (Some((s, sub)), Some(k)) => managed.contains(&(s.clone(), sub.clone(), k)),
+            _ => false,
+        };
+        if drop {
+            last.2 = true;
+        } else {
+            last.1.push(line);
+        }
+    }
+    for (header, lines, dropped) in sections {
+        let has_entries = lines.iter().any(|l| config_key(l).is_some());
+        if dropped && !has_entries {
+            continue;
+        }
+        for l in header.into_iter().chain(lines) {
+            out.push_str(l);
+            out.push('\n');
+        }
+    }
+    out.push_str(REPO_CONFIG);
+    out
+}
 
 /// Where repositories live and how to reach the `git` binary.
 #[derive(Debug, Clone)]
@@ -88,10 +227,58 @@ impl RepoStore {
 
     async fn configure(&self, path: &Path) -> GitResult<()> {
         let cfg = path.join("config");
-        let mut existing = tokio::fs::read_to_string(&cfg).await.unwrap_or_default();
-        existing.push_str(REPO_CONFIG);
-        tokio::fs::write(&cfg, existing).await?;
+        let existing = tokio::fs::read_to_string(&cfg).await.unwrap_or_default();
+        tokio::fs::write(&cfg, rewrite_config(&existing)).await?;
         Ok(())
+    }
+
+    /// Bring `git_dir`'s config up to [`CONFIG_VERSION`] (see
+    /// [`rewrite_config`]); returns whether it was rewritten. The new file
+    /// replaces the old one atomically. Blocking.
+    pub fn upgrade_config(git_dir: &Path) -> GitResult<bool> {
+        let cfg = git_dir.join("config");
+        let existing = std::fs::read_to_string(&cfg)?;
+        if config_version(&existing) >= CONFIG_VERSION {
+            return Ok(false);
+        }
+        let tmp = git_dir.join(format!("config.bgh-{}", bgh_core::crypto::random_token(8)));
+        std::fs::write(&tmp, rewrite_config(&existing))?;
+        std::fs::rename(&tmp, &cfg)?;
+        Ok(true)
+    }
+
+    /// Run [`Self::upgrade_config`] over every repository on disk (main and
+    /// wiki repositories alike). Blocking; returns `(rewritten, failed)`.
+    pub fn upgrade_all_configs(&self) -> (usize, usize) {
+        let (mut rewritten, mut failed) = (0, 0);
+        let Ok(shards) = std::fs::read_dir(&self.root) else {
+            return (0, 0);
+        };
+        for shard in shards.flatten() {
+            let name = shard.file_name();
+            let name = name.to_string_lossy();
+            if name.len() != 2 || !name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            let Ok(repos) = std::fs::read_dir(shard.path()) else {
+                continue;
+            };
+            for repo in repos.flatten() {
+                let path = repo.path();
+                if !path.join("HEAD").is_file() || !path.join("config").is_file() {
+                    continue;
+                }
+                match Self::upgrade_config(&path) {
+                    Ok(true) => rewritten += 1,
+                    Ok(false) => {}
+                    Err(err) => {
+                        failed += 1;
+                        tracing::warn!(path = %path.display(), %err, "repository config upgrade failed");
+                    }
+                }
+            }
+        }
+        (rewritten, failed)
     }
 
     /// Create an empty bare repository whose HEAD points at `default_branch`.
@@ -234,5 +421,76 @@ impl RepoStore {
         } else {
             Err(GitError::NotFound(format!("repository {repo_id}")))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LEGACY: &str = "[core]
+\trepositoryformatversion = 0
+\tfilemode = true
+\tbare = true
+[core]
+\tlogAllRefUpdates = false
+[receive]
+\tadvertisePushOptions = true
+\tautogc = false
+\tunpackLimit = 100
+[uploadpack]
+\tallowFilter = true
+\tallowReachableSHA1InWant = true
+[gc]
+\tauto = 0
+[remote \"x\"]
+\turl = /tmp/x
+";
+
+    #[test]
+    fn rewrite_is_idempotent_and_keeps_foreign_settings() {
+        assert_eq!(config_version(LEGACY), 1);
+        let once = rewrite_config(LEGACY);
+        assert_eq!(config_version(&once), CONFIG_VERSION);
+        assert_eq!(rewrite_config(&once), once);
+        assert!(once.contains("\tbare = true"));
+        assert!(once.contains("[remote \"x\"]\n\turl = /tmp/x"));
+        assert_eq!(once.matches("unpackLimit").count(), 1);
+        assert_eq!(once.matches("hideRefs = refs/pull/").count(), 1);
+        // The legacy `[core]` section whose only entry moved is dropped.
+        assert_eq!(once.matches("[core]").count(), 2);
+    }
+
+    #[test]
+    fn hidden_refs() {
+        assert!(is_hidden_ref("refs/pull/1/head"));
+        assert!(is_hidden_ref("refs/bgh/x"));
+        assert!(!is_hidden_ref("refs/heads/pull/1"));
+        assert!(!is_hidden_ref("refs/pullx"));
+    }
+
+    #[tokio::test]
+    async fn upgrades_existing_repositories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = RepoStore::new(tmp.path(), "git");
+        let path = store.init(7, "main").await.unwrap();
+        std::fs::write(path.join("config"), LEGACY).unwrap();
+        assert_eq!(store.upgrade_all_configs(), (1, 0));
+        assert_eq!(store.upgrade_all_configs(), (0, 0));
+        let out = std::process::Command::new("git")
+            .args(["config", "--get-all", "receive.hideRefs"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "refs/pull/\nrefs/bgh/\n"
+        );
+        let out = std::process::Command::new("git")
+            .args(["config", "receive.fsck.zeroPaddedFilemode"])
+            .current_dir(&path)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "ignore\n");
     }
 }

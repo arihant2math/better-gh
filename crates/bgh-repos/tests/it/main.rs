@@ -19,6 +19,7 @@ mod gitdb;
 mod keys;
 mod lfs;
 mod protection;
+mod push_hardening;
 mod push_rules;
 mod settings;
 mod social;
