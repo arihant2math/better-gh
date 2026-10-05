@@ -22,6 +22,7 @@ pub mod json;
 pub mod logs;
 pub mod models;
 pub mod protocol;
+pub mod runner;
 pub mod scoped;
 pub mod server;
 pub mod services;
@@ -287,4 +288,5 @@ pub fn register(reg: &mut Registry) {
     reg.job(engine::cancel_run_job);
     reg.on_event("actions.trigger", trigger::on_event);
     reg.service("actions.maintenance", services::maintenance);
+    reg.service("actions.builtin_runner", services::builtin_runner);
 }
