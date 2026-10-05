@@ -1,11 +1,14 @@
+Integration: ready
+Reusable workflows (local/cross-repo calls, inputs, secrets, outputs, matrix, limits, permissions caps) + run graph UI.
+
 # P16 — Reusable workflows (`jobs.<id>.uses` / `on.workflow_call`): status
 
 Branch `bgh/p16-reusable-workflows`. Migration
 `2800_actions_reusable_workflows.sql` (range 2800–2899).
 
-**Status:** complete — scope and acceptance met; integrated into
-`claude/sleepy-cray-9jj0t3` (full gate, `actions-e2e.sh`, `gh-compat.sh`,
-`api-smoke.sh` green).
+**Status:** complete — scope and acceptance met; gate green on the merged
+integration head (fmt, clippy, 56 test binaries, web 347 tests + build);
+`actions-e2e.sh`, `gh-compat.sh`, `api-smoke.sh` green.
 
 ## How it works
 
