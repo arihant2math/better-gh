@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use axum::Router;
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use base64::Engine;
@@ -52,8 +52,11 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Raw file downloads (absolute paths).
+///
+/// Empty: `download_url` (`/{owner}/{repo}/raw/{ref}/{path}`) is served by
+/// the git-transport package's download module.
 pub fn web_routes() -> Router<AppState> {
-    Router::new().route("/{owner}/{repo}/raw/{*rest}", get(raw_download))
+    Router::new()
 }
 
 // ----- JSON shapes -------------------------------------------------------------
@@ -733,95 +736,6 @@ async fn readme(
             Ok(Json(ctx.render(&found, false)).into_response())
         }
     }
-}
-
-// ----- raw downloads ----------------------------------------------------------
-
-async fn raw_download(
-    State(state): State<AppState>,
-    auth: MaybeUser,
-    Path((owner, repo, rest)): Path<(String, String, String)>,
-) -> ApiResult<Response> {
-    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    let parts: Vec<String> = rest
-        .split('/')
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
-        .collect();
-    if parts.len() < 2 {
-        return Err(ApiError::NotFound);
-    }
-    let (ref_used, data) = crate::store(&state)
-        .read(access.repo.id, move |r| {
-            // Longest prefix of `rest` that names a branch, tag or commit.
-            for i in (1..parts.len()).rev() {
-                let candidate = parts[..i].join("/");
-                let commit = resolve_raw_ref(r, &candidate)?;
-                let Some(commit) = commit else { continue };
-                let path = parts[i..].join("/");
-                return match r.lookup_path(&commit, &path)? {
-                    PathLookup::Entry(e) if e.kind != TreeEntryKind::Commit => Ok(Some((
-                        candidate,
-                        r.blob_with_limit(&e.sha, RAW_LIMIT)?.data,
-                    ))),
-                    _ => Ok(None),
-                };
-            }
-            Ok(None)
-        })
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let mut resp = data.clone().into_response();
-    let h = resp.headers_mut();
-    h.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static(content_type_for(&data)),
-    );
-    h.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    h.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; sandbox"),
-    );
-    if bgh_git::is_sha(&ref_used) {
-        resp = media::immutable(resp, access.repo.is_private());
-    }
-    Ok(resp)
-}
-
-/// Commit for a raw-download ref candidate: `refs/...`, branch, tag, or a
-/// (possibly abbreviated) commit SHA.
-fn resolve_raw_ref(r: &GitRepo, candidate: &str) -> GitResult<Option<String>> {
-    let mut names = Vec::new();
-    if candidate.starts_with("refs/") {
-        names.push(candidate.to_string());
-    }
-    names.push(format!("refs/heads/{candidate}"));
-    names.push(format!("refs/tags/{candidate}"));
-    for n in names {
-        if bgh_git::is_valid_ref_name(&n)
-            && let Some(found) = r.find_ref(&n)?
-        {
-            return match r.resolve_commit(&found.peeled) {
-                Ok(c) => Ok(Some(c)),
-                Err(GitError::NotFound(_)) => Ok(None),
-                Err(e) => Err(e),
-            };
-        }
-    }
-    if candidate.len() >= 7
-        && candidate.len() <= 40
-        && candidate.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        return match r.resolve_commit(candidate) {
-            Ok(c) => Ok(Some(c)),
-            Err(GitError::NotFound(_)) => Ok(None),
-            Err(e) => Err(e),
-        };
-    }
-    Ok(None)
 }
 
 // ----- PUT / DELETE -------------------------------------------------------------

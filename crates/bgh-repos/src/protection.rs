@@ -536,6 +536,49 @@ pub async fn verify_needs(
     Ok(())
 }
 
+// ----- compatibility with the pre-engine API ----------------------------------------
+
+/// Load a repository's rules by id (compat for callers of the original
+/// `load_rules`; prefer [`RepoRules::load`]).
+pub async fn load_rules(state: &AppState, repo_id: i64) -> ApiResult<RepoRules> {
+    let repo = db::Repository::find(&state.db, repo_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    RepoRules::load(&state.db, &repo).await
+}
+
+/// Synchronous rule check without team membership or object checks
+/// (compat). New code should use [`Actor::load`] + [`authorize_push`] and
+/// enforce the returned policy with `smart_http::receive_pack_with_policy`.
+pub fn check_push(
+    rules: &RepoRules,
+    access: &RepoAccess,
+    pusher: &AuthContext,
+    updates: &[RefUpdate],
+) -> Result<(), String> {
+    check_push_by(rules, access, Some(pusher.user.id), updates)
+}
+
+/// [`check_push`] for a pusher identified by user id; `None` for deploy
+/// keys, which never match push restrictions or bypass lists.
+pub fn check_push_by(
+    rules: &RepoRules,
+    access: &RepoAccess,
+    pusher_id: Option<i64>,
+    updates: &[RefUpdate],
+) -> Result<(), String> {
+    let actor = Actor {
+        user_id: pusher_id.unwrap_or(0),
+        permission: access.permission,
+        team_ids: vec![],
+        org_admin: false,
+    };
+    for u in updates {
+        check_update(rules, &actor, u)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::pattern_matches as m;

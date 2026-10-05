@@ -38,7 +38,7 @@ Collaborators (`collaborators.rs`)
 Contents (`contents.rs`)
 * `GET /repos/{o}/{r}/contents[/{path}]` (file/dir/symlink/submodule, `?ref`, raw/html/object media types), `PUT` (create/update with sha check, author/committer), `DELETE`
 * `GET /repos/{o}/{r}/readme[/{dir}]`
-* web route `GET /{owner}/{repo}/raw/{ref}/{path}` (download_url target)
+* `download_url` points at `/{owner}/{repo}/raw/{ref}/{path}`, served by B2b's download module (not registered here, to avoid a duplicate route)
 
 Git database (`gitdb.rs`)
 * blobs (GET/POST), trees (GET `recursive`, POST with `base_tree`/deletes), commits (GET/POST), refs (`/git/ref/{ref}`, `/git/matching-refs/{ref}`, `/git/refs[/{prefix}]`, POST/PATCH(force)/DELETE), annotated tags (GET/POST)
@@ -94,4 +94,8 @@ SHA-addressed responses (commits/blobs/trees by full SHA) send
 * Contents: submodules in directory arrays are `type: "file"` (GitHub's documented compat behavior); symlinks to files resolve to the target file; `download_url` carries no token for private repos.
 * Short SHAs are not accepted by `git/blobs|commits|tags/{sha}`.
 * Restriction / bypass users aren't checked for push access on PUT; `apps` are always empty.
-* Raw file route `/{owner}/{repo}/raw/...` lives here (contents `download_url`); B2b (git-transport) must not register it again.
+* Coordination with `bgh/git-transport` (B2b), for the merge:
+  * B2b owns `/{owner}/{repo}/raw/...`; repos-api registers no web routes of its own besides git HTTP.
+  * `protection.rs` was rewritten as a rules engine (classic rules + rulesets). B2b's edits to the old `check_push` will conflict textually: keep this branch's file. Compat shims `load_rules(state, repo_id)`, `check_push`, `check_push_by(rules, access, Option<user_id>, updates)` keep B2b's SSH code compiling; SSH pushes should move to `Actor::load` + `authorize_push` + `smart_http::receive_pack_with_policy` to get force-push/linear-history/status-check enforcement (deploy keys: `Actor { user_id: 0, .. }`).
+  * `git_http.rs` receive-pack was changed here to the policy-based path; on conflict keep this branch's version plus B2b's other additions.
+  * This branch's git test helpers live in `tests/gitwork/` (B2b uses `tests/common/`).
