@@ -1,4 +1,4 @@
-Integration: pending (full gate running)
+Integration: ready
 P33 repo metadata: licenses/gitignore endpoints, license detection, create templates + team_id, /repositories, branches-where-head, short SHAs; web pickers.
 
 # P33 repo-metadata — status
@@ -69,6 +69,7 @@ NULL AND pushed_at IS NOT NULL`, partial index).
   errors, templates + team, detection/other/ref/removal, backfill, GraphQL,
   search, `/repositories`, branches-where-head, short SHAs).
 * Unit: license parsing, file ranking, detection of 6 licenses, gitignore lookup.
+* Gate green after merging the integration branch (fmt, clippy, `cargo test --workspace`, web typecheck/lint/test/build); `api-smoke.sh` 45/45. Transport tests now count the license job. `push_hardening::push_size_limit` failed once under full-suite load (client EPIPE before reading the error), then passed 3/3 in re-runs.
 * `scripts/gh-compat.sh`: new cases `gh repo create --gitignore Go --license mit --team t`,
   license detected, `gh repo license list/view`, `gh repo gitignore list/view` (63/63 pass).
 
