@@ -70,7 +70,9 @@ self-integrated into `claude/sleepy-cray-9jj0t3`.
   (`GitCli::new_commits`, `GitCli::changed_files`,
   `GitCli::is_ancestor_with`, new `bgh_git::pushed`) and answers exit
   code + `remote:` lines. Fails closed (no answer = reject). Works for
-  HTTP and SSH.
+  HTTP and SSH. `ensure_hooks` now verifies the hook is executable
+  (`access(X_OK)`, repairs the mode, else refuses the push): git silently
+  skips a non-executable hook, which would disable every object check.
 * Multi-line rejection reasons: `smart_http::rejection_report` sends the
   first line as the per-ref `ng` reason and the rest verbatim on the
   progress channel.

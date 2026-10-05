@@ -595,7 +595,38 @@ pub async fn ensure_hooks(store: &RepoStore) -> GitResult<std::path::PathBuf> {
         }
         tokio::fs::rename(&tmp, &hook).await?;
     }
+    // git silently skips a hook it can't execute (lost mode bits, a
+    // `noexec` mount), which would turn every object check off: repair
+    // the mode, and refuse pushes rather than accept them unchecked.
+    if !executable(&hook) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).await?;
+        }
+        if !executable(&hook) {
+            tracing::error!(
+                hook = %hook.display(),
+                "the pre-receive hook is not executable (noexec mount?); refusing pushes"
+            );
+            return Err(GitError::Object(format!(
+                "pre-receive hook {} is not executable",
+                hook.display()
+            )));
+        }
+    }
     Ok(dir)
+}
+
+/// Whether the current process may execute `path` (`access(X_OK)`, which
+/// also reports `noexec` mounts).
+fn executable(path: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: `c` is a valid NUL-terminated path.
+    unsafe { libc::access(c.as_ptr(), libc::X_OK) == 0 }
 }
 
 /// Transport-independent result of [`receive_pack_stream`].
@@ -1073,6 +1104,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out, b"0000PACK");
+    }
+
+    #[tokio::test]
+    async fn hook_mode_is_repaired() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = RepoStore::new(tmp.path(), "git");
+        let dir = ensure_hooks(&store).await.unwrap();
+        let hook = dir.join("pre-receive");
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!executable(&hook) || nix_root());
+        ensure_hooks(&store).await.unwrap();
+        assert!(executable(&hook));
+    }
+
+    /// root may execute anything with any x bit; `access` is still exact
+    /// for 0o644 files, but keep the check robust.
+    fn nix_root() -> bool {
+        // SAFETY: plain syscall.
+        unsafe { libc::geteuid() == 0 }
     }
 
     #[test]
