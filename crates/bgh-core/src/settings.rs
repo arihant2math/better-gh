@@ -314,10 +314,14 @@ impl SiteSettings {
     /// Defaults before any stored row: the built-in defaults plus the
     /// environment's (`BGH_RATE_LIMIT*`, `BGH_OIDC_*`).
     pub fn defaults(config: &Config) -> Self {
-        let mut s = Self::default();
-        s.rate_limits = config.rate_limits.clone();
-        s.auth_providers.oidc = config.oidc.clone().into_iter().collect();
-        s
+        Self {
+            rate_limits: config.rate_limits.clone(),
+            auth_providers: AuthProviderSettings {
+                oidc: config.oidc.clone().into_iter().collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
     /// Build from `(key, value)` rows over the built-in defaults; see
