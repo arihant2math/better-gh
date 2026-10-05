@@ -7,19 +7,45 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 /// Steps in run order. `git` and `settings` run first so later steps can
-/// rely on the repository and its tags.
+/// rely on the repository and its tags; pull requests come after issues
+/// (they share the number sequence) and before comments and events (which
+/// belong to either), reviews before events (`review_dismissed`).
 pub const STEPS: &[&str] = &[
     "git",
     "settings",
     "labels",
     "milestones",
     "issues",
+    "pulls",
+    "reviews",
+    "review_comments",
     "comments",
     "events",
     "releases",
+    "wiki",
+    "hooks",
+    "branch_protection",
+    "rulesets",
     "teams",
     "finish",
 ];
+
+/// Steps a GitLab import runs (the others show as skipped).
+pub const GITLAB_STEPS: &[&str] = &[
+    "git",
+    "settings",
+    "labels",
+    "milestones",
+    "issues",
+    "pulls",
+    "reviews",
+    "comments",
+    "wiki",
+    "finish",
+];
+
+/// Source platforms (`imports.kind`).
+pub const KINDS: &[&str] = &["github", "gitlab"];
 
 /// What to import (all on by default except `teams`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +62,17 @@ pub struct Options {
     pub issues: bool,
     #[serde(default = "yes")]
     pub releases: bool,
+    /// Pull requests (GitLab: merge requests) with reviews, review
+    /// comments and requested reviewers (P51).
+    #[serde(default = "yes")]
+    pub pulls: bool,
+    /// The `{repo}.wiki.git` repository (P51).
+    #[serde(default = "yes")]
+    pub wiki: bool,
+    /// Webhooks (imported disabled), branch protection and rulesets (P51,
+    /// GitHub only; needs an admin token on the source).
+    #[serde(default = "yes")]
+    pub repo_config: bool,
     /// Org teams and their repository permissions (organization targets).
     #[serde(default)]
     pub teams: bool,
@@ -63,9 +100,13 @@ impl Options {
             "settings" => self.settings,
             "labels" => self.labels,
             "milestones" => self.milestones,
-            // Comments and events belong to the issues.
-            "issues" | "comments" | "events" => self.issues,
+            "issues" => self.issues,
+            // Comments and events belong to issues and pull requests.
+            "comments" | "events" => self.issues || self.pulls,
+            "pulls" | "reviews" | "review_comments" => self.pulls,
             "releases" => self.releases,
+            "wiki" => self.wiki,
+            "hooks" | "branch_protection" | "rulesets" => self.repo_config,
             "teams" => self.teams,
             _ => true,
         }
@@ -128,6 +169,10 @@ impl ImportRow {
         format!("import:{}", self.id)
     }
 
+    pub fn is_gitlab(&self) -> bool {
+        self.kind == "gitlab"
+    }
+
     pub fn is_active(&self) -> bool {
         matches!(self.status.as_str(), "queued" | "running" | "waiting")
     }
@@ -152,7 +197,12 @@ pub fn source_html_url(api_url: &str, source_repo: &str) -> String {
     {
         return format!("https://github.com/{source_repo}");
     }
-    format!("{}/{source_repo}", api.trim_end_matches("/api/v3"))
+    // GHES `/api/v3`, GitLab `/api/v4`.
+    let web = api
+        .strip_suffix("/api/v3")
+        .or_else(|| api.strip_suffix("/api/v4"))
+        .unwrap_or(api);
+    format!("{web}/{source_repo}")
 }
 
 /// Private JSON (`/_bgh/metadata-imports/{id}`). Never includes the token.
@@ -181,7 +231,7 @@ pub fn to_json(
         .map(|s| {
             let idx = STEPS.iter().position(|x| x == s).unwrap_or(0);
             let cur = STEPS.iter().position(|x| *x == row.step).unwrap_or(0);
-            let state = if !options.enabled(s) {
+            let state = if !options.enabled(s) || (row.is_gitlab() && !GITLAB_STEPS.contains(s)) {
                 "skipped"
             } else if row.status == "complete" || idx < cur {
                 "done"
@@ -213,6 +263,9 @@ pub fn to_json(
             "milestones": options.milestones,
             "issues": options.issues,
             "releases": options.releases,
+            "pulls": options.pulls,
+            "wiki": options.wiki,
+            "repo_config": options.repo_config,
             "teams": options.teams,
             "include_lfs": options.include_lfs,
             "user_map_entries": options.user_map.len(),
@@ -282,7 +335,17 @@ mod tests {
             source_html_url("https://ghe.example/api/v3", "o/r"),
             "https://ghe.example/o/r"
         );
+        assert_eq!(
+            source_html_url("https://gitlab.example/api/v4", "group/sub/proj"),
+            "https://gitlab.example/group/sub/proj"
+        );
         let o = Options::default();
         assert!(o.git && o.issues && !o.teams && o.enabled("comments"));
+        assert!(o.pulls && o.enabled("reviews") && o.wiki && o.repo_config);
+        let only_pulls = Options {
+            issues: false,
+            ..Options::default()
+        };
+        assert!(only_pulls.enabled("comments") && !only_pulls.enabled("issues"));
     }
 }

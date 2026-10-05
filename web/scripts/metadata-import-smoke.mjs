@@ -123,7 +123,8 @@ await step('site admin import', async () => {
   await page.waitForTimeout(1600);
   await shot('p18-detail');
   const steps = page.getByRole('list', { name: 'Import steps' }).getByRole('listitem');
-  check((await steps.count()) === 10, 'ten steps listed');
+  // 15 since P51 (pull requests, reviews, wiki, repository config).
+  check((await steps.count()) === 15, 'fifteen steps listed');
   const issuesStat = page.locator('dt', { hasText: /^Issues$/ }).locator('xpath=following-sibling::dd[1]');
   check((await issuesStat.textContent())?.trim() === '3', 'Issues counter shows 3');
   const log = page.getByRole('list', { name: 'Import log' });
@@ -159,7 +160,7 @@ await step('source validation', async () => {
 
 await step('organization settings', async () => {
   await page.goto(`${base}/organizations/${ORG}/settings/import`);
-  check(await visible(page.getByRole('heading', { name: 'Import from GitHub' })), 'org settings Import page');
+  check(await visible(page.getByRole('heading', { name: 'Import a repository' })), 'org settings Import page');
   const owner = page.getByRole('form', { name: 'New import' }).getByLabel('Owner');
   check((await owner.inputValue()) === ORG && !(await owner.isEditable()), 'owner fixed to the organization');
   check(await visible(page.getByRole('link', { name: new RegExp(`${SRC} → ${ORG}/${DEST}`) })), 'previous imports listed');

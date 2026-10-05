@@ -122,6 +122,7 @@ pub async fn archive(
         .arg(commit)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    let timer = bgh_core::observability::git_op("archive");
     let mut child = c.spawn()?;
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
@@ -153,6 +154,7 @@ pub async fn archive(
         tee: Option<(tempfile::NamedTempFile, tokio::fs::File)>,
         path: PathBuf,
         done: bool,
+        timer: Option<bgh_core::observability::GitTimer>,
     }
     let state = State {
         stdout,
@@ -161,6 +163,7 @@ pub async fn archive(
         tee,
         path,
         done: false,
+        timer: Some(timer),
     };
     let stream = futures::stream::unfold(state, |mut st| async move {
         if st.done {
@@ -175,7 +178,11 @@ pub async fn archive(
                     Some(t) => t.await.unwrap_or_default(),
                     None => String::new(),
                 };
-                if !matches!(&status, Ok(s) if s.success()) {
+                let ok = matches!(&status, Ok(s) if s.success());
+                if let Some(t) = st.timer.take() {
+                    t.finish(ok);
+                }
+                if !ok {
                     tracing::warn!(?status, stderr = %err.trim(), "git archive failed");
                     return Some((Err(io::Error::other("git archive failed")), st));
                 }

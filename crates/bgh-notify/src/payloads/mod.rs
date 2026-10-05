@@ -21,6 +21,7 @@ mod packages;
 mod pulls;
 mod push;
 mod releases;
+mod secret_scanning;
 
 use bgh_core::AppState;
 use bgh_core::events::Event;
@@ -51,6 +52,7 @@ pub use push::{
     timestamp_with_offset, unquote_path,
 };
 pub use releases::release;
+pub use secret_scanning::{secret_scanning_alert, secret_scanning_location};
 
 use common::envelope;
 
@@ -203,6 +205,8 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::DeploymentCreated { .. } => vec!["deployment"],
         E::DeploymentStatusCreated { .. } => vec!["deployment_status"],
         E::CommitCommentCreated { .. } => vec!["commit_comment"],
+        E::SecretScanningAlert { .. } => vec!["secret_scanning_alert"],
+        E::SecretScanningAlertLocationCreated { .. } => vec!["secret_scanning_alert_location"],
         // Site-level events: delivered to global (site admin) hooks only.
         E::UserAccountChanged { .. } => vec!["user"],
         E::OrganizationChanged { .. } => vec!["organization"],
@@ -813,6 +817,36 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 "commit_comment",
                 Some("created"),
                 vec![("comment", c)],
+            )])
+        }
+        // ----- secret scanning --------------------------------------------------
+        E::SecretScanningAlert {
+            alert_id, action, ..
+        } => {
+            let Some(alert) = secret_scanning_alert(state, &ctx, *alert_id).await? else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "secret_scanning_alert",
+                Some(action),
+                vec![("alert", alert)],
+            )])
+        }
+        E::SecretScanningAlertLocationCreated {
+            alert_id,
+            location_id,
+            ..
+        } => {
+            let (Some(alert), Some(location)) = (
+                secret_scanning_alert(state, &ctx, *alert_id).await?,
+                secret_scanning_location(state, &ctx, *location_id).await?,
+            ) else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "secret_scanning_alert_location",
+                Some("created"),
+                vec![("alert", alert), ("location", location)],
             )])
         }
         // ----- packages -------------------------------------------------------

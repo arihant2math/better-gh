@@ -1,6 +1,6 @@
 [package]
 name = "bgh-import"
-description = "Metadata importer (GitHub / GHES issues, labels, milestones, releases, users)"
+description = "Metadata importer (GitHub / GHES / GitLab issues, pull requests, reviews, wikis, users)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,6 +11,9 @@ bgh-core.workspace = true
 bgh-repos.workspace = true
 bgh-issues.workspace = true
 bgh-releases.workspace = true
+bgh-pulls.workspace = true
+bgh-wiki.workspace = true
+bgh-git.workspace = true
 axum.workspace = true
 tokio.workspace = true
 futures.workspace = true

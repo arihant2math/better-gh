@@ -17,6 +17,9 @@ use crate::row::{self, ImportRow};
 
 pub struct Users {
     import_id: i64,
+    /// GitLab user objects (`username`, profile `/users/{id}` with
+    /// `public_email`).
+    gitlab: bool,
     host: String,
     map: HashMap<String, String>,
     cache: HashMap<i64, Option<i64>>,
@@ -43,6 +46,7 @@ impl Users {
     pub fn new(row: &ImportRow) -> Self {
         Self {
             import_id: row.id,
+            gitlab: row.is_gitlab(),
             host: row.source_host(),
             map: row
                 .options()
@@ -62,7 +66,8 @@ impl Users {
         gh: &GitHub,
         user: &Value,
     ) -> anyhow::Result<Option<i64>> {
-        let (Some(source_id), Some(login)) = (user["id"].as_i64(), user["login"].as_str()) else {
+        let login = user["login"].as_str().or(user["username"].as_str());
+        let (Some(source_id), Some(login)) = (user["id"].as_i64(), login) else {
             return Ok(None);
         };
         if login.eq_ignore_ascii_case("ghost") {
@@ -123,7 +128,12 @@ impl Users {
         };
 
         // The list payloads carry no email; the profile has the public one.
-        let profile = match gh.get(&format!("/users/{login}")).await {
+        let profile_path = if self.gitlab {
+            format!("/users/{source_id}")
+        } else {
+            format!("/users/{login}")
+        };
+        let profile = match gh.get(&profile_path).await {
             Ok((p, _)) => p,
             Err(e)
                 if e.downcast_ref::<HttpError>()
@@ -135,7 +145,8 @@ impl Users {
         };
         let mut via = None;
         let mut local: Option<i64> = None;
-        if let Some(email) = profile["email"].as_str().filter(|e| !e.is_empty()) {
+        let email_key = if self.gitlab { "public_email" } else { "email" };
+        if let Some(email) = profile[email_key].as_str().filter(|e| !e.is_empty()) {
             local = sqlx::query_scalar(
                 "SELECT e.user_id FROM user_emails e JOIN users u ON u.id = e.user_id
                   WHERE lower(e.email) = lower($1) AND e.verified AND u.type = 'User'

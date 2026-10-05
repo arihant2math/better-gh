@@ -15,6 +15,7 @@ import { installFineGrainedTokenMocks } from './fineGrainedTokens';
 import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
 import { installLicenseMocks } from './licenses';
+import { installMannequinMocks } from './mannequins';
 import { installMetadataImportMocks } from './metadataImports';
 import { installModerationMocks } from './moderation';
 import { installPackageMocks } from './packages';
@@ -24,6 +25,7 @@ import { installRelationshipMocks } from './relationships';
 import { installRepoNavMocks } from './repoNav';
 import { installRulesetMocks } from './rulesets';
 import { installRunnerMocks } from './runners';
+import { installSecretScanningMocks } from './secretScanning';
 import { installUploadMocks } from './uploads';
 import { installUserMocks } from './user';
 
@@ -40,6 +42,7 @@ export function installExtraMocks(server: MockServer): void {
   installUploadMocks(server);
   installImportMocks(server);
   installMetadataImportMocks(server);
+  installMannequinMocks(server);
   installDeploymentMocks(server);
   installPackageMocks(server);
   installInsightsMocks(server);
@@ -49,4 +52,5 @@ export function installExtraMocks(server: MockServer): void {
   installRunnerMocks(server);
   installCacheMocks(server);
   installFineGrainedTokenMocks(server);
+  installSecretScanningMocks(server);
 }

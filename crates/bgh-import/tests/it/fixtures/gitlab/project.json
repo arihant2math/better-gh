@@ -1,0 +1,34 @@
+{
+  "id": 99,
+  "description": "GitLab import fixture",
+  "name": "glproj",
+  "name_with_namespace": "group / sub / glproj",
+  "path": "glproj",
+  "path_with_namespace": "group/sub/glproj",
+  "created_at": "2024-01-01T00:00:00.000Z",
+  "default_branch": "main",
+  "tag_list": [
+    "legacy"
+  ],
+  "topics": [
+    "gitlab",
+    "import"
+  ],
+  "ssh_url_to_repo": "git@gitlab.example:group/sub/glproj.git",
+  "http_url_to_repo": "{{CLONE_URL}}",
+  "web_url": "https://gitlab.example/group/sub/glproj",
+  "readme_url": "https://gitlab.example/group/sub/glproj/-/blob/main/README.md",
+  "visibility": "public",
+  "issues_enabled": true,
+  "merge_requests_enabled": true,
+  "wiki_enabled": true,
+  "archived": false,
+  "last_activity_at": "2024-03-01T00:00:00.000Z",
+  "namespace": {
+    "id": 7,
+    "name": "sub",
+    "path": "sub",
+    "kind": "group",
+    "full_path": "group/sub"
+  }
+}

@@ -211,6 +211,10 @@ where
                 .await
                 .map_err(|e| internal(&e))?;
             let pusher_id = authz.user.as_ref().map(|u| u.user.id);
+            let secrets =
+                bgh_security::push::prepare(state, &access.repo, &access.owner.login, pusher_id)
+                    .await
+                    .map_err(|e| internal(&e))?;
             let actor = match (&authz.user, rules.is_unruled()) {
                 (_, true) => None,
                 (Some(u), false) => Some(
@@ -228,12 +232,16 @@ where
                     let rules = &rules;
                     async move {
                         crate::git_http::deny_hidden_refs(&updates)?;
-                        let policy = match &actor {
+                        let mut policy = match &actor {
                             None => smart_http::PushPolicy::default(),
                             Some(actor) => {
                                 protection::authorize_push(state, rules, actor, &updates).await?
                             }
                         };
+                        policy.object_check = bgh_security::push::combine(
+                            policy.object_check.take(),
+                            secrets.as_ref().map(|s| s.object_check(&updates)),
+                        );
                         Ok(policy.with_limits(limits))
                     }
                 },
