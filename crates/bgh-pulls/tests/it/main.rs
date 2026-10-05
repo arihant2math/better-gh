@@ -5,6 +5,7 @@
 mod common;
 
 mod checks;
+mod governance;
 mod merge;
 mod pulls;
 mod reviews;

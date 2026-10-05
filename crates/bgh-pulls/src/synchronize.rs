@@ -284,6 +284,14 @@ pub async fn synchronize(state: &AppState, pull_id: i64, actor_id: Option<i64>) 
         tx.sync_model(SyncModel::ReviewComment, row.id, SyncAction::Update)
             .await?;
     }
+    if head_changed {
+        // The pusher of the current head (`require_last_push_approval`).
+        sqlx::query("UPDATE pull_requests SET last_pusher_id = $2 WHERE issue_id = $1")
+            .bind(pull.id())
+            .bind(actor_id)
+            .execute(&mut *tx)
+            .await?;
+    }
     if force_pushed {
         timeline::record(
             &mut tx,
