@@ -93,6 +93,7 @@ const go = async (path) => {
 const shot = async (name) => shots && page.screenshot({ path: join(shots, `${name}.png`) });
 
 const R = '/repos/acme/api';
+const run = Date.now().toString(36); // unique titles per run
 const showcase = (await get(`${R}/issues?per_page=100&state=all`)).find((i) => i.title.startsWith('Timeline showcase'));
 if (!showcase) throw new Error('seed missing: run web/scripts/seed-real.mjs first');
 const N = showcase.number;
@@ -239,7 +240,7 @@ if (ms) {
 await go('/acme/api/issues/new/choose');
 await page.getByRole('listitem').filter({ hasText: 'Bug report' }).click();
 await page.waitForSelector('#field-version');
-await page.locator('#issue-title').fill('[Bug]: smoke form issue');
+await page.locator('#issue-title').fill(`[Bug]: smoke form issue ${run}`);
 await page.getByRole('button', { name: /^Create (Ctrl|⌘)/ }).click();
 check(await page.getByText('This field is required.').first().isVisible(), 'required form fields are validated');
 await page.locator('#field-version').fill('v9.9.9');
@@ -247,21 +248,21 @@ await page.locator('#field-what-happened').fill('It broke.');
 await page.locator('#field-terms input[type=checkbox]').check();
 await shot('issue-form');
 await page.getByRole('button', { name: /^Create (Ctrl|⌘)/ }).click();
-const formIssue = await eventually(async () => (await get(`${R}/issues?per_page=100&state=all`)).find((i) => i.title === '[Bug]: smoke form issue'));
+const formIssue = await eventually(async () => (await get(`${R}/issues?per_page=100&state=all`)).find((i) => i.title === `[Bug]: smoke form issue ${run}`));
 check(!!formIssue && formIssue.body.includes('### Version\n\nv9.9.9') && formIssue.body.includes('- [X] I agree'), 'issue form rendered to markdown on the server');
 check(!!formIssue && formIssue.labels.some((l) => l.name === 'bug'), 'template labels applied');
 await eventually(async () => page.url().endsWith(`/issues/${formIssue?.number}`), 5000);
 check(page.url().endsWith(`/issues/${formIssue?.number}`), 'navigates to the created issue');
 
 // ------------------------------------------------------------------ transfer
-const moving = (await rest('POST', '/repos/acme/web/issues', { title: 'smoke transfer me' })).data;
+const moving = (await rest('POST', '/repos/acme/web/issues', { title: `smoke transfer me ${run}` })).data;
 await go(`/acme/web/issues/${moving.number}`);
 await page.getByRole('button', { name: 'Transfer issue' }).click();
 await page.getByRole('radio').first().check();
 await page.getByRole('dialog').getByRole('button', { name: 'Transfer issue' }).click();
 await page.waitForURL(/\/acme\/api\/issues\/\d+$/, { timeout: 8000 }).catch(() => undefined);
 check(/\/acme\/api\/issues\/\d+$/.test(page.url()), 'transfer navigates to the new location');
-const moved = await eventually(async () => (await get(`${R}/issues?per_page=100&state=all`)).find((i) => i.title === 'smoke transfer me'));
+const moved = await eventually(async () => (await get(`${R}/issues?per_page=100&state=all`)).find((i) => i.title === `smoke transfer me ${run}`));
 check(!!moved, 'issue transferred on the server');
 
 check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);

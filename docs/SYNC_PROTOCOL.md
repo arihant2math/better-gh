@@ -177,6 +177,7 @@ interface Issue {             // issues and pull requests share this model
   activeLockReason?: 'off-topic' | 'too heated' | 'resolved' | 'spam' | null;
   reactions?: ReactionCounts;
   parentId?: ID | null;       // sub-issues: parent issue id
+  subIssueIds?: ID[];         // sub-issues in priority order (may be in other repos)
   pinned?: boolean;           // pinned to the repo's issue list
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -250,7 +251,9 @@ interface IssueEvent {        // timeline event (LAZY model)
     commitId?: string;
     lockReason?: string;                          // locked
     sourceIssueId?: ID; sourceCommentId?: ID;     // cross-referenced
-    subIssueId?: ID; parentIssueId?: ID;          // sub_issue_* / parent_issue_*
+    sourceNumber?: number; sourceRepository?: string; sourceIsPr?: boolean; // ("owner/repo")
+    subIssueId?: ID; subIssueNumber?: number; subIssueRepository?: string;          // sub_issue_*
+    parentIssueId?: ID; parentIssueNumber?: number; parentIssueRepository?: string; // parent_issue_*
     fromRepository?: string;                      // transferred ("owner/repo")
   };
   createdAt: Timestamp;
@@ -543,6 +546,11 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | `POST /_bgh/auth/logout` | — | `204`; server closes the user's sync sockets with `4001` |
 | `GET /_bgh/render/blob/{owner}/{repo}/{sha}?path=src/main.rs` | — | `{"language":"rust","lines":["<span class=\"hl-k\">fn</span> main() {", …]}` — one HTML string per source line, `Cache-Control: public, max-age=31536000, immutable`. `404` when no highlighter applies (client renders plain text). |
 | `DELETE /_bgh/notifications/threads/{id}/read` | `X-Client-Tx` | `204`; marks a thread unread (GitHub's REST API has no endpoint for this) |
+| `GET /_bgh/repos/{owner}/{repo}/issue-templates[?ref=]` | — | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, body, form}], config: {blank_issues_enabled, contact_links}, errors}`; the client addresses templates by basename (`?template=bug_report.yml`) |
+| `PUT\|DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/pin` | `X-Client-Tx` | `204`; pin / unpin (max 3 per repo → `422`) |
+| `GET /_bgh/repos/{owner}/{repo}/issues/{n}/viewer-reactions` | — | `{"issue": ["+1"], "comments": {"<comment id>": ["heart"]}}` — the viewer's own reactions (rows only carry counts) |
+| `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/reactions/{content}` | `X-Client-Tx` | `204`; removes the viewer's reaction with that content (GitHub's REST API needs the reaction id); `204` when there is none |
+| `DELETE /_bgh/repos/{owner}/{repo}/issues/comments/{id}/reactions/{content}` | `X-Client-Tx` | same for a comment |
 
 Highlight classes (`hl-*`): `k` keyword, `s` string, `c` comment, `n`
 number/constant, `t` type, `f` function/macro name, `a` attribute/tag. The

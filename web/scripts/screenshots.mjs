@@ -74,6 +74,15 @@ for (const theme of ['light', 'dark']) {
     await shot(page, 'issue-labels-picker', null, '[role=listbox]');
     await page.keyboard.press('Escape');
   }
+  // issues-web: the seeded timeline showcase (#151), labels, milestones, issue forms.
+  await shot(page, `issue-showcase${t}`, '/acme/api/issues/151', '[data-event]');
+  await shot(page, `labels${t}`, '/acme/api/labels', 'text=labels');
+  await shot(page, `milestones${t}`, '/acme/api/milestones', 'text=New milestone');
+  if (theme === 'light') {
+    await shot(page, 'milestone', '/acme/api/milestone/2', 'text=complete');
+    await shot(page, 'new-issue-choose', '/acme/api/issues/new/choose', 'text=Bug report');
+    await shot(page, 'new-issue-form', '/acme/api/issues/new?template=bug_report.yml', '#field-version');
+  }
   await shot(page, `pulls${t}`, '/acme/api/pulls', '[role=listitem]');
   const prNumber = await page.evaluate(() => document.querySelector('[role=listitem] a')?.getAttribute('href'));
   await shot(page, `pull-conversation${t}`, prNumber, 'text=Conversation');

@@ -27,7 +27,7 @@ from the mock, handy for testing rollbacks.
 | `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`) |
 | `src/ui/` | design system (import from `ui/…` files or the `ui` barrel) |
 | `src/shortcuts/` | `useShortcuts`, `formatKeys` |
-| `src/components/` | domain components shared by pages (e.g. `diff/DiffViewer`) |
+| `src/components/` | domain components shared by pages: `diff/DiffViewer`, `editor/MarkdownEditor` (toolbar, preview, `@`/`#` autocomplete), `labels/ColorPicker`, `ConfirmDialog` |
 | `src/pages/<area>/` | route pages, one folder per area, each with its own CSS module |
 | `src/mock/` | in-browser backend (reference implementation of the sync protocol) |
 
@@ -196,3 +196,10 @@ npm run build && npx vite preview &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/screenshots.mjs http://localhost:4173 /tmp/shots
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimistic writes, rollback, reload, keyboard
 ```
+
+Against the real backend (bgh-server on :3000 + `npm run dev`): seed it with
+`node web/scripts/seed-real.mjs` (accounts via `bgh admin`, then REST + git
+push), then `node web/scripts/real-smoke.mjs http://localhost:5173` drives
+the issues UI and verifies every write through REST. Both need
+`DATABASE_URL` and `BGH_BIN`; the smoke test signs in by minting a session
+row and stubs `/_bgh/boot` while the server doesn't serve it.

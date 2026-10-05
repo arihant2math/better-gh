@@ -27,6 +27,8 @@ Web client (`/_bgh`):
 | `GET /_bgh/repos/{o}/{r}/issue-templates[?ref=]` | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, projects, issue_type, body, form}], config: {blank_issues_enabled, contact_links: [{name, url, about}]}, errors: [{filename, message}]}` — parsed from `.github/ISSUE_TEMPLATE/*.md|yml|yaml` + `config.yml` (legacy `ISSUE_TEMPLATE.md` fallback), forms validated (types, unique ids/labels, options), cached in Redis by commit SHA |
 | `GET /_bgh/repos/{o}/{r}/pinned-issues` | array of issues (GitHub shape) |
 | `PUT/DELETE /_bgh/repos/{o}/{r}/issues/{n}/pin` | 204 (max 3 per repo → 422; write permission) |
+| `GET /_bgh/repos/{o}/{r}/issues/{n}/viewer-reactions` | `{issue: [content], comments: {"<id>": [content]}}` — the viewer's own reactions (added by issues-web) |
+| `DELETE /_bgh/repos/{o}/{r}/issues/{n}/reactions/{content}`, `DELETE /_bgh/repos/{o}/{r}/issues/comments/{id}/reactions/{content}` | 204; delete the viewer's reaction by content (idempotent; added by issues-web) |
 
 Media types: `application/vnd.github.{raw,text,html,full}+json` select
 `body` / `body_text` / `body_html` on issues, comments and timeline comments
@@ -88,6 +90,14 @@ Shape builders live in `bgh_issues::json` (`label_sync_json`,
 `bgh_issues::service` (`issue_sync_json`, `sync_comment`,
 `sync_repo_open_issues`); swap them for B8's shared helpers (`bgh/sync`)
 once those land on the integration branch.
+
+issues-web added `Issue.subIssueIds` (ordered children; the parent is
+re-synced on add/remove/reorder) and the event data keys `sourceNumber`,
+`sourceRepository`, `sourceIsPr` (stored on new `cross-referenced`
+events), `subIssueNumber`/`subIssueRepository`,
+`parentIssueNumber`/`parentIssueRepository`; the bootstrap/partial shapes in
+`bgh_core::sync::shapes` now emit the same issue fields (`activeLockReason`,
+`parentId`, `subIssueIds`, `pinned`) and event data as these deltas.
 
 Additive protocol changes made here (documented in `SYNC_PROTOCOL.md` and
 `web/src/sync/models.ts`): `Issue.activeLockReason?`, `Issue.parentId?`,

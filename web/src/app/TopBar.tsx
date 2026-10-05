@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useRef, useState, type ReactNode } from 'react';
 import { Link, matchPath, navigate, prefetch, useLocation } from '../router';
 import { store, sync } from '../sync';
-import { issueByNumber, orgByLogin, repoByName, userByLogin } from '../sync/selectors';
+import { issueByNumber, milestoneByNumber, orgByLogin, repoByName, userByLogin } from '../sync/selectors';
 import { Avatar } from '../ui/Badge';
 import { IconButton } from '../ui/Button';
 import { BellIcon, MoonIcon, PlusIcon, SearchIcon, SidebarCollapseIcon, SidebarExpandIcon, SunIcon } from '../ui/icons';
@@ -26,6 +26,9 @@ const SECTION_TITLES: Record<string, string> = {
   security: 'Security',
   pulse: 'Insights',
   settings: 'Settings',
+  labels: 'Labels',
+  milestones: 'Milestones',
+  milestone: 'Milestones',
 };
 
 const Crumbs = observer(function Crumbs() {
@@ -55,13 +58,18 @@ const Crumbs = observer(function Crumbs() {
       parts.push({ to: base, label: p.repo });
       const section = pathname.split('/')[3];
       if (section && SECTION_TITLES[section]) {
-        const listPath = section === 'pull' ? 'pulls' : section === 'blob' || section === 'tree' ? '' : section;
+        const listPath = section === 'pull' ? 'pulls' : section === 'milestone' ? 'milestones' : section === 'blob' || section === 'tree' ? '' : section;
         parts.push({ to: listPath ? `${base}/${listPath}` : base, label: SECTION_TITLES[section] });
       }
-      if (p.number) {
-        const repo = repoByName(p.owner, p.repo);
+      const repo = repoByName(p.owner, p.repo);
+      if (p.number && (section === 'milestone' || section === 'milestones')) {
+        const ms = repo ? milestoneByNumber(repo.id, Number(p.number)) : undefined;
+        parts.push({ to: `${base}/milestone/${p.number}`, label: ms?.title ?? `#${p.number}` });
+      } else if (p.number) {
         const issue = repo ? issueByNumber(repo.id, Number(p.number)) : undefined;
         parts.push({ to: pathname, label: issue ? `#${issue.number} ${issue.title}` : `#${p.number}` });
+      } else if (section === 'issues' && pathname.split('/')[4] === 'new') {
+        parts.push({ to: pathname, label: 'New issue' });
       }
     }
   }
