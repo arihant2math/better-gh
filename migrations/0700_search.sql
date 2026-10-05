@@ -9,11 +9,11 @@ CREATE INDEX issues_updated_idx ON issues (updated_at DESC, id DESC);
 CREATE INDEX issues_created_idx ON issues (created_at DESC, id DESC);
 CREATE INDEX issues_comments_count_idx ON issues (comments_count DESC, id DESC);
 CREATE INDEX issues_closed_at_idx ON issues (closed_at) WHERE closed_at IS NOT NULL;
-CREATE INDEX issues_closed_by_idx ON issues (closed_by_id) WHERE closed_by_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS issues_closed_by_idx ON issues (closed_by_id) WHERE closed_by_id IS NOT NULL;
 
 -- `in:comments` and `commenter:`.
 CREATE INDEX comments_search_idx ON comments USING gin (to_tsvector('english', body));
-CREATE INDEX comments_author_idx ON comments (author_id, issue_id);
+CREATE INDEX comments_author_issue_idx ON comments (author_id, issue_id);
 
 -- Repositories: name/description full text, name trigram, sort by stars/forks.
 CREATE INDEX repositories_search_idx ON repositories USING gin ((

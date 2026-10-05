@@ -62,6 +62,6 @@ CREATE INDEX jobs_kind_id_idx ON jobs (kind, id DESC);
 -- Admin user listing: filters on site_admin / suspended.
 CREATE INDEX users_site_admin_idx ON users (id) WHERE site_admin;
 CREATE INDEX users_suspended_idx ON users (suspended_at) WHERE suspended_at IS NOT NULL;
-CREATE INDEX users_created_idx ON users (type, created_at DESC, id DESC);
+CREATE INDEX users_type_created_idx ON users (type, created_at DESC, id DESC);
 CREATE INDEX repositories_size_idx ON repositories (size DESC, id);
 CREATE INDEX repositories_owner_size_idx ON repositories (owner_id, size);

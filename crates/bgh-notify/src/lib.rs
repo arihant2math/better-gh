@@ -2,7 +2,8 @@
 //!
 //! * Notifications API: `/notifications`, `/repos/{o}/{r}/notifications`,
 //!   threads (get / mark read / mark done) and thread subscriptions;
-//!   repository watching (`/repos/{o}/{r}/subscription`). Threads are
+//!   repository watching semantics (the `/repos/{o}/{r}/subscription`
+//!   route itself is served by bgh-repos, same `watches` table). Threads are
 //!   created by [`fanout`] from domain events with GitHub's reasons and
 //!   recorded as `notification` sync actions in `user:{id}`.
 //! * Webhooks: repository and organization hooks, ping/test, delivery log
@@ -65,12 +66,6 @@ pub fn router() -> Router<AppState> {
         .route(
             "/repos/{owner}/{repo}/notifications",
             get(threads::list_for_repo).put(threads::mark_repo),
-        )
-        .route(
-            "/repos/{owner}/{repo}/subscription",
-            get(subs::get_repo_subscription)
-                .put(subs::set_repo_subscription)
-                .delete(subs::delete_repo_subscription),
         )
         // Repository webhooks
         .route(
