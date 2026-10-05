@@ -1,4 +1,4 @@
-Integration: in progress
+Integration: ready
 SAML 2.0 SSO (pure-Rust SP: metadata, SP/IdP-initiated sign-in, signed + encrypted assertions, SLO, JIT, attribute mapping, group sync) and SCIM 2.0 (enterprise Users/Groups, org Users, deprovisioning revokes credentials).
 
 # P49 saml-scim — status
@@ -113,6 +113,30 @@ Enabled by `auth_providers.scim.enabled` (404 otherwise). Under `/api/v3`:
   (creates the account only when sign-up is open or the caller is a site
   admin, else 403); `active: false` / `DELETE` remove the membership only.
 
+## Web
+
+* Sign-in page: "Sign in with {display_name}" SSO button when
+  `/_bgh/site` has `saml` (also in SSO-only mode).
+* Site admin → Settings → Authentication: SAML block (IdP fields, IdP
+  metadata import from XML or URL, SP panel from `GET /_bgh/admin/saml`
+  with copyable URLs and certificate fingerprints/expiry/errors, SP
+  certificate + write-only key with "Generate key pair", switches,
+  NameID format, attribute mapping, clock skew); form model and
+  validation in `settingsForm.ts` (`SamlForm`, `samlValue`, `samlErrors`,
+  unit tests). "SCIM provisioning" switch with endpoint URLs.
+* New lazy page `/site-admin/scim` (nav "SCIM provisioning", `g v`):
+  status, endpoint URL, "Generate SCIM token" (`scim:enterprise`, shown
+  once), paginated provisioned users (userName filter) and groups.
+* `scopes.ts`: `scim:enterprise` (site admins only). Mocks in
+  `web/src/mock/extra/saml.ts` (+ tests).
+* Bundle: initial JS unchanged (144.6 KB gzip after the merge); settings
+  chunk +3.4 KB, new SCIM chunk 3.5 KB.
+* Verified with Playwright against `npm run dev:mock` (light/dark) and
+  against a real `bgh serve`: enable SAML+SCIM, settings SAML block,
+  generate key pair + save (key stored write-only, SP cert shown), SCIM
+  page, sign-in button, and a browser IdP-initiated sign-in with a
+  response signed by signxml (lands signed in as the JIT user).
+
 ## Tables / migrations
 
 `6100_saml_scim.sql`: `ssh_keys.saml_synced`, `gpg_keys.saml_synced`,
@@ -170,6 +194,8 @@ per tenant), `scim_groups`, `scim_group_members`.
 ## Known gaps / TODO
 
 * One SAML IdP per instance (GHES model); no per-organization SAML.
+* The web client's sign-out does not call `POST /_bgh/saml/logout` yet
+  (SP-initiated SLO is available to API clients).
 * No `EncryptedID` NameIDs, no Artifact binding, no signed
   `LogoutResponse` verification (responses only redirect to `/login`).
 * Organization SCIM does not revoke credentials (it manages membership
