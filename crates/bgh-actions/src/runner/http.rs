@@ -265,7 +265,11 @@ pub async fn unregister(server_url: &str, token: &str) -> anyhow::Result<()> {
         .send()
         .await
         .context("unregister request failed")?;
-    if !resp.status().is_success() && resp.status() != StatusCode::NOT_FOUND {
+    // 401/404: already gone (ephemeral runners are removed after their job).
+    if !resp.status().is_success()
+        && resp.status() != StatusCode::NOT_FOUND
+        && resp.status() != StatusCode::UNAUTHORIZED
+    {
         bail!("unregister failed: {}", error_for(resp).await);
     }
     Ok(())

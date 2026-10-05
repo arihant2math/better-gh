@@ -24,6 +24,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'retention', title: 'Data retention', anchor: 'retention' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
   { key: 'actions', title: 'Actions', anchor: 'actions' },
+  { key: 'markdown', title: 'Markdown', anchor: 'markdown' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -109,6 +110,7 @@ export interface SettingsForm {
   retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
   actions: SiteSettings['actions'];
   privacy: { private_mode: boolean; anonymous_directory: boolean; allowed: Visibility[] };
+  markdown: SiteSettings['markdown'];
   secret_scanning: { available: boolean; enable_all: boolean; push_protection_all: boolean; max_blob_kb: string; push_scan_timeout_secs: string };
 }
 
@@ -277,6 +279,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       anonymous_directory: s.privacy?.allow_anonymous_directory ?? true,
       allowed: VISIBILITIES.filter((v) => (s.privacy?.allowed_visibilities ?? VISIBILITIES).includes(v)),
     },
+    markdown: { ...(s.markdown ?? { image_proxy: true }) },
     secret_scanning: secretScanningToForm(s.secret_scanning ?? SECRET_SCANNING_DEFAULTS),
   };
 }
@@ -533,6 +536,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           allow_anonymous_directory: f.privacy.anonymous_directory,
           allowed_visibilities: f.privacy.allowed,
         };
+        break;
+      case 'markdown':
+        out.markdown = { ...f.markdown };
         break;
     }
   }

@@ -96,3 +96,51 @@ pub async fn blob(
     h.insert(header::ETAG, HeaderValue::from_str(&etag).expect("etag"));
     Ok(resp)
 }
+
+/// Max blocks per `POST /_bgh/render/code` request.
+const MAX_CODE_BLOCKS: usize = 50;
+
+#[derive(Debug, Deserialize)]
+pub struct CodeBlock {
+    pub lang: String,
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CodeRequest {
+    pub blocks: Vec<CodeBlock>,
+}
+
+/// `POST /_bgh/render/code` `{blocks: [{lang, code}]}` →
+/// `{blocks: [{language, lines} | null]}`: highlighting for fenced code
+/// blocks rendered by the web client's Markdown renderer (P35). `null`
+/// when no grammar matches the language or the block is too large; the
+/// client keeps plain text. Pure function of the input (no repo access).
+pub async fn code(Json(req): Json<CodeRequest>) -> ApiResult<Json<serde_json::Value>> {
+    if req.blocks.len() > MAX_CODE_BLOCKS {
+        return Err(ApiError::unprocessable(format!(
+            "at most {MAX_CODE_BLOCKS} blocks per request"
+        )));
+    }
+    let out = tokio::task::spawn_blocking(move || {
+        req.blocks
+            .into_iter()
+            .map(|b| {
+                if b.code.len() > highlight::MAX_HIGHLIGHT_BYTES {
+                    return None;
+                }
+                let h = highlight::highlight_lang(&b.lang, &b.code);
+                match h.language {
+                    Some(language) if h.highlighted => Some(HighlightedBlob {
+                        language,
+                        lines: h.lines,
+                    }),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(ApiError::internal)?;
+    Ok(Json(serde_json::json!({ "blocks": out })))
+}

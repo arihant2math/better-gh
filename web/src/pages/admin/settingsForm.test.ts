@@ -59,6 +59,7 @@ const settings: SiteSettings = {
   retention: { enabled: true, notifications_days: 150, webhook_payload_days: 30, webhook_delivery_days: 90, activity_days: 0 },
   actions: { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false },
   privacy: { private_mode: false, allow_anonymous_directory: true, allowed_visibilities: ['public', 'internal', 'private'] },
+  markdown: { image_proxy: true },
 };
 
 describe('git settings form', () => {
@@ -136,6 +137,15 @@ describe('actions settings section', () => {
     expect(toPatch(draft, ['actions'])).toEqual({
       actions: { default_workflow_permissions: 'write', can_approve_pull_request_reviews: false },
     });
+  });
+
+  it('round-trips the markdown image proxy switch (default on)', () => {
+    const saved = toForm(settings);
+    const draft = { ...saved, markdown: { image_proxy: false } };
+    expect(dirtySections(draft, saved)).toEqual(['markdown']);
+    expect(toPatch(draft, ['markdown'])).toEqual({ markdown: { image_proxy: false } });
+    const { markdown: _m, ...older } = settings;
+    expect(toForm(older as SiteSettings).markdown.image_proxy).toBe(true);
   });
 
   it('defaults to read when the server has no actions section', () => {

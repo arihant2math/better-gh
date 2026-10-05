@@ -41,6 +41,7 @@ http-body-util.workspace = true
 lettre.workspace = true
 url.workspace = true
 chacha20poly1305.workspace = true
+hmac.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

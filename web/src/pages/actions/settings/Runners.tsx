@@ -10,6 +10,8 @@ import {
   type RunnerLabel,
   type SettingsScope,
 } from '../../../api/actions';
+import { listOrgGroups, runnerArch } from '../../../api/runners';
+import { Link } from '../../../router';
 import { Tag } from '../../../ui/Badge';
 import { Button, IconButton, cx } from '../../../ui/Button';
 import { Dialog } from '../../../ui/Dialog';
@@ -41,6 +43,10 @@ export function Runners({ scope }: { scope: RunnerScope }) {
   const [removing, setRemoving] = useState<Runner | null>(null);
   const runners = (data ?? []).filter((r) => !hidden.has(String(r.id)));
   const where = scope.kind === 'org' ? 'organization' : 'repository';
+  // Organization runners: show each runner's group (one cheap request).
+  const groups = useRes(scope.kind === 'org' ? { key: `${scopeKey(scope)}:runner-groups`, load: () => listOrgGroups(scope.org) } : null);
+  const groupName = (id: number | null | undefined) => (id == null ? undefined : groups.data?.find((g) => g.id === id)?.name);
+  const groupsLink = scope.kind === 'org' ? `/organizations/${encodeURIComponent(scope.org)}/settings/actions/runner-groups` : null;
 
   // Runner status changes on its own: refresh while the page is open.
   useEffect(() => {
@@ -60,7 +66,17 @@ export function Runners({ scope }: { scope: RunnerScope }) {
   return (
     <Section
       title="Runners"
-      description={`Self-hosted runners registered to this ${where}. Jobs run on a runner whose labels include every label in the job's runs-on.`}
+      description={
+        <>
+          Self-hosted runners registered to this {where}. Jobs run on a runner whose labels include every label in the job's runs-on.
+          {groupsLink && (
+            <>
+              {' '}
+              <Link to={groupsLink}>Manage runner groups</Link> to choose which repositories can use them.
+            </>
+          )}
+        </>
+      }
       action={!error ? newButton : undefined}
     >
       {error ? (
@@ -74,7 +90,7 @@ export function Runners({ scope }: { scope: RunnerScope }) {
       ) : (
         <div className={styles.list} role="list">
           {runners.map((r) => (
-            <RunnerRow key={r.id} scope={scope} runner={r} onChanged={() => void reload(res)} onRemove={() => setRemoving(r)} />
+            <RunnerRow key={r.id} scope={scope} runner={r} group={groupName(r.runner_group_id)} onChanged={() => void reload(res)} onRemove={() => setRemoving(r)} />
           ))}
         </div>
       )}
@@ -111,7 +127,8 @@ export function Runners({ scope }: { scope: RunnerScope }) {
   );
 }
 
-function RunnerRow({ scope, runner, onChanged, onRemove }: { scope: RunnerScope; runner: Runner; onChanged: () => void; onRemove: () => void }) {
+function RunnerRow({ scope, runner, group, onChanged, onRemove }: { scope: RunnerScope; runner: Runner; group?: string; onChanged: () => void; onRemove: () => void }) {
+  const arch = runnerArch(runner);
   // Optimistic label overlay until the refreshed list arrives.
   const [labels, setLabels] = useState<RunnerLabel[] | null>(null);
   const [base, setBase] = useState(runner.labels);
@@ -171,7 +188,11 @@ function RunnerRow({ scope, runner, onChanged, onRemove }: { scope: RunnerScope;
       <div className={styles.runnerMain}>
         <div className={styles.runnerTitle}>
           <span className={styles.runnerName}>{runner.name}</span>
-          <span className={styles.meta}>{runner.os}</span>
+          <span className={styles.meta}>
+            {runner.os}
+            {arch && ` · ${arch}`}
+            {group && ` · ${group} group`}
+          </span>
           {runner.ephemeral && <Tag>Ephemeral</Tag>}
         </div>
         <div className={styles.labels}>
