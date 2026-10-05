@@ -9,6 +9,10 @@ export interface PublicSiteInfo {
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   signup_policy: 'open' | 'invite' | 'closed';
   password_login: boolean;
+  /** Site admins may still use their password when `password_login` is off. */
+  password_login_admin_exempt?: boolean;
+  /** LDAP sign-in (directory passwords) is enabled. */
+  ldap?: boolean;
   oidc_providers: { name: string; display_name: string }[];
   /** Sign-in required for everything (absent on older servers). */
   private_mode?: boolean;
