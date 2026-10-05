@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Metadata importer part 2: pull requests, reviews, review comments, wiki, webhooks/protection/rulesets, GitLab source, mannequin reclaim (bgh-import, bgh-pulls `import`, migration 6300); web form, mannequin pages, Playwright 29/29.
 
 # P51 — Metadata importer, part 2: pull requests, reviews, wiki, GitLab source, mannequin reclaim — status

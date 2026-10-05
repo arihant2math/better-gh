@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P65 secret scanning + push protection: new crate bgh-security, migration 7700, REST + webhooks, web Security tab/alerts/unblock/settings; full gate green.
 
 # P65 — Secret scanning and push protection: status

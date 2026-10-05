@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P61 observability: Prometheus `/metrics` (bearer token or private listener, off by default), `BGH_LOG_FORMAT=json`, request span with user/token/auth method/client IP, optional OTLP traces (`--features otlp`).
 
 # P61 Observability — status
