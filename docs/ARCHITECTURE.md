@@ -71,8 +71,9 @@ Each domain crate exposes exactly three functions, all already wired into
   `X-GitHub-Media-Type`).
 * `pub fn web_router() -> Router<AppState>`: routes with **absolute** paths
   (`/_bgh/...`, git transport, raw/archive downloads), merged at the root.
-* `pub fn register(reg: &mut bgh_core::Registry)`: background job handlers
-  and event listeners.
+* `pub fn register(reg: &mut bgh_core::Registry)`: background job handlers,
+  event listeners and long-running services (`reg.service`, started by the
+  `bgh` binary only, e.g. the built-in CI runner).
 
 Domain crates depend on `bgh-core` (and `bgh-git` when needed),
 **never on each other's internals** — shared logic that two domains need
@@ -94,7 +95,8 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 `BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
 `BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
-`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`.
+`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`; CI settings `BGH_ACTIONS_*`
+(see `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,

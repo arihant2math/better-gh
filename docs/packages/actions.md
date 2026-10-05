@@ -130,9 +130,12 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   cancel, concurrency, re-runs, artifacts, logs/zip, job token scope,
   check suites/runs, startup failure), `settings.rs` (secrets at three
   levels incl. sealed boxes and precedence, variables, runners & labels,
-  SSE log stream), `e2e.rs` (real workflow executed by the built-in runner
-  code with the shell executor: checkout from this server, outputs across
-  jobs, artifacts, secrets masking, annotations, check runs).
+  SSE log stream), `e2e.rs` (real workflows executed with the shell
+  executor: built-in runner via `services::run_queued_jobs` — checkout from
+  this server, outputs across jobs, matrix, artifacts, secret masking,
+  annotations, step summary, check suite/runs — and an external runner via
+  `HttpBackend` over TCP). Runner unit tests (39) use a mock backend and
+  cover the docker executor (skipped when `docker info` fails).
 
 ## Known gaps / TODO
 
@@ -149,3 +152,10 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).
 * Usage/billing, OIDC tokens, runner groups, JIT config not implemented.
+* Runner: upload-artifact ignores `overwrite`/`compression-level`/`pattern`;
+  checkout ignores `submodules`/`lfs`; masking does not cover encoded forms
+  of secrets; docker actions ignore `pre-entrypoint`; `docker login` for
+  private images uses the host's docker config; under the shell executor a
+  job `container:` is ignored (warning) and services get no network alias.
+* `bgh-runner run` cancels in-flight jobs on shutdown (their `always()`
+  steps still run).
