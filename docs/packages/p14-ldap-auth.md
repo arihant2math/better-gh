@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 LDAP sign-in and sync, password_login enforcement, git basic-auth throttling, LDAP/OIDC team sync, admin LDAP UI.
 
 # P14 ldap-auth — status
