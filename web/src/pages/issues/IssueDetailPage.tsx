@@ -3,9 +3,11 @@ import { useEffect } from 'react';
 import { NotFound } from '../../app/NotFound';
 import { navigate, useParams } from '../../router';
 import { issueByNumber, repoByName, repoFullName } from '../../sync/selectors';
+import { IssueActions } from './IssueActions';
 import { IssueHeader } from './IssueHeader';
 import { IssueSidebar } from './IssueSidebar';
 import styles from './IssueView.module.css';
+import { SubIssuesPanel } from './SubIssuesPanel';
 import { Timeline } from './Timeline';
 
 /**
@@ -30,8 +32,8 @@ export default observer(function IssueDetailPage() {
     <div className={styles.page}>
       <IssueHeader issue={issue} />
       <div className={styles.columns}>
-        <Timeline issue={issue} repoFullName={repoFullName(repo)} />
-        <IssueSidebar issue={issue} repo={repo} />
+        <Timeline issue={issue} repoFullName={repoFullName(repo)} afterBody={<SubIssuesPanel issue={issue} repo={repo} />} />
+        <IssueSidebar issue={issue} repo={repo} extra={<IssueActions issue={issue} repo={repo} />} />
       </div>
     </div>
   );

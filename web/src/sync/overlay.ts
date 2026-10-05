@@ -17,7 +17,7 @@ export interface ObjectPatch<V> {
 export type Patch<R> = {
   [K in keyof R]?:
     | R[K]
-    | (R[K] extends (infer E)[] ? ArrayPatch<E> : R[K] extends Record<string, infer V> ? ObjectPatch<V> : never);
+    | (NonNullable<R[K]> extends (infer E)[] ? ArrayPatch<E> : NonNullable<R[K]> extends Record<string, infer V> ? ObjectPatch<V> : never);
 };
 
 export type OverlayOp =

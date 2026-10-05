@@ -7,9 +7,10 @@
  * See docs/FRONTEND.md "Optimistic mutations".
  */
 import { store, sync } from './index';
-import type { Comment, ID, Issue, Notification, Repo } from './models';
+import type { Comment, ID, Issue, Label, Milestone, Notification, ReactionContent, Repo } from './models';
 import { ops, tempId, type OverlayOp } from './overlay';
 import type { TxRequest } from './transactions';
+import { setViewerReaction, viewerReactions, type ReactionSubject } from './viewerReactions';
 
 export function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -120,7 +121,7 @@ export function setMilestone(issue: Issue, milestoneId: ID | null) {
   });
 }
 
-export function createIssue(repo: Repo, input: { title: string; body?: string; labelIds?: ID[]; assigneeIds?: ID[] }) {
+export function createIssue(repo: Repo, input: { title: string; body?: string; labelIds?: ID[]; assigneeIds?: ID[]; milestoneId?: ID | null }) {
   const now = nowIso();
   const row: Issue = {
     id: tempId(),
@@ -133,7 +134,7 @@ export function createIssue(repo: Repo, input: { title: string; body?: string; l
     authorId: store().viewerId,
     assigneeIds: input.assigneeIds ?? [],
     labelIds: input.labelIds ?? [],
-    milestoneId: null,
+    milestoneId: input.milestoneId ?? null,
     comments: 0,
     locked: false,
     createdAt: now,
@@ -149,8 +150,220 @@ export function createIssue(repo: Repo, input: { title: string; body?: string; l
       body: input.body ?? '',
       labels: (input.labelIds ?? []).map((id) => store().get('label', id)?.name).filter(Boolean),
       assignees: logins(input.assigneeIds ?? []),
+      ...(input.milestoneId != null ? { milestone: store().get('milestone', input.milestoneId)?.number } : {}),
     },
   });
+}
+
+export type LockReason = NonNullable<Issue['activeLockReason']>;
+
+export function lockIssue(issue: Issue, reason: LockReason | null) {
+  return commit(`Lock #${issue.number}`, [ops.update('issue', issue.id, { locked: true, activeLockReason: reason })], {
+    method: 'PUT',
+    path: issuePath(issue, '/lock'),
+    body: reason ? { lock_reason: reason } : {},
+  });
+}
+
+export function unlockIssue(issue: Issue) {
+  return commit(`Unlock #${issue.number}`, [ops.update('issue', issue.id, { locked: false, activeLockReason: null })], {
+    method: 'DELETE',
+    path: issuePath(issue, '/lock'),
+  });
+}
+
+/** Pin / unpin on the repository's issue list (private endpoint; max 3). */
+export function setPinned(issue: Issue, pinned: boolean) {
+  const r = repoOf(issue.repoId);
+  return commit(pinned ? `Pin #${issue.number}` : `Unpin #${issue.number}`, [ops.update('issue', issue.id, { pinned })], {
+    method: pinned ? 'PUT' : 'DELETE',
+    path: `/_bgh/repos/${enc(r.owner)}/${enc(r.name)}/issues/${issue.number}/pin`,
+  });
+}
+
+/**
+ * Transfer to another repository of the same owner. Not optimistic (the row
+ * changes scope); await `done` and navigate to the new location.
+ */
+export function transferIssue(issue: Issue, target: Repo) {
+  return commit(`Transfer #${issue.number}`, [], {
+    method: 'POST',
+    path: issuePath(issue, '/transfer'),
+    body: { new_owner: target.owner, new_name: target.name },
+  });
+}
+
+// ------------------------------------------------------------------ sub-issues
+
+export function addSubIssue(parent: Issue, child: Pick<Issue, 'id' | 'parentId'>) {
+  const list: OverlayOp[] = [
+    ops.update('issue', parent.id, { subIssueIds: { $add: [child.id] } }),
+    ops.update('issue', child.id, { parentId: parent.id }),
+  ];
+  const oldParent = child.parentId != null && child.parentId !== parent.id ? child.parentId : null;
+  if (oldParent != null && store().get('issue', oldParent)) list.push(ops.update('issue', oldParent, { subIssueIds: { $remove: [child.id] } }));
+  return commit(`Add sub-issue to #${parent.number}`, list, {
+    method: 'POST',
+    path: issuePath(parent, '/sub_issues'),
+    body: { sub_issue_id: child.id, replace_parent: oldParent != null },
+  });
+}
+
+export function removeSubIssue(parent: Issue, childId: ID) {
+  const list: OverlayOp[] = [ops.update('issue', parent.id, { subIssueIds: { $remove: [childId] } })];
+  if (store().get('issue', childId)) list.push(ops.update('issue', childId, { parentId: null }));
+  return commit(`Remove sub-issue from #${parent.number}`, list, {
+    method: 'DELETE',
+    path: issuePath(parent, '/sub_issue'),
+    body: { sub_issue_id: childId },
+  });
+}
+
+/** Move `childId` to position `to` (index in the parent's current list). */
+export function moveSubIssue(parent: Issue, childId: ID, to: number) {
+  const cur = parent.subIssueIds ?? [];
+  const from = cur.indexOf(childId);
+  if (from < 0 || to < 0 || to >= cur.length || from === to) return null;
+  const next = cur.filter((id) => id !== childId);
+  next.splice(to, 0, childId);
+  const body: Record<string, unknown> = { sub_issue_id: childId };
+  if (to === 0) body.before_id = next[1];
+  else body.after_id = next[to - 1];
+  return commit(`Reorder sub-issues of #${parent.number}`, [ops.update('issue', parent.id, { subIssueIds: next })], {
+    method: 'PATCH',
+    path: issuePath(parent, '/sub_issues/priority'),
+    body,
+  });
+}
+
+// ------------------------------------------------------------------ reactions
+
+/** Toggle the viewer's reaction on an issue or comment (counts + "mine" are optimistic). */
+export function toggleReaction(target: { issue: Issue } | { comment: Comment }, content: ReactionContent) {
+  const isIssue = 'issue' in target;
+  const row = isIssue ? target.issue : target.comment;
+  const subject: ReactionSubject = isIssue ? { kind: 'issue', id: row.id } : { kind: 'comment', id: row.id };
+  const on = !viewerReactions(subject).includes(content);
+  const n = Math.max(0, (row.reactions?.[content] ?? 0) + (on ? 1 : -1));
+  // $merge composes with concurrent reactions to other contents.
+  const counts = { $merge: { [content]: n || null } };
+  const r = repoOf(row.repoId);
+  const base = `/repos/${enc(r.owner)}/${enc(r.name)}/issues/${isIssue ? target.issue.number : `comments/${row.id}`}/reactions`;
+  setViewerReaction(subject, content, on);
+  const op = isIssue ? ops.update('issue', row.id, { reactions: counts }) : ops.update('comment', row.id, { reactions: counts });
+  const res = commit(on ? 'React' : 'Remove reaction', [op], on
+    ? { method: 'POST', path: `/api/v3${base}`, body: { content } }
+    : { method: 'DELETE', path: `/_bgh${base}/${enc(content)}` });
+  res.done.catch(() => setViewerReaction(subject, content, !on));
+  return res;
+}
+
+// ------------------------------------------------------------------ labels
+
+function repoPath(repo: Pick<Repo, 'owner' | 'name'>, suffix: string): string {
+  return `/api/v3/repos/${enc(repo.owner)}/${enc(repo.name)}${suffix}`;
+}
+
+export interface LabelInput {
+  name: string;
+  color: string;
+  description: string | null;
+}
+
+export function createLabel(repo: Repo, input: LabelInput) {
+  const row: Label = { id: tempId(), repoId: repo.id, name: input.name, color: input.color, description: input.description };
+  return commit(`Create label ${input.name}`, [ops.insert('label', row)], {
+    method: 'POST',
+    path: repoPath(repo, '/labels'),
+    body: { name: input.name, color: input.color, description: input.description ?? '' },
+  });
+}
+
+export function updateLabel(label: Label, input: Partial<LabelInput>) {
+  const repo = repoOf(label.repoId);
+  const body: Record<string, unknown> = {};
+  if (input.name !== undefined && input.name !== label.name) body.new_name = input.name;
+  if (input.color !== undefined) body.color = input.color;
+  if (input.description !== undefined) body.description = input.description ?? '';
+  return commit(`Edit label ${label.name}`, [ops.update('label', label.id, input)], {
+    method: 'PATCH',
+    path: repoPath(repo, `/labels/${enc(label.name)}`),
+    body,
+  });
+}
+
+export function deleteLabel(label: Label) {
+  const repo = repoOf(label.repoId);
+  const users = store()
+    .byIndex('issue', 'repoId', label.repoId)
+    .filter((i) => i.labelIds.includes(label.id));
+  return commit(
+    `Delete label ${label.name}`,
+    [ops.delete('label', label.id), ...users.map((i) => ops.update('issue', i.id, { labelIds: { $remove: [label.id] } }))],
+    { method: 'DELETE', path: repoPath(repo, `/labels/${enc(label.name)}`) },
+  );
+}
+
+// ------------------------------------------------------------------ milestones
+
+export interface MilestoneInput {
+  title: string;
+  description: string | null;
+  dueOn: string | null;
+  state?: 'open' | 'closed';
+}
+
+export function createMilestone(repo: Repo, input: MilestoneInput) {
+  const now = nowIso();
+  const row: Milestone = {
+    id: tempId(),
+    repoId: repo.id,
+    number: 0,
+    title: input.title,
+    description: input.description,
+    state: input.state ?? 'open',
+    dueOn: input.dueOn,
+    openIssues: 0,
+    closedIssues: 0,
+    createdAt: now,
+    updatedAt: now,
+    closedAt: null,
+  };
+  return commit(`Create milestone ${input.title}`, [ops.insert('milestone', row)], {
+    method: 'POST',
+    path: repoPath(repo, '/milestones'),
+    body: { title: input.title, description: input.description ?? '', due_on: input.dueOn, state: row.state },
+  });
+}
+
+export function updateMilestone(m: Milestone, input: Partial<MilestoneInput>) {
+  const repo = repoOf(m.repoId);
+  const body: Record<string, unknown> = {};
+  const local: Partial<Milestone> = { updatedAt: nowIso() };
+  if (input.title !== undefined) body.title = local.title = input.title;
+  if (input.description !== undefined) body.description = local.description = input.description;
+  if (input.dueOn !== undefined) body.due_on = local.dueOn = input.dueOn;
+  if (input.state !== undefined) {
+    body.state = local.state = input.state;
+    local.closedAt = input.state === 'closed' ? nowIso() : null;
+  }
+  return commit(`Edit milestone ${m.title}`, [ops.update('milestone', m.id, local)], {
+    method: 'PATCH',
+    path: repoPath(repo, `/milestones/${m.number}`),
+    body,
+  });
+}
+
+export function deleteMilestone(m: Milestone) {
+  const repo = repoOf(m.repoId);
+  const users = store()
+    .byIndex('issue', 'repoId', m.repoId)
+    .filter((i) => i.milestoneId === m.id);
+  return commit(
+    `Delete milestone ${m.title}`,
+    [ops.delete('milestone', m.id), ...users.map((i) => ops.update('issue', i.id, { milestoneId: null }))],
+    { method: 'DELETE', path: repoPath(repo, `/milestones/${m.number}`) },
+  );
 }
 
 // ------------------------------------------------------------------ comments

@@ -196,8 +196,8 @@ async fn bootstrap_shapes_of_every_model() {
         json!({"id": i1, "repoId": repo, "number": 1, "title": "First", "state": "closed",
                "stateReason": "completed", "authorId": bob.id, "assigneeIds": [ada.id],
                "labelIds": [bug], "milestoneId": ms, "comments": 0, "locked": false,
-               "activeLockReason": null, "parentId": null, "pinned": false,
-               "reactions": {"+1": 2, "heart": 1},
+               "activeLockReason": null, "reactions": {"+1": 2, "heart": 1},
+               "parentId": null, "subIssueIds": [], "pinned": false,
                "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-02T03:04:05Z",
                "closedAt": "2024-01-03T00:00:00Z", "isPr": false})
     );

@@ -5,7 +5,7 @@
  */
 import type { SocketLike, Transport } from '../api/transport';
 import type { BootData } from '../boot';
-import type { Comment, ID, Issue, IssueEvent, ModelMap, ModelName, Notification, Repo, User } from '../sync/models';
+import type { Comment, ID, Issue, IssueEvent, Label, Milestone, ModelMap, ModelName, Notification, Repo, User } from '../sync/models';
 import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '../sync/protocol';
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
@@ -300,6 +300,27 @@ export class MockServer implements Transport {
     this.put('repo', next);
   }
 
+  /** Recount a milestone's open/closed issues (like bgh-issues' refresh_milestones). */
+  private refreshMilestone(id: ID): void {
+    const m = this.db.tables.milestone.get(id);
+    if (!m) return;
+    let open = 0;
+    let closed = 0;
+    for (const i of this.db.tables.issue.values()) {
+      if (i.milestoneId !== id) continue;
+      if (i.state === 'open') open++;
+      else closed++;
+    }
+    if (open !== m.openIssues || closed !== m.closedIssues) this.put('milestone', { ...m, openIssues: open, closedIssues: closed });
+  }
+
+  private subRef(kind: 'sub' | 'parent', i: Issue): IssueEvent['data'] {
+    const r = this.db.tables.repo.get(i.repoId)!;
+    return kind === 'sub'
+      ? { subIssueId: i.id, subIssueNumber: i.number, subIssueRepository: `${r.owner}/${r.name}` }
+      : { parentIssueId: i.id, parentIssueNumber: i.number, parentIssueRepository: `${r.owner}/${r.name}` };
+  }
+
   restIssue(i: Issue): Record<string, unknown> {
     const repo = this.db.tables.repo.get(i.repoId)!;
     const user = (id: ID) => {
@@ -498,6 +519,7 @@ export class MockServer implements Transport {
         }
       }
       this.put('issue', next, { includeLazy: bodyChanged });
+      if (issue.milestoneId !== next.milestoneId || issue.state !== next.state) for (const mid of new Set([issue.milestoneId, next.milestoneId])) if (mid != null) this.refreshMilestone(mid);
       return { status: 200, body: this.restIssue(next) };
     });
     R('POST', '/api/v3/repos/:owner/:repo/issues', (ctx) => {
@@ -520,7 +542,7 @@ export class MockServer implements Transport {
         authorId: this.db.viewerId,
         assigneeIds: ((ctx.body.assignees as string[] | undefined) ?? []).map((l) => this.userByLogin(l)?.id).filter((x): x is ID => !!x),
         labelIds: [...this.db.tables.label.values()].filter((l) => l.repoId === repo.id && labelNames.includes(l.name)).map((l) => l.id),
-        milestoneId: null,
+        milestoneId: [...this.db.tables.milestone.values()].find((m) => m.repoId === repo.id && m.number === ctx.body.milestone)?.id ?? null,
         comments: 0,
         locked: false,
         createdAt: now,
@@ -530,6 +552,7 @@ export class MockServer implements Transport {
       };
       this.put('issue', issue, { includeLazy: true });
       this.bumpCounts(repo, issue, 1);
+      if (issue.milestoneId) this.refreshMilestone(issue.milestoneId);
       return { status: 201, body: this.restIssue(issue) };
     });
     const setLabels = (ctx: Ctx, mode: 'add' | 'set') => {
@@ -603,6 +626,297 @@ export class MockServer implements Transport {
       const issue = this.db.tables.issue.get(c.issueId);
       if (issue) this.put('issue', { ...issue, comments: Math.max(0, issue.comments - 1) });
       return { status: 204 };
+    });
+
+    // ---------------- lock, pin, transfer
+    R('PUT', '/api/v3/repos/:owner/:repo/issues/:number/lock', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, issue] = r;
+      const reason = (ctx.body.lock_reason as Issue['activeLockReason']) ?? null;
+      if (reason && !['off-topic', 'too heated', 'resolved', 'spam'].includes(reason)) return { status: 422, body: { message: 'Validation Failed' } };
+      if (!issue.locked) {
+        this.event(issue, 'locked', reason ? { lockReason: reason } : {});
+        this.put('issue', { ...issue, locked: true, activeLockReason: reason, updatedAt: this.now() });
+      }
+      return { status: 204 };
+    });
+    R('DELETE', '/api/v3/repos/:owner/:repo/issues/:number/lock', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, issue] = r;
+      if (issue.locked) {
+        this.event(issue, 'unlocked');
+        this.put('issue', { ...issue, locked: false, activeLockReason: null, updatedAt: this.now() });
+      }
+      return { status: 204 };
+    });
+    const pin = (ctx: Ctx, on: boolean): Resp => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [repo, issue] = r;
+      if (issue.isPr) return { status: 422, body: { message: 'Pull requests cannot be pinned' } };
+      if (on && !issue.pinned) {
+        const count = [...this.db.tables.issue.values()].filter((i) => i.repoId === repo.id && i.pinned).length;
+        if (count >= 3) return { status: 422, body: { message: 'You can only pin up to 3 issues per repository' } };
+      }
+      if (!!issue.pinned !== on) {
+        this.event(issue, on ? 'pinned' : 'unpinned');
+        this.put('issue', { ...issue, pinned: on, updatedAt: this.now() });
+      }
+      return { status: 204 };
+    };
+    R('PUT', '/_bgh/repos/:owner/:repo/issues/:number/pin', (ctx) => pin(ctx, true));
+    R('DELETE', '/_bgh/repos/:owner/:repo/issues/:number/pin', (ctx) => pin(ctx, false));
+    R('POST', '/api/v3/repos/:owner/:repo/issues/:number/transfer', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [repo, issue] = r;
+      const target = this.repo(String(ctx.body.new_owner ?? repo.owner), String(ctx.body.new_name ?? ''));
+      if (!target || target.id === repo.id || target.ownerId !== repo.ownerId) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Issue', field: 'new_name', code: 'invalid' }] } };
+      const number = this.db.nextNumber[target.id] ?? 1;
+      this.db.nextNumber[target.id] = number + 1;
+      const byName = (id: ID) => {
+        const l = this.db.tables.label.get(id);
+        return l && [...this.db.tables.label.values()].find((x) => x.repoId === target.id && x.name.toLowerCase() === l.name.toLowerCase())?.id;
+      };
+      const ms = issue.milestoneId != null ? this.db.tables.milestone.get(issue.milestoneId) : undefined;
+      const comments = [...this.db.tables.comment.values()].filter((c) => c.issueId === issue.id);
+      const events = [...this.db.tables.issueEvent.values()].filter((e) => e.issueId === issue.id);
+      this.remove('issue', issue.id);
+      if (issue.state === 'open') this.bumpCounts(repo, issue, -1);
+      const moved: Issue = {
+        ...issue,
+        repoId: target.id,
+        number,
+        labelIds: issue.labelIds.map(byName).filter((x): x is ID => x != null),
+        milestoneId: ms ? ([...this.db.tables.milestone.values()].find((m) => m.repoId === target.id && m.title === ms.title)?.id ?? null) : null,
+        pinned: false,
+        parentId: null,
+        subIssueIds: [],
+        updatedAt: this.now(),
+      };
+      this.put('issue', moved, { includeLazy: true });
+      if (moved.state === 'open') this.bumpCounts(this.db.tables.repo.get(target.id)!, moved, 1);
+      for (const c of comments) this.put('comment', { ...c, repoId: target.id });
+      for (const e of events) this.put('issueEvent', { ...e, repoId: target.id });
+      this.event(moved, 'transferred', { fromRepository: `${repo.owner}/${repo.name}` });
+      if (ms) this.refreshMilestone(ms.id);
+      return { status: 201, body: this.restIssue(moved) };
+    });
+
+    // ---------------- sub-issues
+    R('GET', '/api/v3/repos/:owner/:repo/issues/:number/sub_issues', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, issue] = r;
+      return { status: 200, body: (issue.subIssueIds ?? []).map((id) => this.db.tables.issue.get(id)).filter((i): i is Issue => !!i).map((i) => this.restIssue(i)) };
+    });
+    R('POST', '/api/v3/repos/:owner/:repo/issues/:number/sub_issues', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, parent] = r;
+      const child = this.db.tables.issue.get(Number(ctx.body.sub_issue_id));
+      if (!child || child.isPr || child.id === parent.id) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Issue', field: 'sub_issue_id', code: 'invalid' }] } };
+      if ((parent.subIssueIds ?? []).includes(child.id)) return { status: 422, body: { message: 'Issue is already a sub-issue of this issue' } };
+      for (let up: Issue | undefined = parent; up; up = up.parentId != null ? this.db.tables.issue.get(up.parentId) : undefined) {
+        if (up.id === child.id) return { status: 422, body: { message: 'Sub-issue cannot be an ancestor of the parent issue' } };
+      }
+      if (child.parentId != null) {
+        if (!ctx.body.replace_parent) return { status: 422, body: { message: 'Sub-issue may only have one parent' } };
+        const old = this.db.tables.issue.get(child.parentId);
+        if (old) {
+          this.event(old, 'sub_issue_removed', this.subRef('sub', child));
+          this.put('issue', { ...old, subIssueIds: (old.subIssueIds ?? []).filter((x) => x !== child.id), updatedAt: this.now() });
+        }
+      }
+      this.event(parent, 'sub_issue_added', this.subRef('sub', child));
+      this.event(child, 'parent_issue_added', this.subRef('parent', parent));
+      this.put('issue', { ...child, parentId: parent.id, updatedAt: this.now() });
+      const next = { ...this.db.tables.issue.get(parent.id)!, subIssueIds: [...(parent.subIssueIds ?? []), child.id], updatedAt: this.now() };
+      this.put('issue', next);
+      return { status: 201, body: this.restIssue(next) };
+    });
+    R('DELETE', '/api/v3/repos/:owner/:repo/issues/:number/sub_issue', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, parent] = r;
+      const id = Number(ctx.body.sub_issue_id);
+      if (!(parent.subIssueIds ?? []).includes(id)) return { status: 404, body: { message: 'Not Found' } };
+      const child = this.db.tables.issue.get(id);
+      this.event(parent, 'sub_issue_removed', child ? this.subRef('sub', child) : { subIssueId: id });
+      const next = { ...parent, subIssueIds: (parent.subIssueIds ?? []).filter((x) => x !== id), updatedAt: this.now() };
+      this.put('issue', next);
+      if (child) {
+        this.event(child, 'parent_issue_removed', this.subRef('parent', parent));
+        this.put('issue', { ...child, parentId: null, updatedAt: this.now() });
+      }
+      return { status: 200, body: this.restIssue(next) };
+    });
+    R('PATCH', '/api/v3/repos/:owner/:repo/issues/:number/sub_issues/priority', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, parent] = r;
+      const id = Number(ctx.body.sub_issue_id);
+      const list = parent.subIssueIds ?? [];
+      if (!list.includes(id)) return { status: 404, body: { message: 'Not Found' } };
+      const others = list.filter((x) => x !== id);
+      const anchor = Number(ctx.body.after_id ?? ctx.body.before_id);
+      const at = others.indexOf(anchor);
+      if (at < 0) return { status: 422, body: { message: 'Validation Failed' } };
+      others.splice(ctx.body.after_id != null ? at + 1 : at, 0, id);
+      const next = { ...parent, subIssueIds: others, updatedAt: this.now() };
+      this.put('issue', next);
+      return { status: 200, body: this.restIssue(next) };
+    });
+
+    // ---------------- reactions
+    const reactionTarget = (ctx: Ctx, kind: 'issue' | 'comment'): { key: string; row: Issue | Comment; model: 'issue' | 'comment' } | Resp => {
+      if (kind === 'issue') {
+        const r = issueOr404(ctx);
+        if (isResp(r)) return r;
+        return { key: `issue:${r[1].id}`, row: r[1], model: 'issue' };
+      }
+      const c = this.db.tables.comment.get(Number(ctx.m[3]));
+      return c ? { key: `comment:${c.id}`, row: c, model: 'comment' } : { status: 404, body: { message: 'Not Found' } };
+    };
+    const VALID = ['+1', '-1', 'laugh', 'hooray', 'confused', 'heart', 'rocket', 'eyes'];
+    const react = (ctx: Ctx, kind: 'issue' | 'comment', content: string, on: boolean): Resp => {
+      const t = reactionTarget(ctx, kind);
+      if (isResp(t)) return t;
+      if (!VALID.includes(content)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Reaction', field: 'content', code: 'invalid' }] } };
+      const store = (this.db.viewerReactions ??= {});
+      const mine = store[t.key] ?? [];
+      const has = mine.includes(content);
+      if (has === on) return on ? { status: 200, body: { id: 1, content } } : { status: 204 };
+      store[t.key] = on ? [...mine, content] : mine.filter((c) => c !== content);
+      const counts = { ...(t.row.reactions ?? {}) } as Record<string, number>;
+      counts[content] = Math.max(0, (counts[content] ?? 0) + (on ? 1 : -1));
+      if (!counts[content]) delete counts[content];
+      if (t.model === 'issue') this.put('issue', { ...(t.row as Issue), reactions: counts });
+      else this.put('comment', { ...(t.row as Comment), reactions: counts });
+      return on ? { status: 201, body: { id: this.nextId(), content, user: { login: this.viewer.login, id: this.viewer.id } } } : { status: 204 };
+    };
+    R('POST', '/api/v3/repos/:owner/:repo/issues/comments/:id/reactions', (ctx) => react(ctx, 'comment', String(ctx.body.content ?? ''), true));
+    R('POST', '/api/v3/repos/:owner/:repo/issues/:number/reactions', (ctx) => react(ctx, 'issue', String(ctx.body.content ?? ''), true));
+    R('DELETE', '/_bgh/repos/:owner/:repo/issues/comments/:id/reactions/:content', (ctx) => react(ctx, 'comment', decodeURIComponent(ctx.m[4]!), false));
+    R('DELETE', '/_bgh/repos/:owner/:repo/issues/:number/reactions/:content', (ctx) => react(ctx, 'issue', decodeURIComponent(ctx.m[4]!), false));
+    R('GET', '/_bgh/repos/:owner/:repo/issues/:number/viewer-reactions', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, issue] = r;
+      const store = this.db.viewerReactions ?? {};
+      const comments: Record<string, string[]> = {};
+      for (const c of this.db.tables.comment.values()) if (c.issueId === issue.id && store[`comment:${c.id}`]?.length) comments[c.id] = store[`comment:${c.id}`]!;
+      return { status: 200, body: { issue: store[`issue:${issue.id}`] ?? [], comments } };
+    });
+
+    // ---------------- labels
+    const labelOr404 = (repo: Repo, name: string): Label | Resp =>
+      [...this.db.tables.label.values()].find((l) => l.repoId === repo.id && l.name.toLowerCase() === name.toLowerCase()) ?? { status: 404, body: { message: 'Not Found' } };
+    const validColor = (c: unknown) => typeof c === 'string' && /^[0-9a-fA-F]{6}$/.test(c);
+    R('POST', '/api/v3/repos/:owner/:repo/labels', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const name = String(ctx.body.name ?? '').trim();
+      if (!name || name.includes('fail!')) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', field: 'name', code: 'missing_field' }] } };
+      if (!isResp(labelOr404(repo, name))) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', field: 'name', code: 'already_exists' }] } };
+      const color = validColor(ctx.body.color) ? String(ctx.body.color).toLowerCase() : 'ededed';
+      const label: Label = { id: this.nextId(), repoId: repo.id, name, color, description: (ctx.body.description as string) || null };
+      this.put('label', label);
+      return { status: 201, body: label };
+    });
+    R('PATCH', '/api/v3/repos/:owner/:repo/labels/:name', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const label = labelOr404(repo, decodeURIComponent(ctx.m[3]!));
+      if (isResp(label)) return label;
+      const next = { ...label };
+      if (typeof ctx.body.new_name === 'string') {
+        const n = ctx.body.new_name.trim();
+        const clash = labelOr404(repo, n);
+        if (!n || n.includes('fail!') || (!isResp(clash) && clash.id !== label.id)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', field: 'name', code: 'invalid' }] } };
+        next.name = n;
+      }
+      if (ctx.body.color !== undefined) {
+        if (!validColor(ctx.body.color)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', field: 'color', code: 'invalid' }] } };
+        next.color = String(ctx.body.color).toLowerCase();
+      }
+      if (ctx.body.description !== undefined) next.description = (ctx.body.description as string) || null;
+      this.put('label', next);
+      return { status: 200, body: next };
+    });
+    R('DELETE', '/api/v3/repos/:owner/:repo/labels/:name', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const label = labelOr404(repo, decodeURIComponent(ctx.m[3]!));
+      if (isResp(label)) return label;
+      for (const i of [...this.db.tables.issue.values()]) if (i.labelIds.includes(label.id)) this.put('issue', { ...i, labelIds: i.labelIds.filter((x) => x !== label.id) });
+      this.remove('label', label.id);
+      return { status: 204 };
+    });
+
+    // ---------------- milestones
+    const milestoneOr404 = (repo: Repo, n: number): Milestone | Resp =>
+      [...this.db.tables.milestone.values()].find((m) => m.repoId === repo.id && m.number === n) ?? { status: 404, body: { message: 'Not Found' } };
+    R('POST', '/api/v3/repos/:owner/:repo/milestones', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const title = String(ctx.body.title ?? '').trim();
+      const all = [...this.db.tables.milestone.values()].filter((m) => m.repoId === repo.id);
+      if (!title || title.includes('fail!') || all.some((m) => m.title === title)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Milestone', field: 'title', code: title ? 'already_exists' : 'missing_field' }] } };
+      const now = this.now();
+      const m: Milestone = {
+        id: this.nextId(),
+        repoId: repo.id,
+        number: all.reduce((x, y) => Math.max(x, y.number), 0) + 1,
+        title,
+        description: (ctx.body.description as string) || null,
+        state: ctx.body.state === 'closed' ? 'closed' : 'open',
+        dueOn: (ctx.body.due_on as string) ?? null,
+        openIssues: 0,
+        closedIssues: 0,
+        createdAt: now,
+        updatedAt: now,
+        closedAt: ctx.body.state === 'closed' ? now : null,
+      };
+      this.put('milestone', m);
+      return { status: 201, body: { ...m, due_on: m.dueOn } };
+    });
+    R('PATCH', '/api/v3/repos/:owner/:repo/milestones/:number', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const m = milestoneOr404(repo, Number(ctx.m[3]));
+      if (isResp(m)) return m;
+      const next = { ...m, updatedAt: this.now() };
+      if (typeof ctx.body.title === 'string') {
+        if (!ctx.body.title.trim() || ctx.body.title.includes('fail!')) return { status: 422, body: { message: 'Validation Failed' } };
+        next.title = ctx.body.title.trim();
+      }
+      if ('description' in ctx.body) next.description = (ctx.body.description as string) || null;
+      if ('due_on' in ctx.body) next.dueOn = (ctx.body.due_on as string) ?? null;
+      if (ctx.body.state === 'open' || ctx.body.state === 'closed') {
+        next.state = ctx.body.state;
+        next.closedAt = ctx.body.state === 'closed' ? (m.closedAt ?? this.now()) : null;
+      }
+      this.put('milestone', next);
+      return { status: 200, body: next };
+    });
+    R('DELETE', '/api/v3/repos/:owner/:repo/milestones/:number', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const m = milestoneOr404(repo, Number(ctx.m[3]));
+      if (isResp(m)) return m;
+      for (const i of [...this.db.tables.issue.values()]) if (i.milestoneId === m.id) this.put('issue', { ...i, milestoneId: null });
+      this.remove('milestone', m.id);
+      return { status: 204 };
+    });
+
+    // ---------------- issue templates
+    R('GET', '/_bgh/repos/:owner/:repo/issue-templates', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      return { status: 200, body: mockTemplates(repo) };
     });
 
     // ---------------- pulls
@@ -971,7 +1285,7 @@ export class MockSocket implements SocketLike {
 
 interface SavedState {
   version: number;
-  db: { viewerId: ID; nextId: number; nextNumber: Record<ID, number>; tables: Record<string, unknown[]> };
+  db: { viewerId: ID; nextId: number; nextNumber: Record<ID, number>; viewerReactions?: Record<string, string[]>; tables: Record<string, unknown[]> };
   log: Delta[];
   syncId: number;
   minRetained: number;
@@ -995,7 +1309,7 @@ async function loadState(): Promise<{ db: MockDb; log: Delta[]; syncId: number; 
     if (!s || s.version !== STATE_VERSION) return null;
     const tables = emptyTables();
     for (const m of MODEL_NAMES) for (const row of (s.db.tables[m] ?? []) as { id: ID }[]) (tables[m] as Map<ID, unknown>).set(row.id, row);
-    return { db: { viewerId: s.db.viewerId, nextId: s.db.nextId, nextNumber: s.db.nextNumber, tables }, log: s.log, syncId: s.syncId, minRetained: s.minRetained, signedIn: s.signedIn };
+    return { db: { viewerId: s.db.viewerId, nextId: s.db.nextId, nextNumber: s.db.nextNumber, viewerReactions: s.db.viewerReactions ?? {}, tables }, log: s.log, syncId: s.syncId, minRetained: s.minRetained, signedIn: s.signedIn };
   } catch {
     return null;
   }
@@ -1007,7 +1321,7 @@ async function saveState(server: MockServer): Promise<void> {
     for (const m of MODEL_NAMES) tables[m] = [...server.db.tables[m].values()];
     const state: SavedState = {
       version: STATE_VERSION,
-      db: { viewerId: server.db.viewerId, nextId: server.db.nextId, nextNumber: server.db.nextNumber, tables },
+      db: { viewerId: server.db.viewerId, nextId: server.db.nextId, nextNumber: server.db.nextNumber, viewerReactions: server.db.viewerReactions ?? {}, tables },
       log: server.log,
       syncId: server.syncId,
       minRetained: server.minRetained,
@@ -1033,3 +1347,48 @@ function json(status: number, body: unknown): Response {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+/** Issue templates served by the mock: a form + a markdown template on every repo. */
+function mockTemplates(repo: Repo) {
+  return {
+    commit_sha: fakeSha(`templates:${repo.id}`),
+    templates: [
+      {
+        filename: 'bug_report.yml',
+        type: 'form',
+        name: 'Bug report',
+        about: 'Something isn’t working as expected',
+        title: '[Bug]: ',
+        labels: ['bug'],
+        assignees: [],
+        projects: [],
+        issue_type: null,
+        body: null,
+        form: [
+          { type: 'markdown', attributes: { value: 'Thanks for taking the time to fill out this bug report!' } },
+          { type: 'input', id: 'version', attributes: { label: 'Version', description: 'Which version are you running?', placeholder: 'v1.2.3' }, validations: { required: true } },
+          { type: 'dropdown', id: 'area', attributes: { label: 'Area', options: ['API', 'CLI', 'Docs'], default: 0 } },
+          { type: 'textarea', id: 'what-happened', attributes: { label: 'What happened?', description: 'Also tell us what you expected.', placeholder: 'Tell us what you see!' }, validations: { required: true } },
+          { type: 'textarea', id: 'logs', attributes: { label: 'Relevant log output', render: 'shell' } },
+          { type: 'checkboxes', id: 'terms', attributes: { label: 'Code of Conduct', options: [{ label: 'I agree to follow this project’s Code of Conduct', required: true }] } },
+        ],
+      },
+      {
+        filename: 'feature_request.md',
+        type: 'markdown',
+        name: 'Feature request',
+        about: 'Suggest an idea for this project',
+        title: 'Feature: ',
+        labels: ['enhancement'],
+        assignees: [],
+        projects: [],
+        issue_type: null,
+        body: '**Is your feature request related to a problem?**\n\n**Describe the solution you’d like**\n\n**Additional context**\n',
+        form: null,
+      },
+    ],
+    config: { blank_issues_enabled: true, contact_links: [{ name: 'Community forum', url: 'https://example.com/forum', about: 'Ask and answer questions here.' }] },
+    errors: [],
+  };
+}
+

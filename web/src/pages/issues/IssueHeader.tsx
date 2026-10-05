@@ -5,7 +5,8 @@ import { store } from '../../sync';
 import type { Issue } from '../../sync/models';
 import { updateIssue } from '../../sync/mutations';
 import { canWrite } from '../../sync/selectors';
-import { StateBadge } from '../../ui/Badge';
+import { StateBadge, Tag } from '../../ui/Badge';
+import { LockIcon, PinIcon } from '../../ui/icons';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
@@ -67,6 +68,16 @@ export const IssueHeader = observer(function IssueHeader({ issue, meta }: { issu
       )}
       <div className={styles.metaRow}>
         <StateBadge issue={issue} />
+        {issue.pinned && (
+          <Tag>
+            <PinIcon size={12} /> Pinned
+          </Tag>
+        )}
+        {issue.locked && (
+          <Tag>
+            <LockIcon size={12} /> Locked{issue.activeLockReason ? ` · ${issue.activeLockReason}` : ''}
+          </Tag>
+        )}
         {meta ?? (
           <span className={styles.metaText}>
             <strong>{author?.login ?? 'ghost'}</strong> opened this {issue.isPr ? 'pull request' : 'issue'} <RelativeTime date={issue.createdAt} /> ·{' '}

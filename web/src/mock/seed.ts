@@ -28,6 +28,8 @@ export interface MockDb {
   tables: Tables;
   nextId: number;
   nextNumber: Record<ID, number>;
+  /** Viewer's own reactions: `issue:ID` / `comment:ID` → contents. */
+  viewerReactions?: Record<string, string[]>;
 }
 
 export function emptyTables(): Tables {
@@ -441,7 +443,124 @@ export function seed(now = Date.now()): MockDb {
     nextNumber[repo.id] = number + 1;
   }
 
-  const db: MockDb = { viewerId: viewer.id, tables: t, nextId, nextNumber };
+  showcase(t, viewer, now, id, nextNumber);
+  const db: MockDb = { viewerId: viewer.id, tables: t, nextId, nextNumber, viewerReactions: {} };
   seedProjects(db, now);
   return db;
+}
+
+/**
+ * acme/api gets a "timeline showcase" issue exercising every event type, with
+ * sub-issues, plus two pinned issues and a locked one (deterministic; uses no rng).
+ */
+function showcase(t: Tables, viewer: User, now: number, id: () => number, nextNumber: Record<ID, number>): void {
+  const repo = [...t.repo.values()].find((r) => r.owner === 'acme' && r.name === 'api');
+  if (!repo) return;
+  const issues = [...t.issue.values()].filter((i) => i.repoId === repo.id && !i.isPr).sort((a, b) => b.number - a.number);
+  const open = issues.filter((i) => i.state === 'open');
+  const labels = [...t.label.values()].filter((l) => l.repoId === repo.id);
+  const milestones = [...t.milestone.values()].filter((m) => m.repoId === repo.id);
+  const others = [...t.user.values()].filter((u) => u.type === 'User' && u.id !== viewer.id);
+  const [grace, linus] = [others[0]!, others[1]!];
+  const number = nextNumber[repo.id] ?? 1;
+  nextNumber[repo.id] = number + 1;
+  const MIN = 60_000;
+  const start = now - 3 * 86_400_000;
+  const at = (m: number) => iso(start + m * MIN);
+  const children = open.slice(0, 3);
+  const issue: Issue = {
+    id: id(),
+    repoId: repo.id,
+    number,
+    title: 'Timeline showcase: redesign the issue detail page',
+    body: `This issue exercises **every** timeline event.\n\nRelated: #${issues[3]?.number ?? 1}. cc @${grace.login}\n\n- [x] timeline\n- [ ] reactions`,
+    state: 'open',
+    stateReason: 'reopened',
+    authorId: viewer.id,
+    assigneeIds: [viewer.id],
+    labelIds: labels.filter((l) => l.name === 'enhancement').map((l) => l.id),
+    milestoneId: milestones[1]?.id ?? null,
+    comments: 2,
+    locked: false,
+    activeLockReason: null,
+    reactions: { rocket: 2, heart: 1, '+1': 1 },
+    pinned: true,
+    parentId: null,
+    subIssueIds: children.map((c) => c.id),
+    createdAt: at(0),
+    updatedAt: at(40),
+    closedAt: null,
+    isPr: false,
+  };
+  t.issue.set(issue.id, issue);
+  if (milestones[1]) milestones[1].openIssues++;
+  for (const c of children) t.issue.set(c.id, { ...c, parentId: issue.id });
+  const ev = (event: IssueEvent['event'], m: number, actor: ID, data: IssueEvent['data'] = {}) => {
+    const e: IssueEvent = { id: id(), repoId: repo.id, issueId: issue.id, actorId: actor, event, data, createdAt: at(m) };
+    t.issueEvent.set(e.id, e);
+  };
+  const label = (n: string) => labels.find((l) => l.name === n);
+  const enh = label('enhancement');
+  const triage = label('help wanted') ?? labels[0]!;
+  const ref = (i: Issue) => ({ subIssueId: i.id, subIssueNumber: i.number, subIssueRepository: 'acme/api' });
+  ev('mentioned', 0, grace.id);
+  ev('renamed', 1, viewer.id, { from: 'Timeline showcase: redesign the issue page', to: issue.title });
+  if (enh) ev('labeled', 2, viewer.id, { labelId: enh.id, labelName: enh.name, labelColor: enh.color });
+  ev('labeled', 2, viewer.id, { labelId: triage.id, labelName: triage.name, labelColor: triage.color });
+  ev('unlabeled', 4, viewer.id, { labelId: triage.id, labelName: triage.name, labelColor: triage.color });
+  ev('assigned', 5, viewer.id, { assigneeId: viewer.id });
+  ev('assigned', 6, viewer.id, { assigneeId: grace.id });
+  ev('unassigned', 7, viewer.id, { assigneeId: grace.id });
+  if (milestones[0]) ev('milestoned', 8, viewer.id, { milestoneTitle: milestones[0].title });
+  if (milestones[0]) ev('demilestoned', 10, viewer.id, { milestoneTitle: milestones[0].title });
+  if (milestones[1]) ev('milestoned', 10, viewer.id, { milestoneTitle: milestones[1].title });
+  const c1: Comment = {
+    id: id(),
+    repoId: repo.id,
+    issueId: issue.id,
+    authorId: grace.id,
+    body: 'Love this. We should also show **sub-issue progress** in the list.',
+    authorAssociation: 'MEMBER',
+    reactions: { '+1': 3, hooray: 1 },
+    createdAt: at(12),
+    updatedAt: at(12),
+  };
+  t.comment.set(c1.id, c1);
+  ev('closed', 14, viewer.id, { stateReason: 'not_planned' });
+  ev('reopened', 16, viewer.id, { stateReason: 'reopened' });
+  ev('closed', 17, linus.id, { stateReason: 'duplicate' });
+  ev('reopened', 18, viewer.id, { stateReason: 'reopened' });
+  children.forEach((c, i) => ev('sub_issue_added', 20 + i, viewer.id, ref(c)));
+  if (open[3]) {
+    ev('sub_issue_added', 23, viewer.id, ref(open[3]));
+    ev('sub_issue_removed', 24, viewer.id, ref(open[3]));
+  }
+  ev('pinned', 25, viewer.id);
+  ev('locked', 26, viewer.id, { lockReason: 'resolved' });
+  ev('unlocked', 28, viewer.id);
+  if (issues[5]) ev('cross-referenced', 30, linus.id, { sourceIssueId: issues[5].id, sourceNumber: issues[5].number, sourceRepository: 'acme/api', sourceIsPr: false });
+  ev('cross-referenced', 31, linus.id, { sourceIssueId: 999_999, sourceNumber: 12, sourceRepository: 'acme/web', sourceIsPr: true });
+  ev('referenced', 32, viewer.id, { commitId: fakeSha('showcase-ref') });
+  ev('transferred', 33, viewer.id, { fromRepository: 'acme/web' });
+  ev('unpinned', 34, viewer.id);
+  ev('pinned', 35, viewer.id);
+  const c2: Comment = {
+    id: id(),
+    repoId: repo.id,
+    issueId: issue.id,
+    authorId: viewer.id,
+    body: 'Plan:\n\n- [x] timeline events\n- [ ] reactions\n- [ ] sub-issues panel',
+    authorAssociation: 'OWNER',
+    createdAt: at(38),
+    updatedAt: at(39),
+  };
+  t.comment.set(c2.id, c2);
+  for (const c of children) {
+    const e: IssueEvent = { id: id(), repoId: repo.id, issueId: c.id, actorId: viewer.id, event: 'parent_issue_added', data: { parentIssueId: issue.id, parentIssueNumber: issue.number, parentIssueRepository: 'acme/api' }, createdAt: at(20) };
+    t.issueEvent.set(e.id, e);
+  }
+  repo.openIssues++;
+  // One more pinned issue and a locked one.
+  if (open[4]) t.issue.set(open[4].id, { ...open[4], pinned: true });
+  if (open[5]) t.issue.set(open[5].id, { ...open[5], locked: true, activeLockReason: 'too heated' });
 }

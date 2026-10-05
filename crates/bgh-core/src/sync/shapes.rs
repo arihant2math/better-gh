@@ -187,7 +187,8 @@ const ISSUE_COLS: &str = r#"
     coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
     i.comments_count AS "comments", i.locked AS "locked",
     i.active_lock_reason AS "activeLockReason", coalesce(ra.r, '{}') AS "reactions",
-    si.parent_id AS "parentId", (pin.issue_id IS NOT NULL) AS "pinned",
+    si.parent_id AS "parentId", coalesce(sc.ids, '{}') AS "subIssueIds",
+    (pin.issue_id IS NOT NULL) AS "pinned",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
     bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
 
@@ -237,6 +238,9 @@ fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
                       GROUP BY e.subject_id, e.content) z
               GROUP BY z.subject_id) ra ON ra.subject_id = i.id
   LEFT JOIN sub_issues si ON si.child_id = i.id
+  LEFT JOIN (SELECT s.parent_id, array_agg(s.child_id ORDER BY s.position, s.child_id) AS ids
+               FROM sub_issues s JOIN issues x ON x.id = s.parent_id
+              WHERE {fx} GROUP BY s.parent_id) sc ON sc.parent_id = i.id
   LEFT JOIN pinned_issues pin ON pin.issue_id = i.id
   LEFT JOIN pull_requests p ON p.issue_id = i.id
   LEFT JOIN (SELECT q.pull_id,
@@ -435,8 +439,15 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                      'lockReason', e.data->'lock_reason',
                      'sourceIssueId', e.data->'source_issue_id',
                      'sourceCommentId', e.data->'source_comment_id',
+                     'sourceNumber', e.data->'source_number',
+                     'sourceRepository', e.data->'source_repository',
+                     'sourceIsPr', e.data->'source_is_pull_request',
                      'subIssueId', coalesce(e.data->'sub_issue'->'id', e.data->'sub_issue_id'),
+                     'subIssueNumber', e.data->'sub_issue'->'number',
+                     'subIssueRepository', e.data->'sub_issue'->'repository',
                      'parentIssueId', coalesce(e.data->'parent_issue'->'id', e.data->'parent_issue_id'),
+                     'parentIssueNumber', e.data->'parent_issue'->'number',
+                     'parentIssueRepository', e.data->'parent_issue'->'repository',
                      'fromRepository', e.data->'from_repository',
                      'teamId', e.data->'requested_team_id',
                      'before', e.data->'before',

@@ -27,6 +27,8 @@ Web client (`/_bgh`):
 | `GET /_bgh/repos/{o}/{r}/issue-templates[?ref=]` | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, projects, issue_type, body, form}], config: {blank_issues_enabled, contact_links: [{name, url, about}]}, errors: [{filename, message}]}` — parsed from `.github/ISSUE_TEMPLATE/*.md|yml|yaml` + `config.yml` (legacy `ISSUE_TEMPLATE.md` fallback), forms validated (types, unique ids/labels, options), cached in Redis by commit SHA |
 | `GET /_bgh/repos/{o}/{r}/pinned-issues` | array of issues (GitHub shape) |
 | `PUT/DELETE /_bgh/repos/{o}/{r}/issues/{n}/pin` | 204 (max 3 per repo → 422; write permission) |
+| `GET /_bgh/repos/{o}/{r}/issues/{n}/viewer-reactions` | `{issue: [content], comments: {"<id>": [content]}}` — the viewer's own reactions (added by issues-web) |
+| `DELETE /_bgh/repos/{o}/{r}/issues/{n}/reactions/{content}`, `DELETE /_bgh/repos/{o}/{r}/issues/comments/{id}/reactions/{content}` | 204; delete the viewer's reaction by content (idempotent; added by issues-web) |
 
 Media types: `application/vnd.github.{raw,text,html,full}+json` select
 `body` / `body_text` / `body_html` on issues, comments and timeline comments
@@ -86,12 +88,16 @@ comments) in the new one.
 
 Protocol extensions made here (SYNC_PROTOCOL.md §3 / §3.2,
 `web/src/sync/models.ts`): `Issue.activeLockReason`, `Issue.parentId`,
-`Issue.pinned`; extra `IssueEvent` types (`mentioned`, `subscribed`,
-`cross-referenced`, `pinned`, `unpinned`, `transferred`, `sub_issue_*`,
-`parent_issue_*`) and data keys (`lockReason`, `sourceIssueId`,
-`sourceCommentId`, `subIssueId`, `parentIssueId`, `fromRepository`), all
-rendered by `bgh_core::sync::shapes`. `stateReason` `duplicate` is sent as
-`not_planned` (protocol server note).
+`Issue.subIssueIds` (ordered children; the parent is re-synced on
+add/remove/reorder), `Issue.pinned`; extra `IssueEvent` types (`mentioned`,
+`subscribed`, `cross-referenced`, `pinned`, `unpinned`, `transferred`,
+`sub_issue_*`, `parent_issue_*`) and data keys (`lockReason`,
+`sourceIssueId`, `sourceCommentId`, `sourceNumber`, `sourceRepository`,
+`sourceIsPr` (stored on new `cross-referenced` events), `subIssueId`,
+`subIssueNumber`, `subIssueRepository`, `parentIssueId`, `parentIssueNumber`,
+`parentIssueRepository`, `fromRepository`), all rendered by
+`bgh_core::sync::shapes`. `stateReason` `duplicate` is sent as
+`not_planned` (protocol server note; the client also accepts `duplicate`).
 
 ## Database (migration `0300_issues.sql`)
 

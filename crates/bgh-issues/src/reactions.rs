@@ -6,7 +6,8 @@ use axum::response::{IntoResponse, Response};
 use bgh_core::models::api::REACTION_CONTENTS;
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::json::{self, ReactionRow};
 use crate::{comments, issues};
@@ -290,4 +291,98 @@ pub async fn delete_for_comment(
 ) -> ApiResult<StatusCode> {
     let (access, s) = comment_subject(&state, Some(&auth), &owner, &repo, id).await?;
     delete(&state, &auth, &access, &s, rid).await
+}
+
+// ---------------------------------------------------------------------------
+// Web client helpers (`/_bgh`): the viewer's own reactions. GitHub's REST
+// API needs a reaction id to delete one; the web client only knows counts.
+// ---------------------------------------------------------------------------
+
+/// Reaction contents the viewer used on an issue and on each of its comments.
+#[derive(Debug, Serialize)]
+pub struct ViewerReactions {
+    pub issue: Vec<String>,
+    /// Comment id (as a string key) → contents.
+    pub comments: BTreeMap<String, Vec<String>>,
+}
+
+/// `GET /_bgh/repos/{owner}/{repo}/issues/{issue_number}/viewer-reactions`
+pub async fn viewer_reactions(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, number)): Path<(String, String, i64)>,
+) -> ApiResult<Json<ViewerReactions>> {
+    let (_, issue) = issues::load(&state, Some(&auth), &owner, &repo, number).await?;
+    let rows: Vec<(String, i64, String)> = sqlx::query_as(
+        "SELECT subject_type, subject_id, content FROM reactions
+          WHERE user_id = $1
+            AND ((subject_type = 'issue' AND subject_id = $2)
+              OR (subject_type = 'issue_comment'
+                  AND subject_id IN (SELECT id FROM comments WHERE issue_id = $2)))
+          ORDER BY id",
+    )
+    .bind(auth.user.id)
+    .bind(issue.id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = ViewerReactions {
+        issue: Vec::new(),
+        comments: BTreeMap::new(),
+    };
+    for (kind, id, content) in rows {
+        if kind == "issue" {
+            out.issue.push(content);
+        } else {
+            out.comments
+                .entry(id.to_string())
+                .or_default()
+                .push(content);
+        }
+    }
+    Ok(Json(out))
+}
+
+/// Delete the viewer's reaction with `content` (204 also when there is none).
+async fn delete_own(
+    state: &AppState,
+    auth: &AuthContext,
+    access: &RepoAccess,
+    subject: &Subject,
+    content: &str,
+) -> ApiResult<StatusCode> {
+    validate_content(content)?;
+    let id: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM reactions WHERE subject_type = $1 AND subject_id = $2
+            AND user_id = $3 AND content = $4",
+    )
+    .bind(subject.kind)
+    .bind(subject.id)
+    .bind(auth.user.id)
+    .bind(content)
+    .fetch_optional(&state.db)
+    .await?;
+    match id {
+        Some(id) => delete(state, auth, access, subject, id).await,
+        None => Ok(StatusCode::NO_CONTENT),
+    }
+}
+
+/// `DELETE /_bgh/repos/{owner}/{repo}/issues/{issue_number}/reactions/{content}`
+pub async fn delete_own_for_issue(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, number, content)): Path<(String, String, i64, String)>,
+) -> ApiResult<StatusCode> {
+    let (access, s) = issue_subject(&state, Some(&auth), &owner, &repo, number).await?;
+    delete_own(&state, &auth, &access, &s, &content).await
+}
+
+/// `DELETE /_bgh/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{content}`
+pub async fn delete_own_for_comment(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, id, content)): Path<(String, String, i64, String)>,
+) -> ApiResult<StatusCode> {
+    let (access, s) = comment_subject(&state, Some(&auth), &owner, &repo, id).await?;
+    delete_own(&state, &auth, &access, &s, &content).await
 }

@@ -112,6 +112,76 @@ check(!r.some((x) => x.includes('bootstrap')), 'reload hydrated from IndexedDB (
 check((await page.locator('text=Optimistic hello from the smoke test').count()) === 1, 'comment persisted across reload');
 check((await page.locator('aside >> text=performance').count()) >= 1, 'label persisted across reload');
 
+// 7b. Issues UI (issues-web): timeline events, reactions, lock, sub-issues,
+// labels, milestones, issue forms — all optimistic against the mock.
+const showcaseNumber = await page.evaluate(() => [...window.__bghMock.db.tables.issue.values()].find((i) => i.title.startsWith('Timeline showcase'))?.number);
+await go(`/acme/api/issues/${showcaseNumber}`);
+await page.waitForSelector('[data-event]');
+const kinds = await page.$$eval('[data-event]', (els) => new Set(els.map((e) => e.getAttribute('data-event'))).size);
+check(kinds >= 15, `showcase timeline renders many event types (${kinds})`);
+check((await page.locator('text=closed this as a duplicate').count()) === 1, 'duplicate state reason rendered');
+check((await page.locator('text=transferred this issue from').count()) === 1, 'transferred event rendered');
+
+const issueBody = page.locator('#issue-body');
+await issueBody.getByRole('button', { name: 'Add reaction' }).click();
+await page.getByRole('menuitemcheckbox', { name: 'Laugh' }).click();
+check(await issueBody.getByRole('button', { name: /Laugh: 1 \(you reacted\)/ }).isVisible(), 'reaction added instantly (mock)');
+await issueBody.getByRole('button', { name: /Rocket: 2/ }).click();
+check(await issueBody.getByRole('button', { name: /Rocket: 3 \(you reacted\)/ }).isVisible(), 'existing reaction incremented instantly');
+
+await page.evaluate(() => document.activeElement?.blur());
+await page.keyboard.press('Shift+L');
+await page.getByLabel('Reason for locking').selectOption('spam');
+await page.getByRole('dialog').getByRole('button', { name: 'Lock conversation' }).click();
+check((await page.locator('text=Locked · spam').count()) === 1, 'lock via Shift+L is optimistic');
+await page.waitForTimeout(400);
+check((await page.locator('[data-event=locked]').count()) >= 2, 'lock echoed as a timeline event');
+await page.getByRole('button', { name: 'Unlock conversation' }).click();
+
+const panel = page.getByRole('region', { name: 'Sub-issues' });
+const firstTitle = await panel.locator('li a').first().innerText();
+await panel.locator('li a').first().focus();
+await page.keyboard.press('Alt+ArrowDown');
+await page.waitForTimeout(50);
+check((await panel.locator('li a').nth(1).innerText()) === firstTitle, 'Alt+↓ reorders sub-issues optimistically');
+await page.waitForTimeout(400);
+check((await panel.locator('li a').nth(1).innerText()) === firstTitle, 'sub-issue order confirmed by the server');
+
+await go('/acme/api/labels');
+await page.getByPlaceholder('Search all labels').waitFor();
+await page.evaluate(() => document.activeElement?.blur());
+await page.keyboard.press('n');
+await page.getByPlaceholder('Label name').fill('fail! label');
+await page.getByRole('button', { name: 'Create label' }).click();
+check((await page.locator('text=fail! label').count()) >= 1, 'bad label shown optimistically');
+await page.waitForTimeout(800);
+check((await page.locator('li >> text=fail! label').count()) === 0, 'label create rolled back after 422');
+await page.getByRole('button', { name: 'New label' }).click();
+await page.getByPlaceholder('Label name').fill('smoke');
+await page.getByRole('button', { name: 'Create label' }).click();
+await page.waitForTimeout(400);
+check((await page.locator('li >> text=smoke').count()) === 1, 'label created');
+
+await go('/acme/api/milestones/new');
+await page.getByPlaceholder('Title').fill('Smoke milestone');
+await page.getByRole('button', { name: 'Create milestone' }).click();
+await page.waitForSelector('text=Smoke milestone');
+check(page.url().endsWith('/acme/api/milestones'), 'milestone created, back on the list');
+
+await go('/acme/api/issues/new/choose');
+await page.getByRole('listitem').filter({ hasText: 'Bug report' }).click();
+await page.waitForSelector('#field-version');
+check((await page.locator('#issue-title').inputValue()) === '[Bug]: ', 'form template prefills the title');
+await page.locator('#issue-title').fill('[Bug]: from the mock smoke test');
+await page.locator('#field-version').fill('1.2.3');
+await page.locator('#field-what-happened').fill('Broken');
+await page.locator('#field-terms input').check();
+await page.keyboard.press('Control+Enter');
+await page.waitForURL(/\/acme\/api\/issues\/\d+$/, { timeout: 4000 }).catch(() => undefined);
+check(/\/acme\/api\/issues\/\d+$/.test(page.url()), 'issue form creates the issue and opens it');
+await page.waitForSelector('text=Version');
+check((await page.locator('#issue-body h3', { hasText: 'Version' }).count()) === 1, 'form answers rendered as markdown sections');
+
 // 8. Command palette jump.
 await page.keyboard.press('Control+k');
 await page.keyboard.type('fieldkit');
