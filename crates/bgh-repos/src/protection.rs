@@ -67,6 +67,17 @@ pub fn check_push(
     pusher: &AuthContext,
     updates: &[RefUpdate],
 ) -> Result<(), String> {
+    check_push_by(rules, access, Some(pusher.user.id), updates)
+}
+
+/// [`check_push`] for a pusher identified by user id; `None` for deploy
+/// keys, which never match push restrictions.
+pub fn check_push_by(
+    rules: &[ProtectionRule],
+    access: &RepoAccess,
+    pusher_id: Option<i64>,
+    updates: &[RefUpdate],
+) -> Result<(), String> {
     for u in updates {
         let Some(branch) = u.branch() else { continue };
         for rule in rules.iter().filter(|r| pattern_matches(&r.pattern, branch)) {
@@ -88,7 +99,9 @@ pub fn check_push(
                 let allowed = r
                     .get("users")
                     .and_then(|v| v.as_array())
-                    .is_some_and(|users| users.iter().any(|v| v.as_i64() == Some(pusher.user.id)));
+                    .is_some_and(|users| {
+                        pusher_id.is_some_and(|id| users.iter().any(|v| v.as_i64() == Some(id)))
+                    });
                 if !allowed {
                     return Err(format!(
                         "protected branch hook declined: you're not authorized to push to {branch}"

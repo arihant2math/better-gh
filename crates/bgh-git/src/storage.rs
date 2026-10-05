@@ -142,6 +142,7 @@ impl RepoStore {
 
     /// Remove a repository from disk (idempotent).
     pub async fn delete(&self, repo_id: i64) -> GitResult<()> {
+        crate::cache::evict(&self.path(repo_id));
         match tokio::fs::remove_dir_all(self.path(repo_id)).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -154,7 +155,10 @@ impl RepoStore {
         if !self.exists(repo_id) {
             return Err(GitError::NotFound(format!("repository {repo_id}")));
         }
-        Ok(GitRepo::open(&self.path(repo_id), self.max_blob_size)?.with_git_bin(&self.git_bin))
+        Ok(
+            GitRepo::open_cached(&self.path(repo_id), self.max_blob_size)?
+                .with_git_bin(&self.git_bin),
+        )
     }
 
     /// Run a blocking read against a repository on the blocking thread pool.

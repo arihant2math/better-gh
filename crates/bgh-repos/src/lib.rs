@@ -10,12 +10,16 @@
 //! topics, contents/trees/blobs/commits/refs APIs, branches & protection
 //! APIs, compare, deploy keys. Migrations: 0200-0299.
 
+pub mod browse;
 pub mod create;
+pub mod download;
 pub mod git_http;
 pub mod jobs;
 pub mod json;
+pub mod lfs;
 pub mod protection;
 pub mod repos;
+pub mod ssh;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -43,6 +47,7 @@ pub fn router() -> Router<AppState> {
             "/repos/{owner}/{repo}",
             get(repos::get_repo).delete(repos::delete_repo),
         )
+        .merge(download::api_router())
 }
 
 /// Git smart-HTTP routes (absolute paths). `{repo}` may carry `.git`.
@@ -57,10 +62,16 @@ pub fn web_router() -> Router<AppState> {
             "/{owner}/{repo}/git-receive-pack",
             post(git_http::receive_pack),
         )
+        .merge(browse::web_router())
+        .merge(download::web_router())
+        .merge(lfs::web_router())
 }
 
 /// Job handlers: post-receive processing and storage cleanup.
 pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
+    reg.job(lfs::gc::run);
+    reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
+    reg.service("ssh", ssh::service);
 }

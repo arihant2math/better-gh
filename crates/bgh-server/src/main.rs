@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use bgh_core::Config;
-use bgh_core::registry::{Registry, spawn_listeners};
+use bgh_core::registry::{Registry, spawn_listeners, spawn_services};
 use bgh_core::state::AppState;
 use clap::{Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
@@ -147,6 +147,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let shutdown = CancellationToken::new();
 
     let listeners = spawn_listeners(&state, &registry.listeners, shutdown.clone());
+    let services = spawn_services(&state, &registry.services, shutdown.clone());
     let worker_task = tokio::spawn(bgh_core::jobs::run_workers(
         state.clone(),
         Arc::new(registry.jobs.clone()),
@@ -173,6 +174,9 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let _ = worker_task.await;
     for l in listeners {
         let _ = l.await;
+    }
+    for s in services {
+        let _ = s.await;
     }
     tracing::info!("bye");
     Ok(())
