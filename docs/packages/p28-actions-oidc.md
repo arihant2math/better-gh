@@ -1,4 +1,4 @@
-Integration: in progress
+Integration: ready
 P28 Actions OIDC id-tokens: issuer + discovery + JWKS, key rotation, job token requests, GitHub claims, sub customization (repo + org).
 
 # P28 — Actions OIDC id-token
@@ -89,6 +89,15 @@ permission; environment claim + sub; repo and org `sub` customization
 key valid; an end-to-end shell-executor job curls the endpoint and the
 token verifies, while a job without the permission sees no variables.
 Unit tests for `render_sub` and template validation in `oidc.rs`.
+
+## Gate
+
+Merged `origin/claude/sleepy-cray-9jj0t3` (7ac1b95). fmt, clippy, web
+typecheck/lint/test/build (initial JS 144.4 KB gzip, unchanged) green.
+`cargo test --workspace --no-fail-fast`: all green except one
+`bgh-uploads` `camo::proxies_external_images` failure (site-settings
+cache timing, unrelated to this diff); it passes on re-run, as does the
+whole `bgh-uploads` + `bgh-actions` suite.
 
 ## Known gaps
 
