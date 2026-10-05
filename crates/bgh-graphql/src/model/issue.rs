@@ -11,7 +11,9 @@ use sqlx::{Postgres, QueryBuilder};
 
 use super::actor::{self, User, UserConnection};
 use super::enums::*;
-use super::misc::{ProjectCardConnection, ProjectV2ItemConnection, ReactionGroup, load_reaction_groups};
+use super::misc::{
+    ProjectCardConnection, ProjectV2ItemConnection, ReactionGroup, load_reaction_groups,
+};
 use super::pull::{PullRequest, PullRequestConnection};
 use super::repo::{self, Repository};
 use super::{Actor, nid};
@@ -94,83 +96,90 @@ fn edited(created: chrono::DateTime<chrono::Utc>, updated: chrono::DateTime<chro
 
 #[Object]
 impl Conversation {
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.i.id)
     }
-    async fn full_database_id(&self) -> Option<String> {
+    pub async fn full_database_id(&self) -> Option<String> {
         Some(self.i.id.to_string())
     }
-    async fn number(&self) -> i32 {
+    pub async fn number(&self) -> i32 {
         self.i.number as i32
     }
-    async fn title(&self) -> String {
+    pub async fn title(&self) -> String {
         self.i.title.clone()
     }
     #[graphql(name = "titleHTML")]
-    async fn title_html(&self) -> String {
+    pub async fn title_html(&self) -> String {
         repo::html_escape(&self.i.title)
     }
-    async fn body(&self) -> String {
+    pub async fn body(&self) -> String {
         self.i.body.clone().unwrap_or_default()
     }
     #[graphql(name = "bodyHTML")]
-    async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
+    pub async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
         let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
-        Ok(render_html(ctx, &repo, self.i.body.as_deref().unwrap_or("")))
+        Ok(render_html(
+            ctx,
+            &repo,
+            self.i.body.as_deref().unwrap_or(""),
+        ))
     }
-    async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
+    pub async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
         let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
         let html = render_html(ctx, &repo, self.i.body.as_deref().unwrap_or(""));
         Ok(html_to_text(&html.0))
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
         Ok(URI(gql(ctx).state.urls.html(&self.html_path(&repo))))
     }
-    async fn resource_path(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn resource_path(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
         Ok(URI(self.html_path(&repo)))
     }
-    async fn closed(&self) -> bool {
+    pub async fn closed(&self) -> bool {
         self.i.state == "closed"
     }
-    async fn closed_at(&self) -> Option<DateTime> {
+    pub async fn closed_at(&self) -> Option<DateTime> {
         odt(self.i.closed_at)
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.i.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.i.updated_at)
     }
-    async fn last_edited_at(&self) -> Option<DateTime> {
+    pub async fn last_edited_at(&self) -> Option<DateTime> {
         None
     }
-    async fn published_at(&self) -> Option<DateTime> {
+    pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.i.created_at))
     }
-    async fn includes_created_edit(&self) -> bool {
+    pub async fn includes_created_edit(&self) -> bool {
         false
     }
-    async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.i.author_id).await
     }
-    async fn editor(&self) -> Option<Actor> {
+    pub async fn editor(&self) -> Option<Actor> {
         None
     }
-    async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
+    pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.i.repo_id, self.i.author_id).await
     }
-    async fn locked(&self) -> bool {
+    pub async fn locked(&self) -> bool {
         self.i.locked
     }
-    async fn active_lock_reason(&self) -> Option<LockReason> {
-        self.i.active_lock_reason.as_deref().and_then(LockReason::from_db)
+    pub async fn active_lock_reason(&self) -> Option<LockReason> {
+        self.i
+            .active_lock_reason
+            .as_deref()
+            .and_then(LockReason::from_db)
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.i.repo_id).await
     }
-    async fn assignees(
+    pub async fn assignees(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -181,7 +190,7 @@ impl Conversation {
         let users = assignees(ctx, self.i.id).await?;
         Ok(Page::from_vec(users, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn labels(
+    pub async fn labels(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -196,7 +205,7 @@ impl Conversation {
         let items = labels.iter().map(|x| Label(Arc::new(x.clone()))).collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn milestone(&self, ctx: &Context<'_>) -> GResult<Option<Milestone>> {
+    pub async fn milestone(&self, ctx: &Context<'_>) -> GResult<Option<Milestone>> {
         let Some(id) = self.i.milestone_id else {
             return Ok(None);
         };
@@ -204,7 +213,7 @@ impl Conversation {
         Ok(one(&l.milestones, id).await?.map(Milestone))
     }
     #[allow(clippy::too_many_arguments)]
-    async fn comments(
+    pub async fn comments(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -242,16 +251,40 @@ impl Conversation {
         }
         .into())
     }
-    async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
+    pub async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
         Ok(Some(load_reaction_groups(ctx, "issue", self.i.id).await?))
     }
-    async fn project_cards(&self) -> ProjectCardConnection {
+    pub async fn project_cards(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        archived_states: Option<Vec<Option<String>>>,
+    ) -> ProjectCardConnection {
+        let _ = (first, after, archived_states);
         ProjectCardConnection
     }
-    async fn project_items(&self) -> ProjectV2ItemConnection {
+    pub async fn project_items(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        include_archived: Option<bool>,
+    ) -> ProjectV2ItemConnection {
+        let _ = (first, after, include_archived);
         ProjectV2ItemConnection
     }
-    async fn participants(
+    pub async fn assigned_actors(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<AssigneeConnection> {
+        let users = assignees(ctx, self.i.id).await?;
+        let items = users.into_iter().map(Assignee::User).collect();
+        Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
+    }
+    pub async fn participants(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -279,13 +312,13 @@ impl Conversation {
             .collect();
         Ok(Page::from_vec(users, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.i.author_id
     }
-    async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
-    async fn viewer_can_update(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_update(&self, ctx: &Context<'_>) -> GResult<bool> {
         let g = gql(ctx);
         if g.viewer_id().is_none() {
             return Ok(false);
@@ -296,7 +329,10 @@ impl Conversation {
         let repo = repo::load_unchecked(ctx, self.i.repo_id).await?;
         Ok(repo.row().perm >= Permission::Triage)
     }
-    async fn viewer_subscription(&self, ctx: &Context<'_>) -> GResult<Option<SubscriptionState>> {
+    pub async fn viewer_subscription(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<SubscriptionState>> {
         let g = gql(ctx);
         let Some(v) = g.viewer_id() else {
             return Ok(None);
@@ -340,20 +376,23 @@ pub struct IssueOnly {
 
 #[Object]
 impl IssueOnly {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Issue, self.i.id)
     }
-    async fn state(&self) -> IssueState {
+    pub async fn state(&self) -> IssueState {
         if self.i.state == "closed" {
             IssueState::Closed
         } else {
             IssueState::Open
         }
     }
-    async fn state_reason(&self) -> Option<IssueStateReason> {
-        self.i.state_reason.as_deref().and_then(IssueStateReason::from_db)
+    pub async fn state_reason(&self) -> Option<IssueStateReason> {
+        self.i
+            .state_reason
+            .as_deref()
+            .and_then(IssueStateReason::from_db)
     }
-    async fn is_pinned(&self, ctx: &Context<'_>) -> GResult<Option<bool>> {
+    pub async fn is_pinned(&self, ctx: &Context<'_>) -> GResult<Option<bool>> {
         let g = gql(ctx);
         let pinned: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'pinned_issues')",
@@ -372,19 +411,7 @@ impl IssueOnly {
                 .unwrap_or(false);
         Ok(Some(v))
     }
-    async fn assigned_actors(
-        &self,
-        ctx: &Context<'_>,
-        first: Option<i32>,
-        last: Option<i32>,
-        after: Option<String>,
-        before: Option<String>,
-    ) -> GResult<AssigneeConnection> {
-        let users = assignees(ctx, self.i.id).await?;
-        let items = users.into_iter().map(Assignee::User).collect();
-        Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
-    }
-    async fn closed_by_pull_requests_references(
+    pub async fn closed_by_pull_requests_references(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -410,10 +437,17 @@ impl IssueOnly {
         let items = super::pull::from_issues(ctx, candidates).await?;
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn linked_branches(&self) -> LinkedBranchConnection {
+    pub async fn linked_branches(
+        &self,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> LinkedBranchConnection {
+        let _ = (first, last, after, before);
         LinkedBranchConnection
     }
-    async fn tracked_issues(&self) -> crate::model::actor::CountOnly {
+    pub async fn tracked_issues(&self) -> crate::model::actor::CountOnly {
         crate::model::actor::CountOnly(0)
     }
 }
@@ -429,6 +463,10 @@ impl Issue {
     pub fn row(&self) -> &db::Issue {
         &self.1.i
     }
+    /// `Node.id` (MergedObject types need it as an inherent method).
+    pub async fn id(&self, _ctx: &Context<'_>) -> GResult<ID> {
+        Ok(nid(NodeType::Issue, self.1.i.id))
+    }
 }
 
 connection!(IssueConnection, IssueEdge, Issue);
@@ -437,6 +475,9 @@ connection!(IssueConnection, IssueEdge, Issue);
 #[derive(Union, Clone)]
 pub enum Assignee {
     User(User),
+    Bot(super::Bot),
+    Mannequin(super::Mannequin),
+    Organization(super::Organization),
 }
 
 connection!(AssigneeConnection, AssigneeEdge, Assignee);
@@ -447,10 +488,10 @@ pub struct LinkedBranchConnection;
 
 #[Object]
 impl LinkedBranchConnection {
-    async fn nodes(&self) -> Vec<LinkedBranch> {
+    pub async fn nodes(&self) -> Vec<LinkedBranch> {
         vec![]
     }
-    async fn total_count(&self) -> i32 {
+    pub async fn total_count(&self) -> i32 {
         0
     }
 }
@@ -458,6 +499,8 @@ impl LinkedBranchConnection {
 #[derive(async_graphql::SimpleObject, Clone)]
 pub struct LinkedBranch {
     pub id: ID,
+    #[graphql(name = "ref")]
+    pub ref_: Option<super::Ref>,
 }
 
 /// Either an issue or a pull request.
@@ -478,7 +521,7 @@ pub async fn by_number(
         "SELECT {} FROM issues WHERE repo_id = $1 AND number = $2",
         db::Issue::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(number)
     .fetch_optional(&g.state.db)
     .await
@@ -501,7 +544,7 @@ pub async fn issue_or_pull(
         "SELECT {} FROM issues WHERE repo_id = $1 AND number = $2",
         db::Issue::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(number)
     .fetch_optional(&g.state.db)
     .await
@@ -593,7 +636,9 @@ impl ListFilter {
         if let Some(a) = &self.assignee {
             match a.as_str() {
                 "*" => {
-                    qb.push(" AND EXISTS (SELECT 1 FROM issue_assignees ia WHERE ia.issue_id = i.id)");
+                    qb.push(
+                        " AND EXISTS (SELECT 1 FROM issue_assignees ia WHERE ia.issue_id = i.id)",
+                    );
                 }
                 "none" => {
                     qb.push(
@@ -751,7 +796,7 @@ pub async fn list_for_repo(
     f.since = filter_by.since.map(|d| d.0);
     f.viewer_subscribed = filter_by.viewer_subscribed.unwrap_or(false);
     f.order = order_by;
-    let page = run_list(ctx, repo.id(), &f, &args).await?;
+    let page = run_list(ctx, repo.rid(), &f, &args).await?;
     Ok(page.map(|i| Issue::new(Arc::new(i))).into())
 }
 
@@ -765,63 +810,63 @@ pub struct IssueComment(pub Arc<db::Comment>);
 
 #[Object]
 impl IssueComment {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::IssueComment, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn full_database_id(&self) -> Option<String> {
+    pub async fn full_database_id(&self) -> Option<String> {
         Some(self.0.id.to_string())
     }
-    async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.0.author_id).await
     }
-    async fn editor(&self) -> Option<Actor> {
+    pub async fn editor(&self) -> Option<Actor> {
         None
     }
-    async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
+    pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.0.repo_id, self.0.author_id).await
     }
-    async fn body(&self) -> String {
+    pub async fn body(&self) -> String {
         self.0.body.clone()
     }
     #[graphql(name = "bodyHTML")]
-    async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
+    pub async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(render_html(ctx, &repo, &self.0.body))
     }
-    async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
+    pub async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(html_to_text(&render_html(ctx, &repo, &self.0.body).0))
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn published_at(&self) -> Option<DateTime> {
+    pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.0.created_at))
     }
-    async fn last_edited_at(&self) -> Option<DateTime> {
+    pub async fn last_edited_at(&self) -> Option<DateTime> {
         edited(self.0.created_at, self.0.updated_at).then(|| dt(self.0.updated_at))
     }
-    async fn includes_created_edit(&self) -> bool {
+    pub async fn includes_created_edit(&self) -> bool {
         edited(self.0.created_at, self.0.updated_at)
     }
-    async fn is_minimized(&self) -> bool {
+    pub async fn is_minimized(&self) -> bool {
         false
     }
-    async fn minimized_reason(&self) -> Option<String> {
+    pub async fn minimized_reason(&self) -> Option<String> {
         None
     }
-    async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
+    pub async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
         Ok(Some(
             load_reaction_groups(ctx, "issue_comment", self.0.id).await?,
         ))
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let issue = self.issue_row(ctx).await?;
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         let r = repo.row();
@@ -835,10 +880,10 @@ impl IssueComment {
             r.owner.login, r.repo.name, issue.number, self.0.id
         ))))
     }
-    async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.0.author_id
     }
-    async fn viewer_can_update(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_update(&self, ctx: &Context<'_>) -> GResult<bool> {
         let g = gql(ctx);
         if g.viewer_id().is_none() {
             return Ok(false);
@@ -849,7 +894,7 @@ impl IssueComment {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(repo.row().perm >= Permission::Write)
     }
-    async fn viewer_can_delete(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_delete(&self, ctx: &Context<'_>) -> GResult<bool> {
         let g = gql(ctx);
         if g.viewer_id().is_none() {
             return Ok(false);
@@ -860,16 +905,16 @@ impl IssueComment {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(repo.row().perm >= Permission::Write)
     }
-    async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
-    async fn viewer_can_minimize(&self) -> bool {
+    pub async fn viewer_can_minimize(&self) -> bool {
         false
     }
-    async fn issue(&self, ctx: &Context<'_>) -> GResult<Issue> {
+    pub async fn issue(&self, ctx: &Context<'_>) -> GResult<Issue> {
         Ok(Issue::new(self.issue_row(ctx).await?))
     }
-    async fn pull_request(&self, ctx: &Context<'_>) -> GResult<Option<PullRequest>> {
+    pub async fn pull_request(&self, ctx: &Context<'_>) -> GResult<Option<PullRequest>> {
         let issue = self.issue_row(ctx).await?;
         if !issue.is_pull_request {
             return Ok(None);
@@ -879,13 +924,13 @@ impl IssueComment {
             .into_iter()
             .next())
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.0.repo_id).await
     }
 }
 
 impl IssueComment {
-    async fn issue_row(&self, ctx: &Context<'_>) -> GResult<Arc<db::Issue>> {
+    pub async fn issue_row(&self, ctx: &Context<'_>) -> GResult<Arc<db::Issue>> {
         let l = ctx.data_unchecked::<Loaders>();
         one(&l.issues, self.0.issue_id)
             .await?
@@ -906,28 +951,28 @@ pub struct Label(pub Arc<db::Label>);
 
 #[Object]
 impl Label {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Label, self.0.id)
     }
-    async fn name(&self) -> String {
+    pub async fn name(&self) -> String {
         self.0.name.clone()
     }
-    async fn color(&self) -> String {
+    pub async fn color(&self) -> String {
         self.0.color.clone()
     }
-    async fn description(&self) -> Option<String> {
+    pub async fn description(&self) -> Option<String> {
         self.0.description.clone()
     }
-    async fn is_default(&self) -> bool {
+    pub async fn is_default(&self) -> bool {
         self.0.is_default
     }
-    async fn created_at(&self) -> Option<DateTime> {
+    pub async fn created_at(&self) -> Option<DateTime> {
         Some(dt(self.0.created_at))
     }
-    async fn updated_at(&self) -> Option<DateTime> {
+    pub async fn updated_at(&self) -> Option<DateTime> {
         Some(dt(self.0.updated_at))
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(URI(gql(ctx).state.urls.html(&format!(
             "/{}/labels/{}",
@@ -935,7 +980,7 @@ impl Label {
             bgh_core::urls::encode_segment(&self.0.name)
         ))))
     }
-    async fn resource_path(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn resource_path(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(URI(format!(
             "/{}/labels/{}",
@@ -943,10 +988,10 @@ impl Label {
             bgh_core::urls::encode_segment(&self.0.name)
         )))
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.0.repo_id).await
     }
-    async fn issues(&self, ctx: &Context<'_>) -> GResult<crate::model::actor::CountOnly> {
+    pub async fn issues(&self, ctx: &Context<'_>) -> GResult<crate::model::actor::CountOnly> {
         let n: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM issue_labels il JOIN issues i ON i.id = il.issue_id
               WHERE il.label_id = $1 AND NOT i.is_pull_request",
@@ -985,7 +1030,7 @@ pub async fn repo_labels(
         db::Label::COLUMNS,
         d = order.direction.sql()
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(query.filter(|q| !q.is_empty()))
     .fetch_all(&g.state.db)
     .await
@@ -994,12 +1039,16 @@ pub async fn repo_labels(
     Ok(Page::from_vec(items, &args)?.into())
 }
 
-pub async fn repo_label(ctx: &Context<'_>, repo: &Repository, name: &str) -> GResult<Option<Label>> {
+pub async fn repo_label(
+    ctx: &Context<'_>,
+    repo: &Repository,
+    name: &str,
+) -> GResult<Option<Label>> {
     let row: Option<db::Label> = sqlx::query_as(&format!(
         "SELECT {} FROM labels WHERE repo_id = $1 AND lower(name) = lower($2)",
         db::Label::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(name)
     .fetch_optional(&gql(ctx).state.db)
     .await
@@ -1017,41 +1066,41 @@ pub struct Milestone(pub Arc<db::Milestone>);
 
 #[Object]
 impl Milestone {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Milestone, self.0.id)
     }
-    async fn number(&self) -> i32 {
+    pub async fn number(&self) -> i32 {
         self.0.number as i32
     }
-    async fn title(&self) -> String {
+    pub async fn title(&self) -> String {
         self.0.title.clone()
     }
-    async fn description(&self) -> Option<String> {
+    pub async fn description(&self) -> Option<String> {
         self.0.description.clone()
     }
-    async fn due_on(&self) -> Option<DateTime> {
+    pub async fn due_on(&self) -> Option<DateTime> {
         odt(self.0.due_on)
     }
-    async fn state(&self) -> MilestoneState {
+    pub async fn state(&self) -> MilestoneState {
         if self.0.state == "closed" {
             MilestoneState::Closed
         } else {
             MilestoneState::Open
         }
     }
-    async fn closed(&self) -> bool {
+    pub async fn closed(&self) -> bool {
         self.0.state == "closed"
     }
-    async fn closed_at(&self) -> Option<DateTime> {
+    pub async fn closed_at(&self) -> Option<DateTime> {
         odt(self.0.closed_at)
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn progress_percentage(&self) -> f64 {
+    pub async fn progress_percentage(&self) -> f64 {
         let total = self.0.open_issues + self.0.closed_issues;
         if total == 0 {
             0.0
@@ -1059,18 +1108,19 @@ impl Milestone {
             self.0.closed_issues as f64 * 100.0 / total as f64
         }
     }
-    async fn creator(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn creator(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.0.creator_id).await
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         let r = repo.row();
-        Ok(URI(gql(ctx)
-            .state
-            .urls
-            .milestone_html(&r.owner.login, &r.repo.name, self.0.number)))
+        Ok(URI(gql(ctx).state.urls.milestone_html(
+            &r.owner.login,
+            &r.repo.name,
+            self.0.number,
+        )))
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.0.repo_id).await
     }
 }
@@ -1112,7 +1162,7 @@ pub async fn repo_milestones(
         db::Milestone::COLUMNS,
         d = order.direction.sql()
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(&states)
     .bind(query.filter(|q| !q.is_empty()))
     .fetch_all(&g.state.db)
@@ -1131,7 +1181,7 @@ pub async fn repo_milestone(
         "SELECT {} FROM milestones WHERE repo_id = $1 AND number = $2",
         db::Milestone::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(number)
     .fetch_optional(&gql(ctx).state.db)
     .await

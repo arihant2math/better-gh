@@ -6,7 +6,11 @@ use async_graphql::{Context, ID, Object};
 use bgh_core::node_id::NodeType;
 use bgh_core::prelude::*;
 
-use super::enums::{RepositoryAffiliation, RepositoryOrder, RepositoryPrivacy};
+use super::enums::{
+    ProjectOrder, ProjectState, ProjectV2Order, RepositoryAffiliation, RepositoryOrder,
+    RepositoryPrivacy, TeamOrder,
+};
+use super::misc::{ProjectConnection, ProjectV2Connection};
 use super::repo::{self, Repository, RepositoryConnection};
 use super::{Actor, nid};
 use crate::conn::{ConnArgs, Page, connection};
@@ -31,88 +35,88 @@ pub struct User(pub Arc<db::User>);
 
 #[Object]
 impl User {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::User, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn login(&self) -> String {
+    pub async fn login(&self) -> String {
         self.0.login.clone()
     }
-    async fn name(&self) -> Option<String> {
+    pub async fn name(&self) -> Option<String> {
         self.0.name.clone()
     }
     /// The user's publicly visible profile email ("" when hidden).
-    async fn email(&self) -> String {
+    pub async fn email(&self) -> String {
         self.0.email.clone().unwrap_or_default()
     }
-    async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
+    pub async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
         avatar(ctx, &self.0, size)
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.user_html(&self.0.login))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/{}", self.0.login))
     }
-    async fn bio(&self) -> Option<String> {
+    pub async fn bio(&self) -> Option<String> {
         self.0.bio.clone()
     }
-    async fn company(&self) -> Option<String> {
+    pub async fn company(&self) -> Option<String> {
         self.0.company.clone()
     }
-    async fn location(&self) -> Option<String> {
+    pub async fn location(&self) -> Option<String> {
         self.0.location.clone()
     }
-    async fn website_url(&self) -> Option<URI> {
+    pub async fn website_url(&self) -> Option<URI> {
         self.0.blog.clone().filter(|b| !b.is_empty()).map(URI)
     }
-    async fn twitter_username(&self) -> Option<String> {
+    pub async fn twitter_username(&self) -> Option<String> {
         self.0.twitter_username.clone()
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn is_site_admin(&self) -> bool {
+    pub async fn is_site_admin(&self) -> bool {
         self.0.site_admin
     }
-    async fn is_hireable(&self) -> bool {
+    pub async fn is_hireable(&self) -> bool {
         self.0.hireable.unwrap_or(false)
     }
-    async fn is_viewer(&self, ctx: &Context<'_>) -> bool {
+    pub async fn is_viewer(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id() == Some(self.0.id)
     }
-    async fn is_employee(&self) -> bool {
+    pub async fn is_employee(&self) -> bool {
         false
     }
-    async fn is_bounty_hunter(&self) -> bool {
+    pub async fn is_bounty_hunter(&self) -> bool {
         false
     }
-    async fn is_campus_expert(&self) -> bool {
+    pub async fn is_campus_expert(&self) -> bool {
         false
     }
-    async fn is_developer_program_member(&self) -> bool {
+    pub async fn is_developer_program_member(&self) -> bool {
         false
     }
-    async fn status(&self) -> Option<UserStatus> {
+    pub async fn status(&self) -> Option<UserStatus> {
         None
     }
     /// Find a repository owned by this user by name.
-    async fn repository(
+    pub async fn repository(
         &self,
         ctx: &Context<'_>,
         name: String,
         #[graphql(default)] follow_renames: bool,
-    ) -> GResult<Option<Repository>> {
+    ) -> async_graphql::Result<Option<Repository>> {
         let _ = follow_renames;
         repo::by_owner_and_name(ctx, &self.0, &name).await
     }
     #[allow(clippy::too_many_arguments)]
-    async fn repositories(
+    pub async fn repositories(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -126,7 +130,7 @@ impl User {
         owner_affiliations: Option<Vec<Option<RepositoryAffiliation>>>,
         affiliations: Option<Vec<Option<RepositoryAffiliation>>>,
         order_by: Option<RepositoryOrder>,
-    ) -> GResult<RepositoryConnection> {
+    ) -> async_graphql::Result<RepositoryConnection> {
         let _ = (is_locked, affiliations);
         repo::owner_repositories(
             ctx,
@@ -144,7 +148,7 @@ impl User {
         )
         .await
     }
-    async fn organizations(
+    pub async fn organizations(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -162,10 +166,24 @@ impl User {
         .fetch_all(&g.state.db)
         .await
         .gql()?;
-        let items = orgs.into_iter().map(|o| Organization(Arc::new(o))).collect();
+        let items = orgs
+            .into_iter()
+            .map(|o| Organization(Arc::new(o)))
+            .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn followers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
+    #[graphql(name = "projectsV2")]
+    pub async fn projects_v2(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        query: Option<String>,
+        order_by: Option<ProjectV2Order>,
+    ) -> ProjectV2Connection {
+        let _ = (first, after, query, order_by);
+        ProjectV2Connection::default()
+    }
+    pub async fn followers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
         let n: i64 = sqlx::query_scalar("SELECT count(*) FROM follows WHERE following_id = $1")
             .bind(self.0.id)
             .fetch_one(&gql(ctx).state.db)
@@ -173,7 +191,7 @@ impl User {
             .unwrap_or(0);
         Ok(CountOnly(n))
     }
-    async fn following(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
+    pub async fn following(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
         let n: i64 = sqlx::query_scalar("SELECT count(*) FROM follows WHERE follower_id = $1")
             .bind(self.0.id)
             .fetch_one(&gql(ctx).state.db)
@@ -181,10 +199,10 @@ impl User {
             .unwrap_or(0);
         Ok(CountOnly(n))
     }
-    async fn viewer_can_follow(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_follow(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some_and(|v| v != self.0.id)
     }
-    async fn viewer_is_following(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_is_following(&self, ctx: &Context<'_>) -> GResult<bool> {
         let Some(v) = gql(ctx).viewer_id() else {
             return Ok(false);
         };
@@ -204,7 +222,7 @@ pub struct CountOnly(pub i64);
 
 #[Object(name = "FollowerConnection")]
 impl CountOnly {
-    async fn total_count(&self) -> i32 {
+    pub async fn total_count(&self) -> i32 {
         i32::try_from(self.0).unwrap_or(i32::MAX)
     }
 }
@@ -224,49 +242,49 @@ pub struct Organization(pub Arc<db::User>);
 
 #[Object]
 impl Organization {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Organization, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn login(&self) -> String {
+    pub async fn login(&self) -> String {
         self.0.login.clone()
     }
-    async fn name(&self) -> Option<String> {
+    pub async fn name(&self) -> Option<String> {
         self.0.name.clone()
     }
-    async fn email(&self) -> Option<String> {
+    pub async fn email(&self) -> Option<String> {
         self.0.email.clone()
     }
-    async fn description(&self, ctx: &Context<'_>) -> GResult<Option<String>> {
+    pub async fn description(&self, ctx: &Context<'_>) -> GResult<Option<String>> {
         let s = db::OrgSettings::find(&gql(ctx).state.db, self.0.id)
             .await
             .gql()?;
         Ok(s.and_then(|s| s.description))
     }
-    async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
+    pub async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
         avatar(ctx, &self.0, size)
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.user_html(&self.0.login))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/{}", self.0.login))
     }
-    async fn location(&self) -> Option<String> {
+    pub async fn location(&self) -> Option<String> {
         self.0.location.clone()
     }
-    async fn website_url(&self) -> Option<URI> {
+    pub async fn website_url(&self) -> Option<URI> {
         self.0.blog.clone().filter(|b| !b.is_empty()).map(URI)
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn viewer_is_a_member(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_is_a_member(&self, ctx: &Context<'_>) -> GResult<bool> {
         let Some(v) = gql(ctx).viewer_id() else {
             return Ok(false);
         };
@@ -275,7 +293,7 @@ impl Organization {
             .gql()?
             .is_some())
     }
-    async fn viewer_can_administer(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_administer(&self, ctx: &Context<'_>) -> GResult<bool> {
         let Some(v) = gql(ctx).viewer_id() else {
             return Ok(false);
         };
@@ -285,7 +303,7 @@ impl Organization {
             .as_deref()
             == Some("admin"))
     }
-    async fn viewer_can_create_repositories(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_create_repositories(&self, ctx: &Context<'_>) -> GResult<bool> {
         let Some(v) = gql(ctx).viewer_id() else {
             return Ok(false);
         };
@@ -294,17 +312,17 @@ impl Organization {
             .gql()?
             .is_some())
     }
-    async fn repository(
+    pub async fn repository(
         &self,
         ctx: &Context<'_>,
         name: String,
         #[graphql(default)] follow_renames: bool,
-    ) -> GResult<Option<Repository>> {
+    ) -> async_graphql::Result<Option<Repository>> {
         let _ = follow_renames;
         repo::by_owner_and_name(ctx, &self.0, &name).await
     }
     #[allow(clippy::too_many_arguments)]
-    async fn repositories(
+    pub async fn repositories(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -318,7 +336,7 @@ impl Organization {
         owner_affiliations: Option<Vec<Option<RepositoryAffiliation>>>,
         affiliations: Option<Vec<Option<RepositoryAffiliation>>>,
         order_by: Option<RepositoryOrder>,
-    ) -> GResult<RepositoryConnection> {
+    ) -> async_graphql::Result<RepositoryConnection> {
         let _ = (is_locked, affiliations, owner_affiliations);
         repo::owner_repositories(
             ctx,
@@ -334,8 +352,29 @@ impl Organization {
         )
         .await
     }
+    pub async fn projects(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        states: Option<Vec<ProjectState>>,
+        order_by: Option<ProjectOrder>,
+    ) -> ProjectConnection {
+        let _ = (first, after, states, order_by);
+        ProjectConnection::default()
+    }
+    #[graphql(name = "projectsV2")]
+    pub async fn projects_v2(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        query: Option<String>,
+        order_by: Option<ProjectV2Order>,
+    ) -> ProjectV2Connection {
+        let _ = (first, after, query, order_by);
+        ProjectV2Connection::default()
+    }
     /// Teams in this organization (visible ones).
-    async fn teams(
+    pub async fn teams(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -343,7 +382,9 @@ impl Organization {
         after: Option<String>,
         before: Option<String>,
         query: Option<String>,
+        order_by: Option<TeamOrder>,
     ) -> GResult<TeamConnection> {
+        let _ = order_by;
         let g = gql(ctx);
         let member = match g.viewer_id() {
             Some(v) => bgh_core::perms::org_role(&g.state.db, self.0.id, v)
@@ -378,7 +419,7 @@ impl Organization {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn team(&self, ctx: &Context<'_>, slug: String) -> GResult<Option<Team>> {
+    pub async fn team(&self, ctx: &Context<'_>, slug: String) -> GResult<Option<Team>> {
         let g = gql(ctx);
         let row: Option<db::Team> = sqlx::query_as(&format!(
             "SELECT {} FROM teams WHERE org_id = $1 AND lower(slug) = lower($2)",
@@ -404,25 +445,25 @@ pub struct Bot(pub Arc<db::User>);
 
 #[Object]
 impl Bot {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Bot, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn login(&self) -> String {
+    pub async fn login(&self) -> String {
         self.0.login.clone()
     }
-    async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
+    pub async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
         avatar(ctx, &self.0, size)
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.user_html(&self.0.login))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/{}", self.0.login))
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
 }
@@ -433,22 +474,22 @@ pub struct Mannequin(pub Arc<db::User>);
 
 #[Object]
 impl Mannequin {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::User, self.0.id)
     }
-    async fn login(&self) -> String {
+    pub async fn login(&self) -> String {
         self.0.login.clone()
     }
-    async fn email(&self) -> Option<String> {
+    pub async fn email(&self) -> Option<String> {
         None
     }
-    async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
+    pub async fn avatar_url(&self, ctx: &Context<'_>, size: Option<i32>) -> URI {
         avatar(ctx, &self.0, size)
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.user_html(&self.0.login))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/{}", self.0.login))
     }
 }
@@ -459,47 +500,47 @@ pub struct Team(pub Arc<crate::loaders::TeamRow>);
 
 #[Object]
 impl Team {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Team, self.0.team.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.team.id)
     }
-    async fn name(&self) -> String {
+    pub async fn name(&self) -> String {
         self.0.team.name.clone()
     }
-    async fn slug(&self) -> String {
+    pub async fn slug(&self) -> String {
         self.0.team.slug.clone()
     }
-    async fn combined_slug(&self) -> String {
+    pub async fn combined_slug(&self) -> String {
         format!("{}/{}", self.0.org_login, self.0.team.slug)
     }
-    async fn description(&self) -> Option<String> {
+    pub async fn description(&self) -> Option<String> {
         self.0.team.description.clone()
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx)
             .state
             .urls
             .team_html(&self.0.org_login, &self.0.team.slug))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!(
             "/orgs/{}/teams/{}",
             self.0.org_login, self.0.team.slug
         ))
     }
-    async fn organization(&self, ctx: &Context<'_>) -> GResult<Organization> {
+    pub async fn organization(&self, ctx: &Context<'_>) -> GResult<Organization> {
         let g = ctx.data_unchecked::<crate::loaders::Loaders>();
         let org = one(&g.users, self.0.team.org_id)
             .await?
             .ok_or_else(|| crate::ctx::not_found("organization not found"))?;
         Ok(Organization(org))
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.team.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.team.updated_at)
     }
 }

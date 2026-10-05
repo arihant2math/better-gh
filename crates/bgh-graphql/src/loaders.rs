@@ -97,21 +97,9 @@ impl Loaders {
             issue_labels: DataLoader::new(IssueLabelsLoader(s()), tokio::spawn),
             issue_assignees: DataLoader::new(IssueAssigneesLoader(s()), tokio::spawn),
             milestones: DataLoader::new(MilestoneLoader(s()), tokio::spawn),
-            reactions: DataLoader::new(
-                ReactionLoader {
-                    state: s(),
-                    viewer,
-                },
-                tokio::spawn,
-            ),
+            reactions: DataLoader::new(ReactionLoader { state: s(), viewer }, tokio::spawn),
             comments: DataLoader::new(CommentsLoader(s()), tokio::spawn),
-            reviews: DataLoader::new(
-                ReviewsLoader {
-                    state: s(),
-                    viewer,
-                },
-                tokio::spawn,
-            ),
+            reviews: DataLoader::new(ReviewsLoader { state: s(), viewer }, tokio::spawn),
             review_requests: DataLoader::new(ReviewRequestsLoader(s()), tokio::spawn),
             teams: DataLoader::new(TeamLoader(s()), tokio::spawn),
             rollups: DataLoader::new(RollupLoader(s()), tokio::spawn),
@@ -123,7 +111,10 @@ impl Loaders {
             git_refs: DataLoader::new(crate::model::git::RefLoader(s()), tokio::spawn),
             commits: DataLoader::new(crate::model::git::CommitLoader(s()), tokio::spawn),
             git_empty: DataLoader::new(crate::model::git::EmptyLoader(s()), tokio::spawn),
-            users_by_email: DataLoader::new(crate::model::git::UserByEmailLoader(s()), tokio::spawn),
+            users_by_email: DataLoader::new(
+                crate::model::git::UserByEmailLoader(s()),
+                tokio::spawn,
+            ),
         }
     }
 }
@@ -206,8 +197,8 @@ impl RepoLoader {
         auth: Option<&AuthContext>,
         repos: Vec<db::Repository>,
     ) -> Result<Vec<RepoRow>, ApiError> {
-        let owners = bgh_core::views::users_by_id(state, repos.iter().map(|r| Some(r.owner_id)))
-            .await?;
+        let owners =
+            bgh_core::views::users_by_id(state, repos.iter().map(|r| Some(r.owner_id))).await?;
         let raw = perms::repo_permissions(&state.db, auth.map(|a| a.user.id), &repos).await?;
         Ok(repos
             .into_iter()
@@ -279,7 +270,10 @@ impl Loader<i64> for PullLoader {
         .fetch_all(&self.0.db)
         .await
         .map_err(db_err)?;
-        Ok(rows.into_iter().map(|p| (p.issue_id, Arc::new(p))).collect())
+        Ok(rows
+            .into_iter()
+            .map(|p| (p.issue_id, Arc::new(p)))
+            .collect())
     }
 }
 
@@ -405,9 +399,7 @@ pub fn closing_numbers(body: &str) -> Vec<i64> {
     let words: Vec<&str> = body.split_whitespace().collect();
     let mut out = vec![];
     for pair in words.windows(2) {
-        let kw = pair[0]
-            .trim_end_matches(':')
-            .to_ascii_lowercase();
+        let kw = pair[0].trim_end_matches(':').to_ascii_lowercase();
         if KEYWORDS.contains(&kw.as_str())
             && let Some(n) = pair[1]
                 .trim_end_matches(|c: char| !c.is_ascii_digit())
@@ -438,12 +430,12 @@ pub struct ReactionLoader {
     viewer: Option<i64>,
 }
 
-impl Loader<(&'static str, i64)> for ReactionLoader {
+impl Loader<(String, i64)> for ReactionLoader {
     type Value = Arc<ReactionSummary>;
     type Error = Arc<ApiError>;
 
-    async fn load(&self, keys: &[(&'static str, i64)]) -> LResult<(&'static str, i64), Self::Value> {
-        let types: Vec<&str> = keys.iter().map(|k| k.0).collect();
+    async fn load(&self, keys: &[(String, i64)]) -> LResult<(String, i64), Self::Value> {
+        let types: Vec<&str> = keys.iter().map(|k| k.0.as_str()).collect();
         let ids: Vec<i64> = keys.iter().map(|k| k.1).collect();
         let rows: Vec<(String, i64, String, i64, bool)> = sqlx::query_as(
             "SELECT r.subject_type, r.subject_id, r.content, count(*),
@@ -458,14 +450,12 @@ impl Loader<(&'static str, i64)> for ReactionLoader {
         .fetch_all(&self.state.db)
         .await
         .map_err(db_err)?;
-        let mut out: HashMap<(&'static str, i64), ReactionSummary> = keys
+        let mut out: HashMap<(String, i64), ReactionSummary> = keys
             .iter()
-            .map(|k| (*k, ReactionSummary::default()))
+            .map(|k| (k.clone(), ReactionSummary::default()))
             .collect();
         for (ty, id, content, n, mine) in rows {
-            if let Some(key) = keys.iter().find(|k| k.0 == ty && k.1 == id)
-                && let Some(s) = out.get_mut(key)
-            {
+            if let Some(s) = out.get_mut(&(ty, id)) {
                 s.groups.push((content, n, mine));
             }
         }
@@ -559,8 +549,7 @@ pub struct ReviewRow {
 }
 
 impl ReviewRow {
-    pub const COLUMNS: &'static str =
-        "id, pull_id, repo_id, user_id, body, state, commit_id, submitted_at, created_at, updated_at";
+    pub const COLUMNS: &'static str = "id, pull_id, repo_id, user_id, body, state, commit_id, submitted_at, created_at, updated_at";
 }
 
 /// All reviews of a pull request visible to the viewer (submitted ones plus
@@ -736,9 +725,9 @@ impl Rollup {
                 continue;
             }
             match c.conclusion.as_deref() {
-                Some("failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure") => {
-                    any_fail = true
-                }
+                Some(
+                    "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure",
+                ) => any_fail = true,
                 _ => {}
             }
         }
@@ -790,8 +779,10 @@ impl Loader<(i64, String)> for RollupLoader {
         .fetch_all(&self.0.db)
         .await
         .map_err(db_err)?;
-        let mut out: HashMap<(i64, String), Rollup> =
-            keys.iter().map(|k| (k.clone(), Rollup::default())).collect();
+        let mut out: HashMap<(i64, String), Rollup> = keys
+            .iter()
+            .map(|k| (k.clone(), Rollup::default()))
+            .collect();
         for s in statuses {
             if let Some(r) = out.get_mut(&(s.repo_id, s.sha.clone())) {
                 r.statuses.push(s);

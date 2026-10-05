@@ -8,7 +8,7 @@ use crate::ctx::{GResult, err};
 /// Marker inserted for GET requests: mutations are refused.
 pub struct ReadOnly;
 
-pub fn guard(ctx: &Context<'_>) -> GResult<&bgh_core::auth::AuthContext> {
+pub fn guard<'a>(ctx: &Context<'a>) -> GResult<&'a bgh_core::auth::AuthContext> {
     if ctx.data_opt::<ReadOnly>().is_some() {
         return Err(err("FORBIDDEN", "Mutations are not allowed over GET."));
     }
@@ -21,7 +21,7 @@ pub struct Mutation;
 #[Object]
 impl Mutation {
     /// Placeholder until the domain mutations are wired.
-    async fn noop(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn noop(&self, ctx: &Context<'_>) -> GResult<bool> {
         guard(ctx)?;
         Ok(true)
     }

@@ -42,6 +42,10 @@ impl PullRequest {
     pub fn pr(&self) -> &db::PullRequest {
         &self.0.p
     }
+    /// `Node.id` (MergedObject types need it as an inherent method).
+    pub async fn id(&self, _ctx: &Context<'_>) -> GResult<ID> {
+        Ok(nid(NodeType::PullRequest, self.0.i.id))
+    }
 }
 
 connection!(PullRequestConnection, PullRequestEdge, PullRequest);
@@ -69,7 +73,7 @@ pub async fn by_number(
         "SELECT {} FROM issues WHERE repo_id = $1 AND number = $2 AND is_pull_request",
         db::Issue::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(number)
     .fetch_optional(&g.state.db)
     .await
@@ -112,7 +116,7 @@ pub async fn list_for_repo(
     f.head_ref = pf.head_ref_name;
     f.base_ref = pf.base_ref_name;
     f.order = pf.order_by;
-    let page = issue::run_list(ctx, repo.id(), &f, &args).await?;
+    let page = issue::run_list(ctx, repo.rid(), &f, &args).await?;
     let offset = page.offset;
     let has_next = page.has_next;
     let total = page.total;
@@ -127,7 +131,7 @@ pub async fn list_for_repo(
 }
 
 impl PullOnly {
-    async fn base_repo(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn base_repo(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.p.repo_id).await
     }
 
@@ -141,10 +145,10 @@ impl PullOnly {
 
 #[Object]
 impl PullOnly {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::PullRequest, self.i.id)
     }
-    async fn state(&self) -> PullRequestState {
+    pub async fn state(&self) -> PullRequestState {
         if self.p.merged {
             PullRequestState::Merged
         } else if self.i.state == "closed" {
@@ -153,28 +157,31 @@ impl PullOnly {
             PullRequestState::Open
         }
     }
-    async fn is_draft(&self) -> bool {
+    pub async fn is_draft(&self) -> bool {
         self.p.draft
     }
-    async fn head_ref_name(&self) -> String {
+    pub async fn head_ref_name(&self) -> String {
         self.p.head_ref.clone()
     }
-    async fn head_ref_oid(&self) -> GitObjectID {
+    pub async fn head_ref_oid(&self) -> GitObjectID {
         GitObjectID(self.p.head_sha.clone())
     }
-    async fn base_ref_name(&self) -> String {
+    pub async fn base_ref_name(&self) -> String {
         self.p.base_ref.clone()
     }
-    async fn base_ref_oid(&self) -> GitObjectID {
+    pub async fn base_ref_oid(&self) -> GitObjectID {
         GitObjectID(self.p.base_sha.clone())
     }
-    async fn head_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
+    pub async fn head_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         match self.p.head_repo_id {
             Some(id) => repo::load(ctx, id).await,
             None => Ok(None),
         }
     }
-    async fn head_repository_owner(&self, ctx: &Context<'_>) -> GResult<Option<RepositoryOwner>> {
+    pub async fn head_repository_owner(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<RepositoryOwner>> {
         let Some(id) = self.p.head_repo_id else {
             return Ok(None);
         };
@@ -183,41 +190,41 @@ impl PullOnly {
             .await?
             .map(|r| RepositoryOwner::from_user(Arc::new(r.owner.clone()))))
     }
-    async fn base_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
+    pub async fn base_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         Ok(Some(self.base_repo(ctx).await?))
     }
-    async fn is_cross_repository(&self) -> bool {
+    pub async fn is_cross_repository(&self) -> bool {
         self.p.head_repo_id != Some(self.p.repo_id)
     }
-    async fn maintainer_can_modify(&self) -> bool {
+    pub async fn maintainer_can_modify(&self) -> bool {
         self.p.maintainer_can_modify
     }
-    async fn mergeable(&self) -> MergeableState {
+    pub async fn mergeable(&self) -> MergeableState {
         match self.p.mergeable {
             Some(true) => MergeableState::Mergeable,
             Some(false) => MergeableState::Conflicting,
             None => MergeableState::Unknown,
         }
     }
-    async fn merge_state_status(&self) -> MergeStateStatus {
+    pub async fn merge_state_status(&self) -> MergeStateStatus {
         if self.p.draft {
             return MergeStateStatus::Draft;
         }
         MergeStateStatus::from_db(&self.p.mergeable_state)
     }
-    async fn can_be_rebased(&self) -> bool {
+    pub async fn can_be_rebased(&self) -> bool {
         self.p.rebaseable.unwrap_or(false)
     }
-    async fn merged(&self) -> bool {
+    pub async fn merged(&self) -> bool {
         self.p.merged
     }
-    async fn merged_at(&self) -> Option<DateTime> {
+    pub async fn merged_at(&self) -> Option<DateTime> {
         odt(self.p.merged_at)
     }
-    async fn merged_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn merged_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.p.merged_by_id).await
     }
-    async fn merge_commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
+    pub async fn merge_commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
         let Some(sha) = &self.p.merge_commit_sha else {
             return Ok(None);
         };
@@ -226,31 +233,32 @@ impl PullOnly {
         }
         git::commit(ctx, self.base_repo(ctx).await?, sha).await
     }
-    async fn potential_merge_commit(&self) -> Option<Commit> {
+    pub async fn potential_merge_commit(&self) -> Option<Commit> {
         None
     }
-    async fn additions(&self) -> i32 {
+    pub async fn additions(&self) -> i32 {
         self.p.additions as i32
     }
-    async fn deletions(&self) -> i32 {
+    pub async fn deletions(&self) -> i32 {
         self.p.deletions as i32
     }
-    async fn changed_files(&self) -> i32 {
+    pub async fn changed_files(&self) -> i32 {
         self.p.changed_files as i32
     }
-    async fn permalink(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn permalink(&self, ctx: &Context<'_>) -> GResult<URI> {
         let r = self.base_repo(ctx).await?;
         let row = r.row();
-        Ok(URI(gql(ctx)
-            .state
-            .urls
-            .pull_html(&row.owner.login, &row.repo.name, self.i.number)))
+        Ok(URI(gql(ctx).state.urls.pull_html(
+            &row.owner.login,
+            &row.repo.name,
+            self.i.number,
+        )))
     }
-    async fn base_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
+    pub async fn base_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
         let r = self.base_repo(ctx).await?;
         Ref::load(ctx, r, &format!("refs/heads/{}", self.p.base_ref)).await
     }
-    async fn head_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
+    pub async fn head_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
         let Some(id) = self.p.head_repo_id else {
             return Ok(None);
         };
@@ -260,7 +268,7 @@ impl PullOnly {
         Ref::load(ctx, r, &format!("refs/heads/{}", self.p.head_ref)).await
     }
     /// Commits of the pull request (merge base → head), oldest first.
-    async fn commits(
+    pub async fn commits(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -274,20 +282,25 @@ impl PullOnly {
             return Ok(Page::count_only(self.p.commits).into());
         }
         let repo = self.base_repo(ctx).await?;
-        let shas = range_commits(&gql(ctx).state, repo.id(), &self.diff_base(), &self.p.head_sha)
-            .await?;
+        let shas = range_commits(
+            &gql(ctx).state,
+            repo.rid(),
+            &self.diff_base(),
+            &self.p.head_sha,
+        )
+        .await?;
         let page = Page::from_vec(shas, &args)?;
         let l = ctx.data_unchecked::<Loaders>();
         let found = many(
             &l.commits,
-            page.items.iter().map(|s| (repo.id(), s.clone())),
+            page.items.iter().map(|s| (repo.rid(), s.clone())),
         )
         .await?;
         let pull_id = self.i.id;
         let number = self.i.number;
         Ok(page
             .map(|sha| {
-                let c = found.get(&(repo.id(), sha.clone())).cloned();
+                let c = found.get(&(repo.rid(), sha.clone())).cloned();
                 PullRequestCommit {
                     pull_id,
                     number,
@@ -298,7 +311,7 @@ impl PullOnly {
             })
             .into())
     }
-    async fn files(
+    pub async fn files(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -307,11 +320,19 @@ impl PullOnly {
         before: Option<String>,
     ) -> GResult<PullRequestChangedFileConnection> {
         let repo = self.base_repo(ctx).await?;
-        let files =
-            diff_files(&gql(ctx).state, repo.id(), &self.diff_base(), &self.p.head_sha).await?;
+        let files = diff_files(
+            &gql(ctx).state,
+            repo.rid(),
+            &self.diff_base(),
+            &self.p.head_sha,
+        )
+        .await?;
         Ok(Page::from_vec(files, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn review_decision(&self, ctx: &Context<'_>) -> GResult<Option<PullRequestReviewDecision>> {
+    pub async fn review_decision(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<PullRequestReviewDecision>> {
         let l = ctx.data_unchecked::<Loaders>();
         let reviews = one(&l.reviews, self.i.id).await?.unwrap_or_default();
         let latest = latest_per_author(&reviews, true);
@@ -334,7 +355,7 @@ impl PullOnly {
         Ok(required.map(|_| PullRequestReviewDecision::ReviewRequired))
     }
     #[allow(clippy::too_many_arguments)]
-    async fn reviews(
+    pub async fn reviews(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -357,16 +378,16 @@ impl PullOnly {
         let items: Vec<PullRequestReview> = reviews
             .iter()
             .filter(|r| {
-                states.as_ref().is_none_or(|s| {
-                    s.contains(&PullRequestReviewState::from_db(&r.state))
-                })
+                states
+                    .as_ref()
+                    .is_none_or(|s| s.contains(&PullRequestReviewState::from_db(&r.state)))
             })
             .filter(|r| author_id.is_none() || r.user_id == author_id)
             .map(|r| PullRequestReview(Arc::new(r.clone())))
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn latest_reviews(
+    pub async fn latest_reviews(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -382,7 +403,7 @@ impl PullOnly {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn latest_opinionated_reviews(
+    pub async fn latest_opinionated_reviews(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -398,7 +419,7 @@ impl PullOnly {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn review_requests(
+    pub async fn review_requests(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -407,7 +428,9 @@ impl PullOnly {
         before: Option<String>,
     ) -> GResult<ReviewRequestConnection> {
         let l = ctx.data_unchecked::<Loaders>();
-        let rows = one(&l.review_requests, self.i.id).await?.unwrap_or_default();
+        let rows = one(&l.review_requests, self.i.id)
+            .await?
+            .unwrap_or_default();
         let users = many(&l.users, rows.iter().filter_map(|r| r.user_id)).await?;
         let teams = many(&l.teams, rows.iter().filter_map(|r| r.team_id)).await?;
         let pull_id = self.i.id;
@@ -435,7 +458,7 @@ impl PullOnly {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn review_threads(
+    pub async fn review_threads(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -444,11 +467,13 @@ impl PullOnly {
         before: Option<String>,
     ) -> GResult<PullRequestReviewThreadConnection> {
         let l = ctx.data_unchecked::<Loaders>();
-        let comments = one(&l.review_comments, self.i.id).await?.unwrap_or_default();
+        let comments = one(&l.review_comments, self.i.id)
+            .await?
+            .unwrap_or_default();
         let items = threads(&comments);
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn auto_merge_request(&self, ctx: &Context<'_>) -> GResult<Option<AutoMergeRequest>> {
+    pub async fn auto_merge_request(&self, ctx: &Context<'_>) -> GResult<Option<AutoMergeRequest>> {
         let Some(v) = self.p.auto_merge.clone().filter(|v| !v.is_null()) else {
             return Ok(None);
         };
@@ -458,7 +483,7 @@ impl PullOnly {
             pull_id: self.i.id,
         }))
     }
-    async fn closing_issues_references(
+    pub async fn closing_issues_references(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -474,25 +499,34 @@ impl PullOnly {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn viewer_can_enable_auto_merge(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_enable_auto_merge(&self, ctx: &Context<'_>) -> GResult<bool> {
         let r = self.base_repo(ctx).await?;
-        Ok(r.row().repo.allow_auto_merge && r.row().perm >= Permission::Write && self.p.auto_merge.is_none())
+        Ok(r.row().repo.allow_auto_merge
+            && r.row().perm >= Permission::Write
+            && self.p.auto_merge.is_none())
     }
-    async fn viewer_can_disable_auto_merge(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_disable_auto_merge(&self, ctx: &Context<'_>) -> GResult<bool> {
         let r = self.base_repo(ctx).await?;
         Ok(r.row().perm >= Permission::Write && self.p.auto_merge.is_some())
     }
-    async fn viewer_can_merge_as_admin(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_merge_as_admin(&self, ctx: &Context<'_>) -> GResult<bool> {
         Ok(self.base_repo(ctx).await?.row().perm >= Permission::Admin)
     }
-    async fn viewer_merge_body_text(&self) -> String {
-        String::new()
-    }
-    async fn viewer_merge_headline_text(&self, merge_type: Option<PullRequestMergeMethod>) -> String {
+    pub async fn viewer_merge_body_text(
+        &self,
+        merge_type: Option<PullRequestMergeMethod>,
+    ) -> String {
         let _ = merge_type;
         String::new()
     }
-    async fn revert_url(&self) -> Option<URI> {
+    pub async fn viewer_merge_headline_text(
+        &self,
+        merge_type: Option<PullRequestMergeMethod>,
+    ) -> String {
+        let _ = merge_type;
+        String::new()
+    }
+    pub async fn revert_url(&self) -> Option<URI> {
         None
     }
 }
@@ -506,7 +540,12 @@ fn latest_per_author(reviews: &[ReviewRow], opinionated: bool) -> Vec<&ReviewRow
         if r.state == "PENDING" {
             continue;
         }
-        if opinionated && !matches!(r.state.as_str(), "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED") {
+        if opinionated
+            && !matches!(
+                r.state.as_str(),
+                "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED"
+            )
+        {
             continue;
         }
         let Some(uid) = r.user_id else {
@@ -517,7 +556,10 @@ fn latest_per_author(reviews: &[ReviewRow], opinionated: bool) -> Vec<&ReviewRow
         }
         latest.insert(uid, r);
     }
-    let mut out: Vec<&ReviewRow> = order.iter().filter_map(|u| latest.get(u).copied()).collect();
+    let mut out: Vec<&ReviewRow> = order
+        .iter()
+        .filter_map(|u| latest.get(u).copied())
+        .collect();
     if opinionated {
         out.retain(|r| r.state != "DISMISSED");
     }
@@ -555,6 +597,34 @@ fn valid_sha(s: &str) -> bool {
     !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Commits only in `base` and only in `head`: `(behind, ahead)`.
+pub async fn ahead_behind(
+    state: &AppState,
+    repo_id: i64,
+    base: &str,
+    head: &str,
+) -> GResult<(i64, i64)> {
+    if !valid_sha(base) || !valid_sha(head) {
+        return Ok((0, 0));
+    }
+    let state = state.clone();
+    let range = format!("{base}...{head}");
+    let out = tokio::task::spawn_blocking(move || {
+        run_git(
+            &state,
+            repo_id,
+            &["rev-list", "--left-right", "--count", &range],
+        )
+    })
+    .await
+    .map_err(ApiError::from)
+    .gql()?
+    .gql()?;
+    let s = String::from_utf8_lossy(&out);
+    let mut it = s.split_whitespace().map(|n| n.parse::<i64>().unwrap_or(0));
+    Ok((it.next().unwrap_or(0), it.next().unwrap_or(0)))
+}
+
 /// Commit SHAs in `base..head`, oldest first.
 pub async fn range_commits(
     state: &AppState,
@@ -568,7 +638,11 @@ pub async fn range_commits(
     let state = state.clone();
     let range = format!("{base}..{head}");
     let out = tokio::task::spawn_blocking(move || {
-        run_git(&state, repo_id, &["rev-list", "--reverse", "--max-count=250", &range])
+        run_git(
+            &state,
+            repo_id,
+            &["rev-list", "--reverse", "--max-count=250", &range],
+        )
     })
     .await
     .map_err(ApiError::from)
@@ -598,8 +672,16 @@ pub async fn diff_files(
     let state = state.clone();
     let (base, head) = (base.to_string(), head.to_string());
     let res = tokio::task::spawn_blocking(move || -> Result<_, ApiError> {
-        let numstat = run_git(&state, repo_id, &["diff", "--numstat", "-M", "-z", &base, &head])?;
-        let status = run_git(&state, repo_id, &["diff", "--name-status", "-M", "-z", &base, &head])?;
+        let numstat = run_git(
+            &state,
+            repo_id,
+            &["diff", "--numstat", "-M", "-z", &base, &head],
+        )?;
+        let status = run_git(
+            &state,
+            repo_id,
+            &["diff", "--name-status", "-M", "-z", &base, &head],
+        )?;
         Ok((numstat, status))
     })
     .await
@@ -702,13 +784,13 @@ pub struct PullRequestCommit {
 
 #[Object]
 impl PullRequestCommit {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(node_id::encode_str(
             NodeType::Commit,
             &format!("pr:{}:{}", self.pull_id, self.sha),
         ))
     }
-    async fn commit(&self) -> GResult<Commit> {
+    pub async fn commit(&self) -> GResult<Commit> {
         let c = self
             .c
             .clone()
@@ -718,7 +800,7 @@ impl PullRequestCommit {
             c,
         })
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         let r = self.repo.row();
         URI(gql(ctx).state.urls.html(&format!(
             "/{}/pull/{}/commits/{}",
@@ -727,7 +809,7 @@ impl PullRequestCommit {
             self.sha
         )))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!(
             "/{}/pull/{}/commits/{}",
             self.repo.row().full_name(),
@@ -737,7 +819,11 @@ impl PullRequestCommit {
     }
 }
 
-connection!(PullRequestCommitConnection, PullRequestCommitEdge, PullRequestCommit);
+connection!(
+    PullRequestCommitConnection,
+    PullRequestCommitEdge,
+    PullRequestCommit
+);
 
 /// A file changed in a pull request.
 #[derive(Clone)]
@@ -750,19 +836,19 @@ pub struct PullRequestChangedFile {
 
 #[Object]
 impl PullRequestChangedFile {
-    async fn path(&self) -> &str {
+    pub async fn path(&self) -> &str {
         &self.path
     }
-    async fn additions(&self) -> i32 {
+    pub async fn additions(&self) -> i32 {
         self.additions as i32
     }
-    async fn deletions(&self) -> i32 {
+    pub async fn deletions(&self) -> i32 {
         self.deletions as i32
     }
-    async fn change_type(&self) -> PatchStatus {
+    pub async fn change_type(&self) -> PatchStatus {
         self.change
     }
-    async fn viewer_viewed_state(&self) -> FileViewedState {
+    pub async fn viewer_viewed_state(&self) -> FileViewedState {
         FileViewedState::Unviewed
     }
 }
@@ -783,75 +869,75 @@ pub struct PullRequestReview(pub Arc<ReviewRow>);
 
 #[Object]
 impl PullRequestReview {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::PullRequestReview, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn full_database_id(&self) -> Option<String> {
+    pub async fn full_database_id(&self) -> Option<String> {
         Some(self.0.id.to_string())
     }
-    async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.0.user_id).await
     }
-    async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
+    pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.0.repo_id, self.0.user_id).await
     }
-    async fn body(&self) -> String {
+    pub async fn body(&self) -> String {
         self.0.body.clone()
     }
     #[graphql(name = "bodyHTML")]
-    async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
+    pub async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(render_html(ctx, &repo, &self.0.body))
     }
-    async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
+    pub async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(html_to_text(&render_html(ctx, &repo, &self.0.body).0))
     }
-    async fn state(&self) -> PullRequestReviewState {
+    pub async fn state(&self) -> PullRequestReviewState {
         PullRequestReviewState::from_db(&self.0.state)
     }
-    async fn submitted_at(&self) -> Option<DateTime> {
+    pub async fn submitted_at(&self) -> Option<DateTime> {
         odt(self.0.submitted_at)
     }
-    async fn published_at(&self) -> Option<DateTime> {
+    pub async fn published_at(&self) -> Option<DateTime> {
         odt(self.0.submitted_at)
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn last_edited_at(&self) -> Option<DateTime> {
+    pub async fn last_edited_at(&self) -> Option<DateTime> {
         None
     }
-    async fn includes_created_edit(&self) -> bool {
+    pub async fn includes_created_edit(&self) -> bool {
         false
     }
-    async fn is_minimized(&self) -> bool {
+    pub async fn is_minimized(&self) -> bool {
         false
     }
-    async fn minimized_reason(&self) -> Option<String> {
+    pub async fn minimized_reason(&self) -> Option<String> {
         None
     }
-    async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.0.user_id
     }
-    async fn commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
+    pub async fn commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
         let Some(sha) = &self.0.commit_id else {
             return Ok(None);
         };
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         git::commit(ctx, repo, sha).await
     }
-    async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
+    pub async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
         let _ = ctx;
         Ok(Some(super::misc::reaction_groups(&Default::default())))
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         let l = ctx.data_unchecked::<Loaders>();
         let number = one(&l.issues, self.0.pull_id)
@@ -864,7 +950,7 @@ impl PullRequestReview {
             self.0.id
         ))))
     }
-    async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
+    pub async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
         let l = ctx.data_unchecked::<Loaders>();
         let i = one(&l.issues, self.0.pull_id)
             .await?
@@ -875,10 +961,10 @@ impl PullRequestReview {
             .next()
             .ok_or_else(|| crate::ctx::not_found("pull request not found"))
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.0.repo_id).await
     }
-    async fn comments(
+    pub async fn comments(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -899,7 +985,11 @@ impl PullRequestReview {
     }
 }
 
-connection!(PullRequestReviewConnection, PullRequestReviewEdge, PullRequestReview);
+connection!(
+    PullRequestReviewConnection,
+    PullRequestReviewEdge,
+    PullRequestReview
+);
 
 /// A review comment associated with a given repository pull request.
 #[derive(Clone)]
@@ -907,87 +997,87 @@ pub struct PullRequestReviewComment(pub Arc<ReviewCommentRow>);
 
 #[Object]
 impl PullRequestReviewComment {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::PullRequestReviewComment, self.0.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.0.id)
     }
-    async fn full_database_id(&self) -> Option<String> {
+    pub async fn full_database_id(&self) -> Option<String> {
         Some(self.0.id.to_string())
     }
-    async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.0.user_id).await
     }
-    async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
+    pub async fn author_association(&self, ctx: &Context<'_>) -> GResult<CommentAuthorAssociation> {
         association(ctx, self.0.repo_id, self.0.user_id).await
     }
-    async fn body(&self) -> String {
+    pub async fn body(&self) -> String {
         self.0.body.clone()
     }
     #[graphql(name = "bodyHTML")]
-    async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
+    pub async fn body_html(&self, ctx: &Context<'_>) -> GResult<HTML> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(render_html(ctx, &repo, &self.0.body))
     }
-    async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
+    pub async fn body_text(&self, ctx: &Context<'_>) -> GResult<String> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         Ok(html_to_text(&render_html(ctx, &repo, &self.0.body).0))
     }
-    async fn path(&self) -> String {
+    pub async fn path(&self) -> String {
         self.0.path.clone()
     }
-    async fn diff_hunk(&self) -> String {
+    pub async fn diff_hunk(&self) -> String {
         self.0.diff_hunk.clone()
     }
-    async fn line(&self) -> Option<i32> {
+    pub async fn line(&self) -> Option<i32> {
         self.0.line
     }
-    async fn original_line(&self) -> Option<i32> {
+    pub async fn original_line(&self) -> Option<i32> {
         self.0.original_line
     }
-    async fn start_line(&self) -> Option<i32> {
+    pub async fn start_line(&self) -> Option<i32> {
         self.0.start_line
     }
-    async fn original_start_line(&self) -> Option<i32> {
+    pub async fn original_start_line(&self) -> Option<i32> {
         self.0.original_start_line
     }
-    async fn position(&self) -> Option<i32> {
+    pub async fn position(&self) -> Option<i32> {
         self.0.position
     }
-    async fn original_position(&self) -> i32 {
+    pub async fn original_position(&self) -> i32 {
         self.0.original_position.unwrap_or(0)
     }
-    async fn outdated(&self) -> bool {
+    pub async fn outdated(&self) -> bool {
         self.0.position.is_none() && self.0.subject_type == "line"
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.0.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    async fn published_at(&self) -> Option<DateTime> {
+    pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.0.created_at))
     }
-    async fn includes_created_edit(&self) -> bool {
+    pub async fn includes_created_edit(&self) -> bool {
         false
     }
-    async fn is_minimized(&self) -> bool {
+    pub async fn is_minimized(&self) -> bool {
         false
     }
-    async fn minimized_reason(&self) -> Option<String> {
+    pub async fn minimized_reason(&self) -> Option<String> {
         None
     }
-    async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.0.user_id
     }
-    async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
+    pub async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<ReactionGroup>>> {
         Ok(Some(
             load_reaction_groups(ctx, "pull_request_review_comment", self.0.id).await?,
         ))
     }
-    async fn reply_to(&self, ctx: &Context<'_>) -> GResult<Option<PullRequestReviewComment>> {
+    pub async fn reply_to(&self, ctx: &Context<'_>) -> GResult<Option<PullRequestReviewComment>> {
         let Some(parent) = self.0.in_reply_to_id else {
             return Ok(None);
         };
@@ -1000,15 +1090,15 @@ impl PullRequestReviewComment {
             .find(|c| c.id == parent)
             .map(|c| PullRequestReviewComment(Arc::new(c.clone()))))
     }
-    async fn commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
+    pub async fn commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         git::commit(ctx, repo, &self.0.commit_id).await
     }
-    async fn original_commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
+    pub async fn original_commit(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         git::commit(ctx, repo, &self.0.original_commit_id).await
     }
-    async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
+    pub async fn url(&self, ctx: &Context<'_>) -> GResult<URI> {
         let repo = repo::load_unchecked(ctx, self.0.repo_id).await?;
         let l = ctx.data_unchecked::<Loaders>();
         let number = one(&l.issues, self.0.pull_id)
@@ -1021,7 +1111,10 @@ impl PullRequestReviewComment {
             self.0.id
         ))))
     }
-    async fn pull_request_review(&self, ctx: &Context<'_>) -> GResult<Option<PullRequestReview>> {
+    pub async fn pull_request_review(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<PullRequestReview>> {
         let Some(rid) = self.0.review_id else {
             return Ok(None);
         };
@@ -1049,7 +1142,10 @@ pub struct PullRequestReviewThread {
 }
 
 pub fn thread_node_id(root_id: i64) -> String {
-    node_id::encode_str(NodeType::PullRequestReviewComment, &format!("thread:{root_id}"))
+    node_id::encode_str(
+        NodeType::PullRequestReviewComment,
+        &format!("thread:{root_id}"),
+    )
 }
 
 /// Decode a review thread id into its root comment id.
@@ -1101,41 +1197,41 @@ pub fn threads(comments: &[ReviewCommentRow]) -> Vec<PullRequestReviewThread> {
 
 #[Object]
 impl PullRequestReviewThread {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(thread_node_id(self.root.id))
     }
-    async fn is_resolved(&self) -> bool {
+    pub async fn is_resolved(&self) -> bool {
         self.root.resolved_at.is_some()
     }
-    async fn is_outdated(&self) -> bool {
+    pub async fn is_outdated(&self) -> bool {
         self.root.position.is_none() && self.root.subject_type == "line"
     }
-    async fn is_collapsed(&self) -> bool {
+    pub async fn is_collapsed(&self) -> bool {
         self.root.resolved_at.is_some()
     }
-    async fn path(&self) -> String {
+    pub async fn path(&self) -> String {
         self.root.path.clone()
     }
-    async fn line(&self) -> Option<i32> {
+    pub async fn line(&self) -> Option<i32> {
         self.root.line
     }
-    async fn original_line(&self) -> Option<i32> {
+    pub async fn original_line(&self) -> Option<i32> {
         self.root.original_line
     }
-    async fn start_line(&self) -> Option<i32> {
+    pub async fn start_line(&self) -> Option<i32> {
         self.root.start_line
     }
-    async fn original_start_line(&self) -> Option<i32> {
+    pub async fn original_start_line(&self) -> Option<i32> {
         self.root.original_start_line
     }
-    async fn diff_side(&self) -> DiffSide {
+    pub async fn diff_side(&self) -> DiffSide {
         if self.root.side.as_deref() == Some("LEFT") {
             DiffSide::Left
         } else {
             DiffSide::Right
         }
     }
-    async fn start_diff_side(&self) -> Option<DiffSide> {
+    pub async fn start_diff_side(&self) -> Option<DiffSide> {
         self.root.start_side.as_deref().map(|s| {
             if s == "LEFT" {
                 DiffSide::Left
@@ -1144,26 +1240,26 @@ impl PullRequestReviewThread {
             }
         })
     }
-    async fn subject_type(&self) -> PullRequestReviewThreadSubjectType {
+    pub async fn subject_type(&self) -> PullRequestReviewThreadSubjectType {
         if self.root.subject_type == "file" {
             PullRequestReviewThreadSubjectType::File
         } else {
             PullRequestReviewThreadSubjectType::Line
         }
     }
-    async fn resolved_by(&self, ctx: &Context<'_>) -> GResult<Option<User>> {
+    pub async fn resolved_by(&self, ctx: &Context<'_>) -> GResult<Option<User>> {
         actor::user(ctx, self.root.resolved_by_id).await
     }
-    async fn viewer_can_resolve(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_resolve(&self, ctx: &Context<'_>) -> GResult<bool> {
         Ok(self.root.resolved_at.is_none() && self.can_write(ctx).await?)
     }
-    async fn viewer_can_unresolve(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_can_unresolve(&self, ctx: &Context<'_>) -> GResult<bool> {
         Ok(self.root.resolved_at.is_some() && self.can_write(ctx).await?)
     }
-    async fn viewer_can_reply(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_reply(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
-    async fn comments(
+    pub async fn comments(
         &self,
         first: Option<i32>,
         last: Option<i32>,
@@ -1177,7 +1273,7 @@ impl PullRequestReviewThread {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
+    pub async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
         let l = ctx.data_unchecked::<Loaders>();
         let i = one(&l.issues, self.root.pull_id)
             .await?
@@ -1188,13 +1284,13 @@ impl PullRequestReviewThread {
             .next()
             .ok_or_else(|| crate::ctx::not_found("pull request not found"))
     }
-    async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
+    pub async fn repository(&self, ctx: &Context<'_>) -> GResult<Repository> {
         repo::load_unchecked(ctx, self.root.repo_id).await
     }
 }
 
 impl PullRequestReviewThread {
-    async fn can_write(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn can_write(&self, ctx: &Context<'_>) -> GResult<bool> {
         let g = gql(ctx);
         if g.viewer_id().is_none() {
             return Ok(false);
@@ -1233,22 +1329,22 @@ pub struct ReviewRequest {
 
 #[Object]
 impl ReviewRequest {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(node_id::encode_str(
             NodeType::PullRequestReview,
             &format!("request:{}", self.id),
         ))
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.id)
     }
-    async fn as_code_owner(&self) -> bool {
+    pub async fn as_code_owner(&self) -> bool {
         false
     }
-    async fn requested_reviewer(&self) -> Option<RequestedReviewer> {
+    pub async fn requested_reviewer(&self) -> Option<RequestedReviewer> {
         Some(self.reviewer.clone())
     }
-    async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
+    pub async fn pull_request(&self, ctx: &Context<'_>) -> GResult<PullRequest> {
         let l = ctx.data_unchecked::<Loaders>();
         let i = one(&l.issues, self.pull_id)
             .await?
@@ -1271,25 +1367,25 @@ pub struct AutoMergeRequest {
 
 #[Object]
 impl AutoMergeRequest {
-    async fn author_email(&self) -> Option<String> {
+    pub async fn author_email(&self) -> Option<String> {
         self.v
             .get("author_email")
             .and_then(|v| v.as_str())
             .map(str::to_string)
     }
-    async fn commit_body(&self) -> Option<String> {
+    pub async fn commit_body(&self) -> Option<String> {
         self.v
             .get("commit_message")
             .and_then(|v| v.as_str())
             .map(str::to_string)
     }
-    async fn commit_headline(&self) -> Option<String> {
+    pub async fn commit_headline(&self) -> Option<String> {
         self.v
             .get("commit_title")
             .and_then(|v| v.as_str())
             .map(str::to_string)
     }
-    async fn merge_method(&self) -> PullRequestMergeMethod {
+    pub async fn merge_method(&self) -> PullRequestMergeMethod {
         PullRequestMergeMethod::from_rest(
             self.v
                 .get("merge_method")
@@ -1297,21 +1393,24 @@ impl AutoMergeRequest {
                 .unwrap_or("merge"),
         )
     }
-    async fn enabled_at(&self) -> Option<DateTime> {
+    pub async fn enabled_at(&self) -> Option<DateTime> {
         self.v
             .get("enabled_at")
             .and_then(|v| v.as_str())
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|d| DateTime(d.with_timezone(&chrono::Utc)))
     }
-    async fn enabled_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn enabled_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.v.get("enabled_by_id").and_then(|v| v.as_i64())).await
     }
-    async fn pull_request(&self, ctx: &Context<'_>) -> GResult<Option<PullRequest>> {
+    pub async fn pull_request(&self, ctx: &Context<'_>) -> GResult<Option<PullRequest>> {
         let l = ctx.data_unchecked::<Loaders>();
         let Some(i) = one(&l.issues, self.pull_id).await? else {
             return Ok(None);
         };
-        Ok(from_issues(ctx, vec![(*i).clone()]).await?.into_iter().next())
+        Ok(from_issues(ctx, vec![(*i).clone()])
+            .await?
+            .into_iter()
+            .next())
     }
 }

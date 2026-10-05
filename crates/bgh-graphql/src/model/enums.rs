@@ -579,3 +579,57 @@ pub enum RepositoryLockReason {
     TradeRestriction,
     TransferringOwnership,
 }
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum ProjectState {
+    Open,
+    Closed,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum ProjectOrderField {
+    CreatedAt,
+    UpdatedAt,
+    Name,
+}
+
+#[derive(InputObject, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ProjectOrder {
+    pub field: ProjectOrderField,
+    pub direction: OrderDirection,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[graphql(name = "ProjectV2OrderField")]
+pub enum ProjectV2OrderField {
+    Title,
+    Number,
+    UpdatedAt,
+    CreatedAt,
+}
+
+#[derive(InputObject, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[graphql(name = "ProjectV2Order")]
+pub struct ProjectV2Order {
+    pub field: ProjectV2OrderField,
+    pub direction: OrderDirection,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum TeamOrderField {
+    Name,
+}
+
+#[derive(InputObject, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TeamOrder {
+    pub field: TeamOrderField,
+    pub direction: OrderDirection,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum ComparisonStatus {
+    Diverged,
+    Ahead,
+    Behind,
+    Identical,
+}

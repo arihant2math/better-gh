@@ -25,13 +25,13 @@ pub struct Query;
 #[Object]
 impl Query {
     /// The currently authenticated user.
-    async fn viewer(&self, ctx: &Context<'_>) -> GResult<User> {
+    pub async fn viewer(&self, ctx: &Context<'_>) -> GResult<User> {
         let a = gql(ctx).require_auth()?;
         Ok(User(Arc::new(a.user.clone())))
     }
 
     /// Lookup a given repository by the owner and repository name.
-    async fn repository(
+    pub async fn repository(
         &self,
         ctx: &Context<'_>,
         owner: String,
@@ -48,7 +48,7 @@ impl Query {
     }
 
     /// Lookup a repository owner (ie. either a User or an Organization) by login.
-    async fn repository_owner(
+    pub async fn repository_owner(
         &self,
         ctx: &Context<'_>,
         login: String,
@@ -56,13 +56,12 @@ impl Query {
         let u = db::User::find_by_login(&gql(ctx).state.db, &login)
             .await
             .gql()?;
-        Ok(u
-            .filter(|u| u.kind != "Bot")
+        Ok(u.filter(|u| u.kind != "Bot")
             .map(|u| RepositoryOwner::from_user(Arc::new(u))))
     }
 
     /// Lookup a user by login.
-    async fn user(&self, ctx: &Context<'_>, login: String) -> GResult<Option<User>> {
+    pub async fn user(&self, ctx: &Context<'_>, login: String) -> GResult<Option<User>> {
         let u = db::User::find_by_login(&gql(ctx).state.db, &login)
             .await
             .gql()?;
@@ -75,7 +74,11 @@ impl Query {
     }
 
     /// Lookup an organization by login.
-    async fn organization(&self, ctx: &Context<'_>, login: String) -> GResult<Option<Organization>> {
+    pub async fn organization(
+        &self,
+        ctx: &Context<'_>,
+        login: String,
+    ) -> GResult<Option<Organization>> {
         let u = db::User::find_by_login(&gql(ctx).state.db, &login)
             .await
             .gql()?;
@@ -88,7 +91,7 @@ impl Query {
     }
 
     /// Fetches an object given its ID.
-    async fn node(&self, ctx: &Context<'_>, id: ID) -> GResult<Option<Node>> {
+    pub async fn node(&self, ctx: &Context<'_>, id: ID) -> GResult<Option<Node>> {
         match resolve_node(ctx, &id).await? {
             Some(n) => Ok(Some(n)),
             None => Err(not_found(format!(
@@ -99,7 +102,7 @@ impl Query {
     }
 
     /// Lookup nodes by a list of IDs.
-    async fn nodes(&self, ctx: &Context<'_>, ids: Vec<ID>) -> GResult<Vec<Option<Node>>> {
+    pub async fn nodes(&self, ctx: &Context<'_>, ids: Vec<ID>) -> GResult<Vec<Option<Node>>> {
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids {
             out.push(resolve_node(ctx, id).await?);
@@ -109,7 +112,7 @@ impl Query {
 
     /// Perform a search across resources.
     #[allow(clippy::too_many_arguments)]
-    async fn search(
+    pub async fn search(
         &self,
         ctx: &Context<'_>,
         query: String,
@@ -123,7 +126,7 @@ impl Query {
     }
 
     /// The client's rate limit information.
-    async fn rate_limit(&self, #[graphql(default)] dry_run: bool) -> RateLimit {
+    pub async fn rate_limit(&self, #[graphql(default)] dry_run: bool) -> RateLimit {
         let _ = dry_run;
         let reset = chrono::Utc::now() + chrono::Duration::hours(1);
         RateLimit {

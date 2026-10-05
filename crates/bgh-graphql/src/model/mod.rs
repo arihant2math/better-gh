@@ -76,7 +76,34 @@ pub enum Actor {
         arg(name = "size", ty = "Option<i32>")
     ),
     field(name = "url", ty = "URI"),
-    field(name = "resource_path", ty = "URI")
+    field(name = "resource_path", ty = "URI"),
+    field(
+        name = "repository",
+        ty = "Option<Repository>",
+        arg(name = "name", ty = "String"),
+        arg(name = "follow_renames", ty = "bool", default)
+    ),
+    field(
+        name = "repositories",
+        ty = "repo::RepositoryConnection",
+        arg(name = "first", ty = "Option<i32>"),
+        arg(name = "last", ty = "Option<i32>"),
+        arg(name = "after", ty = "Option<String>"),
+        arg(name = "before", ty = "Option<String>"),
+        arg(name = "privacy", ty = "Option<enums::RepositoryPrivacy>"),
+        arg(name = "is_fork", ty = "Option<bool>"),
+        arg(name = "is_archived", ty = "Option<bool>"),
+        arg(name = "is_locked", ty = "Option<bool>"),
+        arg(
+            name = "owner_affiliations",
+            ty = "Option<Vec<Option<enums::RepositoryAffiliation>>>"
+        ),
+        arg(
+            name = "affiliations",
+            ty = "Option<Vec<Option<enums::RepositoryAffiliation>>>"
+        ),
+        arg(name = "order_by", ty = "Option<enums::RepositoryOrder>")
+    )
 )]
 pub enum RepositoryOwner {
     User(User),

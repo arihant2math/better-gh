@@ -57,10 +57,10 @@ pub struct SearchResultItemConnection {
 
 #[Object]
 impl SearchResultItemConnection {
-    async fn nodes(&self) -> Vec<Option<SearchResultItem>> {
+    pub async fn nodes(&self) -> Vec<Option<SearchResultItem>> {
         self.page.items.iter().cloned().map(Some).collect()
     }
-    async fn edges(&self) -> Vec<SearchResultItemEdge> {
+    pub async fn edges(&self) -> Vec<SearchResultItemEdge> {
         self.page
             .items
             .iter()
@@ -72,25 +72,25 @@ impl SearchResultItemConnection {
             })
             .collect()
     }
-    async fn page_info(&self) -> PageInfo {
+    pub async fn page_info(&self) -> PageInfo {
         self.page.page_info()
     }
-    async fn issue_count(&self) -> i32 {
+    pub async fn issue_count(&self) -> i32 {
         self.count(SearchType::Issue)
     }
-    async fn repository_count(&self) -> i32 {
+    pub async fn repository_count(&self) -> i32 {
         self.count(SearchType::Repository)
     }
-    async fn user_count(&self) -> i32 {
+    pub async fn user_count(&self) -> i32 {
         self.count(SearchType::User)
     }
-    async fn discussion_count(&self) -> i32 {
+    pub async fn discussion_count(&self) -> i32 {
         0
     }
-    async fn code_count(&self) -> i32 {
+    pub async fn code_count(&self) -> i32 {
         0
     }
-    async fn wiki_count(&self) -> i32 {
+    pub async fn wiki_count(&self) -> i32 {
         0
     }
 }
@@ -155,14 +155,19 @@ pub fn parse(q: &str, viewer: Option<&str>) -> Parsed {
             _ => (false, t.clone()),
         };
         match body.split_once(':') {
-            Some((k, v)) if !k.is_empty() && !v.is_empty() && k.chars().all(|c| c.is_ascii_alphabetic() || c == '-') => {
+            Some((k, v))
+                if !k.is_empty()
+                    && !v.is_empty()
+                    && k.chars().all(|c| c.is_ascii_alphabetic() || c == '-') =>
+            {
                 let v = if v == "@me" {
                     viewer.unwrap_or("").to_string()
                 } else {
                     v.to_string()
                 };
                 for part in v.split(',') {
-                    p.quals.push((k.to_ascii_lowercase(), part.to_string(), neg));
+                    p.quals
+                        .push((k.to_ascii_lowercase(), part.to_string(), neg));
                 }
             }
             _ => p.text.push(t),
@@ -193,9 +198,11 @@ pub async fn search(
 }
 
 fn push_user_match(qb: &mut QueryBuilder<'_, Postgres>, col: &str, login: &str) {
-    qb.push(format!(" {col} = (SELECT id FROM users WHERE lower(login) = lower("))
-        .push_bind(login.to_string())
-        .push("))");
+    qb.push(format!(
+        " {col} = (SELECT id FROM users WHERE lower(login) = lower("
+    ))
+    .push_bind(login.to_string())
+    .push("))");
 }
 
 fn neg(qb: &mut QueryBuilder<'_, Postgres>, negated: bool) {
@@ -224,7 +231,9 @@ async fn search_issues(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResul
             }
             "user" | "org" | "owner" => {
                 neg(&mut qb, n);
-                qb.push(" lower(o.login) = lower(").push_bind(v.to_string()).push(")");
+                qb.push(" lower(o.login) = lower(")
+                    .push_bind(v.to_string())
+                    .push(")");
             }
             "is" | "state" | "type" => match v.to_ascii_lowercase().as_str() {
                 "issue" => {
@@ -283,10 +292,12 @@ async fn search_issues(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResul
             }
             "assignee" => {
                 neg(&mut qb, n);
-                qb.push(" EXISTS (SELECT 1 FROM issue_assignees ia JOIN users u ON u.id = ia.user_id
-                          WHERE ia.issue_id = i.id AND lower(u.login) = lower(")
-                    .push_bind(v.to_string())
-                    .push("))");
+                qb.push(
+                    " EXISTS (SELECT 1 FROM issue_assignees ia JOIN users u ON u.id = ia.user_id
+                          WHERE ia.issue_id = i.id AND lower(u.login) = lower(",
+                )
+                .push_bind(v.to_string())
+                .push("))");
             }
             "mentions" => {
                 neg(&mut qb, n);
@@ -298,10 +309,12 @@ async fn search_issues(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResul
             }
             "commenter" => {
                 neg(&mut qb, n);
-                qb.push(" EXISTS (SELECT 1 FROM comments c JOIN users u ON u.id = c.author_id
-                          WHERE c.issue_id = i.id AND lower(u.login) = lower(")
-                    .push_bind(v.to_string())
-                    .push("))");
+                qb.push(
+                    " EXISTS (SELECT 1 FROM comments c JOIN users u ON u.id = c.author_id
+                          WHERE c.issue_id = i.id AND lower(u.login) = lower(",
+                )
+                .push_bind(v.to_string())
+                .push("))");
             }
             "involves" => {
                 neg(&mut qb, n);
@@ -351,10 +364,12 @@ async fn search_issues(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResul
             },
             "label" => {
                 neg(&mut qb, n);
-                qb.push(" EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
-                          WHERE il.issue_id = i.id AND lower(l.name) = lower(")
-                    .push_bind(v.to_string())
-                    .push("))");
+                qb.push(
+                    " EXISTS (SELECT 1 FROM issue_labels il JOIN labels l ON l.id = il.label_id
+                          WHERE il.issue_id = i.id AND lower(l.name) = lower(",
+                )
+                .push_bind(v.to_string())
+                .push("))");
             }
             "milestone" => {
                 neg(&mut qb, n);
@@ -369,7 +384,9 @@ async fn search_issues(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResul
                 }
                 "assignee" => {
                     neg(&mut qb, n);
-                    qb.push(" NOT EXISTS (SELECT 1 FROM issue_assignees ia WHERE ia.issue_id = i.id)");
+                    qb.push(
+                        " NOT EXISTS (SELECT 1 FROM issue_assignees ia WHERE ia.issue_id = i.id)",
+                    );
                 }
                 "milestone" => {
                     neg(&mut qb, n);
@@ -481,7 +498,9 @@ async fn search_repos(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResult
             }
             "user" | "org" | "owner" => {
                 neg(&mut qb, n);
-                qb.push(" lower(o.login) = lower(").push_bind(v.to_string()).push(")");
+                qb.push(" lower(o.login) = lower(")
+                    .push_bind(v.to_string())
+                    .push(")");
             }
             "is" => match v {
                 "public" => {
@@ -526,7 +545,9 @@ async fn search_repos(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResult
             }
             "topic" => {
                 neg(&mut qb, n);
-                qb.push(" ").push_bind(v.to_lowercase()).push(" = ANY(r.topics)");
+                qb.push(" ")
+                    .push_bind(v.to_lowercase())
+                    .push(" = ANY(r.topics)");
             }
             _ => {}
         }
@@ -584,7 +605,8 @@ async fn search_users(ctx: &Context<'_>, p: &Parsed) -> GResult<Vec<SearchResult
             .push_bind(format!("%{t}%"))
             .push(")");
     }
-    qb.push(" ORDER BY lower(login) LIMIT ").push_bind(MAX_RESULTS);
+    qb.push(" ORDER BY lower(login) LIMIT ")
+        .push_bind(MAX_RESULTS);
     let rows: Vec<db::User> = qb.build_query_as().fetch_all(&g.state.db).await.gql()?;
     Ok(rows
         .into_iter()
@@ -604,7 +626,10 @@ mod tests {
 
     #[test]
     fn parses_qualifiers() {
-        let p = parse(r#"is:open -label:bug "two words" assignee:@me repo:a/b"#, Some("me"));
+        let p = parse(
+            r#"is:open -label:bug "two words" assignee:@me repo:a/b"#,
+            Some("me"),
+        );
         assert_eq!(p.text, vec!["two words"]);
         assert!(p.quals.contains(&("label".into(), "bug".into(), true)));
         assert!(p.quals.contains(&("assignee".into(), "me".into(), false)));

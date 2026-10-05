@@ -27,7 +27,10 @@ impl License {
             "GPL-2.0" => ("GNU General Public License v2.0", Some("GNU GPLv2")),
             "GPL-3.0" => ("GNU General Public License v3.0", Some("GNU GPLv3")),
             "AGPL-3.0" => ("GNU Affero General Public License v3.0", Some("GNU AGPLv3")),
-            "LGPL-2.1" => ("GNU Lesser General Public License v2.1", Some("GNU LGPLv2.1")),
+            "LGPL-2.1" => (
+                "GNU Lesser General Public License v2.1",
+                Some("GNU LGPLv2.1"),
+            ),
             "LGPL-3.0" => ("GNU Lesser General Public License v3.0", Some("GNU LGPLv3")),
             "BSD-2-Clause" => ("BSD 2-Clause \"Simplified\" License", None),
             "BSD-3-Clause" => ("BSD 3-Clause \"New\" or \"Revised\" License", None),
@@ -105,16 +108,16 @@ impl Language {
 
 #[Object]
 impl Language {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(bgh_core::node_id::encode_str(
             bgh_core::node_id::NodeType::Blob,
             &format!("language:{}", self.name),
         ))
     }
-    async fn name(&self) -> &str {
+    pub async fn name(&self) -> &str {
         &self.name
     }
-    async fn color(&self) -> Option<String> {
+    pub async fn color(&self) -> Option<String> {
         let c = match self.name.as_str() {
             "Rust" => "#dea584",
             "Go" => "#00ADD8",
@@ -167,7 +170,11 @@ impl LanguageConnection {
             .collect();
         Ok(Self {
             edges,
-            nodes: page.items.into_iter().map(|(n, _)| Language::new(n)).collect(),
+            nodes: page
+                .items
+                .into_iter()
+                .map(|(n, _)| Language::new(n))
+                .collect(),
             page_info,
             total_count: page.total as i32,
             total_size: i32::try_from(total_size).unwrap_or(i32::MAX),
@@ -183,13 +190,13 @@ pub struct Topic {
 
 #[Object]
 impl Topic {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(bgh_core::node_id::encode_str(
             bgh_core::node_id::NodeType::Blob,
             &format!("topic:{}", self.name),
         ))
     }
-    async fn name(&self) -> &str {
+    pub async fn name(&self) -> &str {
         &self.name
     }
 }
@@ -202,27 +209,31 @@ pub struct RepositoryTopic {
 
 #[Object]
 impl RepositoryTopic {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(bgh_core::node_id::encode_str(
             bgh_core::node_id::NodeType::Blob,
             &format!("repository-topic:{}", self.name),
         ))
     }
-    async fn topic(&self) -> Topic {
+    pub async fn topic(&self) -> Topic {
         Topic {
             name: self.name.clone(),
         }
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         let g = crate::ctx::gql(ctx);
         URI(g.state.urls.html(&format!("/topics/{}", self.name)))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/topics/{}", self.name))
     }
 }
 
-connection!(RepositoryTopicConnection, RepositoryTopicEdge, RepositoryTopic);
+connection!(
+    RepositoryTopicConnection,
+    RepositoryTopicEdge,
+    RepositoryTopic
+);
 
 impl RepositoryTopicConnection {
     pub fn new(topics: Vec<String>, args: &ConnArgs) -> GResult<Self> {
@@ -301,13 +312,13 @@ pub struct ProjectV2Item {
 
 #[Object(name = "ProjectV2Item")]
 impl ProjectV2Item {
-    async fn id(&self) -> &ID {
+    pub async fn id(&self) -> &ID {
         &self.id
     }
-    async fn project(&self) -> &ProjectV2 {
+    pub async fn project(&self) -> &ProjectV2 {
         &self.project
     }
-    async fn field_value_by_name(&self, name: String) -> Option<ProjectV2ItemFieldValue> {
+    pub async fn field_value_by_name(&self, name: String) -> Option<ProjectV2ItemFieldValue> {
         let _ = name;
         None
     }
@@ -336,7 +347,11 @@ macro_rules! empty_connection {
 empty_connection!(ProjectConnection, Project, "ProjectConnection");
 empty_connection!(ProjectV2Connection, ProjectV2, "ProjectV2Connection");
 empty_connection!(ProjectCardConnection, ProjectCard, "ProjectCardConnection");
-empty_connection!(ProjectV2ItemConnection, ProjectV2Item, "ProjectV2ItemConnection");
+empty_connection!(
+    ProjectV2ItemConnection,
+    ProjectV2Item,
+    "ProjectV2ItemConnection"
+);
 
 // ---------------------------------------------------------------------------
 // Reactions
@@ -352,19 +367,19 @@ pub struct ReactionGroup {
 
 #[Object]
 impl ReactionGroup {
-    async fn content(&self) -> ReactionContent {
+    pub async fn content(&self) -> ReactionContent {
         self.content
     }
-    async fn viewer_has_reacted(&self) -> bool {
+    pub async fn viewer_has_reacted(&self) -> bool {
         self.viewer_has_reacted
     }
-    async fn users(&self) -> ReactorCount {
+    pub async fn users(&self) -> ReactorCount {
         ReactorCount(self.count)
     }
-    async fn reactors(&self) -> ReactorCount {
+    pub async fn reactors(&self) -> ReactorCount {
         ReactorCount(self.count)
     }
-    async fn created_at(&self) -> Option<DateTime> {
+    pub async fn created_at(&self) -> Option<DateTime> {
         None
     }
 }
@@ -373,7 +388,7 @@ pub struct ReactorCount(pub i64);
 
 #[Object(name = "ReactingUserConnection")]
 impl ReactorCount {
-    async fn total_count(&self) -> i32 {
+    pub async fn total_count(&self) -> i32 {
         self.0 as i32
     }
 }
@@ -404,7 +419,7 @@ pub async fn load_reaction_groups(
     id: i64,
 ) -> GResult<Vec<ReactionGroup>> {
     let l = ctx.data_unchecked::<crate::loaders::Loaders>();
-    let s = crate::loaders::one(&l.reactions, (subject_type, id))
+    let s = crate::loaders::one(&l.reactions, (subject_type.to_string(), id))
         .await?
         .unwrap_or_default();
     Ok(reaction_groups(&s))

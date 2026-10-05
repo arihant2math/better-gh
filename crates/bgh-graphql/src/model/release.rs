@@ -38,72 +38,87 @@ impl Release {
 
 #[Object]
 impl Release {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::Release, self.r.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.r.id)
     }
-    async fn name(&self) -> Option<String> {
+    pub async fn name(&self) -> Option<String> {
         self.r.name.clone()
     }
-    async fn tag_name(&self) -> String {
+    pub async fn tag_name(&self) -> String {
         self.r.tag_name.clone()
     }
-    async fn tag_commit(&self, ctx: &Context<'_>) -> GResult<Option<super::Commit>> {
-        super::git::commit(ctx, self.repo.clone(), &format!("refs/tags/{}", self.r.tag_name)).await
+    pub async fn tag_commit(&self, ctx: &Context<'_>) -> GResult<Option<super::Commit>> {
+        super::git::commit(
+            ctx,
+            self.repo.clone(),
+            &format!("refs/tags/{}", self.r.tag_name),
+        )
+        .await
     }
-    async fn tag(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
-        Ref::load(ctx, self.repo.clone(), &format!("refs/tags/{}", self.r.tag_name)).await
+    pub async fn tag(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
+        Ref::load(
+            ctx,
+            self.repo.clone(),
+            &format!("refs/tags/{}", self.r.tag_name),
+        )
+        .await
     }
-    async fn description(&self) -> Option<String> {
+    pub async fn description(&self) -> Option<String> {
         self.r.body.clone()
     }
     #[graphql(name = "descriptionHTML")]
-    async fn description_html(&self, ctx: &Context<'_>) -> Option<HTML> {
-        Some(render_html(ctx, &self.repo, self.r.body.as_deref().unwrap_or("")))
+    pub async fn description_html(&self, ctx: &Context<'_>) -> Option<HTML> {
+        Some(render_html(
+            ctx,
+            &self.repo,
+            self.r.body.as_deref().unwrap_or(""),
+        ))
     }
-    async fn short_description_html(&self, ctx: &Context<'_>) -> Option<HTML> {
-        let text = html_to_text(&render_html(ctx, &self.repo, self.r.body.as_deref().unwrap_or("")).0);
+    pub async fn short_description_html(&self, ctx: &Context<'_>) -> Option<HTML> {
+        let text =
+            html_to_text(&render_html(ctx, &self.repo, self.r.body.as_deref().unwrap_or("")).0);
         Some(HTML(text.chars().take(200).collect()))
     }
-    async fn is_draft(&self) -> bool {
+    pub async fn is_draft(&self) -> bool {
         self.r.draft
     }
-    async fn is_prerelease(&self) -> bool {
+    pub async fn is_prerelease(&self) -> bool {
         self.r.prerelease
     }
-    async fn is_latest(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn is_latest(&self, ctx: &Context<'_>) -> GResult<bool> {
         let l = ctx.data_unchecked::<Loaders>();
         Ok(one(&l.latest_release, self.r.repo_id)
             .await?
             .is_some_and(|x| x.id == self.r.id))
     }
-    async fn is_immutable(&self) -> bool {
+    pub async fn is_immutable(&self) -> bool {
         false
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.r.created_at)
     }
-    async fn published_at(&self) -> Option<DateTime> {
+    pub async fn published_at(&self) -> Option<DateTime> {
         odt(self.r.published_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.r.created_at)
     }
-    async fn author(&self, ctx: &Context<'_>) -> GResult<Option<User>> {
+    pub async fn author(&self, ctx: &Context<'_>) -> GResult<Option<User>> {
         actor::user(ctx, self.r.author_id).await
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.html(&self.html_path()))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(self.html_path())
     }
-    async fn repository(&self) -> Repository {
+    pub async fn repository(&self) -> Repository {
         self.repo.clone()
     }
-    async fn release_assets(
+    pub async fn release_assets(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -124,12 +139,15 @@ impl Release {
             .collect();
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn reaction_groups(&self, ctx: &Context<'_>) -> GResult<Option<Vec<super::misc::ReactionGroup>>> {
+    pub async fn reaction_groups(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<Vec<super::misc::ReactionGroup>>> {
         Ok(Some(
             super::misc::load_reaction_groups(ctx, "release", self.r.id).await?,
         ))
     }
-    async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_react(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
 }
@@ -145,25 +163,25 @@ pub struct ReleaseAsset {
 
 #[Object]
 impl ReleaseAsset {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         nid(NodeType::ReleaseAsset, self.a.id)
     }
-    async fn database_id(&self) -> Option<i64> {
+    pub async fn database_id(&self) -> Option<i64> {
         Some(self.a.id)
     }
-    async fn name(&self) -> String {
+    pub async fn name(&self) -> String {
         self.a.name.clone()
     }
-    async fn content_type(&self) -> String {
+    pub async fn content_type(&self) -> String {
         self.a.content_type.clone()
     }
-    async fn size(&self) -> i32 {
+    pub async fn size(&self) -> i32 {
         i32::try_from(self.a.size).unwrap_or(i32::MAX)
     }
-    async fn download_count(&self) -> i32 {
+    pub async fn download_count(&self) -> i32 {
         self.a.download_count as i32
     }
-    async fn download_url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn download_url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.html(&format!(
             "/{}/releases/download/{}/{}",
             self.release.repo.row().full_name(),
@@ -171,23 +189,23 @@ impl ReleaseAsset {
             bgh_core::urls::encode_segment(&self.a.name)
         )))
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx).state.urls.api(&format!(
             "/repos/{}/releases/assets/{}",
             self.release.repo.row().full_name(),
             self.a.id
         )))
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.a.created_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.a.updated_at)
     }
-    async fn uploaded_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+    pub async fn uploaded_by(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
         actor::actor(ctx, self.a.uploader_id).await
     }
-    async fn release(&self) -> Release {
+    pub async fn release(&self) -> Release {
         self.release.clone()
     }
 }
@@ -213,7 +231,7 @@ pub async fn list_for_repo(
     let total: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM releases WHERE repo_id = $1 AND ($2 OR NOT draft)",
     )
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(drafts)
     .fetch_one(&g.state.db)
     .await
@@ -225,7 +243,7 @@ pub async fn list_for_repo(
         ReleaseRow::COLUMNS,
         d = order.direction.sql()
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(drafts)
     .bind(w.fetch())
     .bind(w.offset)
@@ -244,7 +262,7 @@ pub async fn by_tag(ctx: &Context<'_>, repo: &Repository, tag: &str) -> GResult<
           ORDER BY draft, id DESC LIMIT 1",
         ReleaseRow::COLUMNS
     ))
-    .bind(repo.id())
+    .bind(repo.rid())
     .bind(tag)
     .bind(drafts)
     .fetch_optional(&g.state.db)

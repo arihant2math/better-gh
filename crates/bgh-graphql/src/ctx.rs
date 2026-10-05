@@ -63,7 +63,10 @@ pub fn api_err(e: ApiError) -> async_graphql::Error {
         ApiError::Status(..) => "UNPROCESSABLE",
         ApiError::Internal(cause) => {
             tracing::error!(error = ?cause, "graphql resolver error");
-            return err("INTERNAL", "Something went wrong while executing your query.");
+            return err(
+                "INTERNAL",
+                "Something went wrong while executing your query.",
+            );
         }
     };
     let message = match &e {

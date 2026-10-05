@@ -11,7 +11,9 @@ use sqlx::{Postgres, QueryBuilder};
 use super::actor::{CountOnly, User, UserConnection};
 use super::enums::*;
 use super::git::{self, Commit, GitObject};
-use super::issue::{self, Issue, IssueConnection, Label, LabelConnection, Milestone, MilestoneConnection};
+use super::issue::{
+    self, Issue, IssueConnection, Label, LabelConnection, Milestone, MilestoneConnection,
+};
 use super::misc::{
     CodeOfConduct, FundingLink, IssueTemplate, Language, LanguageConnection, License,
     ProjectConnection, ProjectV2Connection, PullRequestTemplate, RepositoryContactLink,
@@ -33,7 +35,7 @@ impl Repository {
     pub fn row(&self) -> &RepoRow {
         &self.0
     }
-    pub fn id(&self) -> i64 {
+    pub fn rid(&self) -> i64 {
         self.0.repo.id
     }
     fn r(&self) -> &db::Repository {
@@ -181,31 +183,31 @@ connection!(RepositoryConnection, RepositoryEdge, Repository);
 
 #[Object]
 impl Repository {
-    async fn id(&self) -> ID {
-        nid(NodeType::Repository, self.id())
+    pub async fn id(&self) -> ID {
+        nid(NodeType::Repository, self.rid())
     }
-    async fn database_id(&self) -> Option<i64> {
-        Some(self.id())
+    pub async fn database_id(&self) -> Option<i64> {
+        Some(self.rid())
     }
-    async fn name(&self) -> String {
+    pub async fn name(&self) -> String {
         self.r().name.clone()
     }
-    async fn name_with_owner(&self) -> String {
+    pub async fn name_with_owner(&self) -> String {
         self.0.full_name()
     }
-    async fn owner(&self) -> RepositoryOwner {
+    pub async fn owner(&self) -> RepositoryOwner {
         RepositoryOwner::from_user(Arc::new(self.0.owner.clone()))
     }
-    async fn description(&self) -> Option<String> {
+    pub async fn description(&self) -> Option<String> {
         self.r().description.clone()
     }
     #[graphql(name = "descriptionHTML")]
-    async fn description_html(&self) -> HTML {
+    pub async fn description_html(&self) -> HTML {
         let d = self.r().description.as_deref().unwrap_or("");
         HTML(format!("<div>{}</div>", html_escape(d)))
     }
     #[graphql(name = "shortDescriptionHTML")]
-    async fn short_description_html(&self, #[graphql(default = 200)] limit: i32) -> HTML {
+    pub async fn short_description_html(&self, #[graphql(default = 200)] limit: i32) -> HTML {
         let d: String = self
             .r()
             .description
@@ -216,122 +218,132 @@ impl Repository {
             .collect();
         HTML(html_escape(&d))
     }
-    async fn homepage_url(&self) -> Option<URI> {
+    pub async fn homepage_url(&self) -> Option<URI> {
         self.r().homepage.clone().filter(|h| !h.is_empty()).map(URI)
     }
-    async fn url(&self, ctx: &Context<'_>) -> URI {
-        URI(gql(ctx).state.urls.repo_html(self.owner_login(), &self.r().name))
+    pub async fn url(&self, ctx: &Context<'_>) -> URI {
+        URI(gql(ctx)
+            .state
+            .urls
+            .repo_html(self.owner_login(), &self.r().name))
     }
-    async fn resource_path(&self) -> URI {
+    pub async fn resource_path(&self) -> URI {
         URI(format!("/{}", self.0.full_name()))
     }
-    async fn ssh_url(&self, ctx: &Context<'_>) -> GitSSHRemote {
-        GitSSHRemote(gql(ctx).state.urls.ssh_url(self.owner_login(), &self.r().name))
+    pub async fn ssh_url(&self, ctx: &Context<'_>) -> GitSSHRemote {
+        GitSSHRemote(
+            gql(ctx)
+                .state
+                .urls
+                .ssh_url(self.owner_login(), &self.r().name),
+        )
     }
-    async fn mirror_url(&self) -> Option<URI> {
+    pub async fn mirror_url(&self) -> Option<URI> {
         None
     }
-    async fn open_graph_image_url(&self, ctx: &Context<'_>) -> URI {
-        URI(gql(ctx).state.urls.avatar(self.0.owner.id, self.0.owner.avatar_url.as_deref()))
+    pub async fn open_graph_image_url(&self, ctx: &Context<'_>) -> URI {
+        URI(gql(ctx)
+            .state
+            .urls
+            .avatar(self.0.owner.id, self.0.owner.avatar_url.as_deref()))
     }
-    async fn uses_custom_open_graph_image(&self) -> bool {
+    pub async fn uses_custom_open_graph_image(&self) -> bool {
         false
     }
-    async fn security_policy_url(&self) -> Option<URI> {
+    pub async fn security_policy_url(&self) -> Option<URI> {
         None
     }
-    async fn created_at(&self) -> DateTime {
+    pub async fn created_at(&self) -> DateTime {
         dt(self.r().created_at)
     }
-    async fn pushed_at(&self) -> Option<DateTime> {
+    pub async fn pushed_at(&self) -> Option<DateTime> {
         odt(self.r().pushed_at)
     }
-    async fn updated_at(&self) -> DateTime {
+    pub async fn updated_at(&self) -> DateTime {
         dt(self.r().updated_at)
     }
-    async fn archived_at(&self) -> Option<DateTime> {
+    pub async fn archived_at(&self) -> Option<DateTime> {
         self.r().archived.then(|| dt(self.r().updated_at))
     }
-    async fn is_blank_issues_enabled(&self) -> bool {
+    pub async fn is_blank_issues_enabled(&self) -> bool {
         true
     }
-    async fn is_security_policy_enabled(&self) -> Option<bool> {
+    pub async fn is_security_policy_enabled(&self) -> Option<bool> {
         Some(false)
     }
-    async fn has_issues_enabled(&self) -> bool {
+    pub async fn has_issues_enabled(&self) -> bool {
         self.r().has_issues
     }
-    async fn has_projects_enabled(&self) -> bool {
+    pub async fn has_projects_enabled(&self) -> bool {
         self.r().has_projects
     }
-    async fn has_wiki_enabled(&self) -> bool {
+    pub async fn has_wiki_enabled(&self) -> bool {
         self.r().has_wiki
     }
-    async fn has_discussions_enabled(&self) -> bool {
+    pub async fn has_discussions_enabled(&self) -> bool {
         self.r().has_discussions
     }
-    async fn has_vulnerability_alerts_enabled(&self) -> bool {
+    pub async fn has_vulnerability_alerts_enabled(&self) -> bool {
         false
     }
-    async fn has_sponsorships_enabled(&self) -> bool {
+    pub async fn has_sponsorships_enabled(&self) -> bool {
         false
     }
-    async fn merge_commit_allowed(&self) -> bool {
+    pub async fn merge_commit_allowed(&self) -> bool {
         self.r().allow_merge_commit
     }
-    async fn squash_merge_allowed(&self) -> bool {
+    pub async fn squash_merge_allowed(&self) -> bool {
         self.r().allow_squash_merge
     }
-    async fn rebase_merge_allowed(&self) -> bool {
+    pub async fn rebase_merge_allowed(&self) -> bool {
         self.r().allow_rebase_merge
     }
-    async fn auto_merge_allowed(&self) -> bool {
+    pub async fn auto_merge_allowed(&self) -> bool {
         self.r().allow_auto_merge
     }
-    async fn delete_branch_on_merge(&self) -> bool {
+    pub async fn delete_branch_on_merge(&self) -> bool {
         self.r().delete_branch_on_merge
     }
-    async fn allow_update_branch(&self) -> bool {
+    pub async fn allow_update_branch(&self) -> bool {
         self.r().allow_update_branch
     }
-    async fn forking_allowed(&self) -> bool {
+    pub async fn forking_allowed(&self) -> bool {
         self.r().allow_forking
     }
-    async fn web_commit_signoff_required(&self) -> bool {
+    pub async fn web_commit_signoff_required(&self) -> bool {
         self.r().web_commit_signoff_required
     }
-    async fn squash_merge_commit_title(&self) -> Option<String> {
+    pub async fn squash_merge_commit_title(&self) -> Option<String> {
         Some(self.r().squash_merge_commit_title.clone())
     }
-    async fn squash_merge_commit_message(&self) -> Option<String> {
+    pub async fn squash_merge_commit_message(&self) -> Option<String> {
         Some(self.r().squash_merge_commit_message.clone())
     }
-    async fn merge_commit_title(&self) -> Option<String> {
+    pub async fn merge_commit_title(&self) -> Option<String> {
         Some(self.r().merge_commit_title.clone())
     }
-    async fn merge_commit_message(&self) -> Option<String> {
+    pub async fn merge_commit_message(&self) -> Option<String> {
         Some(self.r().merge_commit_message.clone())
     }
-    async fn fork_count(&self) -> i32 {
+    pub async fn fork_count(&self) -> i32 {
         self.r().forks_count as i32
     }
-    async fn stargazer_count(&self) -> i32 {
+    pub async fn stargazer_count(&self) -> i32 {
         self.r().stargazers_count as i32
     }
-    async fn stargazers(&self) -> CountOnly {
+    pub async fn stargazers(&self) -> CountOnly {
         CountOnly(self.r().stargazers_count)
     }
-    async fn watchers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
-        let n: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM watches WHERE repo_id = $1 AND subscribed",
-        )
-        .bind(self.id())
-        .fetch_one(&gql(ctx).state.db)
-        .await
-        .gql()?;
+    pub async fn watchers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM watches WHERE repo_id = $1 AND subscribed")
+                .bind(self.rid())
+                .fetch_one(&gql(ctx).state.db)
+                .await
+                .gql()?;
         Ok(CountOnly(n))
     }
-    async fn forks(
+    pub async fn forks(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -344,7 +356,7 @@ impl Repository {
             "SELECT {} FROM repositories WHERE parent_id = $1 ORDER BY created_at, id",
             db::Repository::COLUMNS
         ))
-        .bind(self.id())
+        .bind(self.rid())
         .fetch_all(&g.state.db)
         .await
         .gql()?;
@@ -358,74 +370,74 @@ impl Repository {
             .collect();
         Ok(Page::from_vec(visible, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn disk_usage(&self) -> Option<i32> {
+    pub async fn disk_usage(&self) -> Option<i32> {
         Some(self.r().size as i32)
     }
-    async fn is_archived(&self) -> bool {
+    pub async fn is_archived(&self) -> bool {
         self.r().archived
     }
-    async fn is_disabled(&self) -> bool {
+    pub async fn is_disabled(&self) -> bool {
         self.r().disabled
     }
-    async fn is_empty(&self, ctx: &Context<'_>) -> GResult<bool> {
-        git::is_empty(ctx, self.id()).await
+    pub async fn is_empty(&self, ctx: &Context<'_>) -> GResult<bool> {
+        git::is_empty(ctx, self.rid()).await
     }
-    async fn is_fork(&self) -> bool {
+    pub async fn is_fork(&self) -> bool {
         self.r().fork
     }
-    async fn is_in_organization(&self) -> bool {
+    pub async fn is_in_organization(&self) -> bool {
         self.0.owner.is_org()
     }
-    async fn is_locked(&self) -> bool {
+    pub async fn is_locked(&self) -> bool {
         false
     }
-    async fn lock_reason(&self) -> Option<RepositoryLockReason> {
+    pub async fn lock_reason(&self) -> Option<RepositoryLockReason> {
         None
     }
-    async fn is_mirror(&self) -> bool {
+    pub async fn is_mirror(&self) -> bool {
         false
     }
-    async fn is_private(&self) -> bool {
+    pub async fn is_private(&self) -> bool {
         self.r().is_private()
     }
-    async fn visibility(&self) -> RepositoryVisibility {
+    pub async fn visibility(&self) -> RepositoryVisibility {
         RepositoryVisibility::from_db(&self.r().visibility)
     }
-    async fn is_template(&self) -> bool {
+    pub async fn is_template(&self) -> bool {
         self.r().is_template
     }
-    async fn is_user_configuration_repository(&self) -> bool {
+    pub async fn is_user_configuration_repository(&self) -> bool {
         self.r().name.eq_ignore_ascii_case(self.owner_login())
     }
-    async fn license_info(&self) -> Option<License> {
+    pub async fn license_info(&self) -> Option<License> {
         self.r().license_spdx_id.as_deref().map(License::from_spdx)
     }
-    async fn code_of_conduct(&self) -> Option<CodeOfConduct> {
+    pub async fn code_of_conduct(&self) -> Option<CodeOfConduct> {
         None
     }
-    async fn contact_links(&self) -> Option<Vec<RepositoryContactLink>> {
+    pub async fn contact_links(&self) -> Option<Vec<RepositoryContactLink>> {
         Some(vec![])
     }
-    async fn funding_links(&self) -> Vec<FundingLink> {
+    pub async fn funding_links(&self) -> Vec<FundingLink> {
         vec![]
     }
-    async fn viewer_can_administer(&self) -> bool {
+    pub async fn viewer_can_administer(&self) -> bool {
         self.0.perm >= Permission::Admin
     }
-    async fn viewer_can_update_topics(&self) -> bool {
+    pub async fn viewer_can_update_topics(&self) -> bool {
         self.0.perm >= Permission::Maintain
     }
-    async fn viewer_can_create_projects(&self) -> bool {
+    pub async fn viewer_can_create_projects(&self) -> bool {
         self.0.perm >= Permission::Write
     }
-    async fn viewer_can_subscribe(&self, ctx: &Context<'_>) -> bool {
+    pub async fn viewer_can_subscribe(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).auth.is_some()
     }
-    async fn viewer_permission(&self, ctx: &Context<'_>) -> Option<RepositoryPermission> {
+    pub async fn viewer_permission(&self, ctx: &Context<'_>) -> Option<RepositoryPermission> {
         gql(ctx).auth.as_ref()?;
         RepositoryPermission::from_perm(self.0.perm)
     }
-    async fn viewer_default_commit_email(&self, ctx: &Context<'_>) -> Option<String> {
+    pub async fn viewer_default_commit_email(&self, ctx: &Context<'_>) -> Option<String> {
         let a = gql(ctx).auth.as_ref()?;
         Some(a.user.email.clone().unwrap_or_else(|| {
             format!(
@@ -436,7 +448,7 @@ impl Repository {
             )
         }))
     }
-    async fn viewer_default_merge_method(&self) -> PullRequestMergeMethod {
+    pub async fn viewer_default_merge_method(&self) -> PullRequestMergeMethod {
         let r = self.r();
         if r.allow_merge_commit {
             PullRequestMergeMethod::Merge
@@ -446,7 +458,10 @@ impl Repository {
             PullRequestMergeMethod::Rebase
         }
     }
-    async fn viewer_possible_commit_emails(&self, ctx: &Context<'_>) -> GResult<Option<Vec<String>>> {
+    pub async fn viewer_possible_commit_emails(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<Vec<String>>> {
         let g = gql(ctx);
         let Some(a) = g.auth.as_ref() else {
             return Ok(None);
@@ -460,19 +475,24 @@ impl Repository {
         .gql()?;
         Ok(Some(emails))
     }
-    async fn viewer_has_starred(&self, ctx: &Context<'_>) -> GResult<bool> {
+    pub async fn viewer_has_starred(&self, ctx: &Context<'_>) -> GResult<bool> {
         let g = gql(ctx);
         let Some(v) = g.viewer_id() else {
             return Ok(false);
         };
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM stars WHERE user_id = $1 AND repo_id = $2)")
-            .bind(v)
-            .bind(self.id())
-            .fetch_one(&g.state.db)
-            .await
-            .gql()
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM stars WHERE user_id = $1 AND repo_id = $2)",
+        )
+        .bind(v)
+        .bind(self.rid())
+        .fetch_one(&g.state.db)
+        .await
+        .gql()
     }
-    async fn viewer_subscription(&self, ctx: &Context<'_>) -> GResult<Option<SubscriptionState>> {
+    pub async fn viewer_subscription(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<SubscriptionState>> {
         let g = gql(ctx);
         let Some(v) = g.viewer_id() else {
             return Ok(None);
@@ -481,7 +501,7 @@ impl Repository {
             "SELECT subscribed, ignored FROM watches WHERE user_id = $1 AND repo_id = $2",
         )
         .bind(v)
-        .bind(self.id())
+        .bind(self.rid())
         .fetch_optional(&g.state.db)
         .await
         .gql()?;
@@ -491,7 +511,7 @@ impl Repository {
             _ => SubscriptionState::Unsubscribed,
         }))
     }
-    async fn repository_topics(
+    pub async fn repository_topics(
         &self,
         first: Option<i32>,
         last: Option<i32>,
@@ -503,10 +523,10 @@ impl Repository {
             &ConnArgs::new(first, last, after, before),
         )
     }
-    async fn primary_language(&self) -> Option<Language> {
+    pub async fn primary_language(&self) -> Option<Language> {
         self.r().language.clone().map(Language::new)
     }
-    async fn languages(
+    pub async fn languages(
         &self,
         first: Option<i32>,
         last: Option<i32>,
@@ -521,32 +541,40 @@ impl Repository {
             .unwrap_or_default();
         LanguageConnection::new(langs, &ConnArgs::new(first, last, after, before))
     }
-    async fn issue_templates(&self) -> Option<Vec<IssueTemplate>> {
+    pub async fn issue_templates(&self) -> Option<Vec<IssueTemplate>> {
         Some(vec![])
     }
-    async fn pull_request_templates(&self) -> Option<Vec<PullRequestTemplate>> {
+    pub async fn pull_request_templates(&self) -> Option<Vec<PullRequestTemplate>> {
         Some(vec![])
     }
-    async fn projects(&self) -> ProjectConnection {
+    pub async fn projects(
+        &self,
+        first: Option<i32>,
+        after: Option<String>,
+        states: Option<Vec<ProjectState>>,
+        order_by: Option<ProjectOrder>,
+    ) -> ProjectConnection {
+        let _ = (first, after, states, order_by);
         ProjectConnection::default()
     }
     #[graphql(name = "projectsV2")]
-    async fn projects_v2(
+    pub async fn projects_v2(
         &self,
         first: Option<i32>,
         after: Option<String>,
         query: Option<String>,
+        order_by: Option<ProjectV2Order>,
     ) -> ProjectV2Connection {
-        let _ = (first, after, query);
+        let _ = (first, after, query, order_by);
         ProjectV2Connection::default()
     }
-    async fn parent(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
+    pub async fn parent(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         match self.r().parent_id {
             Some(id) => load(ctx, id).await,
             None => Ok(None),
         }
     }
-    async fn template_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
+    pub async fn template_repository(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         match self.r().template_repository_id {
             Some(id) => load(ctx, id).await,
             None => Ok(None),
@@ -555,12 +583,12 @@ impl Repository {
 
     // --- git ------------------------------------------------------------
 
-    async fn default_branch_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
+    pub async fn default_branch_ref(&self, ctx: &Context<'_>) -> GResult<Option<Ref>> {
         let name = format!("refs/heads/{}", self.r().default_branch);
         Ref::load(ctx, self.clone(), &name).await
     }
     #[graphql(name = "ref")]
-    async fn ref_(&self, ctx: &Context<'_>, qualified_name: String) -> GResult<Option<Ref>> {
+    pub async fn ref_(&self, ctx: &Context<'_>, qualified_name: String) -> GResult<Option<Ref>> {
         let full = if qualified_name.starts_with("refs/") {
             qualified_name
         } else {
@@ -569,7 +597,7 @@ impl Repository {
         Ref::load(ctx, self.clone(), &full).await
     }
     #[allow(clippy::too_many_arguments)]
-    async fn refs(
+    pub async fn refs(
         &self,
         ctx: &Context<'_>,
         ref_prefix: String,
@@ -582,7 +610,7 @@ impl Repository {
         direction: Option<OrderDirection>,
     ) -> GResult<RefConnection> {
         let _ = direction;
-        let mut refs = git::list_refs(ctx, self.id(), &ref_prefix).await?;
+        let mut refs = git::list_refs(ctx, self.rid(), &ref_prefix).await?;
         if let Some(q) = query.filter(|q| !q.is_empty()) {
             let q = q.to_lowercase();
             refs.retain(|r| r.name.to_lowercase().contains(&q));
@@ -606,7 +634,7 @@ impl Repository {
         Ok(Page::from_vec(items, &ConnArgs::new(first, last, after, before))?.into())
     }
     /// A Git object in the repository.
-    async fn object(
+    pub async fn object(
         &self,
         ctx: &Context<'_>,
         oid: Option<GitObjectID>,
@@ -623,7 +651,7 @@ impl Repository {
     // --- issues & pull requests -----------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    async fn issues(
+    pub async fn issues(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -646,10 +674,10 @@ impl Repository {
         )
         .await
     }
-    async fn issue(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<Issue>> {
+    pub async fn issue(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<Issue>> {
         issue::by_number(ctx, self, i64::from(number), false).await
     }
-    async fn issue_or_pull_request(
+    pub async fn issue_or_pull_request(
         &self,
         ctx: &Context<'_>,
         number: i32,
@@ -657,7 +685,7 @@ impl Repository {
         issue::issue_or_pull(ctx, self, i64::from(number)).await
     }
     #[allow(clippy::too_many_arguments)]
-    async fn pull_requests(
+    pub async fn pull_requests(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -684,14 +712,18 @@ impl Repository {
         )
         .await
     }
-    async fn pull_request(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<PullRequest>> {
+    pub async fn pull_request(
+        &self,
+        ctx: &Context<'_>,
+        number: i32,
+    ) -> GResult<Option<PullRequest>> {
         pull::by_number(ctx, self, i64::from(number)).await
     }
 
     // --- labels, milestones, people --------------------------------------
 
     #[allow(clippy::too_many_arguments)]
-    async fn labels(
+    pub async fn labels(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -710,11 +742,11 @@ impl Repository {
         )
         .await
     }
-    async fn label(&self, ctx: &Context<'_>, name: String) -> GResult<Option<Label>> {
+    pub async fn label(&self, ctx: &Context<'_>, name: String) -> GResult<Option<Label>> {
         issue::repo_label(ctx, self, &name).await
     }
     #[allow(clippy::too_many_arguments)]
-    async fn milestones(
+    pub async fn milestones(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -735,10 +767,10 @@ impl Repository {
         )
         .await
     }
-    async fn milestone(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<Milestone>> {
+    pub async fn milestone(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<Milestone>> {
         issue::repo_milestone(ctx, self, i64::from(number)).await
     }
-    async fn assignable_users(
+    pub async fn assignable_users(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -750,7 +782,7 @@ impl Repository {
         let users = people(ctx, self, query, true).await?;
         Ok(Page::from_vec(users, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn mentionable_users(
+    pub async fn mentionable_users(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -762,7 +794,7 @@ impl Repository {
         let users = people(ctx, self, query, false).await?;
         Ok(Page::from_vec(users, &ConnArgs::new(first, last, after, before))?.into())
     }
-    async fn collaborators(
+    pub async fn collaborators(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -777,13 +809,13 @@ impl Repository {
 
     // --- releases --------------------------------------------------------
 
-    async fn latest_release(&self, ctx: &Context<'_>) -> GResult<Option<Release>> {
+    pub async fn latest_release(&self, ctx: &Context<'_>) -> GResult<Option<Release>> {
         let l = ctx.data_unchecked::<Loaders>();
-        Ok(one(&l.latest_release, self.id())
+        Ok(one(&l.latest_release, self.rid())
             .await?
             .map(|r| Release::new(self.clone(), r)))
     }
-    async fn releases(
+    pub async fn releases(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -792,9 +824,15 @@ impl Repository {
         before: Option<String>,
         order_by: Option<ReleaseOrder>,
     ) -> GResult<ReleaseConnection> {
-        release::list_for_repo(ctx, self, ConnArgs::new(first, last, after, before), order_by).await
+        release::list_for_repo(
+            ctx,
+            self,
+            ConnArgs::new(first, last, after, before),
+            order_by,
+        )
+        .await
     }
-    async fn release(&self, ctx: &Context<'_>, tag_name: String) -> GResult<Option<Release>> {
+    pub async fn release(&self, ctx: &Context<'_>, tag_name: String) -> GResult<Option<Release>> {
         release::by_tag(ctx, self, &tag_name).await
     }
 }
@@ -868,7 +906,7 @@ pub struct Ref {
 
 impl Ref {
     pub async fn load(ctx: &Context<'_>, repo: Repository, full: &str) -> GResult<Option<Self>> {
-        let info = git::find_ref(ctx, repo.id(), full).await?;
+        let info = git::find_ref(ctx, repo.rid(), full).await?;
         Ok(info.map(|i| Ref {
             repo,
             name: i.name,
@@ -886,28 +924,28 @@ impl Ref {
 
 #[Object]
 impl Ref {
-    async fn id(&self) -> ID {
+    pub async fn id(&self) -> ID {
         ID(node_id::encode_str(
             NodeType::Ref,
-            &format!("{}:{}", self.repo.id(), self.name),
+            &format!("{}:{}", self.repo.rid(), self.name),
         ))
     }
-    async fn name(&self) -> String {
+    pub async fn name(&self) -> String {
         self.short().to_string()
     }
-    async fn prefix(&self) -> String {
+    pub async fn prefix(&self) -> String {
         self.name[..self.name.len() - self.short().len()].to_string()
     }
-    async fn repository(&self) -> Repository {
+    pub async fn repository(&self) -> Repository {
         self.repo.clone()
     }
-    async fn target(&self, ctx: &Context<'_>) -> GResult<Option<GitObject>> {
+    pub async fn target(&self, ctx: &Context<'_>) -> GResult<Option<GitObject>> {
         git::object(ctx, self.repo.clone(), &self.target).await
     }
-    async fn branch_protection_rule(&self) -> Option<BranchProtectionRule> {
+    pub async fn branch_protection_rule(&self) -> Option<BranchProtectionRule> {
         None
     }
-    async fn associated_pull_requests(
+    pub async fn associated_pull_requests(
         &self,
         ctx: &Context<'_>,
         first: Option<i32>,
@@ -928,9 +966,26 @@ impl Ref {
         )
         .await
     }
-    /// The commit the ref points at (for branches).
-    async fn compare_target(&self, ctx: &Context<'_>) -> GResult<Option<Commit>> {
-        git::commit(ctx, self.repo.clone(), &self.target).await
+    /// Compare this ref (base) with another ref (head).
+    pub async fn compare(
+        &self,
+        ctx: &Context<'_>,
+        head_ref: String,
+    ) -> GResult<Option<Comparison>> {
+        let head = if head_ref.starts_with("refs/") {
+            head_ref
+        } else {
+            format!("refs/heads/{head_ref}")
+        };
+        let Some(h) = git::find_ref(ctx, self.repo.rid(), &head).await? else {
+            return Ok(None);
+        };
+        let Some(b) = git::find_ref(ctx, self.repo.rid(), &self.name).await? else {
+            return Ok(None);
+        };
+        let (behind, ahead) =
+            pull::ahead_behind(&gql(ctx).state, self.repo.rid(), &b.peeled, &h.peeled).await?;
+        Ok(Some(Comparison { ahead, behind }))
     }
 }
 
@@ -943,4 +998,28 @@ pub struct BranchProtectionRule {
     pub requires_strict_status_checks: bool,
     pub requires_approving_reviews: bool,
     pub required_approving_review_count: Option<i32>,
+}
+
+/// Represents a comparison between two commit revisions.
+pub struct Comparison {
+    ahead: i64,
+    behind: i64,
+}
+
+#[Object]
+impl Comparison {
+    pub async fn ahead_by(&self) -> i32 {
+        self.ahead as i32
+    }
+    pub async fn behind_by(&self) -> i32 {
+        self.behind as i32
+    }
+    pub async fn status(&self) -> ComparisonStatus {
+        match (self.ahead > 0, self.behind > 0) {
+            (true, true) => ComparisonStatus::Diverged,
+            (true, false) => ComparisonStatus::Ahead,
+            (false, true) => ComparisonStatus::Behind,
+            (false, false) => ComparisonStatus::Identical,
+        }
+    }
 }

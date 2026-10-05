@@ -313,7 +313,10 @@ pub fn verify_csrf(headers: &HeaderMap) -> ApiResult<()> {
     match (expected, given) {
         (Some(e), Some(g))
             if e.len() == g.len()
-                && e.bytes().zip(g.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0 =>
+                && e.bytes()
+                    .zip(g.bytes())
+                    .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+                    == 0 =>
         {
             Ok(())
         }
