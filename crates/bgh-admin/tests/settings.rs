@@ -281,6 +281,15 @@ async fn maintenance_mode() {
         .send()
         .await
         .assert_status(200);
+    // The web client's sign-in endpoints pass the maintenance gate too.
+    for path in ["/_bgh/auth/login", "/_bgh/boot"] {
+        let res = app.post(path).json(&json!({})).send().await;
+        assert_ne!(
+            res.status(),
+            503,
+            "{path} must not be blocked by maintenance"
+        );
+    }
     app.get("/api/v3/user")
         .auth(&admin)
         .send()

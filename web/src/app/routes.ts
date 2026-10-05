@@ -47,6 +47,8 @@ function settingsRoutes() {
 }
 
 const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
+const AdminLayout = () => import('../pages/admin/AdminLayout');
+const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout');
 const ProjectsListPage = () => import('../pages/projects/ProjectsListPage');
 const ProjectPage = () => import('../pages/projects/ProjectPage');
 const WikiPage = () => import('../pages/wiki/WikiPage');
@@ -124,6 +126,33 @@ export function registerRoutes(): void {
       prefetch: (p) => VALID_LOGIN.test(p.owner!) && prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
       title: (p) => p.owner!,
     },
+    // Site administration (lazy chunks; the layout guards non-admins).
+    { path: '/site-admin', layout: AdminLayout, load: () => import('../pages/admin/DashboardPage'), title: () => 'Site admin' },
+    { path: '/site-admin/users', layout: AdminLayout, load: () => import('../pages/admin/UsersPage'), title: () => 'Users · Site admin' },
+    { path: '/site-admin/users/:login', layout: AdminLayout, load: () => import('../pages/admin/UserDetailPage'), title: (p) => `${p.login} · Site admin` },
+    { path: '/site-admin/orgs', layout: AdminLayout, load: () => import('../pages/admin/OrgsPage'), title: () => 'Organizations · Site admin' },
+    { path: '/site-admin/orgs/:org', layout: AdminLayout, load: () => import('../pages/admin/OrgDetailPage'), title: (p) => `${p.org} · Site admin` },
+    { path: '/site-admin/repos', layout: AdminLayout, load: () => import('../pages/admin/ReposPage'), title: () => 'Repositories · Site admin' },
+    { path: '/site-admin/repos/:owner/:repo', layout: AdminLayout, load: () => import('../pages/admin/RepoDetailPage'), title: (p) => `${p.owner}/${p.repo} · Site admin` },
+    { path: '/site-admin/settings', layout: AdminLayout, load: () => import('../pages/admin/SettingsPage'), title: () => 'Site settings · Site admin' },
+    { path: '/site-admin/audit-log', layout: AdminLayout, load: () => import('../pages/admin/AuditLogPage'), title: () => 'Audit log · Site admin' },
+    { path: '/site-admin/jobs', layout: AdminLayout, load: () => import('../pages/admin/JobsPage'), title: () => 'Background jobs · Site admin' },
+    { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
+    // Organization settings.
+    { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
+    { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
+    { path: '/organizations/:org/settings/members', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgMembersPage'), title: (p) => `Members · ${p.org}` },
+    { path: '/organizations/:org/settings/teams', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgTeamsPage'), title: (p) => `Teams · ${p.org}` },
+    { path: '/organizations/:org/settings/teams/:team', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
+    {
+      path: '/organizations/:org/settings/outside-collaborators',
+      layout: OrgSettingsLayout,
+      load: () => import('../pages/orgsettings/OrgCollaboratorsPage'),
+      title: (p) => `Outside collaborators · ${p.org}`,
+    },
+    { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
+    { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
+    { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
     // Projects (owner level). Before `/:owner/...` patterns.
     { path: '/orgs/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
     { path: '/users/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },

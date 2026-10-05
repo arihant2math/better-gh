@@ -106,6 +106,12 @@
   --hl-f: #8250df;
   --hl-a: #116329;
 
+  /* charts: categorical slots in fixed order (validated for CVD + contrast, both themes) */
+  --chart-1: var(--accent);
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-muted: #c4c8cf;
+  --chart-grid: var(--border-subtle);
   color-scheme: light;
 }
 
@@ -166,6 +172,11 @@
     --hl-t: #ffa657;
     --hl-f: #d2a8ff;
     --hl-a: #7ee787;
+    --chart-1: var(--accent);
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-muted: #4a4e57;
+    --chart-grid: var(--border-subtle);
     color-scheme: dark;
   }
 }
@@ -226,6 +237,11 @@
   --hl-t: #ffa657;
   --hl-f: #d2a8ff;
   --hl-a: #7ee787;
+  --chart-1: var(--accent);
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-muted: #4a4e57;
+  --chart-grid: var(--border-subtle);
   color-scheme: dark;
 }
 

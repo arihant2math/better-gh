@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useResource } from '../../api/cache';
 import { getOrg, listOrgMembers, listOrgTeams, profileKeys, type RestOrg } from '../../api/profile';
 import { session } from '../../app/session';
+import { site } from '../../app/site';
 import { Pill } from '../../components/settings/kit';
 import { Link, navigate, useQuery } from '../../router';
 import { store } from '../../sync';
@@ -82,7 +83,7 @@ export const OrgProfile = observer(function OrgProfile({ login, synced }: { logi
               New repository
             </Button>
           )}
-          {isOwner && (
+          {(isOwner || site.viewerSiteAdmin) && (
             <Button size="sm" leadingIcon={GearIcon} onClick={() => navigate(`/organizations/${encodeURIComponent(orgLogin)}/settings`)}>
               Settings
             </Button>

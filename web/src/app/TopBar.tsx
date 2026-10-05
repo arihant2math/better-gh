@@ -40,6 +40,11 @@ const Crumbs = observer(function Crumbs() {
   if (pathname === '/') parts.push({ to: '/', label: 'Home' });
   else if (top === 'notifications') parts.push({ to: '/notifications', label: 'Inbox' });
   else if (top === 'settings') parts.push({ to: '/settings', label: 'Settings' });
+  else if (top === 'site-admin') parts.push({ to: '/site-admin', label: 'Site admin' });
+  else if (top === 'organizations' && p.org) {
+    parts.push({ to: `/${p.org}`, label: p.org });
+    parts.push({ to: `/organizations/${encodeURIComponent(p.org)}/settings/profile`, label: 'Settings' });
+  }
   else if (top === 'issues' && !p.owner) parts.push({ to: '/issues', label: 'My issues' });
   else if (top === 'pulls' && !p.owner) parts.push({ to: '/pulls', label: 'Reviews' });
   else if (p.owner) {

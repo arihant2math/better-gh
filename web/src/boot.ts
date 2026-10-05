@@ -7,6 +7,8 @@ export interface BootUser {
   login: string;
   name: string | null;
   avatarUrl: string;
+  /** Site administrator (optional; fetched from `/api/v3/user` when absent). */
+  siteAdmin?: boolean;
 }
 
 export interface BootData {

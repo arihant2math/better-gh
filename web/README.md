@@ -18,6 +18,7 @@ feature work: [`docs/FRONTEND.md`](../docs/FRONTEND.md). Wire protocol:
 | `npm test` | vitest (store, reconciliation, sync client vs. mock, query language, diff parser) |
 | `node scripts/screenshots.mjs [url] [dir]` | Playwright screenshots of key pages (mock mode) |
 | `node scripts/smoke.mjs [url]` | Playwright interaction smoke test (optimistic writes, rollback, reload, keyboard) |
+| `node scripts/admin-smoke.mjs [url] [dir]` | Playwright smoke test of site admin + org settings against a real backend (no mock) |
 
 ## Bundle budget
 
@@ -29,7 +30,7 @@ Enforced by `scripts/size-check.mjs`, run as part of `npm run build`:
 | Initial CSS, gzip | ≤ 30 KB |
 | Any lazily loaded chunk, gzip | ≤ 60 KB |
 
-Current: ~119 KB gzip initial JS (React DOM ≈ 58 KB, MobX ≈ 14 KB, app shell
+Current: ~122 KB gzip initial JS (React DOM ≈ 58 KB, MobX ≈ 14 KB, app shell
 + sync engine ≈ 35 KB). Route pages, markdown (marked + DOMPurify), the
 virtualizer and the mock backend are separate lazy chunks.
 
