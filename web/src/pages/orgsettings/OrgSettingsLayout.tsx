@@ -15,10 +15,10 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'invitations', label: 'Invitations', icon: MailIcon, keys: 'g v' },
   { id: 'audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a', group: 'Archive' },
   { id: 'hooks', label: 'Webhooks', icon: WebhookIcon, keys: 'g w', group: 'Code, planning, and automation' },
+  { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },
   { id: 'import', label: 'Import', icon: DownloadIcon, keys: 'g p' },
   { id: 'installations', label: 'GitHub Apps', icon: AppsIcon, keys: 'g i', group: 'Third-party Access' },
   { id: 'apps', label: 'Developer settings', icon: CodeIcon, keys: 'g d' },
-  { id: 'rules', label: 'Rulesets', icon: ShieldLockIcon, keys: 'g r' },
 ];
 
 export const orgSettingsPath = (org: string, section = 'profile') => `/organizations/${encodeURIComponent(org)}/settings/${section}`;

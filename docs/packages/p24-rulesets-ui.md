@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Rulesets UI (repo + org list/editor/insights, import/export, branch badges, mock); gate green after merging the integration branch; org pages need P23's endpoints and show "not available" until P23 lands.
 
 # P24 — Rulesets UI (repo and org)

@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 GitHub/GHES metadata importer (new crate `bgh-import`, migration 3000), CLI, site-admin and org Import UI; full gate green on the merged branch.
 
 # P18 — Metadata importer, part 1: GitHub/GHES issues, labels, milestones, releases, users — status
