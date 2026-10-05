@@ -278,6 +278,7 @@ export interface Notification {
     | 'team_mention'
     | 'manual'
     | 'ci_activity'
+    | 'approval_requested'
     | 'security_alert';
   unread: boolean;
   updatedAt: Timestamp;

@@ -69,7 +69,8 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   …/runs/{id}`, `GET …/attempts/{n}`, `GET …/attempts/{n}/jobs`,
   `GET …/attempts/{n}/logs`, `POST …/cancel` (202), `POST …/force-cancel`,
   `POST …/rerun` (201), `POST …/rerun-failed-jobs`, `GET …/jobs?filter=`,
-  `GET|DELETE …/logs` (302 → zip), `GET …/artifacts`, `GET …/pending_deployments` (`[]`).
+  `GET|DELETE …/logs` (302 → zip), `GET …/artifacts`, `GET|POST …/pending_deployments` and `GET …/approvals`
+  (P20, see `docs/packages/p20-environment-protection.md`).
 * Jobs: `GET /repos/{o}/{r}/actions/jobs/{id}`, `GET …/logs` (302 → text),
   `POST …/rerun`.
 * Artifacts: `GET /repos/{o}/{r}/actions/artifacts?name=`, `GET|DELETE
@@ -81,8 +82,10 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   `{name}/repositories[/{repo_id}]`).
 * Variables: same three levels (`/actions/variables`, `…/organization-variables`,
   `/environments/{env}/variables`, `/orgs/{org}/actions/variables…`).
-* Environments (minimal, no protection rules): `GET /repos/{o}/{r}/environments`,
-  `GET|PUT|DELETE …/environments/{name}`.
+* Environments with protection rules (P20): `GET /repos/{o}/{r}/environments`,
+  `GET|PUT|DELETE …/environments/{name}` (`wait_timer`, `reviewers`,
+  `prevent_self_review`, `deployment_branch_policy`, `can_admins_bypass`),
+  `…/environments/{name}/deployment-branch-policies[/{id}]`.
 * Runners: repo and org — `GET …/actions/runners`, `GET …/runners/downloads`
   (`[]`), `POST …/registration-token`, `POST …/remove-token`, `GET|DELETE
   …/runners/{id}`, labels `GET|POST|PUT|DELETE …/{id}/labels`, `DELETE

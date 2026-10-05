@@ -117,6 +117,7 @@ export const deleteAuthorization = (id: number) => api.delete<null>(`/_bgh/autho
 
 /** Reason keys accepted by `PUT /_bgh/notifications/settings` (bgh-notify `Reason`). */
 export const NOTIFICATION_REASONS = [
+  'approval_requested',
   'assign',
   'author',
   'comment',

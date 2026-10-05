@@ -250,6 +250,20 @@ interface EnvRow {
   name: string;
   createdAt: string;
   updatedAt: string;
+  /** Protection rules (P20). */
+  waitTimer?: number;
+  reviewers?: { type: 'User' | 'Team'; id: ID }[];
+  preventSelfReview?: boolean;
+  canAdminsBypass?: boolean;
+  branchPolicy?: 'protected' | 'custom' | null;
+  policies?: { id: number; name: string; type: 'branch' | 'tag' }[];
+}
+
+/** A job waiting for an environment's reviewers. */
+interface Gate {
+  envName: string;
+  since: string;
+  state: 'pending' | 'approved' | 'rejected';
 }
 
 interface RepoState {
@@ -991,6 +1005,8 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     for (const name of ['staging', 'production']) {
       st.envs.set(name, { id: repo.id * 100 + st.nextEnv++, name, createdAt: iso(now - 200 * DAY), updatedAt: iso(now - 20 * DAY) });
     }
+    // Production needs a review (the viewer may approve).
+    Object.assign(st.envs.get('production')!, { reviewers: [{ type: 'User', id: viewer.id }], canAdminsBypass: true, branchPolicy: 'protected' });
     states.set(repo.id, st);
     silent = true;
     try {
@@ -1267,11 +1283,25 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     job.annotations = annotationsFor(job, new Rng(hash('ann', job.id)));
   };
 
+  /** Jobs waiting for (or reviewed by) an environment's reviewers. */
+  const gates = new Map<ID, Gate>();
+
   const advanceJob = (run: Run, job: Job, now: number) => {
     const sim = run.sim!;
+    if (job.status === 'waiting') return;
     if (job.status === 'queued') {
       if (--job.wait > 0) return;
       const def = defOf(run, job.key);
+      const env = def.environment ? states.get(run.repoId)?.envs.get(def.environment) : undefined;
+      if (env?.reviewers?.length && !gates.has(job.id)) {
+        gates.set(job.id, { envName: env.name, since: iso(now), state: 'pending' });
+        job.status = 'waiting';
+        run.status = 'waiting';
+        run.updatedAt = iso(now);
+        emitJob(job);
+        emitRun(run);
+        return;
+      }
       job.status = 'in_progress';
       job.startedAt = iso(now);
       assignRunner(job, sim.rng);
@@ -1909,9 +1939,52 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     if (isResp(r)) return r;
     return { status: 200, text: fullLog(r[1]), headers: { 'content-type': 'text/plain; charset=utf-8' } };
   });
+  const reviewersJson = (e: EnvRow) =>
+    (e.reviewers ?? []).map((r) => ({ type: r.type, reviewer: r.type === 'User' ? simpleUser(user(r.id)) : { id: r.id, name: `team-${r.id}`, slug: `team-${r.id}` } }));
+  const waitingGates = (run: Run) => current(run).flatMap((j) => (j.status === 'waiting' && gates.get(j.id)?.state === 'pending' ? [[j, gates.get(j.id)!] as const] : []));
   R('GET', `${P}/actions/runs/:id/pending_deployments`, (ctx) => {
     const r = runOf(ctx);
-    return isResp(r) ? r : { status: 200, body: [] };
+    if (isResp(r)) return r;
+    const [st, run] = r;
+    const seen = new Set<string>();
+    const body = waitingGates(run).flatMap(([, g]) => {
+      const e = st.envs.get(g.envName.toLowerCase());
+      if (!e || seen.has(e.name)) return [];
+      seen.add(e.name);
+      return [
+        {
+          environment: { id: e.id, node_id: btoa(`EN_${e.id}`), name: e.name, url: `${base(st.repo)}/environments/${encodeURIComponent(e.name)}`, html_url: `${html(st.repo)}/deployments/activity_log?environments_filter=${encodeURIComponent(e.name)}` },
+          wait_timer: e.waitTimer ?? 0,
+          wait_timer_started_at: g.since,
+          current_user_can_approve: (e.reviewers ?? []).some((x) => x.type === 'User' && x.id === s.viewer.id) || !!e.canAdminsBypass,
+          reviewers: reviewersJson(e),
+        },
+      ];
+    });
+    return { status: 200, body };
+  });
+  R('POST', `${P}/actions/runs/:id/pending_deployments`, (ctx) => {
+    const r = runOf(ctx);
+    if (isResp(r)) return r;
+    const [st, run] = r;
+    const ids = Array.isArray(ctx.body.environment_ids) ? (ctx.body.environment_ids as number[]) : [];
+    const state = ctx.body.state;
+    if (!ids.length || (state !== 'approved' && state !== 'rejected')) return err(422, 'Validation Failed', { errors: [{ resource: 'PendingDeployment', field: 'state', code: 'invalid' }] });
+    const now = s.now();
+    const reviewed = waitingGates(run).filter(([, g]) => ids.includes(st.envs.get(g.envName.toLowerCase())?.id ?? -1));
+    if (!reviewed.length) return err(422, 'There are no pending deployment requests to approve or reject.');
+    for (const [job, g] of reviewed) {
+      g.state = state;
+      if (state === 'approved') job.status = 'queued';
+      else completeJob(job, 'failure', Date.parse(now));
+      emitJob(job);
+    }
+    if (!current(run).some((j) => j.status === 'waiting')) {
+      run.status = 'in_progress';
+      run.updatedAt = now;
+      emitRun(run);
+    }
+    return { status: 200, body: reviewed.map(([job, g]) => ({ id: job.id, environment: g.envName, sha: run.headSha, ref: run.headBranch, task: 'deploy' })) };
   });
 
   const runLogsZip = (run: Run, attempt: number): Resp => {
@@ -2343,8 +2416,15 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     html_url: `${html(repo)}/deployments/activity_log?environments_filter=${encodeURIComponent(e.name)}`,
     created_at: e.createdAt,
     updated_at: e.updatedAt,
-    protection_rules: [],
-    deployment_branch_policy: null,
+    can_admins_bypass: e.canAdminsBypass ?? true,
+    protection_rules: [
+      ...(e.waitTimer ? [{ id: e.id * 10 + 1, node_id: btoa(`GA_${e.id}1`), type: 'wait_timer', wait_timer: e.waitTimer }] : []),
+      ...(e.reviewers?.length
+        ? [{ id: e.id * 10 + 2, node_id: btoa(`GA_${e.id}2`), type: 'required_reviewers', prevent_self_review: !!e.preventSelfReview, reviewers: reviewersJson(e) }]
+        : []),
+      ...(e.branchPolicy ? [{ id: e.id * 10 + 3, node_id: btoa(`GA_${e.id}3`), type: 'branch_policy' }] : []),
+    ],
+    deployment_branch_policy: e.branchPolicy ? { protected_branches: e.branchPolicy === 'protected', custom_branch_policies: e.branchPolicy === 'custom' } : null,
   });
   R('GET', `${P}/environments`, (ctx) => {
     const st = repoOf(ctx);
@@ -2367,8 +2447,57 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     const now = s.now();
     const prev = st.envs.get(name.toLowerCase());
     const e: EnvRow = prev ? { ...prev, updatedAt: now } : { id: st.repo.id * 100 + st.nextEnv++, name, createdAt: now, updatedAt: now };
+    const b = ctx.body as Record<string, unknown>;
+    if (typeof b.wait_timer === 'number') {
+      if (b.wait_timer < 0 || b.wait_timer > 43200) return err(422, 'Validation Failed', { errors: [{ resource: 'Environment', field: 'wait_timer', code: 'custom', message: 'wait_timer must be an integer between 0 and 43200' }] });
+      e.waitTimer = b.wait_timer;
+    }
+    if (typeof b.prevent_self_review === 'boolean') e.preventSelfReview = b.prevent_self_review;
+    if (typeof b.can_admins_bypass === 'boolean') e.canAdminsBypass = b.can_admins_bypass;
+    if (Array.isArray(b.reviewers)) {
+      if (b.reviewers.length > 6) return err(422, 'Validation Failed', { errors: [{ resource: 'Environment', field: 'reviewers', code: 'custom', message: 'An environment can have at most 6 reviewers' }] });
+      e.reviewers = (b.reviewers as { type: 'User' | 'Team'; id: ID }[]).map((r) => ({ type: r.type, id: r.id }));
+    }
+    if ('deployment_branch_policy' in b) {
+      const p = b.deployment_branch_policy as { protected_branches?: boolean; custom_branch_policies?: boolean } | null;
+      e.branchPolicy = p ? (p.protected_branches ? 'protected' : 'custom') : null;
+    }
     st.envs.set(name.toLowerCase(), e);
     return { status: 200, body: envJson(st.repo, e) };
+  });
+  const policyBase = `${P}/environments/:name/deployment-branch-policies`;
+  R('GET', policyBase, (ctx) => {
+    const st = repoOf(ctx);
+    if (isResp(st)) return st;
+    const e = st.envs.get(dec(ctx.m[3]).toLowerCase());
+    if (!e) return notFound();
+    const rows = (e.policies ?? []).map((p) => ({ ...p, node_id: btoa(`DBP_${p.id}`) }));
+    const p = paginate(ctx, rows);
+    return { status: 200, body: { total_count: rows.length, branch_policies: p.items }, headers: p.headers };
+  });
+  R('POST', policyBase, (ctx) => {
+    const st = repoOf(ctx);
+    if (isResp(st)) return st;
+    const e = st.envs.get(dec(ctx.m[3]).toLowerCase());
+    if (!e || e.branchPolicy !== 'custom') return notFound();
+    const name = String(ctx.body.name ?? '').trim();
+    const type = ctx.body.type === 'tag' ? 'tag' : 'branch';
+    if (!name) return err(422, 'Validation Failed', { errors: [{ resource: 'DeploymentBranchPolicy', field: 'name', code: 'missing_field' }] });
+    e.policies ??= [];
+    const dup = e.policies.find((p) => p.name === name && p.type === type);
+    if (dup) return { status: 303, body: null, headers: { location: `${base(st.repo)}/environments/${encodeURIComponent(e.name)}/deployment-branch-policies/${dup.id}` } };
+    const row = { id: e.id * 1000 + e.policies.length + 1, name, type } as const;
+    e.policies.push(row);
+    return { status: 200, body: { ...row, node_id: btoa(`DBP_${row.id}`) } };
+  });
+  R('DELETE', `${policyBase}/:id`, (ctx) => {
+    const st = repoOf(ctx);
+    if (isResp(st)) return st;
+    const e = st.envs.get(dec(ctx.m[3]).toLowerCase());
+    const id = Number(ctx.m[4]);
+    if (!e?.policies?.some((p) => p.id === id)) return notFound();
+    e.policies = e.policies.filter((p) => p.id !== id);
+    return { status: 204 };
   });
   R('DELETE', `${P}/environments/:name`, (ctx) => {
     const st = repoOf(ctx);

@@ -56,7 +56,8 @@ crates/
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
   bgh-graphql/             GitHub GraphQL v4 subset (for `gh` CLI, etc.)
   bgh-actions/             CI: workflow parsing, runner orchestration,
-                           deployments + statuses (`bgh_actions::deployments`)
+                           deployments + statuses (`bgh_actions::deployments`),
+                           environment protection gates (`bgh_actions::gates`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
   bgh-import/              metadata importer (GitHub/GHES issues, labels,
