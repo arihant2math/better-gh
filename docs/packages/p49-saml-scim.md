@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 SAML 2.0 SSO (pure-Rust SP: metadata, SP/IdP-initiated sign-in, signed + encrypted assertions, SLO, JIT, attribute mapping, group sync) and SCIM 2.0 (enterprise Users/Groups, org Users, deprovisioning revokes credentials).
 
 # P49 saml-scim — status
