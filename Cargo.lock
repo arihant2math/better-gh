@@ -486,6 +486,7 @@ dependencies = [
  "bgh-sync",
  "bytes",
  "clap",
+ "futures",
  "http",
  "http-body-util",
  "redis",

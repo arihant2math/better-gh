@@ -477,6 +477,24 @@ mod tests {
         assert!(read_push_commands(&mut r).await.is_err());
     }
 
+    #[tokio::test]
+    async fn gunzips_request_bodies() {
+        use async_compression::tokio::bufread::GzipEncoder;
+        let mut gz = Vec::new();
+        GzipEncoder::new(&b"0000PACK"[..])
+            .read_to_end(&mut gz)
+            .await
+            .unwrap();
+        let mut h = HeaderMap::new();
+        h.insert(header::CONTENT_ENCODING, "gzip".parse().unwrap());
+        let mut out = Vec::new();
+        body_reader(&h, Body::from(gz))
+            .read_to_end(&mut out)
+            .await
+            .unwrap();
+        assert_eq!(out, b"0000PACK");
+    }
+
     #[test]
     fn validates_protocol_header() {
         let mut h = HeaderMap::new();
