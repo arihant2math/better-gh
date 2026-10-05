@@ -433,7 +433,7 @@ async fn labels_milestones_and_search() {
     )
     .await;
     assert_eq!(d["search"]["issueCount"], 0);
-    assert_eq!(d["rateLimit"]["limit"], 5000);
+    assert!(d["rateLimit"]["limit"].as_i64().unwrap() > 0);
 }
 
 #[tokio::test]

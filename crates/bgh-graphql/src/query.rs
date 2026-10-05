@@ -125,18 +125,35 @@ impl Query {
         search::search(ctx, &query, kind, ConnArgs::new(first, last, after, before)).await
     }
 
-    /// The client's rate limit information.
-    pub async fn rate_limit(&self, #[graphql(default)] dry_run: bool) -> RateLimit {
+    /// The client's rate limit information (the shared `graphql` budget;
+    /// this request is already counted by the root middleware).
+    pub async fn rate_limit(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default)] dry_run: bool,
+    ) -> GResult<RateLimit> {
         let _ = dry_run;
-        let reset = chrono::Utc::now() + chrono::Duration::hours(1);
-        RateLimit {
+        let g = gql(ctx);
+        let settings = bgh_core::settings::load(&g.state).await.gql()?;
+        let q = bgh_core::ratelimit::quota(
+            &g.state,
+            &settings.rate_limits,
+            bgh_core::ratelimit::Resource::Graphql,
+            g.auth.as_ref(),
+            &g.client_ip,
+            false,
+        )
+        .await
+        .gql()?;
+        let reset = chrono::DateTime::from_timestamp(q.reset, 0).unwrap_or_else(chrono::Utc::now);
+        Ok(RateLimit {
             cost: 1,
-            limit: 5000,
+            limit: q.limit as i32,
             node_count: 0,
-            remaining: 4999,
+            remaining: q.remaining as i32,
             reset_at: DateTime(reset),
-            used: 1,
-        }
+            used: q.used as i32,
+        })
     }
 }
 

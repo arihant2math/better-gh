@@ -12,7 +12,9 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   by the server-wide `bgh_core::auth::csrf_middleware`). Bad credentials →
   401 REST error body. Anonymous callers can read public data; `viewer`
   and mutations need auth. `X-OAuth-Scopes` comes from the shared auth
-  middleware; `X-RateLimit-*` headers are static (5000/4999).
+  middleware; requests count against the shared `graphql` budget of
+  `bgh_core::ratelimit` (headers set by its root middleware), which the
+  `rateLimit` object reports.
 * `GET /api/v3/meta` (GHES shape, `installed_version: "3.17.0"` =
   `bgh_graphql::COMPAT_GHES_VERSION`). `gh` gates GraphQL feature detection
   on it: 3.17 = classic issue-search syntax, no classic projects.
@@ -145,7 +147,7 @@ Payload fields `labelable`/`assignable`/`lockedRecord`/`unlockedRecord`/
 
 ## Tests
 
-`cargo test -p bgh-graphql` (19 integration + 2 unit tests):
+`cargo test -p bgh-graphql` (21 integration + 2 unit tests):
 `tests/schema.rs` (SDL names, auth + scopes header, 401, GET vs mutation,
 error `type`, introspection feature detection, `/meta`), `tests/queries.rs`
 (repository fields + owner lists + privacy, issues connection
@@ -158,9 +160,8 @@ threads/close/reopen/squash merge, auto-merge, repository
 create/update/archive/star/template/refs, permission and error types).
 
 Workspace: `cargo clippy --workspace --all-targets -D warnings` clean;
-`cargo test -p <crate>` for every crate passes except
-`bgh-accounts::rate_limits_are_enforced` (known integration conflict) and a
-`bgh-issues::transfer_issue` failure seen once under load (passes alone).
+`cargo test -p bgh-graphql`: 21 integration + 2 unit tests pass after the
+merge of integration 895a904 (rate limiter consolidation).
 
 Schema check against gh's query corpus: every GraphQL operation gh 2.89.0
 sends in its own test suite (~120) was replayed against the server; the
@@ -284,7 +285,7 @@ Runs the gh-compat fixtures, then:
 * `isRequired` on checks is always false, `potentialMergeCommit` is null,
   review `reactionGroups` are empty, comment edit history (`lastEditedAt`,
   `editor`) is approximated.
-* GraphQL requests aren't rate limited (static `rateLimit` and headers);
-  query depth is limited (32) but there is no node-count cost model.
+* Every GraphQL request costs 1 (`rateLimit.cost`); query depth is
+  limited (32) but there is no node-count cost model.
 * `deleteIssue`, `revertPullRequest`, discussions, gists and sponsorships
   are not implemented.

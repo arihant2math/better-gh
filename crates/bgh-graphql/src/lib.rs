@@ -28,6 +28,7 @@ use async_graphql::{EmptySubscription, Schema};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{RawQuery, State};
+use axum::http::request::Parts;
 use axum::http::{HeaderValue, Method};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -91,19 +92,26 @@ pub fn web_router() -> Router<AppState> {
 /// Register background job handlers and event listeners.
 pub fn register(_reg: &mut Registry) {}
 
-async fn post_graphql(State(state): State<AppState>, auth: MaybeUser, body: Bytes) -> Response {
+async fn post_graphql(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    parts: Parts,
+    body: Bytes,
+) -> Response {
     // Cookie-authenticated POSTs are CSRF-checked by the server-wide
     // middleware (bgh_core::auth::csrf_middleware).
     let request: async_graphql::Request = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => return problems_parsing(&e.to_string()),
     };
-    execute(state, auth.0, request, Method::POST).await
+    let ip = client_ip(&state, &parts);
+    execute(state, auth.0, ip, request, Method::POST).await
 }
 
 async fn get_graphql(
     State(state): State<AppState>,
     auth: MaybeUser,
+    parts: Parts,
     RawQuery(query): RawQuery,
 ) -> Response {
     let params: Vec<(String, String)> = query
@@ -131,17 +139,25 @@ async fn get_graphql(
             Err(e) => return problems_parsing(&e.to_string()),
         }
     }
-    execute(state, auth.0, request, Method::GET).await
+    let ip = client_ip(&state, &parts);
+    execute(state, auth.0, ip, request, Method::GET).await
 }
 
 async fn execute(
     state: AppState,
     auth: Option<AuthContext>,
+    client_ip: String,
     request: async_graphql::Request,
     method: Method,
 ) -> Response {
     let loaders = loaders::Loaders::new(&state, auth.as_ref());
-    let mut request = request.data(Gql { state, auth }).data(loaders);
+    let mut request = request
+        .data(Gql {
+            state,
+            auth,
+            client_ip,
+        })
+        .data(loaders);
     if method == Method::GET {
         request = request.data(mutation::ReadOnly);
     }
@@ -151,11 +167,11 @@ async fn execute(
     let mut resp = axum::Json(body).into_response();
     let h = resp.headers_mut();
     h.insert("x-github-media-type", HeaderValue::from_static("github.v4"));
-    h.insert("x-ratelimit-limit", HeaderValue::from_static("5000"));
-    h.insert("x-ratelimit-remaining", HeaderValue::from_static("4999"));
-    h.insert("x-ratelimit-used", HeaderValue::from_static("1"));
-    h.insert("x-ratelimit-resource", HeaderValue::from_static("graphql"));
     resp
+}
+
+fn client_ip(state: &AppState, parts: &Parts) -> String {
+    bgh_core::auth::client_ip(&state.config, &parts.headers, &parts.extensions)
 }
 
 /// GitHub puts the error class in a top-level `type` key (`NOT_FOUND`,

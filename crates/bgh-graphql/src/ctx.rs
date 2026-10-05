@@ -9,6 +9,8 @@ use bgh_core::state::AppState;
 pub struct Gql {
     pub state: AppState,
     pub auth: Option<AuthContext>,
+    /// Client IP (rate-limit identity of anonymous callers).
+    pub client_ip: String,
 }
 
 impl Gql {

@@ -135,3 +135,22 @@ async fn meta_reports_ghes_version() {
         bgh_graphql::COMPAT_GHES_VERSION
     );
 }
+
+#[tokio::test]
+async fn rate_limit_uses_the_graphql_budget() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let q = json!({"query": "{ rateLimit { limit remaining used cost resetAt } }"});
+    let first = app.post("/api/graphql").auth(&alice).json(&q).send().await;
+    first.assert_status(200);
+    assert_eq!(first.header("x-ratelimit-resource"), Some("graphql"));
+    let limit: i64 = first.header("x-ratelimit-limit").unwrap().parse().unwrap();
+    let rl = first.json()["data"]["rateLimit"].clone();
+    assert_eq!(rl["limit"], limit);
+    let second = app.post("/api/graphql").auth(&alice).json(&q).send().await;
+    let rl2 = second.json()["data"]["rateLimit"].clone();
+    assert_eq!(
+        rl2["used"].as_i64().unwrap(),
+        rl["used"].as_i64().unwrap() + 1
+    );
+}
