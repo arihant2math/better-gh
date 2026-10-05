@@ -10,4 +10,5 @@ mod runs;
 mod security;
 mod settings;
 mod smoke;
+mod triggers;
 mod ui;

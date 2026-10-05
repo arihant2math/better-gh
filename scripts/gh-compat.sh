@@ -341,6 +341,36 @@ run_case "gh issue create --project (item added)" --needs FX_PROJECT --expect "T
 run_case "gh project close" --needs FX_PROJECT -- \
   "$GH" project close "${FX_PROJECT:-0}" --owner "$OWNER"
 
+echo "-- actions"
+FX_DISPATCH=""
+# shellcheck disable=SC2016 # expanded by the inner bash
+if [[ -n $FX_REPO ]] && run_case "push repository_dispatch workflow (git)" --kind fixture -- bash -c '
+    set -e
+    fixture_git() { git -c credential.helper= -c "credential.helper=$1/cred-helper.sh" "${@:2}"; }
+    fixture_git "$1" clone -q "$2" "$1/dispatch"
+    cd "$1/dispatch"
+    mkdir -p .github/workflows
+    printf "on:\n  repository_dispatch:\n    types: [deploy]\njobs:\n  d:\n    runs-on: none\n    steps: [{run: echo}]\n" >.github/workflows/dispatch.yml
+    git add -A && git -c user.name=gh -c user.email=gh@example.com commit -qm "Add dispatch workflow"
+    fixture_git "$1" push -q origin HEAD:main
+  ' _ "$WORK" "$API_BASE/$NWO.git"; then
+  FX_DISPATCH=1
+fi
+run_case "gh api -X POST repos/{owner}/{repo}/dispatches" --needs FX_DISPATCH -- \
+  "$GH" api -X POST "repos/$NWO/dispatches" -f event_type=deploy -F 'client_payload[env]=prod'
+# shellcheck disable=SC2329 # invoked through run_case
+dispatch_run() { # the dispatch starts a repository_dispatch run (async trigger)
+  local i
+  for i in $(seq 1 30); do
+    "$GH" api "repos/$NWO/actions/runs?event=repository_dispatch" --jq '.workflow_runs[].event' | grep -q repository_dispatch &&
+      { echo repository_dispatch; return 0; }
+    sleep 1
+  done
+  return 1
+}
+run_case "gh api actions/runs?event=repository_dispatch" --needs FX_DISPATCH --expect "^repository_dispatch\$" -- \
+  dispatch_run
+
 echo "-- releases"
 run_case "gh release create" --needs FX_REPO --expect "/releases/tag/v1\\.0\\.0" -- \
   "$GH" release create v1.0.0 -R "$NWO" --title "v1.0.0" --notes "notes from gh"
