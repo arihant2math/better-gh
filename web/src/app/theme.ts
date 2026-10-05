@@ -1,8 +1,18 @@
 import { makeAutoObservable } from 'mobx';
 
 export type ThemePref = 'system' | 'light' | 'dark';
+export type Density = 'comfortable' | 'compact';
 
 const KEY = 'bgh.theme';
+const DENSITY_KEY = 'bgh.density';
+
+function readDensity(): Density {
+  try {
+    return localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+  } catch {
+    return 'comfortable';
+  }
+}
 
 function read(): ThemePref {
   try {
@@ -15,6 +25,8 @@ function read(): ThemePref {
 
 class Theme {
   pref: ThemePref = read();
+  /** Row/control density; applied as `html[data-density]` (index.html sets it before first paint). */
+  density: Density = readDensity();
   systemDark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches;
 
   constructor() {
@@ -46,6 +58,19 @@ class Theme {
     if (pref === 'system') delete root.dataset.theme;
     else root.dataset.theme = pref;
     requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('theme-switching')));
+  }
+
+  setDensity(density: Density) {
+    this.density = density;
+    try {
+      if (density === 'comfortable') localStorage.removeItem(DENSITY_KEY);
+      else localStorage.setItem(DENSITY_KEY, density);
+    } catch {
+      /* ignore */
+    }
+    if (typeof document === 'undefined') return;
+    if (density === 'comfortable') delete document.documentElement.dataset.density;
+    else document.documentElement.dataset.density = density;
   }
 
   toggle() {

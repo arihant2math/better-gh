@@ -1,0 +1,63 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  touch-action: none;
+}
+
+.canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas:active {
+  cursor: grabbing;
+}
+
+.canvas:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 200px var(--bg-overlay);
+  outline: 1px solid color-mix(in srgb, var(--fg-on-accent) 70%, transparent);
+  pointer-events: none;
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 300px;
+  font-size: var(--fs-md);
+  color: var(--fg-muted);
+}
+
+.zoom input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.hint {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.error {
+  color: var(--danger);
+  font-size: var(--fs-md);
+}
