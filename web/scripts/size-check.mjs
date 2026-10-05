@@ -11,7 +11,15 @@ const BUDGET = {
   initialCssGzip: 30 * 1024,
   /** Any single lazy chunk (route) — keeps routes cheap to prefetch. */
   lazyChunkGzip: 60 * 1024,
+  /**
+   * Chunks reachable only through the Mermaid entry (mermaid and its
+   * d3/cytoscape/katex deps). They load only when a rendered Markdown body
+   * contains a ```mermaid block, never on navigation or prefetch.
+   */
+  diagramChunkGzip: 150 * 1024,
 };
+/** Dynamic entries whose private import graph gets `diagramChunkGzip`. */
+const DIAGRAM_ENTRIES = [/node_modules\/mermaid\/dist\/mermaid\.core\.mjs$/];
 
 const dist = new URL('../dist/', import.meta.url).pathname;
 const manifestPath = join(dist, '.vite/manifest.json');
@@ -50,6 +58,23 @@ for (const f of initialJs) {
 let cssGz = 0;
 for (const f of initialCss) cssGz += gz(f);
 
+// Files reachable from `roots` (static + dynamic imports), not entering `stop` keys.
+const reach = (roots, stop) => {
+  const seen = new Set();
+  const files = new Set();
+  const go = (key) => {
+    if (seen.has(key) || stop.has(key) || !manifest[key]) return;
+    seen.add(key);
+    files.add(manifest[key].file);
+    for (const k of [...(manifest[key].imports ?? []), ...(manifest[key].dynamicImports ?? [])]) go(k);
+  };
+  roots.forEach(go);
+  return files;
+};
+const diagramKeys = new Set(Object.keys(manifest).filter((k) => DIAGRAM_ENTRIES.some((re) => re.test(k))));
+const appFiles = reach(Object.keys(manifest).filter((k) => manifest[k].isEntry), diagramKeys);
+const diagramFiles = new Set([...reach([...diagramKeys], new Set())].filter((f) => !appFiles.has(f)));
+
 const allJs = readdirSync(join(dist, 'assets')).filter((f) => f.endsWith('.js')).map((f) => `assets/${f}`);
 const lazy = allJs.filter((f) => !initialJs.has(f)).map((f) => [f, gz(f)]).sort((a, b) => b[1] - a[1]);
 
@@ -64,7 +89,11 @@ if (verbose) for (const [f, g] of lazy) console.log(`  ${kb(g).padStart(9)}  ${f
 const failures = [];
 if (jsGz > BUDGET.initialJsGzip) failures.push(`initial JS ${kb(jsGz)} > ${kb(BUDGET.initialJsGzip)}`);
 if (cssGz > BUDGET.initialCssGzip) failures.push(`initial CSS ${kb(cssGz)} > ${kb(BUDGET.initialCssGzip)}`);
-for (const [f, g] of lazy) if (g > BUDGET.lazyChunkGzip) failures.push(`lazy chunk ${f} ${kb(g)} > ${kb(BUDGET.lazyChunkGzip)}`);
+for (const [f, g] of lazy) {
+  const limit = diagramFiles.has(f) ? BUDGET.diagramChunkGzip : BUDGET.lazyChunkGzip;
+  if (g > limit) failures.push(`lazy chunk ${f} ${kb(g)} > ${kb(limit)}`);
+}
+if (diagramFiles.size) console.log(`Diagram chunks (on demand, budget ${kb(BUDGET.diagramChunkGzip)} each): ${diagramFiles.size}`);
 if (!entry) failures.push('no index.html entry in manifest');
 
 if (failures.length) {

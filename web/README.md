@@ -29,10 +29,17 @@ Enforced by `scripts/size-check.mjs`, run as part of `npm run build`:
 | Initial JS (everything `index.html` loads before first render), gzip | **≤ 150 KB** |
 | Initial CSS, gzip | ≤ 30 KB |
 | Any lazily loaded chunk, gzip | ≤ 60 KB |
+| On-demand diagram chunks (only reachable through the Mermaid entry), gzip | ≤ 150 KB each |
 
 Current: ~122 KB gzip initial JS (React DOM ≈ 58 KB, MobX ≈ 14 KB, app shell
 + sync engine ≈ 35 KB). Route pages, markdown (marked + DOMPurify), the
-virtualizer and the mock backend are separate lazy chunks.
+virtualizer and the mock backend are separate lazy chunks. The gemoji
+table (`ui/markdown/emoji.json`, shared with the server, regenerate with
+`node scripts/gen-emoji.mjs`) is its own chunk; math (temml, MathML output)
+and Mermaid load only when a rendered body contains math or a ```mermaid
+block. Mermaid and its d3/cytoscape dependencies exceed the 60 KB lazy cap,
+so `size-check.mjs` budgets chunks reachable *only* through the Mermaid
+entry separately; they are never prefetched.
 
 ## Serving (for bgh-server)
 

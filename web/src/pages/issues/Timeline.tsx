@@ -278,7 +278,7 @@ const CommentCard = observer(function CommentCard({
               <Skeleton width="40%" style={{ marginTop: 8 }} />
             </>
           ) : body ? (
-            <Markdown source={body} repo={repo} />
+            <Markdown source={body} repo={repo} onSourceChange={onEdit} />
           ) : (
             <span className={styles.subtle}>No description provided.</span>
           )}

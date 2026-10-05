@@ -295,6 +295,18 @@ impl Renderer<'_> {
         for (id, content, n) in reactions {
             reactions_by.entry(id).or_default().push((content, n));
         }
+        let autolinks = if self.format.html {
+            markdown::load_autolinks(
+                &self.state.db,
+                &rows.first().map(|r| vec![r.repo_id]).unwrap_or_default(),
+            )
+            .await?
+            .into_values()
+            .next()
+            .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let ru = self.urls();
         Ok(rows
             .iter()
@@ -317,7 +329,13 @@ impl Renderer<'_> {
                 let reactions = reactions_by.get(&r.id).map(|counts| {
                     ReactionRollup::from_counts(format!("{}/reactions", ru.release(r.id)), counts)
                 });
-                self.release(r, assets, users.get(&r.author_id.unwrap_or(0)), reactions)
+                self.release(
+                    r,
+                    assets,
+                    users.get(&r.author_id.unwrap_or(0)),
+                    reactions,
+                    &autolinks,
+                )
             })
             .collect())
     }
@@ -336,6 +354,7 @@ impl Renderer<'_> {
         assets: Vec<Asset>,
         author: Option<&db::User>,
         reactions: Option<ReactionRollup>,
+        autolinks: &[markdown::AutolinkRule],
     ) -> Release {
         let ru = self.urls();
         let url = ru.release(r.id);
@@ -343,7 +362,9 @@ impl Renderer<'_> {
         let body_html = self.format.html.then(|| {
             markdown::render(
                 body.as_deref().unwrap_or(""),
-                &RenderContext::new(&self.state.config.base_url).with_repo(self.owner, self.repo),
+                &RenderContext::new(&self.state.config.base_url)
+                    .with_repo(self.owner, self.repo)
+                    .with_autolinks(autolinks),
             )
         });
         let body_text = self.format.text.then(|| body.clone().unwrap_or_default());
