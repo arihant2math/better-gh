@@ -14,6 +14,7 @@ mod checks;
 mod common;
 mod issues;
 mod org;
+mod packages;
 mod pulls;
 mod push;
 mod releases;
@@ -143,6 +144,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         | E::ReleaseEdited { .. }
         | E::ReleaseStateChanged { .. }
         | E::ReleaseDeleted { .. } => vec!["release"],
+        E::PackagePublished { .. } | E::PackageUpdated { .. } => vec!["package"],
         E::StarCreated { .. } | E::RepositoryStarred { starred: true, .. } => vec!["star", "watch"],
         E::StarDeleted { .. } | E::RepositoryStarred { starred: false, .. } => vec!["star"],
         E::RepositoryForked { .. } => vec!["fork"],
@@ -719,6 +721,26 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             vec![("release", release.clone())],
         )]),
 
+        // ----- packages -------------------------------------------------------
+        E::PackagePublished {
+            package_id,
+            version_id,
+            tag,
+            ..
+        } => {
+            b.package(*package_id, *version_id, tag.as_deref(), "published")
+                .await
+        }
+        E::PackageUpdated {
+            package_id,
+            version_id,
+            tag,
+            ..
+        } => {
+            b.package(*package_id, *version_id, tag.as_deref(), "updated")
+                .await
+        }
+
         // ----- stars, forks, collaborators --------------------------------------
         E::StarCreated { actor_id, .. }
         | E::RepositoryStarred {
@@ -1039,6 +1061,26 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
+    /// `package` delivery (`published` | `updated`).
+    async fn package(
+        &self,
+        package_id: i64,
+        version_id: i64,
+        tag: Option<&str>,
+        action: &str,
+    ) -> anyhow::Result<Vec<HookEvent>> {
+        let Some(pkg) =
+            packages::package(self.state, self.ctx, package_id, version_id, tag).await?
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(vec![self.emit(
+            "package",
+            Some(action),
+            vec![("package", pkg)],
+        )])
+    }
+
     fn emit(
         &self,
         event: &'static str,
