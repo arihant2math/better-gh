@@ -690,6 +690,27 @@ pub enum Event {
         release_id: i64,
         actor_id: i64,
     },
+    /// A new container package version was pushed to a package linked to
+    /// `repo_id` (webhook `package` / `published`).
+    PackagePublished {
+        repo_id: i64,
+        package_id: i64,
+        version_id: i64,
+        actor_id: i64,
+        /// Tag the version was pushed with, if any.
+        #[serde(default)]
+        tag: Option<String>,
+    },
+    /// An existing package version was re-tagged (webhook `package` /
+    /// `updated`).
+    PackageUpdated {
+        repo_id: i64,
+        package_id: i64,
+        version_id: i64,
+        actor_id: i64,
+        #[serde(default)]
+        tag: Option<String>,
+    },
     /// Site-level user account change (GHES global webhook `user` event).
     /// `action`: `created` | `deleted` | `renamed` | `suspended` |
     /// `unsuspended` | `promoted` | `demoted`. `login` is the current login
@@ -911,6 +932,8 @@ impl Event {
             Self::CheckSuiteUpdated { .. } => "check_suite_updated",
             Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
             Self::ReleaseUpdated { .. } => "release_updated",
+            Self::PackagePublished { .. } => "package_published",
+            Self::PackageUpdated { .. } => "package_updated",
             Self::UserAccountChanged { .. } => "user_account_changed",
             Self::OrganizationChanged { .. } => "organization_changed",
             Self::GlobalHookPing { .. } => "global_hook_ping",
@@ -1020,6 +1043,8 @@ impl Event {
             | Self::CheckSuiteUpdated { repo_id, .. }
             | Self::WorkflowRunUpdated { repo_id, .. }
             | Self::ReleaseUpdated { repo_id, .. }
+            | Self::PackagePublished { repo_id, .. }
+            | Self::PackageUpdated { repo_id, .. }
             | Self::WorkflowJobUpdated { repo_id, .. }
             | Self::RepositoryEdited { repo_id, .. }
             | Self::ReleaseStateChanged { repo_id, .. }
@@ -1150,6 +1175,8 @@ impl Event {
             | Self::ReleaseEdited { actor_id, .. }
             | Self::ReleaseDeleted { actor_id, .. }
             | Self::ReleaseUpdated { actor_id, .. }
+            | Self::PackagePublished { actor_id, .. }
+            | Self::PackageUpdated { actor_id, .. }
             | Self::UserAccountChanged { actor_id, .. }
             | Self::OrganizationChanged { actor_id, .. }
             | Self::GlobalHookPing { actor_id, .. }
