@@ -1,0 +1,26 @@
+[package]
+name = "bgh-repos"
+description = "Repositories: CRUD, collaborators, forks, stars, contents/refs APIs, branch protection, git transport routes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bgh-core.workspace = true
+bgh-git.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+bgh-core = { workspace = true, features = ["testing"] }
+bgh-server = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

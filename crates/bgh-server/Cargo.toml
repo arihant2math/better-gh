@@ -1,0 +1,57 @@
+[package]
+name = "bgh-server"
+description = "The `bgh` binary: composes all domain routers, runs HTTP, job workers and admin commands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Exposes `bgh_server::test_app()` for other crates' integration tests.
+testing = ["bgh-core/testing"]
+
+[lib]
+name = "bgh_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bgh"
+path = "src/main.rs"
+
+[dependencies]
+bgh-core.workspace = true
+bgh-git.workspace = true
+bgh-accounts.workspace = true
+bgh-repos.workspace = true
+bgh-issues.workspace = true
+bgh-pulls.workspace = true
+bgh-notify.workspace = true
+bgh-releases.workspace = true
+bgh-search.workspace = true
+bgh-admin.workspace = true
+bgh-sync.workspace = true
+bgh-graphql.workspace = true
+bgh-actions.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+sha2.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+bgh-core = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+tempfile.workspace = true

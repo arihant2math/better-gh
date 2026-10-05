@@ -488,6 +488,7 @@ dependencies = [
  "clap",
  "http",
  "http-body-util",
+ "redis",
  "serde",
  "serde_json",
  "sha2",
