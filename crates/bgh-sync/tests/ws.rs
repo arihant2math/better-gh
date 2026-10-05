@@ -507,6 +507,37 @@ async fn sign_out_closes_that_sessions_sockets() {
 }
 
 #[tokio::test]
+async fn revoking_a_session_closes_its_sockets() {
+    let app = bgh_server::test_app().await;
+    let ada = app.create_user("ada").await;
+    let laptop = app.session_cookie(&ada).await;
+    let phone = app.session_cookie(&ada).await;
+    let mut ws_laptop = connect_cookie(&app, &laptop).await;
+    let mut ws_phone = connect_cookie(&app, &phone).await;
+    for ws in [&mut ws_laptop, &mut ws_phone] {
+        assert_eq!(next(ws).await["t"], "hello");
+    }
+    let token = laptop.split_once('=').unwrap().1;
+    let laptop_id: i64 = sqlx::query_scalar("SELECT id FROM sessions WHERE token_hash = $1")
+        .bind(bgh_core::crypto::sha256_hex(token))
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    // Revoked from the phone through the accounts sessions API (raw SQL
+    // delete + `Event::SessionEnded`, forwarded to the hubs by bgh-sync).
+    app.delete(&format!("/_bgh/sessions/{laptop_id}"))
+        .cookie(&phone)
+        .send()
+        .await
+        .assert_status(204);
+    match next_frame(&mut ws_laptop).await {
+        Frame::Close(code) => assert_eq!(code, Some(4001)),
+        Frame::Json(v) => panic!("unexpected {v}"),
+    }
+    assert_quiet(&mut ws_phone).await;
+}
+
+#[tokio::test]
 async fn slow_consumers_are_dropped() {
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
