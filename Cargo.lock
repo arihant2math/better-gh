@@ -687,6 +687,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bgh-packages"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "bgh-core",
+ "bgh-server",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "bgh-projects"
 version = "0.1.0"
 dependencies = [
@@ -820,6 +846,7 @@ dependencies = [
  "bgh-graphql",
  "bgh-issues",
  "bgh-notify",
+ "bgh-packages",
  "bgh-projects",
  "bgh-pulls",
  "bgh-releases",
