@@ -309,6 +309,87 @@ pub async fn org_role(
         .await
 }
 
+/// The repositories a caller can read, for queries spanning many
+/// repositories (search, activity feeds): every public repository plus
+/// `private_ids`, or everything when `all` (site admins). Token scopes are
+/// applied: without `repo` the set is public repositories only.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReadableRepos {
+    pub all: bool,
+    /// Non-public repositories the caller can read.
+    pub private_ids: Vec<i64>,
+}
+
+impl ReadableRepos {
+    /// SQL predicate over the repositories alias `alias`, binding
+    /// `private_ids` as parameter `$param`
+    /// (`(r.visibility = 'public' OR r.id = ANY($3))`). Always bind
+    /// [`Self::private_ids`] at that position, even when `all`.
+    pub fn sql(&self, alias: &str, param: usize) -> String {
+        if self.all {
+            format!("(${param}::bigint[] IS NOT NULL)")
+        } else {
+            format!("({alias}.visibility = 'public' OR {alias}.id = ANY(${param}))")
+        }
+    }
+
+    pub fn can_read(&self, repo: &db::Repository) -> bool {
+        self.all || !repo.is_private() || self.private_ids.contains(&repo.id)
+    }
+}
+
+/// Compute [`ReadableRepos`] for the caller with index-backed lookups
+/// (owned, collaborator, org base permission, team grants incl. parents).
+pub async fn readable_repos(
+    db: impl PgExecutor<'_>,
+    auth: Option<&AuthContext>,
+) -> Result<ReadableRepos, sqlx::Error> {
+    let Some(auth) = auth else {
+        return Ok(ReadableRepos::default());
+    };
+    if !auth.has_scope("repo") {
+        return Ok(ReadableRepos::default());
+    }
+    if auth.user.site_admin {
+        return Ok(ReadableRepos {
+            all: true,
+            private_ids: vec![],
+        });
+    }
+    let private_ids: Vec<i64> = sqlx::query_scalar(
+        r#"
+        WITH RECURSIVE user_teams AS (
+            SELECT t.id, t.parent_id
+              FROM team_members tm JOIN teams t ON t.id = tm.team_id
+             WHERE tm.user_id = $1
+            UNION
+            SELECT p.id, p.parent_id
+              FROM teams p JOIN user_teams ut ON p.id = ut.parent_id
+        )
+        SELECT id FROM repositories WHERE owner_id = $1 AND visibility <> 'public'
+        UNION
+        SELECT r.id FROM collaborators c JOIN repositories r ON r.id = c.repo_id
+         WHERE c.user_id = $1 AND r.visibility <> 'public'
+        UNION
+        SELECT r.id FROM org_members m
+          JOIN org_settings s ON s.org_id = m.org_id
+          JOIN repositories r ON r.owner_id = m.org_id
+         WHERE m.user_id = $1 AND r.visibility <> 'public'
+           AND (m.role = 'admin' OR s.default_repository_permission <> 'none')
+        UNION
+        SELECT r.id FROM team_repos tr JOIN repositories r ON r.id = tr.repo_id
+         WHERE tr.team_id IN (SELECT id FROM user_teams) AND r.visibility <> 'public'
+        "#,
+    )
+    .bind(auth.user.id)
+    .fetch_all(db)
+    .await?;
+    Ok(ReadableRepos {
+        all: false,
+        private_ids,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

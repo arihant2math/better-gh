@@ -85,6 +85,9 @@ comrak = { version = "0.55", default-features = false }
 ammonia = "4"
 gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
 
+# search
+regex = "1"
+
 # testing
 tempfile = "3"
 

@@ -157,6 +157,53 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    /// A draft or published release was created (`ReleasePublished` follows
+    /// when it is published).
+    ReleaseCreated {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+    },
+    ReleaseUpdated {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
+    },
+    ReleaseDeleted {
+        repo_id: i64,
+        release_id: i64,
+        tag_name: String,
+        actor_id: i64,
+    },
+    /// A user starred a repository (GitHub `WatchEvent`).
+    RepositoryStarred {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// `repo_id` is the parent, `fork_id` the new fork.
+    RepositoryForked {
+        repo_id: i64,
+        fork_id: i64,
+        actor_id: i64,
+    },
+    /// A private repository was made public.
+    RepositoryPublicized {
+        repo_id: i64,
+        actor_id: i64,
+    },
+    /// A collaborator was added to a repository (GitHub `MemberEvent`).
+    CollaboratorAdded {
+        repo_id: i64,
+        user_id: i64,
+        actor_id: i64,
+    },
+    /// `pull_id` is the issue id of the pull request.
+    PullRequestReviewCommentCreated {
+        repo_id: i64,
+        pull_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+    },
 }
 
 impl Event {
@@ -182,6 +229,14 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::ReleaseCreated { .. } => "release_created",
+            Self::ReleaseUpdated { .. } => "release_updated",
+            Self::ReleaseDeleted { .. } => "release_deleted",
+            Self::RepositoryStarred { .. } => "repository_starred",
+            Self::RepositoryForked { .. } => "repository_forked",
+            Self::RepositoryPublicized { .. } => "repository_publicized",
+            Self::CollaboratorAdded { .. } => "collaborator_added",
+            Self::PullRequestReviewCommentCreated { .. } => "pull_request_review_comment_created",
         }
     }
 
@@ -205,7 +260,15 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
-            | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
+            | Self::ReleasePublished { repo_id, .. }
+            | Self::ReleaseCreated { repo_id, .. }
+            | Self::ReleaseUpdated { repo_id, .. }
+            | Self::ReleaseDeleted { repo_id, .. }
+            | Self::RepositoryStarred { repo_id, .. }
+            | Self::RepositoryForked { repo_id, .. }
+            | Self::RepositoryPublicized { repo_id, .. }
+            | Self::CollaboratorAdded { repo_id, .. }
+            | Self::PullRequestReviewCommentCreated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
         }
     }
@@ -231,7 +294,15 @@ impl Event {
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
-            | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            | Self::OrgMemberAdded { actor_id, .. }
+            | Self::ReleaseCreated { actor_id, .. }
+            | Self::ReleaseUpdated { actor_id, .. }
+            | Self::ReleaseDeleted { actor_id, .. }
+            | Self::RepositoryStarred { actor_id, .. }
+            | Self::RepositoryForked { actor_id, .. }
+            | Self::RepositoryPublicized { actor_id, .. }
+            | Self::CollaboratorAdded { actor_id, .. }
+            | Self::PullRequestReviewCommentCreated { actor_id, .. } => Some(*actor_id),
         }
     }
 }
