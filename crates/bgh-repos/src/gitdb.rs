@@ -730,10 +730,10 @@ async fn list_refs(
 }
 
 #[derive(Deserialize)]
-struct CreateRef {
+pub struct CreateRef {
     #[serde(rename = "ref")]
-    refname: Option<String>,
-    sha: Option<String>,
+    pub refname: Option<String>,
+    pub sha: Option<String>,
 }
 
 async fn object_exists(state: &AppState, access: &RepoAccess, sha: &str) -> ApiResult<bool> {
@@ -743,7 +743,7 @@ async fn object_exists(state: &AppState, access: &RepoAccess, sha: &str) -> ApiR
         .await?)
 }
 
-async fn create_ref(
+pub async fn create_ref(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo)): Path<(String, String)>,
@@ -782,13 +782,13 @@ async fn create_ref(
 }
 
 #[derive(Deserialize)]
-struct UpdateRef {
-    sha: Option<String>,
+pub struct UpdateRef {
+    pub sha: Option<String>,
     #[serde(default)]
-    force: bool,
+    pub force: bool,
 }
 
-async fn update_ref(
+pub async fn update_ref(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo, name)): Path<(String, String, String)>,
@@ -827,7 +827,7 @@ async fn update_ref(
     )))
 }
 
-async fn delete_ref(
+pub async fn delete_ref(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo, name)): Path<(String, String, String)>,

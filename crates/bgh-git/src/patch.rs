@@ -404,8 +404,10 @@ fn child_stream(
 ) -> impl Stream<Item = std::io::Result<Bytes>> + Send + 'static {
     let stdout = child.stdout.take().expect("piped stdout");
     let stream = ReaderStream::new(stdout);
-    // Keep the child alive (and reaped) while the body streams.
-    futures::stream::unfold(
+    // Keep the child alive (and reaped) while the body streams. Response
+    // bodies may be polled again after the end (e.g. by the compression
+    // layer); `Unfold` panics on that, so the stream is fused.
+    futures::StreamExt::fuse(futures::stream::unfold(
         (stream, Some(child)),
         |(mut stream, mut child)| async move {
             use futures::StreamExt;
@@ -419,7 +421,7 @@ fn child_stream(
                 }
             }
         },
-    )
+    ))
 }
 
 fn spawn(dir: &Path, bin: &str, args: &[&str]) -> GitResult<tokio::process::Child> {

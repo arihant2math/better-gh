@@ -141,7 +141,7 @@ pub struct ForkBody {
 
 /// `POST /repos/{owner}/{repo}/forks` → 202 with the fork (or the
 /// caller's existing fork in the same network).
-async fn create_fork(
+pub async fn create_fork(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo)): Path<(String, String)>,
@@ -337,7 +337,7 @@ pub struct GenerateBody {
 }
 
 /// `POST /repos/{template_owner}/{template_repo}/generate` → 201.
-async fn generate(
+pub async fn generate(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo)): Path<(String, String)>,

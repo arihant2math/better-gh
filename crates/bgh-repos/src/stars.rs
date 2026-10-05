@@ -210,7 +210,7 @@ async fn check(
 }
 
 /// `PUT /user/starred/{owner}/{repo}` (idempotent).
-async fn star(
+pub async fn star(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo)): Path<(String, String)>,
@@ -221,7 +221,7 @@ async fn star(
 }
 
 /// `DELETE /user/starred/{owner}/{repo}` (idempotent).
-async fn unstar(
+pub async fn unstar(
     State(state): State<AppState>,
     auth: RequireUser,
     Path((owner, repo)): Path<(String, String)>,
