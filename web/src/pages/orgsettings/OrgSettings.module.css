@@ -333,3 +333,59 @@
   flex-shrink: 0;
   margin-top: 3px;
 }
+/* ---------------------------------------------------------------- personal access tokens */
+
+.patRow {
+  align-items: flex-start;
+  padding: 10px 14px;
+}
+
+.patRow > svg {
+  margin-top: 3px;
+}
+
+.patMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.patTitle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.patMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+.patRepo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.patActions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}

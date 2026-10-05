@@ -13,6 +13,7 @@ pub mod project;
 pub mod pull;
 pub mod release;
 pub mod repo;
+pub mod ruleset;
 
 use async_graphql::{ID, Interface};
 use bgh_core::node_id::{self, NodeType};

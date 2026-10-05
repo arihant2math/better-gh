@@ -303,6 +303,11 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
     if let Some(cap) = crate::apps::effective_cap(auth, repo) {
         return cap;
     }
+    // Fine-grained personal access tokens: their repositories and
+    // permissions, within the user's own role.
+    if let Some(cap) = crate::pat::effective_cap(auth, repo) {
+        return raw.min(cap);
+    }
     if let Some(job_repo) = job_token_repo(auth) {
         let cap = if auth
             .scopes
@@ -319,11 +324,16 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
             cap
         };
     }
+    // Organizations whose token policy blocks this (classic) token.
+    if crate::pat::is_blocked(auth, repo.owner_id) {
+        return raw.min(public_floor(repo));
+    }
     if auth.has_scope("repo") {
         return raw;
     }
     if repo.is_private() {
-        Permission::None
+        // `repo:status` / `repo_deployment` reach their categories only.
+        crate::pat::narrow_cap(auth).map_or(Permission::None, |cap| raw.min(cap))
     } else if auth.has_scope("public_repo") {
         raw
     } else {
@@ -537,6 +547,9 @@ pub async fn readable_repos(
     let Some(auth) = auth else {
         return Ok(ReadableRepos::default());
     };
+    if crate::pat::is_fine_grained(auth) {
+        return crate::pat::readable_repos(db, auth).await;
+    }
     if !auth.has_scope("repo") {
         return Ok(ReadableRepos::default());
     }
@@ -547,7 +560,34 @@ pub async fn readable_repos(
             internal: true,
         });
     }
-    let private_ids: Vec<i64> = sqlx::query_scalar(
+    // Organizations whose token policy blocks the token are left out.
+    let blocked: Vec<i64> = auth
+        .scopes
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|s| s.strip_prefix(crate::pat::BLOCKED_ORG_PREFIX)?.parse().ok())
+        .collect();
+    let private_ids = private_readable_ids(db, auth.user.id, &blocked, None, None).await?;
+    Ok(ReadableRepos {
+        all: false,
+        private_ids,
+        internal: !auth.user.is_suspended(),
+    })
+}
+
+/// Non-public repositories `user_id` can read (owned, collaborator, org
+/// base permission, team grants incl. parents; site admins: all), ignoring
+/// token scopes, except those owned by `exclude_owners`; limited to
+/// repositories of `only_owner` and to `only_ids` when given.
+pub async fn private_readable_ids(
+    db: impl PgExecutor<'_>,
+    user_id: i64,
+    exclude_owners: &[i64],
+    only_owner: Option<i64>,
+    only_ids: Option<&[i64]>,
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar(
         r#"
         WITH RECURSIVE user_teams AS (
             SELECT t.id, t.parent_id
@@ -556,7 +596,7 @@ pub async fn readable_repos(
             UNION
             SELECT p.id, p.parent_id
               FROM teams p JOIN user_teams ut ON p.id = ut.parent_id
-        )
+        ), readable AS (
         SELECT id FROM repositories WHERE owner_id = $1 AND visibility <> 'public'
         UNION
         SELECT r.id FROM collaborators c JOIN repositories r ON r.id = c.repo_id
@@ -570,16 +610,21 @@ pub async fn readable_repos(
         UNION
         SELECT r.id FROM team_repos tr JOIN repositories r ON r.id = tr.repo_id
          WHERE tr.team_id IN (SELECT id FROM user_teams) AND r.visibility <> 'public'
+        )
+        SELECT r.id FROM repositories r
+         WHERE (r.id IN (SELECT id FROM readable)
+                OR (r.visibility <> 'public' AND (SELECT site_admin FROM users WHERE id = $1)))
+           AND r.owner_id <> ALL($2)
+           AND ($3::bigint IS NULL OR r.owner_id = $3)
+           AND ($4::bigint[] IS NULL OR r.id = ANY($4))
         "#,
     )
-    .bind(auth.user.id)
+    .bind(user_id)
+    .bind(exclude_owners)
+    .bind(only_owner)
+    .bind(only_ids)
     .fetch_all(db)
-    .await?;
-    Ok(ReadableRepos {
-        all: false,
-        private_ids,
-        internal: !auth.user.is_suspended(),
-    })
+    .await
 }
 
 #[cfg(test)]

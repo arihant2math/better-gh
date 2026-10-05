@@ -1432,6 +1432,7 @@ async fn materialize(
             timeout_minutes: timeout as u64,
             environment,
             token_permissions: IndexMap::new(),
+            runtime_token: String::new(),
         };
         let stored = StoredJob {
             spec,

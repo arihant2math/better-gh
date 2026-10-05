@@ -99,6 +99,7 @@ function prefetchPackages(p: Params) {
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
+const CachesPage = () => import('../pages/actions/caches/CachesPage');
 const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
 const OrgRunnerGroupsPage = () => import('../pages/actions/settings/OrgRunnerGroupsPage');
 
@@ -224,6 +225,7 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/installations/*', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `Installed GitHub Apps · ${p.org}` },
     { path: '/apps/:slug', load: AppPage, title: (p) => `${p.slug} · GitHub Apps` },
     { path: '/apps/:slug/installations/new', load: AppPage, title: (p) => `Install ${p.slug}` },
+    { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
     { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
@@ -361,6 +363,7 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/actions/runs/:run', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/attempts/:attempt', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/job/:job', layout: RepoLayout, load: JobPage, prefetch: prefetchActions, title: (p) => `Job ${p.job} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/caches', layout: RepoLayout, load: CachesPage, prefetch: prefetchActions, title: (p) => `Caches · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/secrets/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },

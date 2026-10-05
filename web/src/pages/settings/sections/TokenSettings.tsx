@@ -5,13 +5,14 @@ import { invalidate } from '../../../api/cache';
 import { createToken, deleteToken, listTokens, type AccessToken } from '../../../api/developerSettings';
 import { describeScope } from '../../../api/scopes';
 import { apiFieldErrors, Banner, ButtonRow, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section } from '../../../components/settings/kit';
-import { Link, navigate, useLocation } from '../../../router';
+import { Link, navigate, useLocation, useQuery } from '../../../router';
 import { Button, cx } from '../../../ui/Button';
 import { AlertIcon, ArrowLeftIcon, KeyAsteriskIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
 import { Field, Input, Select } from '../../../ui/Input';
 import { toast } from '../../../ui/Toast';
 import { ListSkeleton, OneTimeSecret, lastUsedText, subPath } from '../developer/common';
 import styles from '../developer/developer.module.css';
+import { FineGrainedSection, NewFineGrainedToken } from '../developer/FineGrainedTokens';
 import { dateInDays, expiresInDays, expiryStatus, formatDate, selectedScopes, type ExpiryChoice } from '../developer/logic';
 import { ScopeTree } from '../developer/ScopeTree';
 import { useList } from '../developer/useList';
@@ -21,10 +22,15 @@ const LIST_KEY = 'dev:tokens';
 /** The token just created, kept in memory only until the list page unmounts. */
 let justCreated: AccessToken | null = null;
 
-/** `/settings/tokens` and `/settings/tokens/new`. */
+/**
+ * `/settings/tokens` (fine-grained + classic tokens), `/settings/tokens/new`
+ * (classic) and `/settings/tokens/new?type=fine-grained`.
+ */
 export default function TokenSettings() {
   const { pathname } = useLocation();
-  return subPath(pathname)[0] === 'new' ? <NewToken /> : <TokenList />;
+  const query = useQuery();
+  if (subPath(pathname)[0] !== 'new') return <TokenList />;
+  return query.get('type') === 'fine-grained' ? <NewFineGrainedToken /> : <NewToken />;
 }
 
 function TokenList() {
@@ -47,11 +53,6 @@ function TokenList() {
             <code className={styles.code}>gh auth login --with-token</code>.
           </>
         }
-        actions={
-          <Button variant="primary" leadingIcon={PlusIcon} onClick={() => navigate('/settings/tokens/new')}>
-            Generate new token
-          </Button>
-        }
       />
       {created && (
         <div style={{ marginBottom: 24 }}>
@@ -62,14 +63,21 @@ function TokenList() {
           />
         </div>
       )}
+      <FineGrainedSection />
       <Section
         title="Tokens (classic)"
+        description="Classic tokens are granted OAuth scopes and work for every account and organization you can access."
         actions={
-          items && items.length > 1 ? (
-            <Button size="sm" variant="danger" onClick={() => setConfirmAll(true)}>
-              Revoke all
+          <>
+            {items && items.length > 1 ? (
+              <Button size="sm" variant="danger" onClick={() => setConfirmAll(true)}>
+                Revoke all
+              </Button>
+            ) : null}
+            <Button size="sm" leadingIcon={PlusIcon} onClick={() => navigate('/settings/tokens/new')}>
+              Generate new token (classic)
             </Button>
-          ) : null
+          </>
         }
       >
         {items ? (

@@ -25,6 +25,7 @@ pub mod models;
 pub mod node_id;
 pub mod outbox;
 pub mod pagination;
+pub mod pat;
 pub mod perms;
 pub mod polling;
 pub mod privacy;

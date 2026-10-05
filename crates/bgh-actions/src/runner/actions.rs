@@ -160,14 +160,20 @@ impl JobRunner {
                 "actions/checkout" => return self.checkout(run, &with).await,
                 "actions/upload-artifact" => return self.upload_artifact(run, &with).await,
                 "actions/download-artifact" => return self.download_artifact(run, &with).await,
-                "actions/cache" | "actions/cache/restore" | "actions/cache/save" => {
-                    self.log(
-                        run.log_step,
-                        "##[warning]Caching is not supported by this server; continuing without cache",
-                    );
-                    let mut b = Body::success();
-                    b.outputs.insert("cache-hit".into(), "false".into());
-                    return b;
+                "actions/cache" => {
+                    return self
+                        .cache_action(scope, run, &with, super::cache::CacheMode::Main)
+                        .await;
+                }
+                "actions/cache/restore" => {
+                    return self
+                        .cache_action(scope, run, &with, super::cache::CacheMode::Restore)
+                        .await;
+                }
+                "actions/cache/save" => {
+                    return self
+                        .cache_action(scope, run, &with, super::cache::CacheMode::Save)
+                        .await;
                 }
                 _ => {}
             }

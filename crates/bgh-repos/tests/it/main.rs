@@ -26,6 +26,7 @@ mod lifecycle;
 mod maintenance;
 mod markdown;
 mod metadata;
+mod org_rulesets;
 mod protection;
 mod push_hardening;
 mod push_rules;
