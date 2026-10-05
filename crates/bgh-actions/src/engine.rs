@@ -51,10 +51,10 @@ pub struct StoredJob {
     /// (empty for jobs of the run's own workflow).
     #[serde(default)]
     pub secret_layers: Vec<SecretsLayer>,
-    /// `permissions:` of the callers leading to this job; the token gets
-    /// at most their intersection.
+    /// `permissions:` of the callers leading to this job (`None`: the
+    /// default); the token gets at most their intersection.
     #[serde(default)]
-    pub permission_caps: Vec<Permissions>,
+    pub permission_caps: Vec<Option<Permissions>>,
 }
 
 /// Durable "re-evaluate this run" job (used when one run unblocks another).
@@ -590,7 +590,7 @@ struct Scope {
     /// Where `./` calls of this workflow resolve.
     source: Source,
     secret_layers: Vec<SecretsLayer>,
-    permission_caps: Vec<Permissions>,
+    permission_caps: Vec<Option<Permissions>>,
     /// The `call` row (`None` for the run's workflow).
     call_id: Option<i64>,
     /// The run or one of the calls leading here was cancelled.
@@ -1559,14 +1559,12 @@ async fn prepare_call(
     let mut secrets = scope.secret_layers.clone();
     secrets.push(layer);
     let mut permission_caps = scope.permission_caps.clone();
-    if let Some(p) = call
-        .job
-        .permissions
-        .clone()
-        .or_else(|| scope.def.permissions.clone())
-    {
-        permission_caps.push(p);
-    }
+    permission_caps.push(
+        call.job
+            .permissions
+            .clone()
+            .or_else(|| scope.def.permissions.clone()),
+    );
     Ok(Ok(StoredCall {
         uses: call.uses.to_string(),
         workflow_ref: resolved.workflow_ref,

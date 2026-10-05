@@ -147,10 +147,12 @@ pub struct StoredCall {
     pub inputs: Value,
     /// Secret layers from the top-level workflow down to this call.
     pub secrets: Vec<SecretsLayer>,
-    /// `permissions:` of every caller on the way down; the called jobs'
-    /// token is the intersection.
+    /// `permissions:` of every caller on the way down (`None`: the caller
+    /// had none, i.e. the default); the called jobs' token gets at most
+    /// their intersection, and the innermost one when the called workflow
+    /// sets no `permissions:` itself.
     #[serde(default)]
-    pub permission_caps: Vec<Permissions>,
+    pub permission_caps: Vec<Option<Permissions>>,
 }
 
 /// Job key of the top-level job a (possibly nested) job key belongs to:
