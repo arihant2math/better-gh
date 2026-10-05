@@ -12,6 +12,7 @@ import type {
   FilePatch,
   HighlightedBlob,
   History,
+  IssueLinks,
   LastCommits,
   PullRequirements,
   RestBranch,
@@ -90,6 +91,11 @@ export function listCheckRunAnnotations(owner: string, repo: string, runId: numb
 
 export function rerequestCheckRun(owner: string, repo: string, runId: number): Promise<unknown> {
   return api.post(v3('repos', owner, repo, 'check-runs', runId, 'rerequest'));
+}
+
+/** Click one of a check run's `actions` buttons (`check_run` `requested_action` webhook). */
+export function requestCheckRunAction(owner: string, repo: string, runId: number, identifier: string): Promise<unknown> {
+  return api.post(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${runId}/requested-action`, { identifier });
 }
 
 export function getCommit(owner: string, repo: string, sha: string): Promise<RestCommitDetail> {
@@ -240,3 +246,8 @@ export const browseKeys = {
   blob: (owner: string, repo: string, ref: string, path: string) => `blob:${owner}/${repo}@${ref}:${path}`,
   lastCommit: (owner: string, repo: string, ref: string, path: string) => `last-commit:${owner}/${repo}@${ref}:${path}`,
 };
+
+/** Linked pull requests (of an issue) or issues (of a PR), plus linked branches. */
+export function getIssueLinks(owner: string, repo: string, number: number): Promise<IssueLinks> {
+  return api.get<IssueLinks>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/links`);
+}

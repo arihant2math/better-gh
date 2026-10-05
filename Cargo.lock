@@ -609,6 +609,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bytes",
+ "chacha20poly1305",
  "chrono",
  "comrak",
  "futures",
@@ -628,6 +629,7 @@ dependencies = [
  "tokio-util",
  "tower",
  "tracing",
+ "url",
  "uuid",
 ]
 
@@ -812,6 +814,7 @@ dependencies = [
  "http",
  "rand 0.9.5",
  "redis",
+ "reqwest",
  "russh",
  "serde",
  "serde_json",
@@ -821,6 +824,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]
