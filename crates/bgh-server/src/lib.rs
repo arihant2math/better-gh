@@ -36,6 +36,8 @@ pub use web::WebFiles;
 
 /// Register job handlers and event listeners of every domain crate.
 pub fn register(reg: &mut Registry) {
+    // Shared infrastructure jobs (bgh-core).
+    reg.job(bgh_core::mail::send_job);
     bgh_accounts::register(reg);
     bgh_repos::register(reg);
     bgh_issues::register(reg);

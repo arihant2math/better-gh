@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use bgh_core::audit;
 use bgh_core::error::unique_violation;
 use bgh_core::events::Event;
+use bgh_core::mail;
 use bgh_core::models::api::{OrganizationFull, OrganizationSimple, SimpleUser};
 use bgh_core::perms;
 use bgh_core::prelude::*;
@@ -1420,22 +1421,22 @@ pub async fn create_invitation(
         Invitee::Email(e) => Some(e.to_string()),
     };
     if let Some(to) = to {
+        let greeting = match &invitee {
+            Invitee::User(u) => u.login.clone(),
+            Invitee::Email(e) => e.to_string(),
+        };
         let link = state
             .urls
             .html(&format!("/orgs/{}/invitation", access.org.login));
         util::queue_mail(
             tx,
-            &to,
-            &format!(
-                "[{}] @{} has invited you to join the @{} organization",
-                state.config.site_name, inviter.login, access.org.login
-            ),
-            format!(
-                "@{inviter} has invited you to join the @{org} organization on {site}.\n\n\
-                 View the invitation: {link}\n",
-                inviter = inviter.login,
-                org = access.org.login,
-                site = state.config.site_name,
+            mail::templates::org_invitation(
+                &state.config.site_name,
+                &to,
+                &greeting,
+                &inviter.login,
+                &access.org.login,
+                &link,
             ),
         )
         .await?;

@@ -2,12 +2,11 @@
 //! shapes, request metadata, mail.
 
 use axum::http::{HeaderMap, header};
-use bgh_core::jobs::JobPayload;
 use bgh_core::mail;
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use bgh_core::urls::Urls;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 
 /// A PATCH body field: absent (leave unchanged), `null`, or a value. Use
@@ -195,22 +194,10 @@ pub async fn sync_profile(tx: &mut Tx, urls: &Urls, user: &db::User) -> ApiResul
 // Mail
 // ---------------------------------------------------------------------------
 
-/// Background job delivering one email (`bgh_core::mail`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SendMail(pub mail::Message);
-
-impl JobPayload for SendMail {
-    const KIND: &'static str = "accounts.send_mail";
-}
-
-pub async fn send_mail_job(state: AppState, job: SendMail) -> anyhow::Result<()> {
-    mail::send(&state, &job.0).await
-}
-
-/// Queue an email in `tx` (sent after commit by the job worker).
-pub async fn queue_mail(tx: &mut Tx, to: &str, subject: &str, text: String) -> ApiResult<()> {
-    tx.enqueue(&SendMail(mail::Message::new(to, subject, text)))
-        .await?;
+/// Queue an email in `tx` (delivered after commit by the shared `mail.send`
+/// job, see `bgh_core::mail`).
+pub async fn queue_mail(tx: &mut Tx, email: mail::Email) -> ApiResult<()> {
+    tx.enqueue(&mail::SendEmail::new(email)).await?;
     Ok(())
 }
 
