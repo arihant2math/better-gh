@@ -1,25 +1,25 @@
 # Phase 4 fleet (foreman-maintained, branch bgh/foreman only)
 
-Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:16 UTC (integration head 7ac1b95).
+Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:45 UTC (integration head 7ac1b95). PACING: seven-day rate-limit warning seen 17:41; no new launches until the queue drains, then ~6 workers.
 
 | Pkg | Session | Status | Integrated |
 |---|---|---|---|
 | P1–P19 P21 P22 P24 P26 P29 P31–P35 | (archived) | done | yes |
 | P20 | session_01YKLKPRAJnD9iwrqFqwFppG | ready | – |
-| P23 | session_011a5XX8Do8JZq7A3nb5YxMQ | ready (resumed after nudge) | – |
-| P27 | session_01DhMk89Z1C3StA4YVVnw7nm | ready | – |
+| P23 | session_011a5XX8Do8JZq7A3nb5YxMQ | ready (in batch 7) | – |
+| P27 | session_01DhMk89Z1C3StA4YVVnw7nm | ready (in batch 7) | – |
 | P37 | session_011o3zDh28KNGENgEM7MooWB | ready | – |
-| P47 | session_011LfNiSENea9TZ1ajuzWFWH | ready | – |
-| P36 | session_017gT9WihAABZpQdE8oFpAoA | bounced 17:25 (conflict w/ P14/P7), fixing | – |
+| P47 | session_011LfNiSENea9TZ1ajuzWFWH | ready (in batch 7) | – |
+| P36 | session_017gT9WihAABZpQdE8oFpAoA | ready (bounce fixed, in batch 7) | – |
 | P25 | session_01TU99LstbiDzVfq5YrKsfhR | running | – |
-| P38 | session_01JD3SCGswJFpG9KW6rU73Pi | running | – |
-| P46 | session_01Fdy1y7wDZ4h259dMZKmFUn | running | – |
-| P41 | session_019G1WTXr3Mz4YC5iKhUBtG5 | running | – |
-| P42 | session_01CjtG4VR13kvpeAxtZtxVE2 | running | – |
+| P38 | session_01JD3SCGswJFpG9KW6rU73Pi | ready | – |
+| P46 | session_01Fdy1y7wDZ4h259dMZKmFUn | ready | – |
+| P41 | session_019G1WTXr3Mz4YC5iKhUBtG5 | ready | – |
+| P42 | session_01CjtG4VR13kvpeAxtZtxVE2 | ready | – |
 | P51 | session_01Dfzr6SecvGXLsxpcFHL7Zb | running | – |
-| P65 | session_011JdkwUVtjabABsRtPAjgBx | running | – |
+| P65 | session_011JdkwUVtjabABsRtPAjgBx | ready | – |
 | P50 | session_01DAJAyPoAe9eeuKtZHeAemr | running | – |
-| P61 | session_01MJEBcx6auSQf7p1TLMCmFf | running | – |
+| P61 | session_01MJEBcx6auSQf7p1TLMCmFf | ready | – |
 | P49 | session_01GKWEGkpY6svMi9tt5fJRB3 | running | – |
 | P28 | session_0175PRhG1uGz8ANg7JsaM4kv | running | – |
 | integrator | session_0199JgoqhKWUQwuSikBwmDCv | running; 6 batches, 12 pkgs landed, head 7ac1b95 (rust 1066, web 459) | – |
