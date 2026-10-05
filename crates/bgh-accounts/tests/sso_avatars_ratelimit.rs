@@ -55,16 +55,18 @@ async fn mock_provider() -> String {
     base
 }
 
+/// Configure the `corp` provider through the `auth_providers` site setting
+/// (what the admin settings API stores).
 async fn configure(app: &TestApp, issuer: &str, extra: Value) {
-    let mut cfg = json!({"id": "corp", "name": "Corp SSO", "issuer": issuer, "client_id": "bgh", "client_secret": "s3cret"});
+    let mut cfg = json!({"name": "corp", "display_name": "Corp SSO", "issuer": issuer,
+                         "client_id": "bgh", "client_secret": "s3cret"});
     cfg.as_object_mut()
         .unwrap()
         .extend(extra.as_object().unwrap().clone());
-    sqlx::query("INSERT INTO site_settings (key, value) VALUES ('auth.oidc', $1)")
-        .bind(cfg)
-        .execute(&app.state.db)
+    bgh_core::settings::store_section(&app.state.db, "auth_providers", &json!({"oidc": [cfg]}))
         .await
         .unwrap();
+    bgh_core::settings::invalidate(&app.state);
 }
 
 /// Start a login and return (state, nonce).
@@ -247,7 +249,7 @@ async fn oidc_respects_auto_create_domains_and_two_factor() {
     configure(
         &app,
         &issuer,
-        json!({"auto_create": false, "allowed_domains": ["example.com"]}),
+        json!({"auto_create_users": false, "allowed_domains": ["example.com"]}),
     )
     .await;
     let ada = app.create_user("ada").await;
@@ -406,8 +408,9 @@ async fn avatars() {
 #[tokio::test]
 async fn rate_limits_are_enforced() {
     let app = TestApp::spawn_with_config(bgh_server::factory(), |c| {
-        c.rate_limit_authenticated = 5;
-        c.rate_limit_anonymous = 3;
+        c.rate_limits.enabled = true;
+        c.rate_limits.authenticated_per_hour = 5;
+        c.rate_limits.unauthenticated_per_hour = 3;
     })
     .await;
     let ada = app.create_user("ada").await;
@@ -459,12 +462,19 @@ async fn rate_limits_are_enforced() {
     assert_eq!(v["rate"]["remaining"], 0);
     assert_eq!(v["rate"]["used"], 5);
 
-    let off =
-        TestApp::spawn_with_config(bgh_server::factory(), |c| c.rate_limit_authenticated = 0).await;
-    let res = off.get("/api/v3/users/nobody").send().await;
-    assert!(res.header("x-ratelimit-limit").is_none());
-    off.get("/api/v3/rate_limit")
-        .send()
-        .await
-        .assert_status(404);
+    // Not enforced (the default): still counted and reported.
+    let off = TestApp::spawn_with_config(bgh_server::factory(), |c| {
+        c.rate_limits.unauthenticated_per_hour = 2;
+    })
+    .await;
+    for remaining in ["1", "0", "0"] {
+        let res = off.get("/api/v3/users/nobody").send().await;
+        res.assert_status(404);
+        assert_eq!(res.header("x-ratelimit-limit"), Some("2"));
+        assert_eq!(res.header("x-ratelimit-remaining"), Some(remaining));
+    }
+    let v = off.get("/api/v3/rate_limit").send().await.json();
+    assert_eq!(v["resources"]["core"]["used"], 2, "capped at the limit");
+    assert_eq!(v["resources"]["core"]["remaining"], 0);
+    assert_eq!(v["resources"]["search"]["limit"], 10);
 }

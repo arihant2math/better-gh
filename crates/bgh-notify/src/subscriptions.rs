@@ -10,11 +10,9 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_core::time::ts;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::threads::{self, require_scope};
 
@@ -344,18 +342,10 @@ pub async fn set_watch(
         .bind(delta)
         .execute(&mut *tx)
         .await?;
+        tx.sync_model(SyncModel::Repo, repo_id, SyncAction::Update)
+            .await?;
     }
-    tx.sync(
-        &sync::user_scope(user_id),
-        "viewerRepo",
-        repo_id,
-        SyncAction::Update,
-        &json!({
-            "id": repo_id,
-            "watching": watching_state(row.as_ref().map(|r| (r.subscribed, r.ignored))),
-        }),
-    )
-    .await?;
+    tx.sync_viewer_repo(user_id, repo_id).await?;
     tx.commit().await?;
     Ok(row)
 }

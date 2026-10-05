@@ -9,10 +9,8 @@ use axum::http::StatusCode;
 use bgh_core::models::api::{AuthorAssociation, REACTION_CONTENTS, ReactionRollup, SimpleUser};
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::prelude::*;
-use bgh_core::time::ts;
 use bgh_git::patch::{self, Side};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 use crate::git;
 use crate::json::{Href, associations};
@@ -159,39 +157,6 @@ pub async fn render(
         })
         .collect())
 }
-
-/// Compact client shape (model `review_comment`).
-/// Compact client row (model `reviewComment`, an extension of the v1 sync
-/// protocol; camelCase like the normative models).
-pub fn sync_json(c: &ReviewComment) -> Value {
-    json!({
-        "id": c.id,
-        "repoId": c.repo_id,
-        "issueId": c.pull_id,
-        "reviewId": c.review_id,
-        "inReplyToId": c.in_reply_to_id,
-        "authorId": c.user_id,
-        "body": c.body,
-        "path": c.path,
-        "commitId": c.commit_id,
-        "originalCommitId": c.original_commit_id,
-        "subjectType": c.subject_type,
-        "side": c.side,
-        "startSide": c.start_side,
-        "line": c.line,
-        "originalLine": c.original_line,
-        "startLine": c.start_line,
-        "originalStartLine": c.original_start_line,
-        "position": c.position,
-        "originalPosition": c.original_position,
-        "outdated": c.is_outdated(),
-        "resolvedAt": ts(c.resolved_at),
-        "resolvedById": c.resolved_by_id,
-        "createdAt": Timestamp::from(c.created_at),
-        "updatedAt": Timestamp::from(c.updated_at),
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Location computation
 // ---------------------------------------------------------------------------
@@ -411,14 +376,8 @@ pub async fn insert(
         .bind(pull.id())
         .execute(&mut **tx)
         .await?;
-        tx.sync(
-            &bgh_core::sync::repo_scope(pull.pr.repo_id),
-            "reviewComment",
-            row.id,
-            SyncAction::Insert,
-            &sync_json(&row),
-        )
-        .await?;
+        tx.sync_model(SyncModel::ReviewComment, row.id, SyncAction::Insert)
+            .await?;
     }
     Ok(row)
 }
@@ -688,21 +647,8 @@ async fn create_comment(
             .bind(&loc.commit_id)
             .fetch_one(&mut *tx)
             .await?;
-            let review: model::Review = sqlx::query_as(&format!(
-                "SELECT {} FROM pr_reviews WHERE id = $1",
-                model::Review::COLUMNS
-            ))
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await?;
-            tx.sync(
-                &access.scope(),
-                "review",
-                id,
-                SyncAction::Insert,
-                &crate::reviews::sync_json(&review),
-            )
-            .await?;
+            tx.sync_model(SyncModel::Review, id, SyncAction::Insert)
+                .await?;
             (id, true)
         }
     };
@@ -821,14 +767,8 @@ pub async fn edit(
     .bind(&text)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &access.scope(),
-        "reviewComment",
-        id,
-        SyncAction::Update,
-        &sync_json(&row),
-    )
-    .await?;
+    tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
+        .await?;
     tx.emit(Event::PullRequestReviewCommentEdited {
         repo_id: access.repo.id,
         pull_id: row.pull_id,
@@ -903,14 +843,8 @@ pub async fn delete(
         .bind(c.pull_id)
         .execute(&mut *tx)
         .await?;
-        tx.sync(
-            &access.scope(),
-            "reviewComment",
-            id,
-            SyncAction::Delete,
-            &json!({"id": id}),
-        )
-        .await?;
+        tx.sync_delete(&access.scope(), SyncModel::ReviewComment, id)
+            .await?;
         crate::json::sync_pull(&mut tx, &access.scope(), c.pull_id).await?;
         tx.emit(Event::PullRequestReviewCommentDeleted {
             repo_id: access.repo.id,
@@ -1007,7 +941,7 @@ pub async fn create_reaction(
     Json(body): Json<ReactionBody>,
 ) -> ApiResult<(StatusCode, axum::Json<ReactionJson>)> {
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
-    let c = visible_comment(&state, access.repo.id, id, Some(auth.user.id)).await?;
+    visible_comment(&state, access.repo.id, id, Some(auth.user.id)).await?;
     let content = body
         .content
         .filter(|c| REACTION_CONTENTS.contains(&c.as_str()))
@@ -1042,15 +976,9 @@ pub async fn create_reaction(
     .bind(&content)
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &access.scope(),
-        "reaction",
-        row.id,
-        SyncAction::Insert,
-        &json!({"id": row.id, "subjectType": SUBJECT, "subjectId": id,
-                "userId": auth.user.id, "content": content, "issueId": c.pull_id}),
-    )
-    .await?;
+    // Reactions have no model of their own: the comment's counts changed.
+    tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
+        .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -1080,14 +1008,8 @@ pub async fn delete_reaction(
     if n == 0 {
         return Err(ApiError::NotFound);
     }
-    tx.sync(
-        &access.scope(),
-        "reaction",
-        reaction_id,
-        SyncAction::Delete,
-        &json!({"id": reaction_id}),
-    )
-    .await?;
+    tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
+        .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

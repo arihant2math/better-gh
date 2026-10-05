@@ -265,15 +265,10 @@ pub async fn create(
     let pull = model::find_by_id(&mut *tx, issue_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let data = json::sync_json(&mut tx, &pull, true).await?;
-    tx.sync(
-        &access.scope(),
-        "issue",
-        issue_id,
-        SyncAction::Insert,
-        &data,
-    )
-    .await?;
+    tx.sync_issue(issue_id, SyncAction::Insert, true).await?;
+    // `openPulls` of the repository row changed.
+    tx.sync_model(SyncModel::Repo, access.repo.id, SyncAction::Update)
+        .await?;
     tx.enqueue(&Refresh {
         pull_id: issue_id,
         codeowners: !pull.pr.draft,

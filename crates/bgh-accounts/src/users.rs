@@ -375,7 +375,7 @@ pub async fn update_authenticated_user(
         .execute(&mut *tx)
         .await?;
     }
-    util::sync_profile(&mut tx, &state.urls, &user).await?;
+    util::sync_profile(&mut tx, &user).await?;
     audit::log(
         &mut *tx,
         Some(&auth.user),

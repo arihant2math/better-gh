@@ -280,6 +280,7 @@ async fn create_fork(
         json!({"name": fork.name, "fork": true, "parent": access.full_name()}),
     )
     .await?;
+    // Forks start without labels (no `labels::create_defaults`), like GitHub.
     tx.sync_model(SyncModel::Repo, fork.id, SyncAction::Insert)
         .await?;
     tx.emit(Event::RepositoryCreated {
@@ -477,6 +478,7 @@ async fn generate(
         .fetch_one(&mut *tx)
         .await?
     };
+    bgh_core::labels::create_defaults(&mut tx, new.id).await?;
     tx.sync_model(SyncModel::Repo, new.id, SyncAction::Insert)
         .await?;
     tx.emit(Event::RepositoryCreated {

@@ -170,7 +170,7 @@ async fn account_emails_go_through_the_queue() {
         "someone@example.com",
         "someone",
         "http://x/reset?t=abc",
-        3,
+        180,
     );
     bgh_core::mail::enqueue(&app.state.db, email).await.unwrap();
     app.drain_jobs().await;

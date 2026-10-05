@@ -36,6 +36,8 @@ pub use web::WebFiles;
 
 /// Register job handlers and event listeners of every domain crate.
 pub fn register(reg: &mut Registry) {
+    // Shared infrastructure jobs (bgh-core).
+    reg.job(bgh_core::mail::send_job);
     bgh_accounts::register(reg);
     bgh_repos::register(reg);
     bgh_issues::register(reg);
@@ -93,7 +95,7 @@ pub fn app(state: AppState) -> Router {
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            bgh_core::ratelimit::rate_limit_middleware,
+            bgh_core::ratelimit::middleware,
         ))
         .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn(etag))
@@ -129,6 +131,12 @@ pub fn app(state: AppState) -> Router {
             let state = shell_state.clone();
             async move { web_files.serve(&state, req).await }
         })
+        // API endpoints outside the nested `/api/v3` router (`/api/graphql`,
+        // `/api/v3/`) get the same rate limiting.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::ratelimit::root_middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             (spa_files, state.clone()),
             web::spa_pages,
