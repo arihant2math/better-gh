@@ -263,17 +263,16 @@ run_case "gh api graphql viewer" --expect "^$OWNER\$" -- \
 echo "-- repos"
 run_case "gh repo create" --expect "gh-created" -- \
   "$GH" repo create "$OWNER/gh-created" --public --description "created by gh"
-# P33: templates, licenses, gitignore (the org + team fixture needs site admin).
-FX_ORG=""
-if run_case "create org $OWNER-org (REST)" --kind fixture -- \
-  api POST /admin/organizations "{\"login\":\"$OWNER-org\",\"admin\":\"$OWNER\"}" &&
-  run_case "create team $OWNER-org/t (REST)" --kind fixture -- \
-    api POST "/orgs/$OWNER-org/teams" '{"name":"t"}'; then
-  FX_ORG="$OWNER-org"
+# P33: templates, licenses, gitignore. Reuses the org fixture created above
+# (site admin) and adds the team the templated-repo case grants access to.
+FX_ORG_TEAM=""
+if [[ -n $FX_ORG ]] && run_case "create team $FX_ORG/t (REST)" --kind fixture -- \
+  api POST "/orgs/$FX_ORG/teams" '{"name":"t"}'; then
+  FX_ORG_TEAM="$FX_ORG"
 fi
-run_case "gh repo create --gitignore --license --team" --needs FX_ORG --expect "gh-templated" -- \
+run_case "gh repo create --gitignore --license --team" --needs FX_ORG_TEAM --expect "gh-templated" -- \
   "$GH" repo create "${FX_ORG:-x}/gh-templated" --public --gitignore Go --license mit --team t
-run_case "repo license detected (MIT)" --needs FX_ORG --expect "^MIT\$" -- \
+run_case "repo license detected (MIT)" --needs FX_ORG_TEAM --expect "^MIT\$" -- \
   "$GH" api "repos/${FX_ORG:-x}/gh-templated" --jq .license.spdx_id
 run_case "gh repo license list" --expect "mit" -- "$GH" repo license list
 run_case "gh repo license view" --expect "MIT License" -- "$GH" repo license view mit
