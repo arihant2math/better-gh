@@ -262,13 +262,19 @@ pub async fn license(
 /// Event listener: count pushes for `total_pushes`.
 pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
     if let Event::Push(_) = &*event {
+        // At-least-once delivery: count each push event once.
+        let mut tx = state.db.begin().await?;
+        if !bgh_core::events::claim_effect(&mut tx).await? {
+            return Ok(());
+        }
         sqlx::query(
             "INSERT INTO site_counters (key, value) VALUES ($1, 1)
              ON CONFLICT (key) DO UPDATE SET value = site_counters.value + 1, updated_at = now()",
         )
         .bind(PUSHES)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
     }
     Ok(())
 }
