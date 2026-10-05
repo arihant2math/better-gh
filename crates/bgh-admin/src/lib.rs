@@ -3,7 +3,8 @@
 //! * GHES enterprise admin REST API (`/admin/users`, impersonation tokens,
 //!   `/users/{u}/site_admin`, `/users/{u}/suspended`, organization rename,
 //!   `/admin/keys`, global webhooks `/admin/hooks`, `/enterprise/stats/*`,
-//!   `/enterprise/settings/license`, `/enterprise/announcement`).
+//!   `/enterprise/settings/license`, `/enterprise/announcement`,
+//!   `/admin/ldap/*`).
 //! * Audit log search (`/_bgh/admin/audit-log`, `/orgs/{org}/audit-log`,
 //!   `/enterprises/{e}/audit-log`).
 //! * Admin UI endpoints under `/_bgh/admin/...`: site settings, job
@@ -20,6 +21,7 @@ pub mod health;
 pub mod hooks;
 pub mod jobs_inspector;
 pub mod keys;
+pub mod ldap;
 pub mod maintenance;
 pub mod manage_accounts;
 pub mod manage_repos;
@@ -72,6 +74,16 @@ pub fn router() -> Router<AppState> {
                 .patch(settings::set_announcement)
                 .delete(settings::delete_announcement),
         )
+        .route(
+            "/admin/ldap/users/{username}/mapping",
+            axum::routing::patch(ldap::update_user_mapping),
+        )
+        .route("/admin/ldap/users/{username}/sync", post(ldap::sync_user))
+        .route(
+            "/admin/ldap/teams/{team_id}/mapping",
+            axum::routing::patch(ldap::update_team_mapping),
+        )
+        .route("/admin/ldap/teams/{team_id}/sync", post(ldap::sync_team))
         .route("/rate_limit", get(settings::rate_limit))
         .route("/orgs/{org}/audit-log", get(audit_log::org_audit_log))
         .route(
@@ -90,6 +102,8 @@ pub fn web_router() -> Router<AppState> {
             get(settings::get).patch(settings::update),
         )
         .route("/_bgh/admin/health", get(health::health))
+        .route("/_bgh/admin/ldap/test", post(ldap::test))
+        .route("/_bgh/admin/ldap/sync", post(ldap::sync_now))
         .route("/_bgh/admin/audit-log", get(audit_log::admin_search))
         // Jobs
         .route("/_bgh/admin/jobs", get(jobs_inspector::list))

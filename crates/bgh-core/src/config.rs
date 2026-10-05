@@ -245,6 +245,7 @@ impl Config {
                                 .collect()
                         })
                         .unwrap_or_default(),
+                    groups_claim: parse("BGH_OIDC_GROUPS_CLAIM")?,
                 }),
                 _ => None,
             },

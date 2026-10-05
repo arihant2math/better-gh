@@ -27,6 +27,7 @@ pub mod models;
 pub mod protocol;
 pub mod rerequest;
 pub mod results;
+pub mod reusable;
 pub mod runner;
 pub mod runtime;
 pub mod scoped;
@@ -43,8 +44,8 @@ use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
 use api::{
-    artifacts, caches, deployments as deploy_api, dispatches, environments, runners, runs, secrets,
-    variables, workflows,
+    access, artifacts, caches, deployments as deploy_api, dispatches, environments, runners, runs,
+    secrets, variables, workflows,
 };
 
 /// REST API routes (relative to `/api/v3`).
@@ -78,6 +79,10 @@ pub fn router() -> Router<AppState> {
             get(runs::list_for_workflow),
         )
         // runs
+        .route(
+            &r("/actions/permissions/access"),
+            get(access::get).put(access::put),
+        )
         .route(&r("/actions/runs"), get(runs::list))
         .route(
             &r("/actions/runs/{run_id}"),

@@ -80,7 +80,7 @@ export type RepoPatch = Partial<
     | 'allow_forking'
     | 'web_commit_signoff_required'
   >
-> & { visibility?: 'public' | 'private' };
+> & { visibility?: 'public' | 'private' | 'internal' };
 
 export interface Collaborator extends RestUser {
   role_name: Permission | string;
@@ -245,7 +245,10 @@ export function syncedRepoPatch(patch: RepoPatch): Partial<Repo> {
   if (patch.name !== undefined) out.name = patch.name;
   if (patch.description !== undefined) out.description = patch.description || null;
   if (patch.private !== undefined) out.private = patch.private;
-  if (patch.visibility !== undefined) out.private = patch.visibility !== 'public';
+  if (patch.visibility !== undefined) {
+    out.private = patch.visibility !== 'public';
+    out.visibility = patch.visibility;
+  }
   if (patch.archived !== undefined) out.archived = patch.archived;
   if (patch.default_branch !== undefined) out.defaultBranch = patch.default_branch;
   if (patch.has_issues !== undefined) out.hasIssues = patch.has_issues;

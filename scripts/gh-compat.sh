@@ -248,6 +248,22 @@ run_case "gh api graphql viewer" --expect "^$OWNER\$" -- \
 echo "-- repos"
 run_case "gh repo create" --expect "gh-created" -- \
   "$GH" repo create "$OWNER/gh-created" --public --description "created by gh"
+# P33: templates, licenses, gitignore (the org + team fixture needs site admin).
+FX_ORG=""
+if run_case "create org $OWNER-org (REST)" --kind fixture -- \
+  api POST /admin/organizations "{\"login\":\"$OWNER-org\",\"admin\":\"$OWNER\"}" &&
+  run_case "create team $OWNER-org/t (REST)" --kind fixture -- \
+    api POST "/orgs/$OWNER-org/teams" '{"name":"t"}'; then
+  FX_ORG="$OWNER-org"
+fi
+run_case "gh repo create --gitignore --license --team" --needs FX_ORG --expect "gh-templated" -- \
+  "$GH" repo create "${FX_ORG:-x}/gh-templated" --public --gitignore Go --license mit --team t
+run_case "repo license detected (MIT)" --needs FX_ORG --expect "^MIT\$" -- \
+  "$GH" api "repos/${FX_ORG:-x}/gh-templated" --jq .license.spdx_id
+run_case "gh repo license list" --expect "mit" -- "$GH" repo license list
+run_case "gh repo license view" --expect "MIT License" -- "$GH" repo license view mit
+run_case "gh repo gitignore list" --expect "^Go\$" -- "$GH" repo gitignore list
+run_case "gh repo gitignore view" --expect "go.work" -- "$GH" repo gitignore view Go
 run_case "gh repo view" --needs FX_REPO --expect "$REPO" -- "$GH" repo view "$NWO"
 run_case "gh repo view --json" --needs FX_REPO --expect "^main\$" -- \
   "$GH" repo view "$NWO" --json name,owner,defaultBranchRef --jq .defaultBranchRef.name

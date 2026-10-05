@@ -4,7 +4,9 @@
 
 mod common;
 
+mod access_policy;
 mod activity;
+mod commit_node_ids;
 mod palette;
 mod search_code;
 mod search_issues;

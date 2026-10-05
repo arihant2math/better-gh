@@ -35,6 +35,39 @@ pub fn host_key_path(state: &AppState) -> std::path::PathBuf {
     state.config.data_dir.join("ssh").join("host_ed25519_key")
 }
 
+/// The SSH host's public keys as `(algorithm, OpenSSH public key,
+/// SHA-256 fingerprint without the `SHA256:` prefix)`, for `GET /meta`.
+/// Empty when SSH is disabled or the host key hasn't been generated yet.
+pub fn host_public_keys(state: &AppState) -> Vec<(String, String, String)> {
+    if !state.config.ssh_enabled {
+        return Vec::new();
+    }
+    let Ok(pem) = std::fs::read_to_string(host_key_path(state)) else {
+        return Vec::new();
+    };
+    let Ok(key) = russh::keys::PrivateKey::from_openssh(pem) else {
+        return Vec::new();
+    };
+    let public = key.public_key();
+    let Ok(openssh) = public.to_openssh() else {
+        return Vec::new();
+    };
+    // `ssh-ed25519 AAAA… comment` → drop the comment, like GitHub.
+    let openssh = openssh.split(' ').take(2).collect::<Vec<_>>().join(" ");
+    let fingerprint = public.fingerprint(russh::keys::HashAlg::Sha256).to_string();
+    let fingerprint = fingerprint
+        .strip_prefix("SHA256:")
+        .unwrap_or(&fingerprint)
+        .to_string();
+    let algorithm = match public.algorithm() {
+        russh::keys::Algorithm::Ed25519 => "ED25519".to_string(),
+        russh::keys::Algorithm::Rsa { .. } => "RSA".to_string(),
+        russh::keys::Algorithm::Ecdsa { .. } => "ECDSA".to_string(),
+        other => other.as_str().to_uppercase(),
+    };
+    vec![(algorithm, openssh, fingerprint)]
+}
+
 fn server_config(state: &AppState) -> anyhow::Result<russh::server::Config> {
     let key = keys::load_or_generate_host_key(&host_key_path(state))?;
     let mut methods = MethodSet::empty();

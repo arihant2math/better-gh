@@ -131,6 +131,19 @@ impl Query {
         search::search(ctx, &query, kind, ConnArgs::new(first, last, after, before)).await
     }
 
+    /// Known open source licenses (the vendored choosealicense.com set).
+    pub async fn licenses(&self) -> Vec<Option<crate::model::misc::License>> {
+        bgh_core::licenses::all()
+            .iter()
+            .map(|l| Some(crate::model::misc::License::from_spdx(&l.spdx_id)))
+            .collect()
+    }
+
+    /// A license by its key (e.g. `mit`).
+    pub async fn license(&self, key: String) -> Option<crate::model::misc::License> {
+        bgh_core::licenses::find(&key).map(|l| crate::model::misc::License::from_spdx(&l.spdx_id))
+    }
+
     /// The client's rate limit information (the shared `graphql` budget;
     /// this request is already counted by the root middleware).
     pub async fn rate_limit(

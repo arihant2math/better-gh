@@ -925,7 +925,8 @@ async fn job_token_permissions_for_caches() {
         .await;
 
     let wf = WORKFLOW.replace("jobs:", "permissions:\n  actions: write\njobs:");
-    wc.commit(&[(".github/workflows/c.yml", &wf)], "perms").await;
+    wc.commit(&[(".github/workflows/c.yml", &wf)], "perms")
+        .await;
     wc.push("main").await;
     settle(&app).await;
     let spec = runner.acquire(&app).await.unwrap();
