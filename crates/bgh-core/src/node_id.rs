@@ -52,6 +52,7 @@ pub enum NodeType {
     ProjectV2Field,
     ProjectV2View,
     DraftIssue,
+    CommitComment,
 }
 
 impl NodeType {
@@ -97,6 +98,7 @@ impl NodeType {
         Self::ProjectV2Field,
         Self::ProjectV2View,
         Self::DraftIssue,
+        Self::CommitComment,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -142,6 +144,7 @@ impl NodeType {
             Self::ProjectV2Field => "ProjectV2Field",
             Self::ProjectV2View => "ProjectV2View",
             Self::DraftIssue => "DraftIssue",
+            Self::CommitComment => "CommitComment",
         }
     }
 

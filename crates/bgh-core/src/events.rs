@@ -766,6 +766,17 @@ pub enum Event {
         state: String,
         actor_id: Option<i64>,
     },
+    /// A commit comment was created (`POST /repos/{o}/{r}/commits/{sha}/comments`).
+    /// Webhook `commit_comment` created, activity `CommitCommentEvent`,
+    /// notifications to the commit author (resolved by email when the
+    /// comment was created) and mentioned users.
+    CommitCommentCreated {
+        repo_id: i64,
+        comment_id: i64,
+        actor_id: i64,
+        #[serde(default)]
+        commit_author_id: Option<i64>,
+    },
     /// A browser session ended (logout or revocation): sync sockets of
     /// that session (or of every session of the user when `session_id` is
     /// `None`) must close with code 4001.
@@ -959,6 +970,7 @@ impl Event {
             Self::SessionEnded { .. } => "session_ended",
             Self::DeploymentCreated { .. } => "deployment_created",
             Self::DeploymentStatusCreated { .. } => "deployment_status_created",
+            Self::CommitCommentCreated { .. } => "commit_comment_created",
             Self::RepositoryEdited { .. } => "repository_edited",
             Self::ReleaseStateChanged { .. } => "release_state_changed",
             Self::DeployKeyCreated { .. } => "deploy_key_created",
@@ -1075,7 +1087,8 @@ impl Event {
             | Self::WikiPagesUpdated { repo_id, .. }
             | Self::CheckRunActionRequested { repo_id, .. }
             | Self::DeploymentCreated { repo_id, .. }
-            | Self::DeploymentStatusCreated { repo_id, .. } => Some(*repo_id),
+            | Self::DeploymentStatusCreated { repo_id, .. }
+            | Self::CommitCommentCreated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -1131,6 +1144,7 @@ impl Event {
             | Self::IssueCommentCreated { actor_id, .. }
             | Self::IssueCommentEdited { actor_id, .. }
             | Self::IssueCommentDeleted { actor_id, .. }
+            | Self::CommitCommentCreated { actor_id, .. }
             | Self::PullRequestOpened { actor_id, .. }
             | Self::PullRequestClosed { actor_id, .. }
             | Self::PullRequestReopened { actor_id, .. }

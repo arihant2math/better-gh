@@ -4,6 +4,7 @@
 
 mod support;
 
+mod commit_comments;
 mod coverage;
 mod email;
 mod notifications;

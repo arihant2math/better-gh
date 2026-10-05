@@ -11,6 +11,7 @@
 //! return `Ok(None)` / an empty vec instead of failing.
 
 mod checks;
+mod commit_comments;
 mod common;
 mod deployments;
 mod issues;
@@ -29,6 +30,7 @@ use serde_json::{Map, Value, json};
 pub use checks::{
     ACTIONS_APP_ID, app_json, check_run, check_suite, pull_requests_for_sha, status_payload,
 };
+pub use commit_comments::commit_comment;
 pub use common::{
     RepoCtx, association, author_associations, commit_node_id, organization, reactions, repository,
     sender, user_json, user_or_ghost, user_or_null,
@@ -196,6 +198,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::OrgMemberAdded { .. } => vec!["organization"],
         E::DeploymentCreated { .. } => vec!["deployment"],
         E::DeploymentStatusCreated { .. } => vec!["deployment_status"],
+        E::CommitCommentCreated { .. } => vec!["commit_comment"],
         // Site-level events: delivered to global (site admin) hooks only.
         E::UserAccountChanged { .. } => vec!["user"],
         E::OrganizationChanged { .. } => vec!["organization"],
@@ -759,6 +762,17 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                     ("workflow", Value::Null),
                     ("workflow_run", Value::Null),
                 ],
+            )])
+        }
+        // ----- commit comments -------------------------------------------------
+        E::CommitCommentCreated { comment_id, .. } => {
+            let Some(c) = commit_comment(state, &ctx, *comment_id).await? else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "commit_comment",
+                Some("created"),
+                vec![("comment", c)],
             )])
         }
         // ----- packages -------------------------------------------------------

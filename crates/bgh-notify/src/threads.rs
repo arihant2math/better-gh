@@ -188,6 +188,7 @@ fn subject_json(
         (Some("PullRequestReviewComment"), Some(id)) => {
             Some(format!("{api_repo}/pulls/comments/{id}"))
         }
+        (Some("CommitComment"), Some(id)) => Some(format!("{api_repo}/comments/{id}")),
         (Some("PullRequestReview"), Some(id)) => number
             .map(|num| format!("{api_repo}/pulls/{num}/reviews/{id}"))
             .or_else(|| url.clone()),
