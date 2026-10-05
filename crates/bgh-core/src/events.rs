@@ -1083,6 +1083,14 @@ impl Event {
         }
     }
 
+    /// Whether an Actions job token (`GITHUB_TOKEN`) caused the event: its
+    /// writes are attributed to `github-actions[bot]` (see
+    /// [`crate::bots`]). Workflow triggers ignore such events (except
+    /// dispatches), like GitHub, so workflows can't trigger themselves.
+    pub fn via_actions_token(&self) -> bool {
+        crate::bots::is_actions_bot(self.actor_id())
+    }
+
     /// The user who caused the event, if known.
     pub fn actor_id(&self) -> Option<i64> {
         match self {

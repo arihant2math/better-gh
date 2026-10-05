@@ -29,8 +29,10 @@ Branch `bgh/actions`.
   then `bgh-runner run` (HTTP long-poll, `Authorization: RunnerToken`).
 * Executors: `docker` (job container = `container:` or
   `BGH_ACTIONS_DEFAULT_IMAGE`, services on a per-job network with aliases,
-  job dir bind-mounted at `/__w`) and `shell` (host); `auto` picks docker
-  when `docker info` works.
+  job dir bind-mounted at `/__w`) and `shell` (host, explicit only); `auto`
+  picks docker when `docker info` works, otherwise the built-in runner
+  takes no jobs (`bgh-runner` falls back to shell on its own host). Steps
+  start from an empty environment plus `runner::process::HOST_ENV`.
 * Steps: `run` (shells bash/sh/python/pwsh/custom), file commands
   (`GITHUB_OUTPUT/ENV/PATH/STEP_SUMMARY/STATE`, heredocs), workflow commands
   (`set-output`, `add-mask`, `add-path`, `group`, `debug/notice/warning/error`
@@ -44,11 +46,16 @@ Branch `bgh/actions`.
 
 ### GITHUB_TOKEN
 
-A short-lived `access_tokens` row (`kind = 'app'`) of the triggering actor
-with scopes `repo workflow actions:repo:<id>`; `bgh_core::perms::effective`
-limits such tokens to that repository (max Write; other repos as
-anonymous). Created when a runner claims the job, deleted on completion,
-expires after `timeout + 60 min` regardless.
+A short-lived `access_tokens` row (`kind = 'app'`) of `github-actions[bot]`
+(`bgh_core::bots`, id 41898282) with scopes `repo actions:repo:<id>
+actions:actor:<triggering user>` plus the permission map from the job's
+`permissions:` (job level, else workflow level, else the site setting
+`actions.default_workflow_permissions`, default `read`) mirrored as
+`actions:permission:<category>:<access>` scopes and stored in
+`access_tokens.permissions`; fork pull requests get it read-only. Enforced
+by `bgh_core::token_permissions` (see `docs/packages/p08-actions-security.md`).
+Created when a runner claims the job, deleted on completion, expires after
+`timeout + 60 min` regardless. Events caused by it never trigger workflows.
 
 ## Endpoints
 
@@ -153,7 +160,6 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
 * `actions/cache` is a no-op; no cache API (`/actions/caches`).
-* `permissions:` is not applied to `GITHUB_TOKEN` (always repo-scoped Write).
 * Fork pull requests get no secrets and a read-only token
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
