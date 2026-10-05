@@ -43,7 +43,8 @@ crates/
   bgh-repos/               repos CRUD, collaborators, forks, stars, watching,
                            topics, contents/trees/blobs/commits/refs API,
                            branches, tags, compare, branch protection, deploy
-                           keys, git transport routes
+                           keys, git transport routes, insights (`/stats/*`,
+                           traffic, community profile, activity log)
   bgh-issues/              issues, labels, milestones, comments, reactions,
                            timeline/events, assignees, locking, templates
   bgh-pulls/               pull requests, reviews, review comments, merge,

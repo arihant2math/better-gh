@@ -37,7 +37,7 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
 export function TimeChart({
   times,
   series,
-  kind = 'area',
+  kind: kindProp = 'area',
   height = 180,
   label,
   formatTime,
@@ -55,6 +55,8 @@ export function TimeChart({
   const [hover, setHover] = useState<number | null>(null);
   const id = useId();
   const n = times.length;
+  // An area needs at least two points: short series render as columns.
+  const kind = n < 3 ? 'bar' : kindProp;
   const left = 40;
   const right = 8;
   const top = 8;
