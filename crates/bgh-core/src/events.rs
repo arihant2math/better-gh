@@ -666,6 +666,13 @@ pub enum Event {
         job_id: i64,
         action: String,
     },
+    /// A browser session ended (logout or revocation): sync sockets of
+    /// that session (or of every session of the user when `session_id` is
+    /// `None`) must close with code 4001.
+    SessionEnded {
+        user_id: i64,
+        session_id: Option<i64>,
+    },
 }
 
 impl Event {
@@ -776,6 +783,7 @@ impl Event {
             Self::OrganizationChanged { .. } => "organization_changed",
             Self::GlobalHookPing { .. } => "global_hook_ping",
             Self::WorkflowJobUpdated { .. } => "workflow_job_updated",
+            Self::SessionEnded { .. } => "session_ended",
         }
     }
 
@@ -882,7 +890,8 @@ impl Event {
             | Self::UserFollowed { .. }
             | Self::UserAccountChanged { .. }
             | Self::OrganizationChanged { .. }
-            | Self::GlobalHookPing { .. } => None,
+            | Self::GlobalHookPing { .. }
+            | Self::SessionEnded { .. } => None,
             Self::AccessChanged { repo_id, .. } => *repo_id,
         }
     }
@@ -992,6 +1001,7 @@ impl Event {
             | Self::UserAccountChanged { actor_id, .. }
             | Self::OrganizationChanged { actor_id, .. }
             | Self::GlobalHookPing { actor_id, .. } => Some(*actor_id),
+            Self::SessionEnded { user_id, .. } => Some(*user_id),
         }
     }
 }

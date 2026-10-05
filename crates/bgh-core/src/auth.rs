@@ -597,6 +597,66 @@ impl FromRequestParts<AppState> for RequireSiteAdmin {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CSRF
+// ---------------------------------------------------------------------------
+
+/// Header carrying the CSRF token (`boot.csrf`, docs/SYNC_PROTOCOL.md §10).
+pub const CSRF_HEADER: &str = "x-csrf-token";
+
+/// CSRF token bound to a session: derived from the secret session cookie
+/// (which scripts can't read), so it needs no storage.
+pub fn csrf_token(session_token: &str) -> String {
+    crypto::sha256_hex(&format!("bgh-csrf:{session_token}"))[..40].to_string()
+}
+
+/// Paths that accept cookie-carrying mutations without `X-CSRF-Token`:
+/// sign-in endpoints (no session yet) and server-rendered forms that carry
+/// their own one-time nonce.
+const CSRF_EXEMPT: &[&str] = &[
+    "/_bgh/auth/login",
+    "/_bgh/auth/signup",
+    "/_bgh/auth/2fa",
+    "/_bgh/signup",
+    "/_bgh/session/two_factor",
+    "/_bgh/password_reset",
+    "/_bgh/emails/verify",
+    "/login/oauth/",
+    "/login/device",
+];
+
+fn csrf_exempt(path: &str, method: &axum::http::Method) -> bool {
+    // `POST /_bgh/session` (login) is exempt; `DELETE` (logout) is not.
+    (path == "/_bgh/session" && method == axum::http::Method::POST)
+        || CSRF_EXEMPT.iter().any(|p| path.starts_with(p))
+}
+
+/// Middleware: cookie-authenticated mutating requests (no `Authorization`
+/// header, a `bgh_session` cookie, method other than GET/HEAD/OPTIONS) must
+/// carry `X-CSRF-Token` matching [`csrf_token`], else 403. Token-authenticated
+/// clients are unaffected.
+pub async fn csrf_middleware(req: Request, next: Next) -> Response {
+    use axum::http::Method;
+    use axum::response::IntoResponse;
+    let mutating = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    if mutating
+        && !req.headers().contains_key(header::AUTHORIZATION)
+        && !csrf_exempt(req.uri().path(), req.method())
+        && let Some(session) = cookie(req.headers(), SESSION_COOKIE)
+    {
+        let sent = req
+            .headers()
+            .get(CSRF_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !crypto::constant_time_eq(sent, &csrf_token(&session)) {
+            return ApiError::forbidden("Missing or invalid CSRF token (X-CSRF-Token).")
+                .into_response();
+        }
+    }
+    next.run(req).await
+}
+
 /// Middleware: installs an [`AuthSlot`] and, after the handler ran, emits
 /// `X-OAuth-Scopes` for token-authenticated requests (like GitHub).
 pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
@@ -622,6 +682,17 @@ mod tests {
         assert!(implied("admin:org", "read:org"));
         assert!(!implied("public_repo", "repo"));
         assert!(!implied("read:org", "admin:org"));
+    }
+
+    #[test]
+    fn csrf_exemptions() {
+        use axum::http::Method;
+        assert!(csrf_exempt("/_bgh/auth/login", &Method::POST));
+        assert!(csrf_exempt("/_bgh/session", &Method::POST));
+        assert!(!csrf_exempt("/_bgh/session", &Method::DELETE));
+        assert!(!csrf_exempt("/api/v3/user", &Method::PATCH));
+        assert_eq!(csrf_token("a"), csrf_token("a"));
+        assert_ne!(csrf_token("a"), csrf_token("b"));
     }
 
     #[test]

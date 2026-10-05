@@ -189,35 +189,44 @@ fn ip_key(ip: &str) -> String {
     format!("login_fail_ip:{ip}")
 }
 
-/// `POST /_bgh/session` → 200 + session cookie, 202 when a second factor is
-/// required, 401 on bad credentials, 429 when throttled.
-pub async fn login(
-    State(state): State<AppState>,
-    client: ClientInfo,
-    Json(body): Json<LoginBody>,
-) -> ApiResult<Response> {
-    let login = body.login.trim();
-    if login.is_empty() || body.password.is_empty() {
+/// Result of checking a login + password.
+pub enum PasswordLogin {
+    /// Fully authenticated.
+    Done(Box<db::User>),
+    /// Second factor required: pending-login token.
+    TwoFactor(String),
+}
+
+/// Check credentials with throttling (429), suspension (403) and 2FA.
+/// Bad credentials → 401 "Bad credentials".
+pub async fn password_login(
+    state: &AppState,
+    client: &ClientInfo,
+    login: &str,
+    password: &str,
+) -> ApiResult<PasswordLogin> {
+    let login = login.trim();
+    if login.is_empty() || password.is_empty() {
         return Err(ApiError::bad_credentials());
     }
-    if ratelimit::count(&state, &login_key(login)).await >= MAX_FAILS_PER_LOGIN
-        || ratelimit::count(&state, &ip_key(&client.ip)).await >= MAX_FAILS_PER_IP
+    if ratelimit::count(state, &login_key(login)).await >= MAX_FAILS_PER_LOGIN
+        || ratelimit::count(state, &ip_key(&client.ip)).await >= MAX_FAILS_PER_IP
     {
         return Err(too_many(
             "Too many failed login attempts. Please try again later.",
         ));
     }
-    let ip = Some(client.ip.clone());
-    let Some(user) = auth::verify_login(&state, login, &body.password).await? else {
-        ratelimit::hit(&state, &login_key(login), LOGIN_WINDOW_SECS).await?;
-        ratelimit::hit(&state, &ip_key(&client.ip), LOGIN_WINDOW_SECS).await?;
+    let ip = Some(client.ip.as_str());
+    let Some(user) = auth::verify_login(state, login, password).await? else {
+        ratelimit::hit(state, &login_key(login), LOGIN_WINDOW_SECS).await?;
+        ratelimit::hit(state, &ip_key(&client.ip), LOGIN_WINDOW_SECS).await?;
         audit::log_with_ip(
             &state.db,
             None,
             "user.failed_login",
             audit::Target::None,
             json!({ "login": login }),
-            ip.as_deref(),
+            ip,
         )
         .await?;
         return Err(ApiError::bad_credentials());
@@ -229,16 +238,32 @@ pub async fn login(
             "user.failed_login",
             audit::Target::User(user.id),
             json!({ "reason": "suspended" }),
-            ip.as_deref(),
+            ip,
         )
         .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
-    ratelimit::clear(&state, &login_key(login)).await;
-    match after_first_factor(&state, &user).await? {
-        LoginStep::Done => start_session(&state, &client, &user, StatusCode::OK).await,
-        LoginStep::TwoFactor(token) => match body.otp.as_deref().filter(|c| !c.is_empty()) {
-            Some(code) => finish_two_factor(&state, &client, &token, code).await,
+    ratelimit::clear(state, &login_key(login)).await;
+    Ok(match after_first_factor(state, &user).await? {
+        LoginStep::Done => PasswordLogin::Done(Box::new(user)),
+        LoginStep::TwoFactor(token) => PasswordLogin::TwoFactor(token),
+    })
+}
+
+/// `POST /_bgh/session` → 200 + session cookie, 202 when a second factor is
+/// required, 401 on bad credentials, 429 when throttled.
+pub async fn login(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    Json(body): Json<LoginBody>,
+) -> ApiResult<Response> {
+    match password_login(&state, &client, &body.login, &body.password).await? {
+        PasswordLogin::Done(user) => start_session(&state, &client, &user, StatusCode::OK).await,
+        PasswordLogin::TwoFactor(token) => match body.otp.as_deref().filter(|c| !c.is_empty()) {
+            Some(code) => {
+                let user = verify_pending_two_factor(&state, &token, code).await?;
+                start_session(&state, &client, &user, StatusCode::OK).await
+            }
             None => Ok(two_factor_response(token)),
         },
     }
@@ -246,19 +271,20 @@ pub async fn login(
 
 #[derive(Debug, Deserialize)]
 pub struct TwoFactorBody {
-    #[serde(default)]
+    #[serde(default, alias = "twoFactorToken")]
     pub two_factor_token: String,
     #[serde(default)]
     pub code: String,
 }
 
-async fn finish_two_factor(
+/// Check the second factor of a pending login; returns the user and
+/// consumes the pending login on success.
+pub async fn verify_pending_two_factor(
     state: &AppState,
-    client: &ClientInfo,
     token: &str,
     code: &str,
-) -> ApiResult<Response> {
-    let hash = crypto::sha256_hex(token);
+) -> ApiResult<db::User> {
+    let hash = crypto::sha256_hex(token.trim());
     let key = state.redis_key(&format!("2fa_pending:{hash}"));
     let mut redis = state.redis.clone();
     let user_id: Option<i64> = redis.get(&key).await?;
@@ -284,7 +310,6 @@ async fn finish_two_factor(
     let user = db::User::find(&state.db, user_id)
         .await?
         .ok_or_else(ApiError::bad_credentials)?;
-    let ip = Some(client.ip.clone());
     if user.is_suspended() {
         audit::log_with_ip(
             &state.db,
@@ -292,12 +317,12 @@ async fn finish_two_factor(
             "user.failed_login",
             audit::Target::User(user.id),
             json!({ "reason": "suspended" }),
-            ip.as_deref(),
+            None,
         )
         .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
-    start_session(state, client, &user, StatusCode::OK).await
+    Ok(user)
 }
 
 /// `POST /_bgh/session/two_factor {two_factor_token, code}` → 200 + cookie.
@@ -307,7 +332,8 @@ pub async fn two_factor(
     client: ClientInfo,
     Json(body): Json<TwoFactorBody>,
 ) -> ApiResult<Response> {
-    finish_two_factor(&state, &client, body.two_factor_token.trim(), &body.code).await
+    let user = verify_pending_two_factor(&state, &body.two_factor_token, &body.code).await?;
+    start_session(&state, &client, &user, StatusCode::OK).await
 }
 
 /// `DELETE /_bgh/session` → 204, clears the cookie.
@@ -320,9 +346,7 @@ pub async fn logout(
         .await
         .ok()
         .flatten();
-    if let Some(token) = auth::cookie(&headers, auth::SESSION_COOKIE) {
-        auth::destroy_session(&state, &token).await?;
-    }
+    end_cookie_session(&state, &headers).await?;
     if let Some(ctx) = &caller {
         audit::log_with_ip(
             &state.db,
@@ -342,6 +366,27 @@ pub async fn logout(
         )],
     )
         .into_response())
+}
+
+/// Destroy the session of the request's cookie (if any) and tell sync to
+/// close its sockets ([`Event::SessionEnded`]).
+pub async fn end_cookie_session(state: &AppState, headers: &HeaderMap) -> ApiResult<()> {
+    let Some(token) = auth::cookie(headers, auth::SESSION_COOKIE) else {
+        return Ok(());
+    };
+    let row: Option<(i64, i64)> =
+        sqlx::query_as("SELECT id, user_id FROM sessions WHERE token_hash = $1")
+            .bind(crypto::sha256_hex(&token))
+            .fetch_optional(&state.db)
+            .await?;
+    auth::destroy_session(state, &token).await?;
+    if let Some((session_id, user_id)) = row {
+        state.events.emit(Event::SessionEnded {
+            user_id,
+            session_id: Some(session_id),
+        });
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -412,15 +457,22 @@ async fn revoke(
     ids: Option<&[i64]>,
     keep: Option<i64>,
 ) -> ApiResult<u64> {
-    let hashes: Vec<String> = sqlx::query_scalar(
+    let rows: Vec<(i64, String)> = sqlx::query_as(
         "DELETE FROM sessions WHERE user_id = $1 AND ($2::bigint[] IS NULL OR id = ANY($2))
-           AND ($3::bigint IS NULL OR id <> $3) RETURNING token_hash",
+           AND ($3::bigint IS NULL OR id <> $3) RETURNING id, token_hash",
     )
     .bind(user_id)
     .bind(ids)
     .bind(keep)
     .fetch_all(&state.db)
     .await?;
+    for (id, _) in &rows {
+        state.events.emit(Event::SessionEnded {
+            user_id,
+            session_id: Some(*id),
+        });
+    }
+    let hashes: Vec<String> = rows.into_iter().map(|(_, h)| h).collect();
     if !hashes.is_empty() {
         let keys: Vec<String> = hashes
             .iter()
@@ -724,6 +776,10 @@ pub async fn reset_password(
     .await?;
     tx.commit().await?;
     auth::destroy_user_sessions(&state, user_id).await?;
+    state.events.emit(Event::SessionEnded {
+        user_id,
+        session_id: None,
+    });
     if let Ok(Some(user)) = db::User::find(&state.db, user_id).await {
         ratelimit::clear(&state, &login_key(&user.login)).await;
     }

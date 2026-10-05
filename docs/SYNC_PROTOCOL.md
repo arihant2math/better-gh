@@ -539,9 +539,10 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | Endpoint | Request | Response |
 |----------|---------|----------|
 | `GET /_bgh/boot` | — | boot JSON (§9) |
-| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials |
+| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials; `401 {"message","twoFactorRequired":true,"twoFactorToken"}` when the account has two-factor authentication (`429` when throttled) |
+| `POST /_bgh/auth/2fa` | `{"twoFactorToken","code"}` (TOTP or recovery code) | `200` boot JSON + session cookie; `422` wrong code; `401` pending login expired (sign in again) |
 | `POST /_bgh/auth/signup` | `{"login","email","password"}` | `201` boot JSON + session cookie; `422` validation errors |
-| `POST /_bgh/auth/logout` | — | `204`; server closes the user's sync sockets with `4001` |
+| `POST /_bgh/auth/logout` | — | `204`; server closes the session's sync sockets with `4001` (the server emits `Event::SessionEnded {user_id, session_id}`, which bgh-sync consumes; also emitted when sessions are revoked or a password is reset, then with `session_id: null` = all sessions) |
 | `GET /_bgh/render/blob/{owner}/{repo}/{sha}?path=src/main.rs` | — | `{"language":"rust","lines":["<span class=\"hl-k\">fn</span> main() {", …]}` — one HTML string per source line, `Cache-Control: public, max-age=31536000, immutable`. `404` when no highlighter applies (client renders plain text). |
 | `DELETE /_bgh/notifications/threads/{id}/read` | `X-Client-Tx` | `204`; marks a thread unread (GitHub's REST API has no endpoint for this) |
 
@@ -552,6 +553,10 @@ server must HTML-escape source text; the client inserts the lines as HTML.
 All POST/PATCH/PUT/DELETE requests from the web client carry
 `X-CSRF-Token: <boot.csrf>`; the server rejects cookie-authenticated
 mutations without it (`403`). Token-authenticated API clients don't need it.
+The token is derived from the session cookie (`bgh_core::auth::csrf_token`)
+and enforced by `bgh_core::auth::csrf_middleware`; sign-in endpoints
+(`/_bgh/auth/login|signup|2fa`, password reset) and server-rendered OAuth
+forms (which carry their own nonce) are exempt.
 
 ---
 

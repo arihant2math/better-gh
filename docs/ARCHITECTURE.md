@@ -95,7 +95,14 @@ parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
 `BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
 `BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
 every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
-`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`; CI settings `BGH_ACTIONS_*`
+`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`, `BGH_SMTP_URL` (unset: mail is
+logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`, `BGH_RATE_LIMIT`
+(`5000`/h per user, `0` disables), `BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP),
+`BGH_TRUST_PROXY` (`false`; take client IPs from `X-Forwarded-For`), and
+`BGH_OIDC_*` for a single SSO provider (see `bgh_accounts::sso`; site
+setting `auth.oidc` overrides).
+(`BGH_RATE_LIMIT*` are read but the API rate limiter currently follows
+the `rate_limits` site setting below.) CI settings `BGH_ACTIONS_*`
 (see `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 Runtime site settings (edited by site admins, `site_settings` table) are
@@ -198,8 +205,12 @@ and octokit-style raw requests.
   The first user account becomes site admin.
 * Sessions: random cookie `bgh_session` (HttpOnly, SameSite=Lax, Secure on
   https), stored as SHA-256 in `sessions`, cached in Redis for 5 min.
-  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry.
-  Basic auth with a password is accepted for git transport only.
+  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry;
+  OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
+  Basic auth with a password is accepted for git transport only, and never
+  for accounts with two-factor authentication.
+* API rate limits: `bgh_core::ratelimit::middleware` on `/api/v3`
+  (Redis fixed windows, `X-RateLimit-*` headers).
 
 ### Migrations
 

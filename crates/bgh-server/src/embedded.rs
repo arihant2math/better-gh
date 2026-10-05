@@ -45,6 +45,16 @@ impl EmbeddedFiles {
         (self.lookup)("index.html").is_some()
     }
 
+    /// Whether `rel` (relative path) exists.
+    pub fn contains(&self, rel: &str) -> bool {
+        (self.lookup)(rel).is_some()
+    }
+
+    /// Uncompressed contents of `rel`.
+    pub fn read(&self, rel: &str) -> Option<Vec<u8>> {
+        (self.lookup)(rel).map(|f| f.data.into_owned())
+    }
+
     /// Serve a GET/HEAD request (method and API-path checks are done by the caller).
     pub fn serve(&self, req: &Request) -> Response {
         let path = req.uri().path();

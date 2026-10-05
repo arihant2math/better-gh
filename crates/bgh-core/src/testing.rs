@@ -534,8 +534,20 @@ impl TestRequest<'_> {
     }
 
     /// `Cookie: ...` (see [`TestApp::session_cookie`]).
+    /// `Cookie` header. For a `bgh_session` cookie the matching
+    /// `X-CSRF-Token` is added too, like the web client does; send a raw
+    /// `.header("cookie", ..)` to test CSRF rejection.
     pub fn cookie(self, cookie: &str) -> Self {
-        self.header("cookie", cookie)
+        let csrf = cookie
+            .split(';')
+            .filter_map(|p| p.trim().split_once('='))
+            .find(|(k, _)| *k == crate::auth::SESSION_COOKIE)
+            .map(|(_, v)| crate::auth::csrf_token(v));
+        let req = self.header("cookie", cookie);
+        match csrf {
+            Some(t) => req.header(crate::auth::CSRF_HEADER, &t),
+            None => req,
+        }
     }
 
     pub fn json(mut self, body: &impl Serialize) -> Self {
