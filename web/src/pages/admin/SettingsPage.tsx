@@ -25,6 +25,7 @@ import {
 import {
   AnnouncementSection,
   AuthSection,
+  GitSection,
   MaintenanceSection,
   OrganizationsSection,
   RateLimitsSection,
@@ -201,6 +202,8 @@ export default function SettingsPage() {
         return <AuthSection value={draft.auth_providers} onChange={update('auth_providers')} errors={errors} />;
       case 'smtp':
         return <SmtpSection value={draft.smtp} onChange={update('smtp')} errors={errors} />;
+      case 'git':
+        return <GitSection value={draft.git} onChange={update('git')} errors={errors} />;
       case 'maintenance':
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
     }

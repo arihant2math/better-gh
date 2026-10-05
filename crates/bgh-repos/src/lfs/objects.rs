@@ -60,6 +60,11 @@ pub async fn upload(
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok());
+    let repo_id = lfs.access.repo.id;
+    let linked = has_object(&state, repo_id, &oid).await?;
+    if !linked {
+        super::check_quota(&state, &lfs.access.repo, declared.unwrap_or(1) as i64).await?;
+    }
     let stream = body.into_data_stream().map_err(std::io::Error::other);
     let mut reader = StreamReader::new(stream);
     let store = object_store(&state);
@@ -80,9 +85,14 @@ pub async fn upload(
         }
         Err(PutError::Io(e)) => return Err(ApiError::internal(e).into()),
     };
+    if !linked && declared.is_none() {
+        // Unknown length: the object stays unlinked (removed by the
+        // next LFS gc) when it doesn't fit.
+        super::check_quota(&state, &lfs.access.repo, size as i64).await?;
+    }
     link(
         &state,
-        lfs.access.repo.id,
+        repo_id,
         &oid,
         size as i64,
         lfs.user.as_ref().map(|u| u.user.id),

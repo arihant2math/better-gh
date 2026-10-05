@@ -340,3 +340,11 @@ URLs are generated on the fly, nothing stores the old one).
 * **Resources:** the process is mostly I/O bound; git operations run as
   child processes. Size `BGH_DB_MAX_CONNECTIONS` below PostgreSQL's
   `max_connections` divided by the number of `bgh` processes.
+* **Push limits** (Site admin → Settings → Git pushes, section `git`):
+  receive-side fsck (on by default; rejects malformed objects and
+  malicious `.gitmodules`/symlinks, while tolerating
+  `zeroPaddedFilemode`, `badTimezone` and `missingSpaceBeforeDate` in old
+  history), per-file limit 100 MB with a warning above 50 MB (GH001
+  messages, as on GitHub) and a 2 GB per-push limit. Storage quotas count
+  LFS objects and are checked against each incoming push. Repository
+  configs are upgraded automatically at startup (`bgh.configVersion`).

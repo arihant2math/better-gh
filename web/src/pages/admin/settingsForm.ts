@@ -12,6 +12,7 @@ export type SectionKey = keyof SiteSettings;
 export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'signup', title: 'Sign-up', anchor: 'signup' },
   { key: 'repositories', title: 'Repositories', anchor: 'repositories' },
+  { key: 'git', title: 'Git pushes', anchor: 'git' },
   { key: 'organizations', title: 'Organizations', anchor: 'organizations' },
   { key: 'announcement', title: 'Announcement', anchor: 'announcement' },
   { key: 'rate_limits', title: 'Rate limits', anchor: 'rate-limits' },
@@ -66,7 +67,17 @@ export interface SettingsForm {
     tls: SiteSettings['smtp']['tls'];
   };
   maintenance: { enabled: boolean; message: string; scheduled: string };
+  git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
 }
+
+/** An optional megabyte limit: on/off plus the typed value. */
+export interface Limit {
+  on: boolean;
+  mb: string;
+}
+
+const limitForm = (v: number | null, fallback: number): Limit => ({ on: v != null, mb: String(v ?? fallback) });
+const limitValue = (l: Limit) => (l.on ? Number(l.mb) : null);
 
 const secretForm = (v: string | null): SecretForm => ({ stored: v != null && v !== '', value: '', clear: false });
 
@@ -142,6 +153,12 @@ export function toForm(s: SiteSettings): SettingsForm {
       message: s.maintenance.message ?? '',
       scheduled: toLocalInput(s.maintenance.scheduled_at),
     },
+    git: {
+      fsck: s.git.fsck_on_push,
+      max_object: limitForm(s.git.max_object_size_mb, 100),
+      warn_object: limitForm(s.git.warn_object_size_mb, 50),
+      max_push: limitForm(s.git.max_push_size_mb, 2048),
+    },
   };
 }
 
@@ -207,6 +224,11 @@ export function validate(f: SettingsForm): Errors {
   if (f.smtp.enabled && !f.smtp.host.trim()) e['smtp.host'] = 'Required when email is enabled.';
   if (f.smtp.enabled && !f.smtp.from.trim()) e['smtp.from'] = 'Required when email is enabled.';
   if (f.maintenance.scheduled && !fromLocalInput(f.maintenance.scheduled)) e['maintenance.scheduled'] = 'Enter a valid date and time.';
+  for (const k of ['max_object', 'warn_object', 'max_push'] as const)
+    if (f.git[k].on && !POSITIVE_INT.test(f.git[k].mb.trim())) e[`git.${k}`] = 'Enter a whole number of megabytes greater than 0.';
+  const { max_object: max, warn_object: warn } = f.git;
+  if (max.on && warn.on && !e['git.max_object'] && !e['git.warn_object'] && Number(warn.mb) >= Number(max.mb))
+    e['git.warn_object'] = 'The warning size must be below the maximum file size.';
   return e;
 }
 
@@ -290,6 +312,14 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           enabled: f.maintenance.enabled,
           message: orNull(f.maintenance.message),
           scheduled_at: fromLocalInput(f.maintenance.scheduled),
+        };
+        break;
+      case 'git':
+        out.git = {
+          fsck_on_push: f.git.fsck,
+          max_object_size_mb: limitValue(f.git.max_object),
+          warn_object_size_mb: limitValue(f.git.warn_object),
+          max_push_size_mb: limitValue(f.git.max_push),
         };
         break;
     }
