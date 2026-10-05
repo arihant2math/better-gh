@@ -4,6 +4,7 @@
 //! 0100-0199.
 
 pub mod avatars;
+pub mod boot;
 pub mod emails;
 pub mod gpg;
 pub mod json;
@@ -200,6 +201,12 @@ pub fn web_router() -> Router<AppState> {
         // `GET /api/v3/` (trailing slash, as requested by `gh`); the nested
         // API router only matches `/api/v3`.
         .route("/api/v3/", get(meta::root))
+        .route("/_bgh/boot", get(boot::get_boot))
+        .route("/_bgh/auth/login", post(boot::login))
+        .route("/_bgh/auth/2fa", post(boot::two_factor))
+        .route("/_bgh/auth/signup", post(boot::signup))
+        .route("/_bgh/auth/logout", post(boot::logout))
+        // Older JSON session endpoints (kept as aliases for API clients).
         .route("/_bgh/signup", post(session::signup))
         .route(
             "/_bgh/session",

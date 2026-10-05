@@ -101,6 +101,7 @@ pub fn app(state: AppState) -> Router {
         );
 
     let web_files = WebFiles::new(state.config.web_dir.clone());
+    let shell_state = state.clone();
 
     // Don't spend CPU compressing git packs (already compressed) or tiny bodies.
     let compress_when = DefaultPredicate::new()
@@ -114,8 +115,10 @@ pub fn app(state: AppState) -> Router {
         .route("/_bgh/{*rest}", any(api_not_found))
         .fallback(move |req: Request| {
             let web_files = web_files.clone();
-            async move { web_files.serve(req).await }
+            let state = shell_state.clone();
+            async move { web_files.serve(&state, req).await }
         })
+        .layer(middleware::from_fn(bgh_core::auth::csrf_middleware))
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
         .layer(CompressionLayer::new().compress_when(compress_when))
         .layer(PropagateRequestIdLayer::x_request_id())

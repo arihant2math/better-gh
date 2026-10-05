@@ -46,7 +46,24 @@ v4, v5 and v6 keys. Subkeys are stored as rows with `primary_key_id` set.
 Each email gets `verified: true` when it matches one of the user's verified
 addresses.
 
-**Sign up, login and sessions** (web client)
+**Web client boot + auth** (docs/SYNC_PROTOCOL.md §9-10)
+- `GET /_bgh/boot` returns `{user, csrf, config, ts}`.
+- `POST /_bgh/auth/login`: 200 with boot and a cookie; 422 on bad
+  credentials; 401 `{twoFactorRequired, twoFactorToken}` for accounts with
+  2FA.
+- `POST /_bgh/auth/2fa {twoFactorToken, code}`, `POST /_bgh/auth/signup`
+  (201), `POST /_bgh/auth/logout` (204, emits `Event::SessionEnded`).
+- bgh-server injects the boot `<script>` (escaped) at `<!--BGH_BOOT-->`
+  in the SPA shell (`/`, `/index.html` and unknown paths), with
+  `Cache-Control: no-cache, private`.
+- CSRF: cookie-authenticated mutations need
+  `X-CSRF-Token = csrf_token(cookie)`, otherwise 403
+  (`bgh_core::auth::csrf_middleware`). Token-authenticated requests are
+  exempt, as are sign-in endpoints and the OAuth forms, which use their own
+  nonces.
+- The web login page handles the 2FA code step.
+
+**Sign up, login and sessions** (older JSON endpoints, kept as aliases)
 `POST /_bgh/signup`; `POST /_bgh/session {login, password, otp?}` returns
 200 with a cookie, or 202 `{two_factor_required, two_factor_token}` (with
 `X-GitHub-OTP: required; app`) for accounts with 2FA; then
@@ -241,6 +258,14 @@ model names to these.
   `members_can_create_public_repositories`, `…_private_…`,
   `members_can_fork_private_repositories`, and
   `members_allowed_repository_creation_type`.
+- `auth::csrf_token`, `auth::csrf_middleware` (layered in bgh-server), and
+  `Event::SessionEnded {user_id, session_id}`, which bgh-sync should
+  consume to close sockets with 4001. `TestRequest::cookie` adds the
+  matching `X-CSRF-Token` automatically; use `.header("cookie", …)` to test
+  rejection.
+- bgh-server `web.rs`: shell injection via
+  `bgh_accounts::boot::{boot_json, boot_script}`; `EmbeddedFiles::contains`
+  and `EmbeddedFiles::read`.
 - `bgh_accounts::users::insert_user` (pub) creates users with an optional
   password hash, as SSO needs.
 - Workspace dependencies: lettre, reqwest (rustls), hmac, sha1, flate2,

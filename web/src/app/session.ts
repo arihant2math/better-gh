@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import { transport } from '../api/transport';
 import { getBoot, isMockMode, setBoot, type BootData, type BootUser } from '../boot';
 import { navigate } from '../router';
@@ -65,8 +65,25 @@ class Session {
     });
   }
 
-  async login(login: string, password: string): Promise<void> {
-    const boot = await api.post<BootData>('/_bgh/auth/login', { login, password });
+  /**
+   * Sign in. Resolves to `{ twoFactorToken }` when the account needs a
+   * second factor (then call `verifyTwoFactor`), else `null`.
+   */
+  async login(login: string, password: string): Promise<{ twoFactorToken: string } | null> {
+    try {
+      const boot = await api.post<BootData>('/_bgh/auth/login', { login, password });
+      this.adopt(boot);
+      return null;
+    } catch (e) {
+      const body = e instanceof ApiError && e.status === 401 ? (e.body as { twoFactorRequired?: boolean; twoFactorToken?: string } | null) : null;
+      if (body?.twoFactorRequired && body.twoFactorToken) return { twoFactorToken: body.twoFactorToken };
+      throw e;
+    }
+  }
+
+  /** Second step of a 2FA sign-in: TOTP or recovery code. */
+  async verifyTwoFactor(twoFactorToken: string, code: string): Promise<void> {
+    const boot = await api.post<BootData>('/_bgh/auth/2fa', { twoFactorToken, code });
     this.adopt(boot);
   }
 

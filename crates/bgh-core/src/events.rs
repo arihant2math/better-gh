@@ -213,6 +213,13 @@ pub enum Event {
         actor_id: i64,
         target_id: i64,
     },
+    /// A browser session ended (logout or revocation): sync sockets of
+    /// that session (or of every session of the user when `session_id` is
+    /// `None`) must close with code 4001.
+    SessionEnded {
+        user_id: i64,
+        session_id: Option<i64>,
+    },
 }
 
 impl Event {
@@ -248,6 +255,7 @@ impl Event {
             Self::TeamRepoAdded { .. } => "team_repo_added",
             Self::TeamRepoRemoved { .. } => "team_repo_removed",
             Self::UserFollowed { .. } => "user_followed",
+            Self::SessionEnded { .. } => "session_ended",
         }
     }
 
@@ -282,7 +290,8 @@ impl Event {
             | Self::TeamDeleted { .. }
             | Self::TeamMemberAdded { .. }
             | Self::TeamMemberRemoved { .. }
-            | Self::UserFollowed { .. } => None,
+            | Self::UserFollowed { .. }
+            | Self::SessionEnded { .. } => None,
         }
     }
 
@@ -318,6 +327,7 @@ impl Event {
             | Self::TeamRepoAdded { actor_id, .. }
             | Self::TeamRepoRemoved { actor_id, .. }
             | Self::UserFollowed { actor_id, .. } => Some(*actor_id),
+            Self::SessionEnded { user_id, .. } => Some(*user_id),
         }
     }
 }
