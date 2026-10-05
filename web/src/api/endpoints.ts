@@ -9,7 +9,6 @@ import type {
   BrowseRefs,
   Contents,
   HighlightedBlob,
-  PullRequirements,
   History,
   LastCommits,
   PullRequirements,

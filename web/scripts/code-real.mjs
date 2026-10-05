@@ -178,7 +178,6 @@ async function measure(selector, trigger) {
           }
         });
         obs.observe(document.body, { childList: true, subtree: true });
-        // eslint-disable-next-line no-new-func
         new Function(trigger)();
         if (document.querySelector(selector)) {
           obs.disconnect();
