@@ -628,6 +628,7 @@ dependencies = [
  "bgh-core",
  "bgh-git",
  "bgh-issues",
+ "bgh-projects",
  "bgh-pulls",
  "bgh-repos",
  "bgh-server",
@@ -721,7 +722,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "bgh-core",
+ "bgh-issues",
  "bgh-server",
  "chrono",
  "futures",

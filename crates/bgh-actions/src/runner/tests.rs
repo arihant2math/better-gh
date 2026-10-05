@@ -169,6 +169,7 @@ fn spec(steps: Vec<Step>) -> JobSpec {
         outputs: IndexMap::new(),
         timeout_minutes: 10,
         environment: None,
+        token_permissions: IndexMap::new(),
     }
 }
 
@@ -1172,14 +1173,15 @@ async fn docker_executor_cancellation() {
 async fn detect_executor_setting() {
     assert_eq!(
         RunnerConfig::detect_executor("shell", "docker").await,
-        ExecutorKind::Shell
+        Some(ExecutorKind::Shell)
     );
     assert_eq!(
         RunnerConfig::detect_executor("docker", "/nonexistent").await,
-        ExecutorKind::Docker
+        Some(ExecutorKind::Docker)
     );
+    // `auto` never falls back to running jobs on the host.
     assert_eq!(
         RunnerConfig::detect_executor("auto", "/nonexistent/docker").await,
-        ExecutorKind::Shell
+        None
     );
 }

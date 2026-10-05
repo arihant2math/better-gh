@@ -55,9 +55,8 @@ pub const OWNER_SCOPE_PREFIX: &str = "app:owner:";
 pub const REPO_SCOPE_PREFIX: &str = "app:repo:";
 
 /// Scope prefix of a token's permission map entries
-/// (`actions:permission:contents:read`, `token_permissions`).
-// TODO(P8 merge): use token_permissions::PERMISSION_SCOPE_PREFIX.
-pub const PERMISSION_SCOPE_PREFIX: &str = "actions:permission:";
+/// (`actions:permission:contents:read`).
+pub use crate::token_permissions::PERMISSION_SCOPE_PREFIX;
 
 /// Longest accepted JWT lifetime (`exp` - now), like GitHub.
 pub const JWT_MAX_LIFETIME_SECS: i64 = 600;
@@ -105,6 +104,35 @@ pub fn token_covers(auth: &AuthContext, repo: &db::Repository) -> Option<bool> {
     let owner = format!("{OWNER_SCOPE_PREFIX}{}", repo.owner_id);
     let one = format!("{REPO_SCOPE_PREFIX}{}", repo.id);
     Some(scopes.iter().any(|s| *s == owner || *s == one))
+}
+
+/// Whether an installation token covers the repository `owner/name`
+/// (fails closed: lookup errors count as covered, so category checks
+/// apply).
+pub async fn covers_repo_named(
+    state: &AppState,
+    auth: &AuthContext,
+    owner: &str,
+    name: &str,
+) -> bool {
+    let row: Result<Option<(i64, i64)>, _> = sqlx::query_as(
+        "SELECT r.id, r.owner_id FROM repositories r JOIN users u ON u.id = r.owner_id
+          WHERE lower(u.login) = lower($1) AND lower(r.name) = lower($2)",
+    )
+    .bind(owner)
+    .bind(name.strip_suffix(".git").unwrap_or(name))
+    .fetch_optional(&state.db)
+    .await;
+    match row {
+        Ok(Some((id, owner_id))) => {
+            let scopes = auth.scopes.as_deref().unwrap_or_default();
+            let o = format!("{OWNER_SCOPE_PREFIX}{owner_id}");
+            let r = format!("{REPO_SCOPE_PREFIX}{id}");
+            scopes.iter().any(|s| *s == o || *s == r)
+        }
+        Ok(None) => false,
+        Err(_) => true,
+    }
 }
 
 /// The scopes recording which repositories an installation token covers.

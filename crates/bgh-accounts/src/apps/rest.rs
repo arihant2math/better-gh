@@ -328,8 +328,8 @@ pub async fn create_access_token(
     let expires_at = Utc::now() + Duration::seconds(INSTALLATION_TOKEN_TTL_SECS);
     sqlx::query(
         "INSERT INTO access_tokens (user_id, kind, name, token_hash, token_last_eight, scopes,
-                expires_at, installation_id)
-         VALUES ($1, 'app', $2, $3, $4, $5, $6, $7)",
+                expires_at, installation_id, permissions)
+         VALUES ($1, 'app', $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(app.bot_user_id)
     .bind(format!("installation {}", inst.id))
@@ -338,6 +338,7 @@ pub async fn create_access_token(
     .bind(&scopes)
     .bind(expires_at)
     .bind(inst.id)
+    .bind(sqlx::types::Json(&permissions))
     .execute(&state.db)
     .await?;
     let repositories = selected.map(|rows| {
