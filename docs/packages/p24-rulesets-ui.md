@@ -64,6 +64,9 @@ Other UI changes:
 
 ## Code
 
+Bundle: all ruleset UI is in lazy route / section chunks; the initial bundle only gains the two `/organizations/:org/settings/rules[/*]` route entries (initial JS 142.3 KB gzip on this branch).
+
+
 * `web/src/api/rulesets.ts` — typed REST calls and shapes (`repository-ruleset`,
   `rule-suite`, `rules/branches`), repo and org scopes.
 * `web/src/pages/rulesets/` — `model.ts` (form ⇄ GitHub JSON for every rule
