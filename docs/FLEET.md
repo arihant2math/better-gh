@@ -1,6 +1,6 @@
 # Phase 4 fleet (foreman-maintained, branch bgh/foreman only)
 
-Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:45 UTC (integration head 7ac1b95). PACING: seven-day rate-limit warning seen 17:41; no new launches until the queue drains, then ~6 workers.
+Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:45 UTC (integration head 7ac1b95). STOPPED NEW LAUNCHES (orchestrator/user decision 17:48): only P25 P28 P49 P50 P51 finish; integrator drains the queue, then a final full gate.
 
 | Pkg | Session | Status | Integrated |
 |---|---|---|---|
@@ -23,7 +23,7 @@ Integration branch: `claude/sleepy-cray-9jj0t3`. Updated 2026-10-05 17:45 UTC (i
 | P49 | session_01GKWEGkpY6svMi9tt5fJRB3 | running | – |
 | P28 | session_0175PRhG1uGz8ANg7JsaM4kv | running | – |
 | integrator | session_0199JgoqhKWUQwuSikBwmDCv | running; 6 batches, 12 pkgs landed, head 7ac1b95 (rust 1066, web 459) | – |
-Queue (wave order): W3 P39(P23) P44(P23); W4 P30 P40 P43 P45(P38,P41,P42) P48 P52 P53 P54 P55 P56 P58 P60 P62 P63 P66(P65); W5 …; W6 P77 P80–P86.
+Not started (dropped from this phase by decision): P39 P40 P43 P44 P45 P48 P52–P60 P62–P64 P66–P86 and P30.
 
 ## Integration process (since 15:53 UTC)
 
