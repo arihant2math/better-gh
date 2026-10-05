@@ -114,6 +114,7 @@ export {
   PinIcon,
   PinSlashIcon,
   PlayIcon,
+  PlugIcon,
   PlusIcon,
   ProjectIcon,
   ProjectRoadmapIcon,

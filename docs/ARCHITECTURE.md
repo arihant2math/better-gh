@@ -239,6 +239,17 @@ and octokit-style raw requests.
   IP (shared by web and git) and audited as `user.failed_login` with
   `transport`. Teams can be synced from external groups
   (`external_group_mappings`: LDAP group DNs, the OIDC groups claim).
+* GitHub Apps (`bgh_core::apps`, `bgh_accounts::apps`, P17): an app
+  authenticates with an RS256 JWT (`Bearer`, `iss` = app id or client id,
+  ≤ 10 min) signed by one of its registered keys (only public keys are
+  stored) and acts as its `{slug}[bot]` user (`AuthMethod::App`), limited
+  to the app endpoints by `apps::middleware`. Installation tokens are
+  `bghs_…` `access_tokens` rows (`kind = 'app'`, `installation_id`, 1 h)
+  of the bot user; their scopes carry the installation, the covered
+  repositories and the permission map, so `perms::effective` caps them
+  without a query (`apps::effective_cap`) and `token_permissions` checks
+  categories. They work for git (`x-access-token:<token>`, `contents`
+  required) and get a rate-limit bucket per installation.
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations

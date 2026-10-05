@@ -258,6 +258,11 @@ impl TokenPermissions {
     /// minted before permission scopes existed get [`Self::write_all`], or
     /// read-all when read-only). `None` for every other credential.
     pub fn of(auth: &AuthContext) -> Option<Self> {
+        // GitHub App installation tokens carry their map the same way.
+        if crate::apps::installation_id(auth).is_some() {
+            let scopes = auth.scopes.as_deref().unwrap_or_default();
+            return Some(Self::from_scopes(scopes).unwrap_or_else(Self::none));
+        }
         job_token_repo(auth)?;
         let scopes = auth.scopes.as_deref().unwrap_or_default();
         Some(Self::from_scopes(scopes).unwrap_or_else(|| {
@@ -458,6 +463,8 @@ pub fn classify(method: &Method, path: &str) -> Need {
         }
         // Rendering markdown writes nothing.
         ["markdown", ..] => Need::one(C::Metadata, Access::Read),
+        // Installation token endpoints (`DELETE /installation/token`).
+        ["installation", ..] => Need::one(C::Metadata, Access::Read),
         // Packages of users and organizations.
         ["user" | "users" | "orgs", rest @ ..] if rest.contains(&"packages") => Need::one(
             C::Packages,
@@ -565,6 +572,14 @@ pub async fn middleware(State(state): State<AppState>, mut req: Request, next: N
         && let Some(own) = job_token_repo(&auth)
         && let Some((owner, repo)) = repo_of(&path)
         && !is_repo(&state, own, owner, repo).await
+    {
+        return next.run(req).await;
+    }
+    // Same for installation tokens and repositories they don't cover.
+    if let Need::Any(_, Access::Read) = need
+        && crate::apps::installation_id(&auth).is_some()
+        && let Some((owner, repo)) = repo_of(&path)
+        && !crate::apps::covers_repo_named(&state, &auth, owner, repo).await
     {
         return next.run(req).await;
     }

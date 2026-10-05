@@ -5,6 +5,7 @@
 mod common;
 
 mod accounts;
+mod apps;
 mod auth;
 mod boot;
 mod ldap;

@@ -15,6 +15,7 @@ import {
   MailIcon,
   PaintbrushIcon,
   PersonIcon,
+  PlugIcon,
   ShieldLockIcon,
   SyncIcon,
   type Icon,
@@ -48,11 +49,15 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
   },
   {
     group: 'Integrations',
-    items: [{ id: 'applications', label: 'Applications', icon: AppsIcon }],
+    items: [
+      { id: 'applications', label: 'Applications', icon: AppsIcon },
+      { id: 'installations', label: 'Installed GitHub Apps', icon: PlugIcon },
+    ],
   },
   {
     group: 'Developer settings',
     items: [
+      { id: 'apps', label: 'GitHub Apps', icon: AppsIcon },
       { id: 'developers', label: 'OAuth apps', icon: CodeIcon },
       { id: 'tokens', label: 'Personal access tokens', icon: KeyAsteriskIcon },
     ],
