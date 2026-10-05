@@ -9,26 +9,26 @@
 import { store, sync } from './index';
 import type { Comment, ID, Issue, Notification, Repo } from './models';
 import { ops, tempId, type OverlayOp } from './overlay';
-import type { TxRequest } from './transactions';
+import type { TxApply, TxRequest } from './transactions';
 
 export function nowIso(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
-function repoOf(repoId: ID): Repo {
+export function repoOf(repoId: ID): Repo {
   const repo = store().get('repo', repoId);
   if (!repo) throw new Error(`repo ${repoId} not in store`);
   return repo;
 }
 
-const enc = encodeURIComponent;
-function issuePath(issue: Pick<Issue, 'repoId' | 'number'>, suffix = ''): string {
+export const enc = encodeURIComponent;
+export function issuePath(issue: Pick<Issue, 'repoId' | 'number'>, suffix = ''): string {
   const r = repoOf(issue.repoId);
   return `/api/v3/repos/${enc(r.owner)}/${enc(r.name)}/issues/${issue.number}${suffix}`;
 }
 
-export function commit(label: string, opsList: OverlayOp[], request: TxRequest) {
-  return sync().queue.commit({ label, ops: opsList, request });
+export function commit(label: string, opsList: OverlayOp[], request: TxRequest, apply?: TxApply) {
+  return sync().queue.commit({ label, ops: opsList, request, apply });
 }
 
 // ------------------------------------------------------------------ issues

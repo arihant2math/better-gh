@@ -277,3 +277,151 @@
   border-top: 1px solid var(--border);
   margin-bottom: 0;
 }
+
+/* ------------------------------------------------------------------ DiffView additions */
+.empty {
+  padding: 32px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 4px;
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+}
+
+.fileActive {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.viewedOn {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.commentCount,
+.treeCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.treeCount {
+  font-size: var(--fs-xs);
+}
+
+.treeActive {
+  background: var(--accent-subtle);
+}
+
+.extra {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 6px 10px;
+  background: var(--bg-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.line,
+.splitLine {
+  position: relative;
+}
+
+.selected,
+.line.selected,
+.line.selected .num {
+  background: var(--accent-subtle) !important;
+}
+
+.line.selected .num,
+.num.selected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.cursor {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.numClickable {
+  cursor: pointer;
+}
+
+.numClickable:hover {
+  color: var(--fg);
+}
+
+.addComment {
+  position: absolute;
+  display: none;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  margin-left: -22px;
+  margin-top: 1px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.line:hover .addComment,
+.cell:hover .addComment {
+  display: grid;
+}
+
+.line .code,
+.cell {
+  position: relative;
+  padding-left: 0;
+}
+
+/* split view */
+.splitLine,
+.hunkSplit {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.hunkSplit .code {
+  grid-column: 2 / span 3;
+}
+
+.cell.add,
+.num.add {
+  background: var(--diff-add-bg);
+}
+
+.num.add {
+  background: var(--diff-add-num);
+}
+
+.cell.del {
+  background: var(--diff-del-bg);
+}
+
+.num.del {
+  background: var(--diff-del-num);
+}
+
+.cell.empty,
+.num.empty {
+  background: var(--bg-subtle);
+}
+
+.splitLine > .cell:nth-child(2) {
+  border-right: 1px solid var(--border-subtle);
+}

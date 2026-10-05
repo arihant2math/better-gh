@@ -1,0 +1,326 @@
+/* Review threads, inline composer, review submission (Files + Conversation tabs). */
+.thread {
+  margin: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  white-space: normal;
+}
+
+.resolved {
+  background: var(--bg-subtle);
+}
+
+.threadHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.threadPath {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.subtle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.chip {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.chipPending {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.comments {
+  display: flex;
+  flex-direction: column;
+}
+
+.comment {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.comment + .comment {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.optimistic {
+  opacity: 0.7;
+}
+
+.commentMain {
+  min-width: 0;
+}
+
+.commentHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  margin-bottom: 2px;
+  font-size: var(--fs-md);
+}
+
+.threadFooter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.replyStub {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.replyBox {
+  flex: 1;
+}
+
+.excerpt,
+.suggestionBody {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-x: auto;
+}
+
+.excerpt {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.excerptLine {
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.exAdd {
+  background: var(--diff-add-bg);
+}
+
+.exDel {
+  background: var(--diff-del-bg);
+}
+
+.suggestion {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.suggestionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reaction {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.reactionMine {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.reactionPicker {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+}
+
+.reactionPick {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.reactionPick:hover {
+  background: var(--bg-hover);
+}
+
+/* ------------------------------------------------------------------ composer */
+.composer {
+  margin: 4px 0;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  font-family: var(--font-sans);
+  white-space: normal;
+}
+
+.composerLabel {
+  margin-bottom: 6px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------------ toolbar */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: normal;
+}
+
+.filter {
+  width: 220px;
+}
+
+.toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.toggle button[aria-pressed='true'] {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.reviewPanel {
+  width: 420px;
+  padding: 12px;
+}
+
+.reviewPanel h3 {
+  margin-bottom: 8px;
+  font-size: var(--fs-md);
+}
+
+.radio {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 2px 8px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.radio small {
+  grid-column: 2;
+  color: var(--fg-muted);
+}
+
+.radio[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reviewActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.pendingBadge {
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--warning-subtle);
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}

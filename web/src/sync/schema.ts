@@ -44,15 +44,22 @@ export const SCHEMA: SchemaMap = {
       { model: 'comment', field: 'issueId' },
       { model: 'review', field: 'issueId' },
       { model: 'issueEvent', field: 'issueId' },
+      { model: 'reviewComment', field: 'issueId' },
     ],
   },
   comment: { scope: repoScope, indexes: ['issueId'], lazy: true },
   review: { scope: repoScope, indexes: ['issueId'], lazy: true },
   issueEvent: { scope: repoScope, indexes: ['issueId'], lazy: true },
   notification: { scope: viewerScope, indexes: ['repoId'] },
+  // PR extension models (lazy; loaded per PR, see SyncClient.loadPull).
+  reviewComment: { scope: repoScope, indexes: ['issueId', 'reviewId'], lazy: true },
+  reaction: { scope: (r) => `repo:${r.repoId ?? 0}`, indexes: ['subjectId'], lazy: true },
+  checkSuite: { scope: repoScope, indexes: ['headSha'], lazy: true },
+  checkRun: { scope: repoScope, indexes: ['headSha', 'checkSuiteId'], lazy: true },
+  commitStatus: { scope: repoScope, indexes: ['sha'], lazy: true },
 };
 
 export const MODEL_NAMES = Object.keys(SCHEMA) as ModelName[];
 
 /** Bump when the client-side persisted shape changes; old IndexedDB data is discarded. */
-export const CLIENT_SCHEMA_VERSION = 1;
+export const CLIENT_SCHEMA_VERSION = 2;

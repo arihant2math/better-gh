@@ -27,6 +27,8 @@ export interface MockDb {
   tables: Tables;
   nextId: number;
   nextNumber: Record<ID, number>;
+  /** PRs whose review threads / checks were generated (mock/pulls.ts). */
+  seededPulls?: ID[];
 }
 
 export function emptyTables(): Tables {

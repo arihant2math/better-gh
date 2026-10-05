@@ -9,7 +9,8 @@ import type { Comment, ID, Issue, IssueEvent, ModelMap, ModelName, Notification,
 import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '../sync/protocol';
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA } from '../sync/schema';
-import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
+import { blobSha, highlight, languageOf, repoFiles, type MockFile } from './content';
+import { branchNames, pullDiffText, registerPullRoutes, type PullHost } from './pulls';
 import { Rng, fakeSha, iso } from './rng';
 import { emptyTables, seed, type MockDb } from './seed';
 
@@ -48,7 +49,7 @@ interface Resp {
 }
 
 const STATE_DB = 'bgh-mock-server';
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
 const LOG_KEEP = 5000;
 
 export class MockServer implements Transport {
@@ -421,10 +422,10 @@ export class MockServer implements Transport {
     R('GET', '/api/v3/repos/:owner/:repo/branches', (ctx) => {
       const repo = repoOr404(ctx);
       if (isResp(repo)) return repo;
-      const heads = [...this.db.tables.issue.values()].filter((i) => i.repoId === repo.id && i.isPr && i.state === 'open').slice(0, 12);
+      const names = branchNames(this.pullHost(() => undefined), repo);
       return {
         status: 200,
-        body: [{ name: repo.defaultBranch, commit: { sha: fakeSha(`${repo.id}:main`) }, protected: true }, ...heads.map((i) => ({ name: i.headRef, commit: { sha: i.headSha }, protected: false }))],
+        body: [{ name: repo.defaultBranch, commit: { sha: fakeSha(`${repo.id}:main`) }, protected: true }, ...names.map((n) => ({ name: n, commit: { sha: fakeSha(`${repo.id}:${n}`) }, protected: false }))],
       };
     });
     R('GET', '/api/v3/repos/:owner/:repo/commits', (ctx) => {
@@ -442,7 +443,7 @@ export class MockServer implements Transport {
       if (ctx.accept.includes('diff')) {
         return {
           status: 200,
-          text: pullDiff(this.repoFilesFor(repo), pr.id, pr.changedFiles ?? 3),
+          text: pullDiffText(this.pullHost(() => undefined), repo, pr),
           headers: { 'content-type': 'text/x-diff; charset=utf-8' },
         };
       }
@@ -698,6 +699,25 @@ export class MockServer implements Transport {
     R('DELETE', '/api/v3/user/starred/:owner/:repo', (ctx) => star(ctx, false));
 
     R('GET', '/api/v3/user', () => ({ status: 200, body: { login: this.viewer.login, id: this.viewer.id, name: this.viewer.name, avatar_url: '' } }));
+    registerPullRoutes(this.pullHost(R));
+  }
+
+  private pullHost(R: (method: string, pattern: string, handler: Route['handler']) => void): PullHost {
+    return {
+      db: this.db,
+      route: (method, pattern, handler) => R(method, pattern, handler),
+      put: (model, row) => this.put(model, row as never, { includeLazy: model === 'issue' && (row as Issue).number > 0 && !this.db.tables.issue.has((row as Issue).id) }),
+      remove: (model, id) => this.remove(model, id),
+      nextId: () => this.nextId(),
+      now: () => this.now(),
+      repo: (o, n) => this.repo(o, n),
+      issue: (r, n) => this.issue(r, n),
+      files: (r) => this.repoFilesFor(r),
+      restIssue: (i) => this.restIssue(i),
+      event: (i, e, d) => this.event(i, e as IssueEvent['event'], (d ?? {}) as IssueEvent['data']),
+      bumpCounts: (r, i, d) => this.bumpCounts(r, i, d),
+      commits: (r, salt, n, start, author) => this.commits(r, salt, n, start, author),
+    };
   }
 
   private userByLogin(login: string): User | undefined {
@@ -961,7 +981,7 @@ export class MockSocket implements SocketLike {
 
 interface SavedState {
   version: number;
-  db: { viewerId: ID; nextId: number; nextNumber: Record<ID, number>; tables: Record<string, unknown[]> };
+  db: { viewerId: ID; nextId: number; nextNumber: Record<ID, number>; seededPulls?: ID[]; tables: Record<string, unknown[]> };
   log: Delta[];
   syncId: number;
   minRetained: number;
@@ -985,7 +1005,7 @@ async function loadState(): Promise<{ db: MockDb; log: Delta[]; syncId: number; 
     if (!s || s.version !== STATE_VERSION) return null;
     const tables = emptyTables();
     for (const m of MODEL_NAMES) for (const row of (s.db.tables[m] ?? []) as { id: ID }[]) (tables[m] as Map<ID, unknown>).set(row.id, row);
-    return { db: { viewerId: s.db.viewerId, nextId: s.db.nextId, nextNumber: s.db.nextNumber, tables }, log: s.log, syncId: s.syncId, minRetained: s.minRetained, signedIn: s.signedIn };
+    return { db: { viewerId: s.db.viewerId, nextId: s.db.nextId, nextNumber: s.db.nextNumber, seededPulls: s.db.seededPulls, tables }, log: s.log, syncId: s.syncId, minRetained: s.minRetained, signedIn: s.signedIn };
   } catch {
     return null;
   }
@@ -997,7 +1017,7 @@ async function saveState(server: MockServer): Promise<void> {
     for (const m of MODEL_NAMES) tables[m] = [...server.db.tables[m].values()];
     const state: SavedState = {
       version: STATE_VERSION,
-      db: { viewerId: server.db.viewerId, nextId: server.db.nextId, nextNumber: server.db.nextNumber, tables },
+      db: { viewerId: server.db.viewerId, nextId: server.db.nextId, nextNumber: server.db.nextNumber, seededPulls: server.db.seededPulls, tables },
       log: server.log,
       syncId: server.syncId,
       minRetained: server.minRetained,

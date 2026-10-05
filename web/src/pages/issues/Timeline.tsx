@@ -46,7 +46,18 @@ type Item =
   | { kind: 'review'; at: string; r: Review };
 
 /** Issue / PR conversation: body, merged timeline (comments, events, reviews), composer. */
-export const Timeline = observer(function Timeline({ issue, repoFullName, footer }: { issue: Issue; repoFullName: string; footer?: ReactNode }) {
+export const Timeline = observer(function Timeline({
+  issue,
+  repoFullName,
+  footer,
+  renderReview,
+}: {
+  issue: Issue;
+  repoFullName: string;
+  footer?: ReactNode;
+  /** Extra content under a review (PRs: its inline review threads). */
+  renderReview?: (review: Review) => ReactNode;
+}) {
   const loaded = useIssueDetails(issue.id);
   const items: Item[] = [
     ...commentsForIssue(issue.id).map((c) => ({ kind: 'comment' as const, at: c.createdAt, c })),
@@ -74,7 +85,7 @@ export const Timeline = observer(function Timeline({ issue, repoFullName, footer
         ) : it.kind === 'event' ? (
           <EventItem key={`e${it.e.id}`} event={it.e} />
         ) : (
-          <ReviewItem key={`r${it.r.id}`} review={it.r} repo={repoFullName} />
+          <ReviewItem key={`r${it.r.id}`} review={it.r} repo={repoFullName} extra={renderReview?.(it.r)} />
         ),
       )}
       {!loaded && issue.comments > 0 && (
@@ -318,7 +329,7 @@ const EventItem = observer(function EventItem({ event }: { event: IssueEvent }) 
   );
 });
 
-const ReviewItem = observer(function ReviewItem({ review, repo }: { review: Review; repo: string }) {
+const ReviewItem = observer(function ReviewItem({ review, repo, extra }: { review: Review; repo: string; extra?: ReactNode }) {
   const author = store().get('user', review.authorId);
   const map = {
     APPROVED: { icon: CheckCircleIcon, text: 'approved these changes', cls: styles.evOpen },
@@ -344,6 +355,7 @@ const ReviewItem = observer(function ReviewItem({ review, repo }: { review: Revi
           <Markdown source={review.body} repo={repo} />
         </div>
       )}
+      {extra}
     </>
   );
 });

@@ -6,7 +6,7 @@ export interface ArrayPatch<T> {
   $remove?: T[];
 }
 
-export type Patch<R> = { [K in keyof R]?: R[K] | (R[K] extends (infer E)[] ? ArrayPatch<E> : never) };
+export type Patch<R> = { [K in keyof R]?: R[K] | (NonNullable<R[K]> extends (infer E)[] ? ArrayPatch<E> : never) };
 
 export type OverlayOp =
   | { op: 'update'; model: ModelName; id: ID; patch: Record<string, unknown> }

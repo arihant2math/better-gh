@@ -142,6 +142,19 @@ export interface Issue {
   deletions?: number;
   changedFiles?: number;
   commits?: number;
+  // Extensions sent by bgh-pulls (docs/packages/pulls.md):
+  mergeCommitSha?: string | null;
+  rebaseable?: boolean | null;
+  maintainerCanModify?: boolean;
+  autoMerge?: AutoMerge | null;
+  reviewComments?: number;
+}
+
+export interface AutoMerge {
+  enabledById?: ID | null;
+  mergeMethod: 'merge' | 'squash' | 'rebase';
+  commitTitle?: string | null;
+  commitMessage?: string | null;
 }
 
 export interface Comment {
@@ -231,6 +244,93 @@ export interface Notification {
   lastReadAt: Timestamp | null;
 }
 
+// ---------------------------------------------------------------- PR extensions
+// Lazy models recorded by bgh-pulls; loaded per PR via
+// `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`, streamed as deltas afterwards.
+
+export type DiffSide = 'LEFT' | 'RIGHT';
+
+/** Inline review comment. A thread is a root (`inReplyToId == null`) plus its replies. */
+export interface ReviewComment {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  reviewId: ID | null;
+  inReplyToId: ID | null;
+  authorId: ID;
+  body: string;
+  path: string;
+  commitId: string;
+  originalCommitId: string;
+  subjectType: 'line' | 'file';
+  side: DiffSide | null;
+  startSide: DiffSide | null;
+  /** `null` when outdated. */
+  line: number | null;
+  originalLine: number | null;
+  startLine: number | null;
+  originalStartLine: number | null;
+  position: number | null;
+  originalPosition: number | null;
+  outdated: boolean;
+  /** Thread resolution lives on the root comment. */
+  resolvedAt: Timestamp | null;
+  resolvedById: ID | null;
+  diffHunk?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Reaction {
+  id: ID;
+  subjectType: string;
+  subjectId: ID;
+  userId: ID;
+  content: ReactionContent;
+  issueId?: ID;
+  repoId?: ID;
+}
+
+export type CheckStatus = 'queued' | 'in_progress' | 'completed' | 'waiting' | 'requested' | 'pending';
+export type CheckConclusion = 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required' | 'stale' | null;
+
+export interface CheckSuite {
+  id: ID;
+  repoId: ID;
+  headSha: string;
+  headBranch: string | null;
+  appSlug: string;
+  status: CheckStatus;
+  conclusion: CheckConclusion;
+  latestCheckRunsCount: number;
+}
+
+export interface CheckRun {
+  id: ID;
+  repoId: ID;
+  checkSuiteId: ID | null;
+  headSha: string;
+  name: string;
+  status: CheckStatus;
+  conclusion: CheckConclusion;
+  detailsUrl: string | null;
+  title: string | null;
+  startedAt: Timestamp | null;
+  completedAt: Timestamp | null;
+}
+
+export interface CommitStatus {
+  id: ID;
+  repoId: ID;
+  sha: string;
+  state: 'error' | 'failure' | 'pending' | 'success';
+  context: string;
+  description: string | null;
+  targetUrl: string | null;
+  creatorId: ID | null;
+  createdAt: Timestamp;
+}
+
 /** Model name → row type. Adding a synced model starts here (see docs/FRONTEND.md). */
 export interface ModelMap {
   user: User;
@@ -246,6 +346,11 @@ export interface ModelMap {
   review: Review;
   issueEvent: IssueEvent;
   notification: Notification;
+  reviewComment: ReviewComment;
+  reaction: Reaction;
+  checkSuite: CheckSuite;
+  checkRun: CheckRun;
+  commitStatus: CommitStatus;
 }
 
 export type ModelName = keyof ModelMap;

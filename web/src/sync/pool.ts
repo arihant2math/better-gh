@@ -147,6 +147,11 @@ export class ObjectPool {
     });
   }
 
+  /** Delete base rows locally (writes the server doesn't broadcast). */
+  removeRows(model: ModelName, ids: readonly ID[]): void {
+    runInAction(() => ids.forEach((id) => this.deleteBase(model, id)));
+  }
+
   /** Drop every row belonging to `scope` (revoke). */
   removeScope(scope: string): void {
     runInAction(() => {

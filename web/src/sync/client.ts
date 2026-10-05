@@ -47,6 +47,8 @@ export class SyncClient {
   readonly scopes = new Set<string>();
 
   private loadedIssues = new Set<ID>();
+  /** `pull:{issueId}@{headSha}` keys loaded this session (observable for `isPullLoaded`). */
+  private loadedPulls = observable.set<string>();
   private partials = new Map<string, Promise<void>>();
   private scopeLoads = new Map<string, Promise<boolean>>();
   private ws: SocketLike | null = null;
@@ -115,6 +117,7 @@ export class SyncClient {
     this.scopes.clear();
     res.scopes.forEach((s) => this.scopes.add(s));
     this.loadedIssues.clear();
+    runInAction(() => this.loadedPulls.clear());
     this.partials.clear();
     this.opts.persistence.setMeta({
       schemaVersion: CLIENT_SCHEMA_VERSION,
@@ -163,6 +166,42 @@ export class SyncClient {
       this.partials.set(key, p);
     }
     return p;
+  }
+
+  /**
+   * Load a pull request's extension rows (review comments, reactions, checks
+   * and statuses of the head commit) from `/_bgh/repos/{o}/{r}/pulls/{n}/sync`.
+   * Keyed by head SHA so a push refetches the checks; kept in memory only
+   * (deltas keep the rows fresh while the socket is live).
+   */
+  loadPull(issueId: ID): Promise<void> {
+    const pr = this.pool.get('issue', issueId);
+    const repo = pr && this.pool.get('repo', pr.repoId);
+    if (!pr || !repo || issueId < 0) return Promise.resolve();
+    const key = `pull:${issueId}@${pr.headSha ?? ''}`;
+    if (this.loadedPulls.has(key)) return Promise.resolve();
+    let p = this.partials.get(key);
+    if (!p) {
+      const enc = encodeURIComponent;
+      p = this.getJson<PartialResponse>(`/_bgh/repos/${enc(repo.owner)}/${enc(repo.name)}/pulls/${pr.number}/sync`)
+        .then((res) => {
+          this.pool.loadRows(res.models, { notNewerThan: res.lastSyncId });
+          runInAction(() => this.loadedPulls.add(key));
+        })
+        .finally(() => this.partials.delete(key));
+      this.partials.set(key, p);
+    }
+    return p;
+  }
+
+  isPullLoaded(issueId: ID): boolean {
+    const pr = this.pool.get('issue', issueId);
+    return this.loadedPulls.has(`pull:${issueId}@${pr?.headSha ?? ''}`);
+  }
+
+  /** Forget a loaded PR so the next `loadPull` refetches (e.g. after a non-synced write). */
+  invalidatePull(issueId: ID): void {
+    for (const k of [...this.loadedPulls]) if (k.startsWith(`pull:${issueId}@`)) this.loadedPulls.delete(k);
   }
 
   isIssueLoaded(issueId: ID): boolean {

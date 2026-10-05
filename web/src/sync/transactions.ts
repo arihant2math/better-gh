@@ -2,6 +2,8 @@ import { makeObservable, observable, runInAction } from 'mobx';
 import type { OverlayOp } from './overlay';
 import type { Persistence } from './persistence';
 import type { ObjectPool } from './pool';
+import type { ID, ModelName } from './models';
+import type { ModelRows } from './protocol';
 
 export interface TxRequest {
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -23,6 +25,13 @@ export interface PendingTx {
   /** `X-Bgh-Sync-Id` from the response; the overlay is dropped once the client has reached it. */
   syncId?: number;
 }
+
+/**
+ * Result handler for writes the server doesn't echo as deltas (pending
+ * reviews): rows to upsert / delete in the base store before the overlay is
+ * dropped. Kept in memory only.
+ */
+export type TxApply = (data: unknown) => { rows?: ModelRows; deletes?: { model: ModelName; id: ID }[] } | undefined;
 
 export interface TxResult {
   status: number;
@@ -85,6 +94,8 @@ export class TxQueue {
   private inflight: string | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private echoTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Per-tx result handlers (in memory only: functions can't be persisted). */
+  private appliers = new Map<string, TxApply>();
   private seq = 0;
   private lastSyncId = 0;
   private online = true;
@@ -113,7 +124,10 @@ export class TxQueue {
   }
 
   /** Apply `ops` optimistically and send `request` in the background. */
-  commit(input: { label: string; ops: OverlayOp[]; request: TxRequest }): { tx: string; done: Promise<TxResult> } {
+  commit(input: { label: string; ops: OverlayOp[]; request: TxRequest; apply?: TxApply }): {
+    tx: string;
+    done: Promise<TxResult>;
+  } {
     const tx: PendingTx = {
       tx: uuid(),
       seq: ++this.seq,
@@ -127,6 +141,7 @@ export class TxQueue {
     };
     this.pool.addOverlay(tx.tx, tx.ops);
     this.txs.push(tx);
+    if (input.apply) this.appliers.set(tx.tx, input.apply);
     this.updateCount();
     const done = new Promise<TxResult>((resolve, reject) => this.waiters.set(tx.tx, { resolve, reject }));
     // Unhandled rejections are expected when callers don't care; errors also go to hooks.
@@ -210,6 +225,14 @@ export class TxQueue {
       return;
     }
     if (result && result.status >= 200 && result.status < 300) {
+      // Writes the server doesn't broadcast (e.g. pending review comments):
+      // put the response rows into the base before the overlay goes away.
+      const apply = this.appliers.get(t.tx);
+      if (apply) {
+        const out = apply(result.data);
+        if (out?.rows) this.pool.loadRows(out.rows);
+        for (const d of out?.deletes ?? []) this.pool.removeRows(d.model, [d.id]);
+      }
       this.waiters.get(t.tx)?.resolve(result);
       this.waiters.delete(t.tx);
       if (!result.syncId || result.syncId <= this.lastSyncId) {
@@ -247,6 +270,7 @@ export class TxQueue {
     if (timer) clearTimeout(timer);
     this.echoTimers.delete(t.tx);
     this.pool.removeOverlay(t.tx);
+    this.appliers.delete(t.tx);
     void this.persistence.deleteTx(t.tx);
     this.updateCount();
   }
