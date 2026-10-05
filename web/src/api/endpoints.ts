@@ -5,9 +5,11 @@
  */
 import { api, encodePath, v3 } from './client';
 import type {
+  BlobLines,
   BlobView,
   BrowseRefs,
   CheckAnnotation,
+  CommitAnnotation,
   Contents,
   FilePatch,
   HighlightedBlob,
@@ -73,6 +75,24 @@ export function getHighlightedBlob(owner: string, repo: string, sha: string, pat
   return api
     .get<HighlightedBlob>(`/_bgh/render/blob/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${sha}?path=${encodeURIComponent(path)}`)
     .catch(() => null);
+}
+
+/**
+ * Lines of `path` at `commitish` (a SHA, `base...head` = their merge base,
+ * or a ref): ranges for context expansion, `hl` for highlighted HTML.
+ */
+export function getBlobLines(owner: string, repo: string, commitish: string, path: string, opts: { start?: number; end?: number; hl?: boolean; text?: boolean } = {}): Promise<BlobLines> {
+  const q = new URLSearchParams({ path });
+  if (opts.start != null) q.set('start', String(opts.start));
+  if (opts.end != null) q.set('end', String(opts.end));
+  if (opts.hl) q.set('hl', '1');
+  if (opts.text === false) q.set('text', '0');
+  return api.get<BlobLines>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/blob-lines/${commitish}?${q}`);
+}
+
+/** Every check-run annotation of a commit (inline in the diff viewer). */
+export function listCommitAnnotations(owner: string, repo: string, sha: string): Promise<CommitAnnotation[]> {
+  return api.get<CommitAnnotation[]>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}/annotations`);
 }
 
 /** One page (≤ 100 files) of a PR's changed files, with patches. */

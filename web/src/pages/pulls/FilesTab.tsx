@@ -4,15 +4,16 @@ import { load } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { getPullFilePatch, listPullFiles } from '../../api/endpoints';
 import type { RestDiffEntry } from '../../api/types';
-import { DiffView, type DiffAnnotations, type DiffFileEntry, type LineSelection } from '../../components/diff/DiffView';
+import { DiffView, type DiffAnnotations, type DiffFileEntry, type DiffSource, type LineSelection } from '../../components/diff/DiffView';
+import { isGenerated } from '../../components/diff/highlight';
 import { parsePatch, type DiffHunk } from '../../components/diff/parseDiff';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { useComputed, usePullDetails } from '../../sync/hooks';
 import type { Issue, Repo } from '../../sync/models';
 import { addPendingComment, addReviewComment } from '../../sync/pullMutations';
-import { pendingReview, threadsForPull, type ReviewThread } from '../../sync/pullSelectors';
-import { repoFullName } from '../../sync/selectors';
+import { checkRunsFor, pendingReview, threadsForPull, type ReviewThread } from '../../sync/pullSelectors';
+import { repoFullName, viewerPermission } from '../../sync/selectors';
 import { Button, IconButton } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, ColumnsIcon, CommentIcon, FilterIcon, RowsIcon } from '../../ui/icons';
@@ -95,7 +96,8 @@ function toEntry(e: RestDiffEntry): DiffFileEntry {
     status: e.status === 'unchanged' ? 'modified' : e.status,
     additions: e.additions,
     deletions: e.deletions,
-    binary: !e.patch && e.additions + e.deletions === 0 && e.status !== 'renamed' && !!e.changes,
+    // GitHub sends binary files without a patch and with no line changes (DiffView checks the blobs).
+    binary: !e.patch && e.additions + e.deletions === 0 && e.status !== 'renamed',
     hunks,
     unavailable: large ? 'Large diffs are not rendered by default.' : !e.patch && (e.changes ?? e.additions + e.deletions) > 0 ? 'Load diff — this patch is too large to include in the file list.' : undefined,
   };
@@ -163,13 +165,34 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- patchKey derives from the deps below
   }, [entries, filter, hideViewed, viewed, patches, whitespace, pr.headSha]);
 
-  // Collapsed: viewed files by default; explicit toggles override.
+  // Highlighting, context expansion, rich/image diffs, file actions and check annotations (P37).
+  const perm = viewerPermission(repo.id);
+  const canEdit = pr.state === 'open' && (pr.headRepoId == null || pr.headRepoId === repo.id) && (perm === 'write' || perm === 'maintain' || perm === 'admin');
+  // Refetch annotations whenever another check run completes.
+  const completedRuns = useComputed(
+    () =>
+      checkRunsFor(pr.headSha)
+        .filter((r) => r.status === 'completed')
+        .map((r) => r.id)
+        .sort()
+        .join(','),
+    [pr.headSha],
+  );
+  const source = useMemo<DiffSource | undefined>(
+    () =>
+      pr.baseSha && pr.headSha
+        ? { owner: repo.owner, repo: repo.name, oldRef: `${pr.baseSha}...${pr.headSha}`, newRef: pr.headSha, annotations: completedRuns, editRef: canEdit ? (pr.headRef ?? null) : null }
+        : undefined,
+    [repo.owner, repo.name, pr.baseSha, pr.headSha, pr.headRef, canEdit, completedRuns],
+  );
+
+  // Collapsed: viewed and generated files by default; explicit toggles override.
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map());
   const collapsed = useMemo(() => {
     const s = new Set<string>();
     for (const f of files) {
       const t = toggled.get(f.path);
-      if (t ?? viewed.isViewed(f.path)) s.add(f.path);
+      if (t ?? (viewed.isViewed(f.path) || isGenerated(f.path))) s.add(f.path);
     }
     return s;
   }, [files, toggled, viewed]);
@@ -396,6 +419,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
         pendingFiles={filter || hideViewed ? 0 : pending}
         onNeedMoreFiles={loadNext}
         jumpTo={jumpTo}
+        source={source}
         emptyText={filter ? 'No changed files match the filter.' : 'No files changed.'}
       />
     </LineSourceContext.Provider>
