@@ -104,14 +104,15 @@ in memory (lost on reload), like the other repo-settings mocks.
   push appears in Rule insights with the failed "Restrict creations" rule.
   All checks pass.
 
-## Notes for P23 (observed in the local merge, not P24 code)
+## Notes for P23 (not P24 code; reported to the P23 session)
 
-* With P23 merged onto the integration branch locally, an active `push`
-  ruleset with `max_file_size: 1` (repo or org) did **not** reject an HTTP
-  push of a 2–3 MB blob, although `push_rules_reject_with_gh013` passes on
-  P23's branch. Possibly P2's receive quarantine hides the new objects from
-  P23's object enumeration once both are merged. The `creation` rule (ref
-  based) is enforced fine.
+* On `origin/bgh/p23-rulesets` @ a121775 (integration merged in), an active
+  `push` ruleset with `max_file_size: 1` (repo or org) did **not** reject a
+  smart-HTTP push of a 3 MB blob, neither for a site admin nor for a write
+  collaborator without bypass, although `push_rules_reject_with_gh013`
+  passes in P23's tests. Ref-based rules (`creation` on `release/*`) are
+  enforced with GH013. Possibly P2's receive quarantine vs. P23's new-object
+  enumeration.
 
 ## Known gaps
 
