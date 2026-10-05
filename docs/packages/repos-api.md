@@ -29,7 +29,7 @@ Forks & templates (`forks.rs`)
 
 Stars / watching (`stars.rs`, `watching.rs`)
 * `GET /repos/{o}/{r}/stargazers`, `GET /user/starred`, `GET /users/{u}/starred` (star+json media type), `GET|PUT|DELETE /user/starred/{o}/{r}`
-* `GET /repos/{o}/{r}/subscribers`, `GET|PUT|DELETE /repos/{o}/{r}/subscription`, `GET /user/subscriptions`, `GET /users/{u}/subscriptions`, legacy `/user/subscriptions/{o}/{r}`
+* `GET /repos/{o}/{r}/subscribers`, `GET /user/subscriptions`, `GET /users/{u}/subscriptions`, legacy `/user/subscriptions/{o}/{r}` (maintains `watchers_count`). `/repos/{o}/{r}/subscription` was implemented then **removed** at the orchestrator's request: it belongs to bgh-notify (B5), which must keep `repositories.watchers_count` in sync when it writes `watches`
 
 Collaborators (`collaborators.rs`)
 * `GET /repos/{o}/{r}/collaborators` (`affiliation`, `permission`), `GET|PUT|DELETE .../collaborators/{u}`, `GET .../collaborators/{u}/permission`

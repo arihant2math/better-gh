@@ -1,7 +1,7 @@
 //! Watching (repository subscriptions).
 //!
 //! * `GET /repos/{o}/{r}/subscribers`
-//! * `GET|PUT|DELETE /repos/{o}/{r}/subscription`
+//! * (`/repos/{o}/{r}/subscription` is owned by bgh-notify)
 //! * `GET /user/subscriptions`, `GET /users/{username}/subscriptions`
 //! * legacy `GET|PUT|DELETE /user/subscriptions/{owner}/{repo}` (204/404)
 //!
@@ -16,18 +16,10 @@ use axum::routing::get;
 use bgh_core::models::api::{MinimalRepository, SimpleUser};
 use bgh_core::prelude::*;
 use bgh_core::views;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/repos/{owner}/{repo}/subscribers", get(subscribers))
-        .route(
-            "/repos/{owner}/{repo}/subscription",
-            get(get_subscription)
-                .put(put_subscription)
-                .delete(delete_subscription),
-        )
         .route("/user/subscriptions", get(list_for_authenticated_user))
         .route("/users/{username}/subscriptions", get(list_for_user))
         .route(
@@ -61,41 +53,16 @@ async fn subscribers(
 #[derive(sqlx::FromRow)]
 struct WatchRow {
     subscribed: bool,
-    ignored: bool,
-    created_at: DateTime<Utc>,
-}
-
-/// `repository-subscription`.
-#[derive(Serialize)]
-pub struct Subscription {
-    subscribed: bool,
-    ignored: bool,
-    reason: Option<String>,
-    created_at: Timestamp,
-    url: String,
-    repository_url: String,
-}
-
-fn render(state: &AppState, access: &RepoAccess, w: &WatchRow) -> Subscription {
-    let repository_url = state.urls.repo(&access.owner.login, &access.repo.name);
-    Subscription {
-        subscribed: w.subscribed,
-        ignored: w.ignored,
-        reason: None,
-        created_at: w.created_at.into(),
-        url: format!("{repository_url}/subscription"),
-        repository_url,
-    }
 }
 
 async fn find_watch(state: &AppState, user_id: i64, repo_id: i64) -> ApiResult<Option<WatchRow>> {
-    Ok(sqlx::query_as(
-        "SELECT subscribed, ignored, created_at FROM watches WHERE user_id = $1 AND repo_id = $2",
+    Ok(
+        sqlx::query_as("SELECT subscribed FROM watches WHERE user_id = $1 AND repo_id = $2")
+            .bind(user_id)
+            .bind(repo_id)
+            .fetch_optional(&state.db)
+            .await?,
     )
-    .bind(user_id)
-    .bind(repo_id)
-    .fetch_optional(&state.db)
-    .await?)
 }
 
 /// Set (`Some((subscribed, ignored))`) or delete (`None`) the caller's
@@ -120,7 +87,7 @@ async fn set_watch(
                 "INSERT INTO watches (user_id, repo_id, subscribed, ignored) VALUES ($1, $2, $3, $4)
                  ON CONFLICT (user_id, repo_id) DO UPDATE
                     SET subscribed = EXCLUDED.subscribed, ignored = EXCLUDED.ignored
-                 RETURNING subscribed, ignored, created_at",
+                 RETURNING subscribed",
             )
             .bind(user_id)
             .bind(repo_id)
@@ -151,57 +118,6 @@ async fn set_watch(
     }
     tx.commit().await?;
     Ok(row)
-}
-
-/// `GET /repos/{owner}/{repo}/subscription`: 404 when not watching.
-async fn get_subscription(
-    State(state): State<AppState>,
-    auth: RequireUser,
-    Path((owner, repo)): Path<(String, String)>,
-) -> ApiResult<Json<Subscription>> {
-    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
-    let w = find_watch(&state, auth.user.id, access.repo.id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    Ok(Json(render(&state, &access, &w)))
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct SubscriptionBody {
-    subscribed: Option<bool>,
-    ignored: Option<bool>,
-}
-
-/// `PUT /repos/{owner}/{repo}/subscription` `{subscribed, ignored}`.
-async fn put_subscription(
-    State(state): State<AppState>,
-    auth: RequireUser,
-    Path((owner, repo)): Path<(String, String)>,
-    Json(body): Json<SubscriptionBody>,
-) -> ApiResult<Json<Subscription>> {
-    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
-    let ignored = body.ignored.unwrap_or(false);
-    let subscribed = body.subscribed.unwrap_or(!ignored);
-    let w = set_watch(
-        &state,
-        auth.user.id,
-        access.repo.id,
-        Some((subscribed, ignored)),
-    )
-    .await?
-    .ok_or(ApiError::NotFound)?;
-    Ok(Json(render(&state, &access, &w)))
-}
-
-/// `DELETE /repos/{owner}/{repo}/subscription`
-async fn delete_subscription(
-    State(state): State<AppState>,
-    auth: RequireUser,
-    Path((owner, repo)): Path<(String, String)>,
-) -> ApiResult<StatusCode> {
-    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
-    set_watch(&state, auth.user.id, access.repo.id, None).await?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Repositories watched by `user_id`, most recent first.
