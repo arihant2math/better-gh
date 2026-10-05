@@ -57,6 +57,11 @@ export interface TwoFactorStatus {
   enabled: boolean;
   enabled_at: string | null;
   recovery_codes_remaining: number;
+  /** Registered WebAuthn credentials (P36; absent from older servers). */
+  security_keys?: number;
+  passkeys?: number;
+  /** The site requires 2FA for every account. */
+  required_by_site?: boolean;
 }
 
 export interface TotpSetup {
@@ -104,6 +109,7 @@ export const KEYS = {
   sessions: 'settings:sessions',
   identities: 'settings:identities',
   blocks: 'settings:blocks',
+  webauthn: 'settings:webauthn',
 } as const;
 
 // ------------------------------------------------------------------ profile + avatar

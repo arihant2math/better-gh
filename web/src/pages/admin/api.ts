@@ -326,7 +326,7 @@ export interface SiteSettings {
     search_unauthenticated_per_minute: number;
     graphql_per_hour: number;
   };
-  auth_providers: { password_login: boolean; oidc: OidcProvider[] };
+  auth_providers: { password_login: boolean; oidc: OidcProvider[]; /** Every account must use 2FA (P36). */ require_2fa?: boolean };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   git_maintenance: GitMaintenanceSettings;

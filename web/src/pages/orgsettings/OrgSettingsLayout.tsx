@@ -5,7 +5,7 @@ import { Link, navigate, useLocation, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { orgByLogin } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
-import { AppsIcon, CodeIcon, LogIcon, MailIcon, OrganizationIcon, PeopleIcon, PersonIcon, PersonAddIcon, WebhookIcon, type Icon } from '../../ui/icons';
+import { AppsIcon, CodeIcon, LogIcon, MailIcon, OrganizationIcon, PeopleIcon, PersonIcon, PersonAddIcon, ShieldLockIcon, WebhookIcon, type Icon } from '../../ui/icons';
 
 export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string; group?: string }[] = [
   { id: 'profile', label: 'General', icon: OrganizationIcon, keys: 'g g' },
@@ -13,6 +13,7 @@ export const ORG_SECTIONS: { id: string; label: string; icon: Icon; keys: string
   { id: 'teams', label: 'Teams', icon: PeopleIcon, keys: 'g t' },
   { id: 'outside-collaborators', label: 'Outside collaborators', icon: PersonAddIcon, keys: 'g c' },
   { id: 'invitations', label: 'Invitations', icon: MailIcon, keys: 'g v' },
+  { id: 'security', label: 'Authentication security', icon: ShieldLockIcon, keys: 'g y', group: 'Security' },
   { id: 'audit-log', label: 'Audit log', icon: LogIcon, keys: 'g a', group: 'Archive' },
   { id: 'hooks', label: 'Webhooks', icon: WebhookIcon, keys: 'g w', group: 'Code, planning, and automation' },
   { id: 'installations', label: 'GitHub Apps', icon: AppsIcon, keys: 'g i', group: 'Third-party Access' },

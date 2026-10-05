@@ -120,3 +120,17 @@ describe('user settings mocks', () => {
     expect((await call(s, 'GET', '/_bgh/user/identities')).body).toEqual([]);
   });
 });
+
+describe('account security mocks (P36)', () => {
+  it('reports sudo mode and WebAuthn counts', async () => {
+    const s = new MockServer(null, {});
+    const sudo = await call(s, 'GET', '/_bgh/sudo');
+    expect(sudo.body).toMatchObject({ active: true, methods: { password: true, totp: false, webauthn: false } });
+    expect((await call(s, 'POST', '/_bgh/sudo', { password: 'wrong' })).status).toBe(403);
+    expect((await call(s, 'POST', '/_bgh/sudo', {})).status).toBe(422);
+    expect((await call(s, 'POST', '/_bgh/sudo', { password: 'hunter22' })).body).toMatchObject({ active: true });
+    expect((await call(s, 'GET', '/_bgh/user/webauthn')).body).toEqual([]);
+    expect((await call(s, 'DELETE', '/_bgh/user/webauthn/1')).status).toBe(404);
+    expect((await call(s, 'GET', '/_bgh/user/two_factor')).body).toMatchObject({ security_keys: 0, passkeys: 0, required_by_site: false });
+  });
+});

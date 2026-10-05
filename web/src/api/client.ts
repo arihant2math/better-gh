@@ -22,6 +22,28 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Parse the body as text instead of JSON. */
   text?: boolean;
+  /** Don't prompt for sudo mode on a sudo 401 (the sudo endpoints themselves). */
+  noSudoPrompt?: boolean;
+}
+
+/** Prefix of the server's 401 for sessions without a fresh sudo mode (`bgh_core::sudo::SUDO_REQUIRED`). */
+export const SUDO_REQUIRED_PREFIX = 'Sudo mode required';
+
+/** Whether an error is the server asking for sudo mode. */
+export function isSudoRequired(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 401 && e.message.startsWith(SUDO_REQUIRED_PREFIX);
+}
+
+/** Asks the user to re-authenticate; resolves true when sudo mode was granted. */
+export type SudoHandler = () => Promise<boolean>;
+let sudoHandler: SudoHandler | null = null;
+
+/** Install the sudo prompt (`app/SudoHost`). Returns an uninstall function. */
+export function setSudoHandler(handler: SudoHandler | null): () => void {
+  sudoHandler = handler;
+  return () => {
+    if (sudoHandler === handler) sudoHandler = null;
+  };
 }
 
 export interface ApiResponse<T> {
@@ -42,6 +64,16 @@ export class ApiClient {
   private etags = new Map<string, { etag: string; data: unknown }>();
 
   async request<T>(path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
+    try {
+      return await this.send<T>(path, opts);
+    } catch (e) {
+      // Sensitive actions need a recent re-authentication: prompt, then retry once.
+      if (!opts.noSudoPrompt && sudoHandler && isSudoRequired(e) && (await sudoHandler())) return this.send<T>(path, { ...opts, noSudoPrompt: true });
+      throw e;
+    }
+  }
+
+  private async send<T>(path: string, opts: RequestOptions): Promise<ApiResponse<T>> {
     const method = opts.method ?? 'GET';
     const headers: Record<string, string> = {
       Accept: opts.accept ?? 'application/vnd.github+json',

@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
-import { DeviceMobileIcon, KeyIcon } from '../../ui/icons';
+import { DeviceMobileIcon, KeyIcon, ShieldLockIcon } from '../../ui/icons';
 import { authStyles as styles, OtpInput } from './AuthPage';
 
 export interface TwoFactorFormProps {
@@ -9,6 +9,8 @@ export interface TwoFactorFormProps {
   verify: (code: string) => Promise<void>;
   /** Shown under the form ("Back to sign in"). */
   footer?: ReactNode;
+  /** The account has security keys: offer them (runs the browser prompt). */
+  securityKey?: () => Promise<void>;
 }
 
 /** Thrown by `verify` for a wrong code (shown under the input, which is cleared). */
@@ -18,7 +20,7 @@ export class WrongCode extends Error {}
  * Second factor step: 6-digit TOTP that submits itself on the sixth digit,
  * or a recovery code (`xxxxx-xxxxx`).
  */
-export function TwoFactorForm({ verify, footer }: TwoFactorFormProps) {
+export function TwoFactorForm({ verify, footer, securityKey }: TwoFactorFormProps) {
   const [recovery, setRecovery] = useState(false);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,21 @@ export function TwoFactorForm({ verify, footer }: TwoFactorFormProps) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Two-factor authentication failed.');
       if (e instanceof WrongCode) setCode('');
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  const runSecurityKey = async () => {
+    if (!securityKey || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await securityKey();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Security key verification failed.');
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -95,6 +112,11 @@ export function TwoFactorForm({ verify, footer }: TwoFactorFormProps) {
       <Button type="submit" variant="primary" size="lg" block loading={busy}>
         Verify
       </Button>
+      {securityKey && (
+        <Button size="lg" block leadingIcon={ShieldLockIcon} disabled={busy} onClick={() => void runSecurityKey()} data-testid="use-security-key">
+          Use security key
+        </Button>
+      )}
       <div className={`${styles.small} ${styles.centered}`}>
         <button type="button" className={styles.linkButton} onClick={toggle}>
           {recovery ? (

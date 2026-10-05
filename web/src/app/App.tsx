@@ -5,6 +5,7 @@ import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
 import { session } from './session';
 import { Shell } from './Shell';
+import { SudoHost } from './SudoHost';
 
 /**
  * Full-page screens rendered without the app shell (sign-in flows, OAuth
@@ -33,6 +34,9 @@ function bareFor(pathname: string): BarePage | undefined {
   return BARE.find((b) => b.re.test(pathname));
 }
 
+/** Where users without 2FA are sent when the site requires it. */
+export const TWO_FACTOR_SETUP_PATH = '/settings/security';
+
 /** Where to go after signing in: a same-origin `return_to`, else home. */
 export function returnTo(search = location.search): string {
   const ret = new URLSearchParams(search).get('return_to');
@@ -50,6 +54,12 @@ export const App = observer(function App() {
     if (signedIn) void session.start();
   }, [signedIn, bare, pathname, search]);
 
+  // The site requires 2FA and this account has none: set it up first.
+  const setupRequired = !!session.user?.twoFactorSetupRequired;
+  useEffect(() => {
+    if (setupRequired && !bare && pathname !== TWO_FACTOR_SETUP_PATH) navigate(TWO_FACTOR_SETUP_PATH, { replace: true });
+  }, [setupRequired, bare, pathname]);
+
   let content = null;
   if (bare) {
     const Page = bare.page;
@@ -65,6 +75,7 @@ export const App = observer(function App() {
   return (
     <>
       {content}
+      {signedIn && <SudoHost />}
       <Toaster />
     </>
   );

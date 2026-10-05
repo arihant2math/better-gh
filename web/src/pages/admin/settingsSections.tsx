@@ -446,6 +446,12 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         label="Password sign-in"
         description="Built-in username and password login. Turn off to require single sign-on."
       />
+      <Switch
+        checked={value.require_2fa}
+        onChange={(require_2fa) => onChange({ require_2fa })}
+        label="Require two-factor authentication"
+        description="Every account must set up two-factor authentication before using the site in a browser (tokens keep working). Enable 2FA on your own account first."
+      />
       <div>
         <div className={styles.switchLabel} style={{ marginBottom: 6 }}>
           OpenID Connect providers

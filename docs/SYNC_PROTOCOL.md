@@ -622,7 +622,11 @@ The server inlines boot data into `index.html` by replacing the
 <script>window.__BGH_BOOT__={"user":{"id":3,"login":"ada","name":"Ada Lovelace","avatarUrl":""},"csrf":"…","config":{"siteName":"Better GitHub","signupEnabled":true,"version":"0.1.0"},"ts":"2024-01-01T00:00:00Z"}</script>
 ```
 
-`user` is `null` when signed out. When boot data is missing or older than
+`user` is `null` when signed out. `user.twoFactorSetupRequired: true` is
+added when the site requires two-factor authentication
+(`auth_providers.require_2fa`) and the account has none: the client then
+keeps the user on `/settings/security` (the server answers 403 to the
+session outside the 2FA setup endpoints). When boot data is missing or older than
 5 minutes (e.g. the shell came from the service worker cache) the client
 refreshes it in the background from `GET /_bgh/boot` (same JSON).
 
@@ -631,7 +635,9 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | Endpoint | Request | Response |
 |----------|---------|----------|
 | `GET /_bgh/boot` | — | boot JSON (§9) |
-| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials; `401 {"message","twoFactorRequired":true,"twoFactorToken"}` when the account has two-factor authentication (`429` when throttled) |
+| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials; `401 {"message","twoFactorRequired":true,"twoFactorToken","twoFactorMethods"}` when the account has two-factor authentication (`twoFactorMethods`: `totp`, `recovery_code`, plus `webauthn` with security keys; `429` when throttled) |
+| `POST /_bgh/auth/2fa/webauthn/challenge` → `POST /_bgh/auth/2fa/webauthn` | `{"twoFactorToken"}` → `{"twoFactorToken","id","credential"}` | second factor with a security key: `{id, options}` then `200` boot JSON + cookie; `422` when verification fails |
+| `POST /_bgh/auth/login/passkey/challenge` → `POST /_bgh/auth/login/passkey` | — → `{"id","credential"}` | passwordless sign-in with a passkey (discoverable credential): `200` boot JSON + cookie |
 | `POST /_bgh/auth/2fa` | `{"twoFactorToken","code"}` (TOTP or recovery code) | `200` boot JSON + session cookie; `422` wrong code; `401` pending login expired (sign in again) |
 | `POST /_bgh/auth/signup` | `{"login","email","password"}` | `201` boot JSON + session cookie; `422` validation errors |
 | `POST /_bgh/auth/logout` | — | `204`; server closes the session's sync sockets with `4001` (the server emits `Event::SessionEnded {user_id, session_id}`, which bgh-sync consumes; also emitted when sessions are revoked or a password is reset, then with `session_id: null` = all sessions) |

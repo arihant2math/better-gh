@@ -59,7 +59,7 @@ export interface SettingsForm {
   organizations: { creation: SiteSettings['organizations']['creation'] };
   announcement: { message: string; expires: string; user_dismissible: boolean };
   rate_limits: { enabled: boolean; authenticated: string; unauthenticated: string; search_authenticated: string; search_unauthenticated: string; graphql: string };
-  auth_providers: { password_login: boolean; oidc: OidcForm[] };
+  auth_providers: { password_login: boolean; oidc: OidcForm[]; require_2fa: boolean };
   smtp: {
     enabled: boolean;
     host: string;
@@ -155,7 +155,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       search_unauthenticated: String(s.rate_limits.search_unauthenticated_per_minute),
       graphql: String(s.rate_limits.graphql_per_hour),
     },
-    auth_providers: { password_login: s.auth_providers.password_login, oidc: s.auth_providers.oidc.map(oidcToForm) },
+    auth_providers: { password_login: s.auth_providers.password_login, oidc: s.auth_providers.oidc.map(oidcToForm), require_2fa: s.auth_providers.require_2fa ?? false },
     smtp: {
       enabled: s.smtp.enabled,
       host: s.smtp.host,
@@ -315,6 +315,7 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
       case 'auth_providers':
         out.auth_providers = {
           password_login: f.auth_providers.password_login,
+          require_2fa: f.auth_providers.require_2fa,
           oidc: f.auth_providers.oidc.map((p) => ({
             name: p.name,
             display_name: orNull(p.display_name),

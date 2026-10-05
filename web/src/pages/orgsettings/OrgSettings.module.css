@@ -299,3 +299,30 @@
   color: var(--fg-muted);
   font-size: var(--fs-xs);
 }
+
+.affectedList {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.affectedList li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}

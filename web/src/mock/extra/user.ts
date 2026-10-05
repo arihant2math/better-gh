@@ -40,6 +40,10 @@ interface UserState {
   emails: EmailRow[];
   sessions: SessionRow[];
   twoFactor: { enabledAt: string | null; pendingSecret: string | null; recovery: string[] };
+  /** WebAuthn credentials (the mock can't run ceremonies; listing/rename/delete only). */
+  webauthn: { id: number; name: string; kind: 'security_key' | 'passkey'; created_at: string; last_used_at: string | null }[];
+  /** Sudo mode ends at (ms). */
+  sudoUntil: number;
   identities: { id: number; provider: string; subject: string; email: string | null; created_at: string; last_login_at: string }[];
   blocks: number[];
   /** Avatar data URLs by user id (the synced row carries the URL). */
@@ -85,6 +89,8 @@ function initial(server: MockServer): UserState {
       { id: 9003, user_agent: UA.safariIphone, ip: '198.51.100.7', created_at: iso(now - 20 * DAY), last_seen_at: iso(now - 4 * DAY), expires_at: iso(now + 10 * DAY), current: false },
     ],
     twoFactor: { enabledAt: null, pendingSecret: null, recovery: [] },
+    webauthn: [],
+    sudoUntil: now + 2 * 3_600_000,
     identities: [{ id: 1, provider: 'keycloak', subject: 'f3b1c2d4-0000-4c1e-9a77-1b2c3d4e5f60', email: `${v.login}@example.com`, created_at: iso(now - 40 * DAY), last_login_at: iso(now - 6 * DAY) }],
     blocks: [],
     avatars: new Map(),
@@ -348,7 +354,49 @@ export function installUserMocks(server: MockServer): void {
   // ---------------------------------------------------------------- 2FA
   R('GET', '/_bgh/user/two_factor', () => {
     const t = st(server).twoFactor;
-    return ok({ enabled: !!t.enabledAt, enabled_at: t.enabledAt, recovery_codes_remaining: t.enabledAt ? t.recovery.length : 0 });
+    const w = st(server).webauthn;
+    return ok({
+      enabled: !!t.enabledAt,
+      enabled_at: t.enabledAt,
+      recovery_codes_remaining: t.enabledAt ? t.recovery.length : 0,
+      security_keys: w.filter((c) => c.kind === 'security_key').length,
+      passkeys: w.filter((c) => c.kind === 'passkey').length,
+      required_by_site: false,
+    });
+  });
+
+  // ---------------------------------------------------------------- WebAuthn + sudo (P36)
+  R('GET', '/_bgh/user/webauthn', () => ok(st(server).webauthn));
+  R('PATCH', '/_bgh/user/webauthn/:id', (ctx) => {
+    const c = st(server).webauthn.find((x) => x.id === Number(param(ctx, 1)));
+    if (!c) return notFound();
+    const name = String(ctx.body.name ?? '').trim();
+    if (!name || name.length > 64) return invalidFields([{ field: 'name', message: 'name must be 1 to 64 characters' }]);
+    c.name = name;
+    return ok(c);
+  });
+  R('DELETE', '/_bgh/user/webauthn/:id', (ctx) => {
+    const s = st(server);
+    const before = s.webauthn.length;
+    s.webauthn = s.webauthn.filter((x) => x.id !== Number(param(ctx, 1)));
+    return s.webauthn.length === before ? notFound() : noContent();
+  });
+  R('GET', '/_bgh/sudo', () => {
+    const s = st(server);
+    const active = s.sudoUntil > Date.now();
+    return ok({
+      active,
+      expires_at: active ? iso(s.sudoUntil) : null,
+      methods: { password: true, totp: !!s.twoFactor.enabledAt, webauthn: s.webauthn.length > 0 },
+    });
+  });
+  R('POST', '/_bgh/sudo', (ctx) => {
+    const s = st(server);
+    const secret = ctx.body.password ?? ctx.body.otp;
+    if (secret == null || secret === '') return invalidFields([{ field: 'password', message: 'missing' }]);
+    if (wrongPassword(secret) || ctx.body.otp === '000000') return { status: 403, body: { message: 'Incorrect password.' } };
+    s.sudoUntil = Date.now() + 2 * 3_600_000;
+    return ok({ active: true, expires_at: iso(s.sudoUntil), methods: { password: true, totp: !!s.twoFactor.enabledAt, webauthn: s.webauthn.length > 0 } });
   });
   R('POST', '/_bgh/user/two_factor/totp', () => {
     const t = st(server).twoFactor;
@@ -375,6 +423,7 @@ export function installUserMocks(server: MockServer): void {
     t.enabledAt = null;
     t.pendingSecret = null;
     t.recovery = [];
+    st(server).webauthn = st(server).webauthn.filter((c) => c.kind === 'passkey');
     return noContent();
   });
   R('POST', '/_bgh/user/two_factor/recovery_codes', (ctx) => {
