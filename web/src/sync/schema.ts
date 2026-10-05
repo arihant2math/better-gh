@@ -61,7 +61,7 @@ export const SCHEMA: SchemaMap = {
     scope: repoScope,
     indexes: ['repoId', 'assigneeIds', 'authorId'],
     keys: { number: (i) => `${i.repoId}#${i.number}` },
-    lazyFields: ['body'],
+    lazyFields: ['body', 'bodyEditedAt'],
     cascade: [
       { model: 'comment', field: 'issueId' },
       { model: 'review', field: 'issueId' },
@@ -101,4 +101,4 @@ export const SCHEMA: SchemaMap = {
 export const MODEL_NAMES = Object.keys(SCHEMA) as ModelName[];
 
 /** Bump when the client-side persisted shape changes; old IndexedDB data is discarded. */
-export const CLIENT_SCHEMA_VERSION = 2;
+export const CLIENT_SCHEMA_VERSION = 3;

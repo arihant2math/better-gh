@@ -1,14 +1,16 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { MarkdownEditor } from '../../components/editor/MarkdownEditor';
 import { Link } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { hasSync, store } from '../../sync';
 import { useIssueDetails } from '../../sync/hooks';
-import type { Comment, Issue, IssueEvent, Review } from '../../sync/models';
+import type { ContentKind } from '../../api/moderation';
+import type { Comment, Issue, IssueEvent, MinimizedReason, Review } from '../../sync/models';
+import { canAdmin, reasonLabel, setMinimized } from '../../sync/moderation';
 import { closeIssue, createComment, deleteComment, editComment, reopenIssue, updateIssue } from '../../sync/mutations';
-import { canWrite, commentsForIssue, eventsForIssue, reviewsForIssue } from '../../sync/selectors';
+import { canTriage, canWrite, commentsForIssue, eventsForIssue, reviewsForIssue } from '../../sync/selectors';
 import { loadViewerReactions } from '../../sync/viewerReactions';
 import { Avatar, LabelPill, StateIcon } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
@@ -22,6 +24,7 @@ import {
   CopyIcon,
   CrossReferenceIcon,
   DuplicateIcon,
+  EyeClosedIcon,
   EyeIcon,
   FileDiffIcon,
   GitCommitIcon,
@@ -56,6 +59,10 @@ import { ReactionBar } from './Reactions';
 import { groupEvents } from './timelineGroups';
 
 export { MarkdownEditor };
+
+// Moderation (P42): lazily loaded edit history / hide dialog.
+const EditHistory = lazy(() => import('./Moderation').then((m) => ({ default: m.EditHistory })));
+const HideDialog = lazy(() => import('./Moderation').then((m) => ({ default: m.HideDialog })));
 
 type Item =
   | { kind: 'comment'; at: string; c: Comment }
@@ -130,6 +137,8 @@ export const Timeline = observer(function Timeline({
         repoId={issue.repoId}
         isAuthor
         pending={issue.id < 0}
+        edited={!!issue.bodyEditedAt}
+        history={{ kind: 'issue', id: issue.id, canDelete: issue.authorId === store().viewerId || canAdmin(issue.repoId) }}
         reactions={<ReactionBar target={{ issue }} disabled={reactDisabled} />}
         onEdit={writable && issue.id > 0 ? (body) => updateIssue(issue, { body }) : undefined}
       />
@@ -178,6 +187,9 @@ const CommentItem = observer(function CommentItem({ comment, repo, issue }: { co
         pending={!confirmed}
         isAuthor={comment.authorId === issue.authorId}
         reactions={<ReactionBar target={{ comment }} disabled={issue.locked && !canWrite(issue.repoId)} />}
+        history={confirmed ? { kind: 'comment', id: comment.id, canDelete: mine || canAdmin(comment.repoId) } : undefined}
+        minimizedReason={comment.minimizedReason}
+        onMinimize={confirmed && canTriage(comment.repoId) ? (reason) => setMinimized({ comment }, reason) : undefined}
         onEdit={(mine || canWrite(comment.repoId)) && confirmed ? (body) => editComment(comment, body) : undefined}
         onDelete={(mine || canWrite(comment.repoId)) && confirmed ? () => setConfirm(true) : undefined}
       />
@@ -202,6 +214,9 @@ const CommentCard = observer(function CommentCard({
   reactions,
   onEdit,
   onDelete,
+  history,
+  minimizedReason,
+  onMinimize,
 }: {
   anchorId?: string;
   authorId: number;
@@ -216,11 +231,23 @@ const CommentCard = observer(function CommentCard({
   reactions?: ReactNode;
   onEdit?: (body: string) => void;
   onDelete?: () => void;
+  /** Edit history target: "edited" becomes a revisions dropdown (P42). */
+  history?: { kind: ContentKind; id: number; canDelete: boolean };
+  /** Hidden comment: collapsed behind "Show comment". */
+  minimizedReason?: MinimizedReason | null;
+  /** Hide (reason) / unhide (null); triagers only. */
+  onMinimize?: (reason: MinimizedReason | null) => void;
 }) {
   const author = store().get('user', authorId);
   const [editing, setEditing] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLButtonElement>(null);
+  const [owner = '', name = ''] = repo.split('/');
+  const collapsed = !!minimizedReason && !showHidden && editing === null;
   const copyLink = () => {
     if (!anchorId) return;
     const url = `${location.origin}${location.pathname}#${anchorId}`;
@@ -237,8 +264,21 @@ const CommentCard = observer(function CommentCard({
           </Link>
           <span className={styles.subtle}>
             commented {pending ? 'just now' : <RelativeTime date={createdAt} />}
-            {edited && ' · edited'}
+            {edited && !history && ' · edited'}
           </span>
+          {edited && history && (
+            <button ref={historyRef} type="button" className={styles.editedButton} aria-expanded={historyOpen} aria-haspopup="dialog" onClick={() => setHistoryOpen((o) => !o)}>
+              edited <TriangleDownIcon size={12} />
+            </button>
+          )}
+          {minimizedReason && (
+            <span className={styles.minimizedNote}>
+              · This comment was marked as {reasonLabel(minimizedReason)}.{' '}
+              <button type="button" className={styles.linkButton} onClick={() => setShowHidden((v) => !v)} aria-expanded={!collapsed}>
+                {collapsed ? 'Show comment' : 'Hide comment'}
+              </button>
+            </span>
+          )}
           <span className={styles.spacer} />
           {isAuthor && <span className={styles.assoc}>Author</span>}
           {association !== 'NONE' && <span className={styles.assoc}>{association.toLowerCase().replace(/_/g, ' ')}</span>}
@@ -252,11 +292,34 @@ const CommentCard = observer(function CommentCard({
               ...(anchorId ? [{ id: 'link', label: 'Copy link', icon: LinkIcon, onSelect: copyLink }] : []),
               { id: 'copy', label: 'Copy text', icon: CopyIcon, onSelect: () => void navigator.clipboard?.writeText(body ?? '') },
               ...(onEdit ? [{ id: 'edit', label: 'Edit', icon: PencilIcon, onSelect: () => setEditing(body ?? '') }] : []),
+              ...(onMinimize
+                ? [
+                    minimizedReason
+                      ? { id: 'unhide', label: 'Unhide', icon: EyeIcon, onSelect: () => onMinimize(null) }
+                      : { id: 'hide', label: 'Hide', icon: EyeClosedIcon, onSelect: () => setHiding(true) },
+                  ]
+                : []),
               ...(onDelete ? [{ separator: true as const, id: 's' }, { id: 'delete', label: 'Delete', icon: TrashIcon, danger: true, onSelect: onDelete }] : []),
             ]}
           />
         </div>
-        <div className={styles.cardBody}>
+        {historyOpen && history && (
+          <Suspense fallback={null}>
+            <EditHistory
+              target={{ owner, repo: name, ...history }}
+              anchor={historyRef}
+              onClose={() => setHistoryOpen(false)}
+              authorLogin={author?.login ?? 'ghost'}
+              createdAt={createdAt}
+            />
+          </Suspense>
+        )}
+        {hiding && onMinimize && (
+          <Suspense fallback={null}>
+            <HideDialog onClose={() => setHiding(false)} onHide={(reason) => onMinimize(reason)} />
+          </Suspense>
+        )}
+        <div className={styles.cardBody} hidden={collapsed}>
           {editing !== null ? (
             <MarkdownEditor
               value={editing}
@@ -579,6 +642,8 @@ const ReviewItem = observer(function ReviewItem({ review, repo, extra }: { revie
     PENDING: { icon: EyeIcon, text: 'started a review', cls: '' },
   } as const;
   const m = map[review.state];
+  const [showHidden, setShowHidden] = useState(false);
+  const hidden = !!review.minimizedReason && !showHidden;
   return (
     <>
       <div className={styles.event}>
@@ -588,9 +653,18 @@ const ReviewItem = observer(function ReviewItem({ review, repo, extra }: { revie
         <Avatar user={author} size={18} />
         <span className={styles.eventText}>
           <strong>{author?.login ?? 'ghost'}</strong> {m.text} <span className={styles.subtle}>{review.submittedAt && <RelativeTime date={review.submittedAt} />}</span>
+          {review.minimizedReason && review.body && (
+            <span className={styles.minimizedNote}>
+              {' '}
+              · This review was marked as {reasonLabel(review.minimizedReason)}.{' '}
+              <button type="button" className={styles.linkButton} onClick={() => setShowHidden((v) => !v)} aria-expanded={!hidden}>
+                {hidden ? 'Show review' : 'Hide review'}
+              </button>
+            </span>
+          )}
         </span>
       </div>
-      {review.body && (
+      {review.body && !hidden && (
         <div className={styles.reviewBody}>
           <Markdown source={review.body} repo={repo} />
         </div>
