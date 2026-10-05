@@ -4,3 +4,4 @@ web/dist
 /data
 *.log
 .env
+/.claude/worktrees
