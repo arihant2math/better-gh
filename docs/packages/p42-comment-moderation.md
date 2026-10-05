@@ -69,6 +69,28 @@ Search and lists read the `issues` table, so the issue disappears there.
 * New `mutation/moderation.rs`: `minimizeComment`, `unminimizeComment`
   (`ReportedContentClassifiers`), `deleteIssue`.
 
+## Web (all in lazy route chunks; initial JS unchanged)
+
+* `sync/models.ts` / `schema.ts`: `minimizedReason` on `Comment`, `Review`,
+  `ReviewComment`; lazy `Issue.bodyEditedAt`; `CLIENT_SCHEMA_VERSION` 3.
+* `sync/moderation.ts`: optimistic `setMinimized` (comment, review
+  comment, review) and `deleteIssue`; `api/moderation.ts`: edit history,
+  revision deletion, commit-comment hidden states.
+* `pages/issues/Moderation.tsx` (own lazy chunk): "edited ▾" revision
+  dropdown + revision viewer (delete revision for author/admin) and the
+  "Hide comment" reason dialog.
+* `Timeline.tsx` (comment card / menu region only): Hide / Unhide menu
+  items (triage+), collapsed "This comment was marked as … Show comment",
+  "edited ▾" on the issue body and comments; hidden reviews collapse too.
+* `ReviewThread.tsx` (review comments) and `commits/CommitComments.tsx`
+  (commit comments): the same hide / unhide / edited ▾.
+* `IssueActions.tsx` sidebar: "Delete issue" (repo admins, not PRs) with
+  confirmation, also in the command palette.
+* Mock: `mock/extra/moderation.ts` (+ test) serves every endpoint and
+  records edits by wrapping `server.put`.
+* Playwright: `scripts/moderation-smoke.mjs` (mock mode) — edit history,
+  hide / show / unhide, persistence across reload, delete issue.
+
 ## Tests
 
 * `crates/bgh-issues/tests/it/moderation.rs`: hide/unhide (permissions,
