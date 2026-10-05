@@ -18,6 +18,7 @@ pub mod items;
 pub mod model;
 pub mod position;
 pub mod projects;
+pub mod rest;
 pub mod service;
 mod util;
 pub mod views;
@@ -25,11 +26,53 @@ pub mod workflows;
 
 use axum::Router;
 use axum::routing::{get, patch, post, put};
+
+macro_rules! rest_routes {
+    ($router:expr, $prefix:literal, $org:literal) => {
+        $router
+            .route(
+                concat!($prefix, "/projectsV2"),
+                get(rest::list_projects::<$org>),
+            )
+            .route(
+                concat!($prefix, "/projectsV2/{project_number}"),
+                get(rest::get_project::<$org>),
+            )
+            .route(
+                concat!($prefix, "/projectsV2/{project_number}/fields"),
+                get(rest::list_fields::<$org>),
+            )
+            .route(
+                concat!($prefix, "/projectsV2/{project_number}/fields/{field_id}"),
+                get(rest::get_field::<$org>),
+            )
+            .route(
+                concat!($prefix, "/projectsV2/{project_number}/items"),
+                get(rest::list_items::<$org>).post(rest::add_item::<$org>),
+            )
+            .route(
+                concat!($prefix, "/projectsV2/{project_number}/items/{item_id}"),
+                get(rest::get_item::<$org>)
+                    .patch(rest::update_item::<$org>)
+                    .delete(rest::delete_item::<$org>),
+            )
+    };
+}
 use bgh_core::{AppState, Registry};
 
-/// REST API routes (relative to `/api/v3`). Projects have no REST surface yet.
+/// REST API routes (relative to `/api/v3`): GitHub's projectsV2 API for
+/// organizations and users (see [`rest`]).
 pub fn router() -> Router<AppState> {
-    Router::new()
+    let r = rest_routes!(Router::new(), "/orgs/{org}", true);
+    rest_routes!(r, "/users/{username}", false)
+        .route(
+            "/orgs/{org}/projectsV2/{project_number}/drafts",
+            post(rest::create_org_draft),
+        )
+        .route(
+            "/user/{user_id}/projectsV2/{project_number}/drafts",
+            post(rest::create_user_draft),
+        )
 }
 
 /// Private web-client routes.

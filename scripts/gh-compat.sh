@@ -293,6 +293,54 @@ run_case "gh pr review --comment" --needs FX_PR -- \
   "$GH" pr review "$FX_PR" -R "$NWO" --comment --body "review from gh"
 run_case "gh pr merge --merge" --needs FX_PR -- "$GH" pr merge "$FX_PR" -R "$NWO" --merge
 
+echo "-- projects"
+FX_PROJECT=""
+if run_case "gh project create" --expect "/users/$OWNER/projects/[0-9]+" -- \
+  "$GH" project create --owner "$OWNER" --title "Compat board" --format json --jq .url; then
+  FX_PROJECT="$(grep -Eo 'projects/[0-9]+' "$LAST_OUT" | head -n 1 | cut -d/ -f2)"
+fi
+run_case "gh project list" --needs FX_PROJECT --expect "Compat board" -- \
+  "$GH" project list --owner "$OWNER"
+run_case "gh project view" --needs FX_PROJECT --expect "Compat board" -- \
+  "$GH" project view "${FX_PROJECT:-0}" --owner "$OWNER"
+run_case "gh project field-list" --needs FX_PROJECT --expect "Status" -- \
+  "$GH" project field-list "${FX_PROJECT:-0}" --owner "$OWNER"
+run_case "gh project field-create" --needs FX_PROJECT --expect "Priority" -- \
+  "$GH" project field-create "${FX_PROJECT:-0}" --owner "$OWNER" --name Priority \
+  --data-type SINGLE_SELECT --single-select-options High,Low --format json --jq .name
+FX_ITEM="" FX_PROJECT_ID="" FX_STATUS_FIELD="" FX_DONE_OPTION=""
+if [[ -n $FX_PROJECT && -n $FX_ISSUE ]] && run_case "gh project item-add" -- \
+  "$GH" project item-add "$FX_PROJECT" --owner "$OWNER" \
+  --url "https://$GH_HOST/$NWO/issues/$FX_ISSUE" --format json --jq .id; then
+  FX_ITEM="$(tr -d '[:space:]' <"$LAST_OUT")"
+fi
+if [[ -n $FX_PROJECT ]] && run_case "gh project view --format json" --kind fixture -- \
+  "$GH" project view "$FX_PROJECT" --owner "$OWNER" --format json --jq .id; then
+  FX_PROJECT_ID="$(tr -d '[:space:]' <"$LAST_OUT")"
+fi
+if [[ -n $FX_PROJECT ]] && run_case "gh project field-list --format json" --kind fixture -- \
+  "$GH" project field-list "$FX_PROJECT" --owner "$OWNER" --format json \
+  --jq '.fields[] | select(.name == "Status") | .id + " " + (.options[] | select(.name == "Done") | .id)'; then
+  read -r FX_STATUS_FIELD FX_DONE_OPTION <"$LAST_OUT"
+fi
+run_case "gh project item-list" --needs FX_ITEM --expect "Fixture issue" -- \
+  "$GH" project item-list "${FX_PROJECT:-0}" --owner "$OWNER"
+run_case "gh project item-edit" --needs FX_ITEM --needs FX_PROJECT_ID --needs FX_DONE_OPTION -- \
+  "$GH" project item-edit --id "${FX_ITEM:-x}" --project-id "${FX_PROJECT_ID:-x}" \
+  --field-id "${FX_STATUS_FIELD:-x}" --single-select-option-id "${FX_DONE_OPTION:-x}"
+run_case "gh project item-list --format json" --needs FX_ITEM --expect "^Done\$" -- \
+  "$GH" project item-list "${FX_PROJECT:-0}" --owner "$OWNER" --format json --jq '.items[0].status'
+run_case "gh project item-create" --needs FX_PROJECT -- \
+  "$GH" project item-create "${FX_PROJECT:-0}" --owner "$OWNER" --title "Draft from gh" --body "draft body"
+run_case "gh project item-archive" --needs FX_ITEM -- \
+  "$GH" project item-archive "${FX_PROJECT:-0}" --owner "$OWNER" --id "${FX_ITEM:-x}"
+run_case "gh issue create --project" --needs FX_PROJECT --expect "/issues/[0-9]+" -- \
+  "$GH" issue create -R "$NWO" --title "Tracked by gh" --body "with project" --project "Compat board"
+run_case "gh issue create --project (item added)" --needs FX_PROJECT --expect "Tracked by gh" -- \
+  "$GH" project item-list "${FX_PROJECT:-0}" --owner "$OWNER" --format json --jq '.items[].content.title'
+run_case "gh project close" --needs FX_PROJECT -- \
+  "$GH" project close "${FX_PROJECT:-0}" --owner "$OWNER"
+
 echo "-- releases"
 run_case "gh release create" --needs FX_REPO --expect "/releases/tag/v1\\.0\\.0" -- \
   "$GH" release create v1.0.0 -R "$NWO" --title "v1.0.0" --notes "notes from gh"

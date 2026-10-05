@@ -47,6 +47,11 @@ pub enum NodeType {
     Environment,
     Deployment,
     DeploymentStatus,
+    ProjectV2,
+    ProjectV2Item,
+    ProjectV2Field,
+    ProjectV2View,
+    DraftIssue,
 }
 
 impl NodeType {
@@ -87,6 +92,11 @@ impl NodeType {
         Self::Environment,
         Self::Deployment,
         Self::DeploymentStatus,
+        Self::ProjectV2,
+        Self::ProjectV2Item,
+        Self::ProjectV2Field,
+        Self::ProjectV2View,
+        Self::DraftIssue,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -127,6 +137,11 @@ impl NodeType {
             Self::Environment => "Environment",
             Self::Deployment => "Deployment",
             Self::DeploymentStatus => "DeploymentStatus",
+            Self::ProjectV2 => "ProjectV2",
+            Self::ProjectV2Item => "ProjectV2Item",
+            Self::ProjectV2Field => "ProjectV2Field",
+            Self::ProjectV2View => "ProjectV2View",
+            Self::DraftIssue => "DraftIssue",
         }
     }
 
@@ -145,10 +160,20 @@ impl NodeType {
 }
 
 /// Encode a node id for a numeric database id.
+///
+/// Draft issues get GitHub's `DI_` prefix: `gh project item-edit` checks
+/// for it before treating an id as draft-issue content.
 pub fn encode(ty: NodeType, id: i64) -> String {
     let name = ty.as_str();
-    STANDARD.encode(format!("{:02}:{name}{id}", name.len()))
+    let id = STANDARD.encode(format!("{:02}:{name}{id}", name.len()));
+    if ty == NodeType::DraftIssue {
+        format!("{DRAFT_ISSUE_PREFIX}{id}")
+    } else {
+        id
+    }
 }
+
+const DRAFT_ISSUE_PREFIX: &str = "DI_";
 
 /// Encode a node id for a string key (e.g. commit SHAs: `"{repo_id}:{sha}"`).
 pub fn encode_str(ty: NodeType, key: &str) -> String {
@@ -158,6 +183,9 @@ pub fn encode_str(ty: NodeType, key: &str) -> String {
 
 /// Decode a node id into its type and raw key.
 pub fn decode_raw(node_id: &str) -> Option<(NodeType, String)> {
+    if let Some(rest) = node_id.strip_prefix(DRAFT_ISSUE_PREFIX) {
+        return decode_raw(rest).filter(|(ty, _)| *ty == NodeType::DraftIssue);
+    }
     let bytes = STANDARD.decode(node_id).ok()?;
     let s = String::from_utf8(bytes).ok()?;
     let (len, rest) = s.split_once(':')?;
@@ -188,5 +216,8 @@ mod tests {
         assert_eq!(decode("garbage"), None);
         let c = encode_str(NodeType::Commit, "7:abc");
         assert_eq!(decode_raw(&c), Some((NodeType::Commit, "7:abc".into())));
+        let d = encode(NodeType::DraftIssue, 9);
+        assert!(d.starts_with("DI_"));
+        assert_eq!(decode(&d), Some((NodeType::DraftIssue, 9)));
     }
 }
