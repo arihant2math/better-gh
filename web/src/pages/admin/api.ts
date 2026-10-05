@@ -255,6 +255,10 @@ export interface OidcProvider {
   client_secret: string | null;
   scopes: string[];
   auto_create_users: boolean;
+  /** Claim proposing the login of new accounts (default `preferred_username`). */
+  login_claim: string | null;
+  /** Email domains allowed to sign in; empty = any. */
+  allowed_domains: string[];
 }
 
 export interface SiteSettings {
@@ -262,7 +266,14 @@ export interface SiteSettings {
   repositories: { default_visibility: Visibility; max_repo_size_mb: number | null };
   organizations: { creation: 'all' | 'admins_only' };
   announcement: { message: string | null; expires_at: string | null; user_dismissible: boolean };
-  rate_limits: { enabled: boolean; authenticated_per_hour: number; unauthenticated_per_hour: number };
+  rate_limits: {
+    enabled: boolean;
+    authenticated_per_hour: number;
+    unauthenticated_per_hour: number;
+    search_authenticated_per_minute: number;
+    search_unauthenticated_per_minute: number;
+    graphql_per_hour: number;
+  };
   auth_providers: { password_login: boolean; oidc: OidcProvider[] };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };

@@ -259,8 +259,43 @@ export function RateLimitsSection({ value, onChange, errors }: Props<'rate_limit
         <Field label="Authenticated requests" htmlFor="set-rl-auth" error={a} hint="Per user, per hour.">
           <Input id="set-rl-auth" inputMode="numeric" trailing="/ hour" value={value.authenticated} invalid={!!a} disabled={!value.enabled} onChange={(e) => onChange({ authenticated: positiveInput(e.target.value) })} />
         </Field>
-        <Field label="Unauthenticated requests" htmlFor="set-rl-anon" error={u} hint="Per client IP, per hour.">
+        <Field label="Unauthenticated requests" htmlFor="set-rl-anon" error={u} hint="Per client IP, per hour (also the anonymous GraphQL budget).">
           <Input id="set-rl-anon" inputMode="numeric" trailing="/ hour" value={value.unauthenticated} invalid={!!u} disabled={!value.enabled} onChange={(e) => onChange({ unauthenticated: positiveInput(e.target.value) })} />
+        </Field>
+      </div>
+      <div className={styles.formRow}>
+        <Field label="Search, authenticated" htmlFor="set-rl-search" error={errors['rate_limits.search_authenticated']} hint="Per user, per minute.">
+          <Input
+            id="set-rl-search"
+            inputMode="numeric"
+            trailing="/ min"
+            value={value.search_authenticated}
+            invalid={!!errors['rate_limits.search_authenticated']}
+            disabled={!value.enabled}
+            onChange={(e) => onChange({ search_authenticated: positiveInput(e.target.value) })}
+          />
+        </Field>
+        <Field label="Search, unauthenticated" htmlFor="set-rl-search-anon" error={errors['rate_limits.search_unauthenticated']} hint="Per client IP, per minute.">
+          <Input
+            id="set-rl-search-anon"
+            inputMode="numeric"
+            trailing="/ min"
+            value={value.search_unauthenticated}
+            invalid={!!errors['rate_limits.search_unauthenticated']}
+            disabled={!value.enabled}
+            onChange={(e) => onChange({ search_unauthenticated: positiveInput(e.target.value) })}
+          />
+        </Field>
+        <Field label="GraphQL" htmlFor="set-rl-graphql" error={errors['rate_limits.graphql']} hint="Per user, per hour.">
+          <Input
+            id="set-rl-graphql"
+            inputMode="numeric"
+            trailing="/ hour"
+            value={value.graphql}
+            invalid={!!errors['rate_limits.graphql']}
+            disabled={!value.enabled}
+            onChange={(e) => onChange({ graphql: positiveInput(e.target.value) })}
+          />
         </Field>
       </div>
     </div>
@@ -340,7 +375,7 @@ function OidcDialog({ provider, all, onClose, onSave }: { provider: OidcForm | n
   }
   const isNew = !!provider && !all.some((o) => o.key === provider.key);
   const errors = form ? oidcErrors(form, all) : {};
-  const show = (k: 'name' | 'issuer' | 'client_id') => {
+  const show = (k: 'name' | 'issuer' | 'client_id' | 'allowed_domains') => {
     const v = form?.[k] ?? '';
     return submitted || (v && v !== 'https://') ? errors[k] : undefined;
   };
@@ -403,6 +438,21 @@ function OidcDialog({ provider, all, onClose, onSave }: { provider: OidcForm | n
           <Field label="Scopes" htmlFor="oidc-scopes" hint="Space separated.">
             <Input id="oidc-scopes" value={form.scopes} spellCheck={false} onChange={(e) => set({ scopes: e.target.value })} />
           </Field>
+          <div className={styles.formRow}>
+            <Field label="Login claim (optional)" htmlFor="oidc-login-claim" hint="Claim proposing the username of new accounts; default preferred_username.">
+              <Input id="oidc-login-claim" value={form.login_claim} placeholder="preferred_username" spellCheck={false} onChange={(e) => set({ login_claim: e.target.value })} />
+            </Field>
+            <Field label="Allowed email domains (optional)" htmlFor="oidc-domains" error={show('allowed_domains')} hint="Space separated; empty allows any domain.">
+              <Input
+                id="oidc-domains"
+                value={form.allowed_domains}
+                invalid={!!show('allowed_domains')}
+                placeholder="example.com"
+                spellCheck={false}
+                onChange={(e) => set({ allowed_domains: e.target.value })}
+              />
+            </Field>
+          </div>
           <Switch
             checked={form.auto_create_users}
             onChange={(auto_create_users) => set({ auto_create_users })}

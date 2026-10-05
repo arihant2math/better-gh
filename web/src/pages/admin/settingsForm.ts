@@ -44,6 +44,9 @@ export interface OidcForm {
   /** Space separated. */
   scopes: string;
   auto_create_users: boolean;
+  login_claim: string;
+  /** Space or comma separated. */
+  allowed_domains: string;
 }
 
 export interface SettingsForm {
@@ -51,7 +54,7 @@ export interface SettingsForm {
   repositories: { default_visibility: Visibility; limited: boolean; max_mb: string };
   organizations: { creation: SiteSettings['organizations']['creation'] };
   announcement: { message: string; expires: string; user_dismissible: boolean };
-  rate_limits: { enabled: boolean; authenticated: string; unauthenticated: string };
+  rate_limits: { enabled: boolean; authenticated: string; unauthenticated: string; search_authenticated: string; search_unauthenticated: string; graphql: string };
   auth_providers: { password_login: boolean; oidc: OidcForm[] };
   smtp: {
     enabled: boolean;
@@ -81,6 +84,8 @@ export function oidcToForm(p: OidcProvider): OidcForm {
     secret: secretForm(p.client_secret),
     scopes: p.scopes.join(' '),
     auto_create_users: p.auto_create_users,
+    login_claim: p.login_claim ?? '',
+    allowed_domains: (p.allowed_domains ?? []).join(' '),
   };
 }
 
@@ -95,6 +100,8 @@ export function emptyOidc(): OidcForm {
     secret: { stored: false, value: '', clear: false },
     scopes: 'openid profile email',
     auto_create_users: true,
+    login_claim: '',
+    allowed_domains: '',
   };
 }
 
@@ -116,6 +123,9 @@ export function toForm(s: SiteSettings): SettingsForm {
       enabled: s.rate_limits.enabled,
       authenticated: String(s.rate_limits.authenticated_per_hour),
       unauthenticated: String(s.rate_limits.unauthenticated_per_hour),
+      search_authenticated: String(s.rate_limits.search_authenticated_per_minute),
+      search_unauthenticated: String(s.rate_limits.search_unauthenticated_per_minute),
+      graphql: String(s.rate_limits.graphql_per_hour),
     },
     auth_providers: { password_login: s.auth_providers.password_login, oidc: s.auth_providers.oidc.map(oidcToForm) },
     smtp: {
@@ -163,6 +173,9 @@ export function domainError(d: string): string | null {
 export const OIDC_NAME = /^[a-z0-9-]+$/;
 export const isHttpUrl = (s: string) => /^https?:\/\/[^\s/]+/i.test(s.trim());
 
+/** Split a space/comma separated list. */
+export const splitList = (s: string) => s.split(/[\s,]+/).filter(Boolean);
+
 export function oidcErrors(p: OidcForm, others: OidcForm[]): Errors {
   const e: Errors = {};
   if (!p.name) e.name = 'Required.';
@@ -170,6 +183,7 @@ export function oidcErrors(p: OidcForm, others: OidcForm[]): Errors {
   else if (others.some((o) => o.key !== p.key && o.name.toLowerCase() === p.name.toLowerCase())) e.name = 'Another provider already uses this name.';
   if (!isHttpUrl(p.issuer)) e.issuer = 'Enter an http(s) URL.';
   if (!p.client_id.trim()) e.client_id = 'Required.';
+  if (splitList(p.allowed_domains).some((d) => d.includes('@'))) e.allowed_domains = 'Domains only, without “@”.';
   return e;
 }
 
@@ -179,8 +193,8 @@ export function validate(f: SettingsForm): Errors {
   if (bad) e['signup.domains'] = bad;
   if (f.repositories.limited && !POSITIVE_INT.test(f.repositories.max_mb.trim())) e['repositories.max_mb'] = 'Enter a whole number of megabytes greater than 0.';
   if (f.announcement.expires && !fromLocalInput(f.announcement.expires)) e['announcement.expires'] = 'Enter a valid date and time.';
-  if (!POSITIVE_INT.test(f.rate_limits.authenticated.trim())) e['rate_limits.authenticated'] = 'Enter a whole number greater than 0.';
-  if (!POSITIVE_INT.test(f.rate_limits.unauthenticated.trim())) e['rate_limits.unauthenticated'] = 'Enter a whole number greater than 0.';
+  for (const k of ['authenticated', 'unauthenticated', 'search_authenticated', 'search_unauthenticated', 'graphql'] as const)
+    if (!POSITIVE_INT.test(f.rate_limits[k].trim())) e[`rate_limits.${k}`] = 'Enter a whole number greater than 0.';
   if (!f.auth_providers.password_login && f.auth_providers.oidc.length === 0)
     e['auth_providers.methods'] = 'At least one sign-in method must stay enabled: keep password sign-in or add an OIDC provider.';
   for (const p of f.auth_providers.oidc) {
@@ -239,6 +253,9 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
           enabled: f.rate_limits.enabled,
           authenticated_per_hour: Number(f.rate_limits.authenticated),
           unauthenticated_per_hour: Number(f.rate_limits.unauthenticated),
+          search_authenticated_per_minute: Number(f.rate_limits.search_authenticated),
+          search_unauthenticated_per_minute: Number(f.rate_limits.search_unauthenticated),
+          graphql_per_hour: Number(f.rate_limits.graphql),
         };
         break;
       case 'auth_providers':
@@ -252,6 +269,8 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
             client_secret: secretValue(p.secret),
             scopes: p.scopes.split(/[\s,]+/).filter(Boolean),
             auto_create_users: p.auto_create_users,
+            login_claim: orNull(p.login_claim),
+            allowed_domains: splitList(p.allowed_domains).map((d) => d.toLowerCase()),
           })),
         };
         break;

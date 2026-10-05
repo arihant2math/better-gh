@@ -50,8 +50,8 @@ passing against the integrated server; screenshots in light and dark mode).
   list and output.
 * Site settings: sign-up policy + allowed domains, default visibility, max
   repo size, org creation, announcement (expiry, dismissible, live
-  preview), rate limits, password login + OIDC providers (secrets
-  write-only), SMTP, maintenance mode (confirm + preview). Per-section
+  preview), rate limits (core, search and GraphQL budgets), password login
+  + OIDC providers (secrets write-only, login claim, allowed domains), SMTP, maintenance mode (confirm + preview). Per-section
   dirty tracking, sticky save bar (⌘S), client validation, 422 mapped to
   sections, `beforeunload` guard, nav dot while dirty.
 * Audit log: phrase search + actor/action/repo/org/user/date filters in
