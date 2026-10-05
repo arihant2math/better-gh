@@ -8,8 +8,9 @@ import type { User } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
-import { BookIcon, LinkIcon, LocationIcon, MailIcon, MentionIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon, TableIcon } from '../../ui/icons';
+import { BookIcon, LinkIcon, LocationIcon, MailIcon, MentionIcon, OrganizationIcon, PackageIcon, PeopleIcon, RepoIcon, StarIcon, TableIcon } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
+import { PackageList } from '../packages/PackageList';
 import { Activity } from './Activity';
 import { FollowButton, useFollowCheck, useFollowDelta, useMyFollowingDelta } from './follow';
 import { useOwnerRepos, useStarred } from './profileData';
@@ -18,7 +19,7 @@ import { RepoCard, RepoList } from './RepoList';
 import { popular, STAR_SORTS } from './repoList';
 import { personFromRest, UserList } from './UserList';
 
-export type UserTab = 'overview' | 'repositories' | 'stars' | 'followers' | 'following';
+export type UserTab = 'overview' | 'repositories' | 'packages' | 'stars' | 'followers' | 'following';
 
 export function blogHref(blog: string): string {
   return /^https?:\/\//i.test(blog) ? blog : `https://${blog}`;
@@ -27,7 +28,7 @@ export function blogHref(blog: string): string {
 /** User profile: sidebar (avatar, bio, follow, details, orgs) + tabs. */
 export const UserProfile = observer(function UserProfile({ login, synced }: { login: string; synced: User | undefined }) {
   const tabParam = (useQuery().get('tab') ?? 'overview') as UserTab;
-  const tab: UserTab = ['overview', 'repositories', 'stars', 'followers', 'following'].includes(tabParam) ? tabParam : 'overview';
+  const tab: UserTab = ['overview', 'repositories', 'packages', 'stars', 'followers', 'following'].includes(tabParam) ? tabParam : 'overview';
   const viewer = session.user;
   const isViewer = !!viewer && viewer.login.toLowerCase() === login.toLowerCase();
   const account = useResource(profileKeys.account(login), () => getAccount(login));
@@ -51,6 +52,7 @@ export const UserProfile = observer(function UserProfile({ login, synced }: { lo
             items={[
               { id: 'overview', label: 'Overview', icon: BookIcon, href: base },
               { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repoCount, href: `${base}?tab=repositories` },
+              { id: 'packages', label: 'Packages', icon: PackageIcon, href: `${base}?tab=packages` },
               { id: 'stars', label: 'Stars', icon: StarIcon, count: starredCount, href: `${base}?tab=stars` },
               { id: 'projects', label: 'Projects', icon: TableIcon, href: `/users${base}/projects` },
             ]}
@@ -66,6 +68,7 @@ export const UserProfile = observer(function UserProfile({ login, synced }: { lo
               emptyBody={isViewer ? <Link to="/new">Create a new repository</Link> : undefined}
             />
           )}
+          {tab === 'packages' && <PackageList owner={displayLogin} />}
           {tab === 'stars' && <StarsTab login={displayLogin} isViewer={isViewer} />}
           {tab === 'followers' && <PeopleTab login={displayLogin} which="followers" isViewer={isViewer} />}
           {tab === 'following' && <PeopleTab login={displayLogin} which="following" isViewer={isViewer} />}

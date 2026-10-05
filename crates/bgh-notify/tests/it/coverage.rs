@@ -33,7 +33,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "marketplace_purchase",
     "merge_group",
     "org_block",
-    "package",
     "page_build",
     "personal_access_token_request",
     "project",
@@ -263,6 +262,20 @@ fn samples() -> Vec<Event> {
             release_id: 1,
             actor_id: 1,
             action: "unpublished".into(),
+        },
+        Event::PackagePublished {
+            repo_id: 1,
+            package_id: 1,
+            version_id: 1,
+            actor_id: 1,
+            tag: None,
+        },
+        Event::PackageUpdated {
+            repo_id: 1,
+            package_id: 1,
+            version_id: 1,
+            actor_id: 1,
+            tag: None,
         },
         Event::LabelCreated {
             repo_id: 1,
