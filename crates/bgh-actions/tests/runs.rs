@@ -264,6 +264,23 @@ async fn runner_protocol_drives_run_to_completion() {
     .await
     .unwrap();
     assert_eq!(ccount, 3);
+    // Check rows are synced through the shared shapes: the last delta of
+    // the suite equals the row a load returns now.
+    let suite_id = run["check_suite_id"].as_i64().unwrap();
+    let (d, n): (serde_json::Value, i64) = sqlx::query_as(
+        "SELECT (SELECT data FROM sync_actions WHERE model = 'checkSuite' AND model_id = $1
+                  ORDER BY id DESC LIMIT 1),
+                (SELECT count(*) FROM sync_actions WHERE model = 'checkRun'
+                   AND model_id IN (SELECT id FROM check_runs WHERE check_suite_id = $1))",
+    )
+    .bind(suite_id)
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(d["status"], "completed");
+    assert_eq!(d["conclusion"], "success");
+    assert_eq!(d["latestCheckRunsCount"], 3);
+    assert!(n >= 3, "check runs recorded: {n}");
 
     // Job log (302 → text) and run logs zip.
     let res = app

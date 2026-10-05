@@ -410,7 +410,11 @@ pub fn reply_location(root: &ReviewComment) -> Location {
     }
 }
 
-pub(crate) async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<ReviewComment> {
+pub(crate) async fn find_comment(
+    state: &AppState,
+    repo_id: i64,
+    id: i64,
+) -> ApiResult<ReviewComment> {
     let c: ReviewComment = sqlx::query_as(&format!(
         "SELECT {} FROM pr_review_comments c WHERE c.id = $1 AND c.repo_id = $2",
         ReviewComment::COLUMNS

@@ -403,7 +403,13 @@ pub async fn pull_sync(
         viewer,
         ..Opts::default()
     };
-    let comment_rows = load_rows(&mut tx, opts, Model::ReviewComment, Filter::Issues(&pull_ids)).await?;
+    let comment_rows = load_rows(
+        &mut tx,
+        opts,
+        Model::ReviewComment,
+        Filter::Issues(&pull_ids),
+    )
+    .await?;
     let review_rows = load_rows(&mut tx, opts, Model::Review, Filter::Issues(&pull_ids)).await?;
     let comment_ids: Vec<i64> = comment_rows
         .iter()
@@ -443,7 +449,8 @@ pub async fn pull_sync(
             .await?;
     let suites = load_rows(&mut tx, opts, Model::CheckSuite, Filter::Ids(&suite_ids)).await?;
     let runs = load_rows(&mut tx, opts, Model::CheckRun, Filter::Ids(&run_ids)).await?;
-    let status_rows = load_rows(&mut tx, opts, Model::CommitStatus, Filter::Ids(&status_ids)).await?;
+    let status_rows =
+        load_rows(&mut tx, opts, Model::CommitStatus, Filter::Ids(&status_ids)).await?;
 
     let mut user_ids = BTreeSet::new();
     for (model, rows) in [

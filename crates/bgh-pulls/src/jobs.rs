@@ -97,6 +97,40 @@ pub async fn checks_changed(state: AppState, job: ChecksChanged) -> anyhow::Resu
     Ok(())
 }
 
+/// Event listener: check runs / suites written by other crates (bgh-actions)
+/// change the `checks` rollup of PRs at that head → `pulls.checks_changed`.
+pub async fn on_checks_event(state: AppState, event: std::sync::Arc<Event>) -> anyhow::Result<()> {
+    let (repo_id, sha): (i64, Option<String>) = match &*event {
+        Event::CheckRunUpdated {
+            repo_id,
+            check_run_id,
+            ..
+        } => (
+            *repo_id,
+            sqlx::query_scalar("SELECT head_sha FROM check_runs WHERE id = $1")
+                .bind(check_run_id)
+                .fetch_optional(&state.db)
+                .await?,
+        ),
+        Event::CheckSuiteUpdated {
+            repo_id,
+            check_suite_id,
+            ..
+        } => (
+            *repo_id,
+            sqlx::query_scalar("SELECT head_sha FROM check_suites WHERE id = $1")
+                .bind(check_suite_id)
+                .fetch_optional(&state.db)
+                .await?,
+        ),
+        _ => return Ok(()),
+    };
+    if let Some(sha) = sha {
+        bgh_core::jobs::enqueue_job(&state.db, &ChecksChanged { repo_id, sha }).await?;
+    }
+    Ok(())
+}
+
 /// Event listener: turn pushes into durable `pulls.push` jobs.
 pub async fn on_event(state: AppState, event: std::sync::Arc<Event>) -> anyhow::Result<()> {
     if let Event::Push(p) = &*event {

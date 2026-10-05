@@ -175,4 +175,5 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::push);
     reg.job(jobs::checks_changed);
     reg.on_event("pulls.push", jobs::on_event);
+    reg.on_event("pulls.checks", jobs::on_checks_event);
 }

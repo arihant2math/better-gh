@@ -3,34 +3,45 @@
 //! workflow run owns one check suite (`app_slug = 'actions'`), every job one
 //! check run named after the job.
 
+//!
+//! Every write records the shared `checkSuite` / `checkRun` sync rows
+//! (`tx.sync_model`, BACKEND_PATTERNS.md §8a); bgh-pulls re-syncs the PR
+//! rows whose `checks` rollup changed from the `CheckRunUpdated` /
+//! `CheckSuiteUpdated` events.
+
+use bgh_core::db::Tx;
+use bgh_core::error::ApiResult;
+use bgh_core::sync::{SyncAction, shapes::Model as SyncModel};
 use serde_json::{Value, json};
-use sqlx::PgConnection;
 
 use crate::protocol::Annotation;
 
 pub async fn create_suite(
-    conn: &mut PgConnection,
+    tx: &mut Tx,
     repo_id: i64,
     head_sha: &str,
     head_branch: Option<&str>,
-) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar(
+) -> ApiResult<i64> {
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO check_suites (repo_id, head_sha, head_branch, after_sha, app_slug, status)
          VALUES ($1, $2, $3, $2, 'actions', 'queued') RETURNING id",
     )
     .bind(repo_id)
     .bind(head_sha)
     .bind(head_branch)
-    .fetch_one(conn)
-    .await
+    .fetch_one(&mut **tx)
+    .await?;
+    tx.sync_model(SyncModel::CheckSuite, id, SyncAction::Insert)
+        .await?;
+    Ok(id)
 }
 
 pub async fn set_suite_status(
-    conn: &mut PgConnection,
+    tx: &mut Tx,
     suite_id: Option<i64>,
     status: &str,
     conclusion: Option<&str>,
-) -> Result<(), sqlx::Error> {
+) -> ApiResult<()> {
     let Some(id) = suite_id else { return Ok(()) };
     sqlx::query(
         "UPDATE check_suites SET status = $2, conclusion = $3, updated_at = now() WHERE id = $1",
@@ -38,14 +49,16 @@ pub async fn set_suite_status(
     .bind(id)
     .bind(status)
     .bind(conclusion)
-    .execute(conn)
+    .execute(&mut **tx)
     .await?;
+    tx.sync_model(SyncModel::CheckSuite, id, SyncAction::Update)
+        .await?;
     Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 pub async fn create_run(
-    conn: &mut PgConnection,
+    tx: &mut Tx,
     suite_id: Option<i64>,
     repo_id: i64,
     head_sha: &str,
@@ -53,12 +66,12 @@ pub async fn create_run(
     external_id: &str,
     status: &str,
     conclusion: Option<&str>,
-) -> Result<Option<i64>, sqlx::Error> {
+) -> ApiResult<Option<i64>> {
     let Some(suite_id) = suite_id else {
         return Ok(None);
     };
     let completed = status == "completed";
-    let id = sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO check_runs (check_suite_id, repo_id, head_sha, name, status, conclusion,
                                  external_id, started_at, completed_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7,
@@ -73,50 +86,58 @@ pub async fn create_run(
     .bind(conclusion)
     .bind(external_id)
     .bind(completed)
-    .fetch_one(conn)
+    .fetch_one(&mut **tx)
     .await?;
+    sqlx::query(
+        "UPDATE check_suites SET latest_check_runs_count = latest_check_runs_count + 1
+          WHERE id = $1",
+    )
+    .bind(suite_id)
+    .execute(&mut **tx)
+    .await?;
+    tx.sync_model(SyncModel::CheckRun, id, SyncAction::Insert)
+        .await?;
+    tx.sync_model(SyncModel::CheckSuite, suite_id, SyncAction::Update)
+        .await?;
     Ok(Some(id))
 }
 
-pub async fn set_details_url(
-    conn: &mut PgConnection,
-    check_run_id: Option<i64>,
-    url: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn set_details_url(tx: &mut Tx, check_run_id: Option<i64>, url: &str) -> ApiResult<()> {
     if let Some(id) = check_run_id {
         sqlx::query("UPDATE check_runs SET details_url = $2 WHERE id = $1")
             .bind(id)
             .bind(url)
-            .execute(conn)
+            .execute(&mut **tx)
+            .await?;
+        tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
             .await?;
     }
     Ok(())
 }
 
-pub async fn start_run(
-    conn: &mut PgConnection,
-    check_run_id: Option<i64>,
-) -> Result<(), sqlx::Error> {
+pub async fn start_run(tx: &mut Tx, check_run_id: Option<i64>) -> ApiResult<()> {
     if let Some(id) = check_run_id {
         sqlx::query(
             "UPDATE check_runs SET status = 'in_progress', started_at = coalesce(started_at, now()),
                     updated_at = now() WHERE id = $1",
         )
         .bind(id)
-        .execute(conn)
+        .execute(&mut **tx)
         .await?;
+        tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
+            .await?;
     }
     Ok(())
 }
 
 /// Map a job conclusion to a check run conclusion (same vocabulary).
 pub async fn complete_run(
-    conn: &mut PgConnection,
+    tx: &mut Tx,
     check_run_id: Option<i64>,
     conclusion: &str,
     summary: Option<&str>,
     annotations: &[Annotation],
-) -> Result<(), sqlx::Error> {
+) -> ApiResult<()> {
     let Some(id) = check_run_id else {
         return Ok(());
     };
@@ -129,8 +150,10 @@ pub async fn complete_run(
     .bind(id)
     .bind(conclusion)
     .bind(output)
-    .execute(conn)
+    .execute(&mut **tx)
     .await?;
+    tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
+        .await?;
     Ok(())
 }
 
