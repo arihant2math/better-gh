@@ -62,8 +62,12 @@ pub async fn tip(app: &TestApp, repo_id: i64, branch: &str) -> Option<String> {
 /// is quiet.
 pub async fn settle(app: &TestApp) {
     for _ in 0..50 {
+        // Event listeners (e.g. `pulls.push`) enqueue jobs asynchronously:
+        // wait for them before deciding nothing is left to run.
+        app.settle_events().await;
         let n = app.drain_jobs().await;
         tokio::time::sleep(Duration::from_millis(40)).await;
+        app.settle_events().await;
         let m = app.drain_jobs().await;
         if n + m == 0 {
             return;
