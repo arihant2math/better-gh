@@ -167,14 +167,17 @@ interface Issue {             // issues and pull requests share this model
   title: string;
   body?: string | null;       // LAZY: absent in bootstrap (section 6)
   state: 'open' | 'closed';
-  stateReason: 'completed' | 'not_planned' | 'reopened' | null;
+  stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
   assigneeIds: ID[];
   labelIds: ID[];
   milestoneId: ID | null;
   comments: number;           // comment count
   locked: boolean;
+  activeLockReason?: 'off-topic' | 'too heated' | 'resolved' | 'spam' | null;
   reactions?: ReactionCounts;
+  parentId?: ID | null;       // sub-issues: parent issue id
+  pinned?: boolean;           // pinned to the repo's issue list
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
@@ -234,7 +237,10 @@ interface IssueEvent {        // timeline event (LAZY model)
     | 'milestoned' | 'demilestoned' | 'renamed' | 'closed' | 'reopened'
     | 'merged' | 'referenced' | 'locked' | 'unlocked'
     | 'review_requested' | 'review_request_removed'
-    | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed';
+    | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed'
+    | 'mentioned' | 'subscribed' | 'cross-referenced' | 'pinned' | 'unpinned'
+    | 'transferred' | 'sub_issue_added' | 'sub_issue_removed'
+    | 'parent_issue_added' | 'parent_issue_removed';
   data: {                     // only the keys relevant to `event`
     labelId?: ID; labelName?: string; labelColor?: string;
     assigneeId?: ID; reviewerId?: ID;
@@ -242,6 +248,10 @@ interface IssueEvent {        // timeline event (LAZY model)
     from?: string; to?: string;  // renamed
     stateReason?: string;
     commitId?: string;
+    lockReason?: string;                          // locked
+    sourceIssueId?: ID; sourceCommentId?: ID;     // cross-referenced
+    subIssueId?: ID; parentIssueId?: ID;          // sub_issue_* / parent_issue_*
+    fromRepository?: string;                      // transferred ("owner/repo")
   };
   createdAt: Timestamp;
 }

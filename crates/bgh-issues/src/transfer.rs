@@ -67,6 +67,7 @@ pub async fn transfer(
         ));
     }
     let (old_repo, new_repo) = (source.repo.id, target.repo.id);
+    let target_info = crate::json::RepoInfo::from_access(&target);
     let mut tx = Tx::begin(&state).await?;
     let issue = service::lock_issue(&mut tx, issue.id).await?;
     let new_number = service::allocate_number(&mut tx, new_repo).await?;
@@ -172,7 +173,6 @@ pub async fn transfer(
 
     // Sync: gone from the old scope, inserted into the new one.
     let old_scope = sync::repo_scope(old_repo);
-    let new_scope = sync::repo_scope(new_repo);
     tx.sync(
         &old_scope,
         "issue",
@@ -190,14 +190,7 @@ pub async fn transfer(
             &json!({ "id": c.id }),
         )
         .await?;
-        tx.sync(
-            &new_scope,
-            "comment",
-            c.id,
-            SyncAction::Insert,
-            &json::comment_sync_json(c),
-        )
-        .await?;
+        service::sync_comment(&mut tx, &state, &target_info, c, SyncAction::Insert).await?;
     }
     let moved = service::issue_by_id(&mut *tx, issue.id).await?;
     service::add_event(
@@ -210,6 +203,8 @@ pub async fn transfer(
     )
     .await?;
     let moved = service::touch_and_sync(&mut tx, issue.id, SyncAction::Insert).await?;
+    service::sync_repo_open_issues(&mut tx, old_repo).await?;
+    service::sync_repo_open_issues(&mut tx, new_repo).await?;
     tx.emit(Event::IssueTransferred {
         repo_id: new_repo,
         issue_id: issue.id,

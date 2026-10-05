@@ -15,6 +15,7 @@ use crate::service;
 /// Upper bound of mentions / references processed per text.
 const MAX_REFS: usize = 50;
 
+#[allow(clippy::too_many_arguments)]
 /// Process references in `new_text` that were not already in `old_text`
 /// (edits only notify for newly added references).
 ///

@@ -7,7 +7,6 @@ use bgh_core::models::api::REACTION_CONTENTS;
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::json::{self, ReactionRow};
 use crate::{comments, issues};
@@ -17,6 +16,26 @@ struct Subject {
     kind: &'static str,
     id: i64,
     issue: db::Issue,
+    comment: Option<db::Comment>,
+}
+
+/// Re-sync the reacted row (reaction counts live on issues and comments).
+async fn sync_subject(
+    tx: &mut Tx,
+    state: &AppState,
+    access: &RepoAccess,
+    subject: &Subject,
+) -> ApiResult<()> {
+    match &subject.comment {
+        Some(c) => {
+            let info = json::RepoInfo::from_access(access);
+            crate::service::sync_comment(tx, state, &info, c, SyncAction::Update).await
+        }
+        None => {
+            let issue = crate::service::issue_by_id(&mut **tx, subject.issue.id).await?;
+            crate::service::sync_issue_row(tx, &issue, SyncAction::Update).await
+        }
+    }
 }
 
 async fn issue_subject(
@@ -33,6 +52,7 @@ async fn issue_subject(
             kind: "issue",
             id: issue.id,
             issue,
+            comment: None,
         },
     ))
 }
@@ -53,6 +73,7 @@ async fn comment_subject(
             kind: "issue_comment",
             id: c.id,
             issue,
+            comment: Some(c),
         },
     ))
 }
@@ -141,14 +162,7 @@ async fn create(
     .await?;
     let (row, status) = match inserted {
         Some(r) => {
-            tx.sync(
-                &access.scope(),
-                "reaction",
-                r.id,
-                SyncAction::Insert,
-                &json::reaction_sync_json(&r),
-            )
-            .await?;
+            sync_subject(&mut tx, state, access, subject).await?;
             tx.emit(Event::ReactionCreated {
                 repo_id: access.repo.id,
                 subject_type: subject.kind.to_string(),
@@ -207,14 +221,7 @@ async fn delete(
         .bind(row.id)
         .execute(&mut *tx)
         .await?;
-    tx.sync(
-        &access.scope(),
-        "reaction",
-        row.id,
-        SyncAction::Delete,
-        &json!({ "id": row.id }),
-    )
-    .await?;
+    sync_subject(&mut tx, state, access, subject).await?;
     tx.emit(Event::ReactionDeleted {
         repo_id: access.repo.id,
         subject_type: subject.kind.to_string(),
