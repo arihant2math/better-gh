@@ -41,7 +41,7 @@ pub struct RunRow {
     pub updated_at: DateTime<Utc>,
 }
 
-const RUN_COLUMNS: &str = "id, check_suite_id, repo_id, head_sha, name, status, conclusion, \
+pub(crate) const RUN_COLUMNS: &str = "id, check_suite_id, repo_id, head_sha, name, status, conclusion, \
     external_id, details_url, output, actions, started_at, completed_at, created_at, updated_at";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -61,7 +61,7 @@ pub struct SuiteRow {
     pub updated_at: DateTime<Utc>,
 }
 
-const SUITE_COLUMNS: &str = "id, repo_id, head_sha, head_branch, before_sha, after_sha, app_slug, \
+pub(crate) const SUITE_COLUMNS: &str = "id, repo_id, head_sha, head_branch, before_sha, after_sha, app_slug, \
     status, conclusion, rerequestable, latest_check_runs_count, created_at, updated_at";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -454,7 +454,7 @@ pub async fn render_suites(
         .collect())
 }
 
-fn run_sync_json(r: &RunRow) -> Value {
+pub(crate) fn run_sync_json(r: &RunRow) -> Value {
     json!({
         "id": r.id, "repoId": r.repo_id, "checkSuiteId": r.check_suite_id,
         "headSha": r.head_sha, "name": r.name, "status": r.status,
@@ -464,7 +464,7 @@ fn run_sync_json(r: &RunRow) -> Value {
     })
 }
 
-fn suite_sync_json(s: &SuiteRow) -> Value {
+pub(crate) fn suite_sync_json(s: &SuiteRow) -> Value {
     json!({
         "id": s.id, "repoId": s.repo_id, "headSha": s.head_sha,
         "headBranch": s.head_branch, "appSlug": s.app_slug, "status": s.status,

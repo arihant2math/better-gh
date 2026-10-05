@@ -184,6 +184,7 @@ pub fn sync_json(c: &ReviewComment) -> Value {
         "originalStartLine": c.original_start_line,
         "position": c.position,
         "originalPosition": c.original_position,
+        "diffHunk": c.diff_hunk,
         "outdated": c.is_outdated(),
         "resolvedAt": ts(c.resolved_at),
         "resolvedById": c.resolved_by_id,
@@ -451,7 +452,11 @@ pub fn reply_location(root: &ReviewComment) -> Location {
     }
 }
 
-async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<ReviewComment> {
+pub(crate) async fn find_comment(
+    state: &AppState,
+    repo_id: i64,
+    id: i64,
+) -> ApiResult<ReviewComment> {
     let c: ReviewComment = sqlx::query_as(&format!(
         "SELECT {} FROM pr_review_comments c WHERE c.id = $1 AND c.repo_id = $2",
         ReviewComment::COLUMNS
@@ -465,7 +470,7 @@ async fn find_comment(state: &AppState, repo_id: i64, id: i64) -> ApiResult<Revi
 }
 
 /// A comment visible to `viewer` (pending review comments only to their author).
-async fn visible_comment(
+pub(crate) async fn visible_comment(
     state: &AppState,
     repo_id: i64,
     id: i64,
@@ -485,7 +490,7 @@ async fn visible_comment(
 }
 
 /// Visibility predicate on `c` (alias of pr_review_comments) for `$viewer`.
-fn visible_sql(viewer_param: &str) -> String {
+pub(crate) fn visible_sql(viewer_param: &str) -> String {
     format!(
         "(c.review_id IS NULL OR NOT EXISTS (SELECT 1 FROM pr_reviews r WHERE r.id = c.review_id
             AND r.state = 'PENDING' AND r.user_id IS DISTINCT FROM {viewer_param}))"

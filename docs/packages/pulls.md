@@ -67,6 +67,42 @@ Statuses / checks
 * `GET …/requirements` — merge box data (blockers, approvals, required
   checks, allowed methods, admin bypass).
 
+## Web client endpoints added by pulls-web (F4)
+
+Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
+`/_bgh/repos/{o}/{r}/pulls/{n}`; 404 without read access):
+
+* `GET …/sync` — PR page snapshot, same envelope as `/_bgh/sync/partial`:
+  `{lastSyncId, models: {reviewComment, review, reaction, checkSuite,
+  checkRun, commitStatus, user}}`. Read in one `REPEATABLE READ, READ ONLY`
+  transaction with `lastSyncId` (`max(sync_actions.id)`) taken first, so
+  deltas `> lastSyncId` apply on top. `reviewComment`: all comments of the
+  PR except other users' pending ones; `review`: submitted reviews plus the
+  viewer's pending one; `reaction`: reactions on those comments
+  (`{id, subjectType: "pull_request_review_comment", subjectId, userId,
+  content, issueId}`, as in the reaction deltas); checks/statuses of the
+  base repo for the current head SHA; `user`: compact rows of every
+  author / resolver / reactor / status creator. Rows use the same
+  compact builders as the deltas.
+* `POST …/reviews/pending/comments` (auth; archived/locked checks like
+  REST) — body of REST `POST /pulls/{n}/comments` (+ `in_reply_to`); adds
+  the comment to the viewer's pending review, creating it (body `''`,
+  `commit_id` = given or head) if needed. Replies thread on the root.
+  No sync actions (pending is private). 201
+  `{review: <review row>, comment: <reviewComment row>}`; 422 for blank
+  body / unresolvable location. Submit with REST `POST …/reviews/{id}/events`.
+* `GET …/patch?path=<file>&w=1` — one file of the PR diff (merge base →
+  head; `w=1|true` adds `git diff -w`):
+  `{filename, previous_filename, status, additions, deletions, patch,
+  truncated}` (`patch` = hunks like `/files`; null over 5 MiB with
+  `truncated: true`, or when nothing remains). 404 when `path` (new name)
+  is not in the diff; 422 without `path`. Backed by
+  `bgh_git::patch::diff_file` (whole-tree `--raw` for rename detection,
+  then numstat/patch restricted by literal pathspec to the file and its
+  previous name). Not cached.
+* `reviewComment` sync rows gained `diffHunk` (additive), so outdated
+  threads can be rendered without the REST shape.
+
 ## Behaviour
 
 * Head mirroring: every PR's head is kept at `refs/pull/{n}/head` in the

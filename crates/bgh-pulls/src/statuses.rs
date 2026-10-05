@@ -29,8 +29,17 @@ pub struct StatusRow {
     pub updated_at: DateTime<Utc>,
 }
 
-const COLUMNS: &str = "id, repo_id, sha, state, context, description, target_url, avatar_url, \
+pub(crate) const COLUMNS: &str = "id, repo_id, sha, state, context, description, target_url, avatar_url, \
     creator_id, created_at, updated_at";
+
+/// Compact client row (model `commitStatus`, an extension of the v1 sync
+/// protocol).
+pub(crate) fn sync_json(row: &StatusRow) -> serde_json::Value {
+    json!({"id": row.id, "repoId": row.repo_id, "sha": row.sha, "state": row.state,
+            "context": row.context, "description": row.description,
+            "targetUrl": row.target_url, "creatorId": row.creator_id,
+            "createdAt": Timestamp::from(row.created_at)})
+}
 
 /// `status`.
 #[derive(Debug, Clone, Serialize)]
@@ -137,10 +146,7 @@ pub async fn create_status(
         "commitStatus",
         row.id,
         SyncAction::Insert,
-        &json!({"id": row.id, "repoId": repo_id, "sha": row.sha, "state": row.state,
-                "context": row.context, "description": row.description,
-                "targetUrl": row.target_url, "creatorId": row.creator_id,
-                "createdAt": Timestamp::from(row.created_at)}),
+        &sync_json(&row),
     )
     .await?;
     tx.enqueue(&ChecksChanged {
