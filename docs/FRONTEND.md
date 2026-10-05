@@ -209,7 +209,7 @@ Site admin lives under `/site-admin/*` (`pages/admin`, guarded by
 `/organizations/:org/settings/*` (`pages/orgsettings`). App-wide
 announcement / maintenance banners come from `GET /_bgh/site` and are a lazy
 chunk loaded only while one is active. The admin UI has no mock backend
-(org rulesets excepted):
+(org rulesets, the org danger zone and admin deleted repositories excepted):
 verify it against a real server with `scripts/admin-smoke.mjs`.
 
 ## Performance rules

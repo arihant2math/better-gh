@@ -39,6 +39,9 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   installations: { title: 'Installed GitHub Apps', load: () => import('../pages/apps/UserInstallationsSection') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
   local: { title: 'Local data & sync', load: () => import('../pages/settings/sections/LocalDataSettings') },
+  // Account and repo lifecycle (package P50).
+  'repositories/deleted': { title: 'Deleted repositories', load: () => import('../pages/settings/sections/DeletedReposSettings') },
+  'repositories/transfers': { title: 'Repository transfers', load: () => import('../pages/settings/sections/TransfersSettings') },
 };
 
 function settingsRoutes() {
@@ -189,6 +192,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/orgs', layout: AdminLayout, load: () => import('../pages/admin/OrgsPage'), title: () => 'Organizations · Site admin' },
     { path: '/site-admin/orgs/:org', layout: AdminLayout, load: () => import('../pages/admin/OrgDetailPage'), title: (p) => `${p.org} · Site admin` },
     { path: '/site-admin/repos', layout: AdminLayout, load: () => import('../pages/admin/ReposPage'), title: () => 'Repositories · Site admin' },
+    { path: '/site-admin/repos/deleted', layout: AdminLayout, load: () => import('../pages/admin/DeletedReposPage'), title: () => 'Deleted repositories · Site admin' },
     { path: '/site-admin/repos/:owner/:repo', layout: AdminLayout, load: () => import('../pages/admin/RepoDetailPage'), title: (p) => `${p.owner}/${p.repo} · Site admin` },
     { path: '/site-admin/settings', layout: AdminLayout, load: () => import('../pages/admin/SettingsPage'), title: () => 'Site settings · Site admin' },
     { path: '/site-admin/audit-log', layout: AdminLayout, load: () => import('../pages/admin/AuditLogPage'), title: () => 'Audit log · Site admin' },

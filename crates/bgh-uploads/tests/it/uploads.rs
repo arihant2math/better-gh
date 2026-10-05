@@ -413,6 +413,14 @@ async fn repo_deletion_removes_attachments_and_blobs() {
     // The scheduled GC keeps young blobs (in-flight uploads); a run without
     // grace removes the orphan.
     assert!(blob.exists());
+    // Kept while the repository is restorable, collected once purged.
+    assert_eq!(
+        bgh_uploads::gc::collect(&app.state, Duration::ZERO)
+            .await
+            .unwrap(),
+        0
+    );
+    app.purge_deleted_repos().await;
     let removed = bgh_uploads::gc::collect(&app.state, Duration::ZERO)
         .await
         .unwrap();

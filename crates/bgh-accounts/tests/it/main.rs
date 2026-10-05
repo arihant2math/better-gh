@@ -11,6 +11,7 @@ mod boot;
 mod fine_grained;
 mod invitations;
 mod ldap;
+mod lifecycle;
 mod oauth;
 mod orgs;
 mod root;

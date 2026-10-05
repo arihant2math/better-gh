@@ -54,12 +54,7 @@ async fn authorize(
             }
         }
         Principal::Deploy(deploy) => {
-            let owner_row = db::User::find_by_login(&state.db, owner)
-                .await
-                .ok()
-                .flatten()
-                .ok_or_else(not_found)?;
-            let repo_row = db::Repository::find_by_name(&state.db, owner_row.id, repo)
+            let (repo_row, owner_row) = bgh_core::lifecycle::resolve_repo(&state.db, owner, repo)
                 .await
                 .ok()
                 .flatten()

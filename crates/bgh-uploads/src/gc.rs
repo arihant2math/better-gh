@@ -77,7 +77,8 @@ pub async fn collect(state: &AppState, grace: Duration) -> anyhow::Result<usize>
     }
     let orphaned: Vec<String> = sqlx::query_scalar(
         "SELECT d FROM unnest($1::text[]) d
-          WHERE NOT EXISTS (SELECT 1 FROM attachments a WHERE a.sha256 = d)",
+          WHERE NOT EXISTS (SELECT 1 FROM attachments a WHERE a.sha256 = d)
+            AND NOT EXISTS (SELECT 1 FROM deleted_repositories r WHERE d = ANY(r.blob_shas))",
     )
     .bind(&candidates)
     .fetch_all(&state.db)

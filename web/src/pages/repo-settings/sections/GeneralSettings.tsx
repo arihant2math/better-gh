@@ -10,6 +10,7 @@ import {
   type FullRepository,
   type RepoPatch,
 } from '../../../api/repoSettings';
+import { isPendingTransfer, requestTransfer } from '../../../api/lifecycle';
 import { session } from '../../../app/session';
 import { site, visibilityPolicy, type RepoVisibility } from '../../../app/site';
 import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Section, Toggle, useDebounced } from '../../../components/settings/kit';
@@ -23,6 +24,7 @@ import { Field, Input, Select } from '../../../ui/Input';
 import { toast } from '../../../ui/Toast';
 import { MERGE_MESSAGE_OPTIONS, SQUASH_MESSAGE_OPTIONS, messageOptionId } from '../model';
 import styles from '../RepoSettings.module.css';
+import { PendingTransferBanner, usePendingTransfer } from './PendingTransfer';
 import { ChipInput, DefaultBranchDialog, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';
 import { MAX_TOPICS, homepageError, normalizeTopic, repoNameError, topicError } from '../validation';
 
@@ -597,8 +599,10 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
   const [open, setOpen] = useState<DangerDialog>(null);
   const full = `${repo.owner}/${repo.name}`;
   const close = () => setOpen(null);
+  const pending = usePendingTransfer(repo.owner, repo.name);
   return (
     <Section title="Danger Zone" danger>
+      {pending.transfer && <PendingTransferBanner owner={repo.owner} transfer={pending.transfer} onCancelled={pending.clear} />}
       <div className={styles.box}>
         <DangerRow
           title="Change repository visibility"
@@ -613,12 +617,14 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
         <DangerRow
           title="Transfer ownership"
           action={
-            <Button variant="danger" size="sm" disabled={repo.archived} onClick={() => setOpen('transfer')}>
+            <Button variant="danger" size="sm" disabled={repo.archived || !!pending.transfer} onClick={() => setOpen('transfer')}>
               Transfer
             </Button>
           }
         >
-          Transfer this repository to another user or to an organization where you can create repositories.
+          {pending.transfer
+            ? `A transfer to ${pending.transfer.to.login} is waiting to be accepted. Cancel it to transfer elsewhere.`
+            : 'Transfer this repository to another user or to an organization where you can create repositories. Another user has 1 day to accept.'}
         </DangerRow>
         <DangerRow
           title={repo.archived ? 'Unarchive this repository' : 'Archive this repository'}
@@ -666,7 +672,7 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
         </Banner>
       </ConfirmDialog>
 
-      <TransferDialog repo={repo} open={open === 'transfer'} onClose={close} />
+      <TransferDialog repo={repo} open={open === 'transfer'} onClose={close} onRequested={pending.reload} />
 
       <ConfirmDialog
         open={open === 'delete'}
@@ -689,7 +695,7 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
   );
 });
 
-const TransferDialog = observer(function TransferDialog({ repo, open, onClose }: { repo: Repo; open: boolean; onClose: () => void }) {
+const TransferDialog = observer(function TransferDialog({ repo, open, onClose, onRequested }: { repo: Repo; open: boolean; onClose: () => void; onRequested: () => void }) {
   const ownerId = useId();
   const nameId = useId();
   const listId = useId();
@@ -726,6 +732,21 @@ const TransferDialog = observer(function TransferDialog({ repo, open, onClose }:
         if (o.toLowerCase() === repo.owner.toLowerCase() && (!newName.trim() || newName.trim() === repo.name)) throw new Error('The repository is already owned by this account.');
         if (nameErr) throw new Error(nameErr);
         const name = newName.trim() || repo.name;
+        // To an organization or to yourself the move is immediate (optimistic below). To another
+        // user the server answers 202 with the repository unchanged: a request they have 1 day to accept.
+        const toOrg = !!s.byKey('org', 'login', o.toLowerCase());
+        const toSelf = !!viewer && o.toLowerCase() === viewer.login.toLowerCase();
+        if (!toOrg && !toSelf) {
+          const res = await requestTransfer(repo.owner, repo.name, o, newName.trim() || undefined);
+          if (isPendingTransfer(full, res)) {
+            onRequested();
+            toast({ kind: 'success', title: `Transfer requested — ${o} has 1 day to accept`, description: `${full} stays where it is until ${o} accepts.` });
+          } else {
+            navigate(`/${res.full_name}/settings`, { replace: true });
+            toast({ kind: 'success', title: `Repository transferred to ${res.full_name}` });
+          }
+          return;
+        }
         const oldPath = `/${repo.owner}/${repo.name}/settings`;
         const done = transferRepo(repo, o, newName.trim() || undefined);
         navigate(`/${o}/${name}/settings`, { replace: true });
@@ -737,7 +758,7 @@ const TransferDialog = observer(function TransferDialog({ repo, open, onClose }:
     >
       <Banner tone="warning" icon={AlertIcon}>
         Transferring moves the repository with its issues, pull requests, wiki, stars and watchers. Requests to the old URL are redirected. Team access is removed
-        unless the new owner is the same organization.
+        unless the new owner is the same organization. A transfer to another user only happens once they accept it (within 1 day).
       </Banner>
       <Field label="New owner" htmlFor={ownerId} hint="A user or an organization where you can create repositories.">
         <Input id={ownerId} value={newOwner} list={listId} autoComplete="off" spellCheck={false} onChange={(e) => setNewOwner(e.target.value)} />

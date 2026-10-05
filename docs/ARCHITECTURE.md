@@ -448,8 +448,16 @@ Site-level account changes also emit `UserAccountChanged` /
 * Storage: `bgh_git::RepoStore` (`{data_dir}/repos/{id % 256:02x}/{id}.git`,
   bare, created with an empty template and server config: no auto-gc,
   `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
-  (alternates). Repo deletion removes the row immediately; the
-  `repos.delete_storage` job first makes the forks self-contained
+  (alternates). Repo deletion is a soft delete (`bgh_core::lifecycle`,
+  P50): the row and everything cascading from it move into a
+  `deleted_repositories` JSON snapshot (generic, from the FK graph in
+  `pg_catalog`; code-index/maintenance tables are excluded and rebuilt),
+  so the name is free at once and no query needs a deleted filter.
+  `POST /_bgh/repos/{id}/restore` re-inserts the rows with their ids
+  within 90 days; storage, wiki, LFS objects and attachment blobs are kept
+  until the `repos.purge_deleted` service enqueues `repos.delete_storage`
+  (which, like `wiki.delete_storage` and the LFS/upload GCs, skips
+  anything still in `deleted_repositories`). That job first makes the forks self-contained
   (`bgh_git::maintenance::dissociate_network`: deepest forks first,
   `repack -a -d --keep-unreachable`, drop alternates, verify with
   `fsck --connectivity-only`), then removes the directory.
@@ -464,7 +472,15 @@ Site-level account changes also emit `UserAccountChanged` /
   commit-graph / geometric / full runs from `repo_maintenance` and prunes
   the archive cache. Repositories generated from templates copy (repack) only
   the objects they reference. Renamed/transferred repositories keep their
-  old `owner/name` in `repo_redirects`; `RepoAccess::load` follows it.
+  old `owner/name` in `repo_redirects`; renaming a user or org inserts one
+  for every owned repository plus a `login_redirects` row (old login
+  reserved 90 days by a trigger on `users`, surfacing as the usual
+  `users_login_key` 422). Every URL → repo/owner lookup (REST
+  `RepoAccess::load`, git HTTP/SSH, LFS, `/v2/` registry, `/users/{u}`,
+  `/orgs/{o}`) goes through `bgh_core::lifecycle::resolve_repo` /
+  `resolve_owner`. `GET /repos/{old}/{name}` and `GET /users/{old}`
+  answer 301 (to `/repositories/{id}`, `/user/{id}`); other endpoints
+  resolve old names transparently.
   Wikis live next to the
   repository as `{id}.wiki.git` (`RepoStore::wiki()`, owned by bgh-wiki;
   bgh-repos' git routes delegate `{repo}.wiki(.git)` to `bgh_wiki::git`).

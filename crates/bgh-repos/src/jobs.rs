@@ -129,11 +129,17 @@ pub(crate) async fn process_ref_updates(
 }
 
 pub async fn delete_storage(state: AppState, job: DeleteStorage) -> anyhow::Result<()> {
-    // Never delete storage of a repository that (still/again) exists.
-    if db::Repository::find(&state.db, job.repo_id)
-        .await?
-        .is_some()
-    {
+    // Never delete storage of a repository that (still/again) exists, or
+    // that is soft-deleted and may still be restored (the purge enqueues
+    // this job again once the retention ends).
+    let keep: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM repositories WHERE id = $1)
+             OR EXISTS (SELECT 1 FROM deleted_repositories WHERE id = $1)",
+    )
+    .bind(job.repo_id)
+    .fetch_one(&state.db)
+    .await?;
+    if keep {
         return Ok(());
     }
     let store = crate::store(&state);

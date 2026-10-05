@@ -400,6 +400,21 @@ impl TestApp {
             .expect("draining jobs")
     }
 
+    /// End the retention of every soft-deleted repository now, purge them
+    /// (`lifecycle::purge_expired`) and run the resulting jobs; returns how
+    /// many repositories were purged.
+    pub async fn purge_deleted_repos(&self) -> usize {
+        sqlx::query("UPDATE deleted_repositories SET purge_after = now() - interval '1 second'")
+            .execute(&self.state.db)
+            .await
+            .expect("expire deleted repositories");
+        let n = crate::lifecycle::purge_expired(&self.state)
+            .await
+            .expect("purge deleted repositories");
+        self.drain_jobs().await;
+        n
+    }
+
     // ----- fixtures -------------------------------------------------------
 
     /// Create a user with [`TEST_PASSWORD`] and a full-scope token.

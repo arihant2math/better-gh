@@ -576,7 +576,11 @@ async fn repository_deletion_removes_wiki_storage() {
         .send()
         .await
         .assert_status(204);
-    // The listener enqueues the cleanup job asynchronously.
+    // Kept while restorable (P50); the purge enqueues the cleanup job.
+    app.settle_events().await;
+    app.drain_jobs().await;
+    assert!(store.path(repo_id).exists(), "wiki kept until the purge");
+    app.purge_deleted_repos().await;
     for _ in 0..100 {
         app.drain_jobs().await;
         if !store.path(repo_id).exists() {

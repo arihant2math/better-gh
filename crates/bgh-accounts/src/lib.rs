@@ -13,6 +13,7 @@ pub mod group_sync;
 pub mod json;
 pub mod keys;
 pub mod ldap;
+pub mod lifecycle;
 pub mod meta;
 pub mod oauth;
 pub mod org_two_factor;
@@ -51,7 +52,9 @@ pub fn router() -> Router<AppState> {
         // users
         .route(
             "/user",
-            get(users::get_authenticated_user).patch(users::update_authenticated_user),
+            get(users::get_authenticated_user)
+                .patch(users::update_authenticated_user)
+                .delete(lifecycle::delete_self),
         )
         .route("/user/{account_id}", get(users::get_user_by_id))
         .route("/users", get(users::list_users))
@@ -186,7 +189,12 @@ pub fn router() -> Router<AppState> {
             get(fine_grained::grant_repositories),
         )
         // organizations
-        .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
+        .route(
+            "/orgs/{org}",
+            get(orgs::get_org)
+                .patch(orgs::update_org)
+                .delete(lifecycle::delete_org),
+        )
         .route("/organizations", get(orgs::list_all))
         .route("/user/orgs", get(orgs::my_orgs))
         .route("/users/{username}/orgs", get(orgs::user_orgs))

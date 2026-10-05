@@ -443,3 +443,16 @@
   gap: var(--sp-2);
   flex-wrap: wrap;
 }
+
+/* Pending transfer to another user (danger zone). */
+.pendingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.pendingText {
+  flex: 1;
+  min-width: 0;
+}

@@ -300,6 +300,39 @@
   font-size: var(--fs-xs);
 }
 
+/* Danger zone (rename / delete organization). */
+.dangerList {
+  display: flex;
+  flex-direction: column;
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.dangerRow + .dangerRow {
+  border-top: 1px solid var(--border);
+}
+
+.dangerTitle {
+  font-weight: var(--fw-semibold);
+}
+
+.dangerWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--danger);
+}
+
+.dangerWarn svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
 /* ---------------------------------------------------------------- personal access tokens */
 
 .patRow {

@@ -357,7 +357,10 @@ async fn delete_repository() {
     let ev = events.try_recv().unwrap();
     assert_eq!(ev.name(), "repository_deleted");
 
-    assert_eq!(app.drain_jobs().await, 1);
+    // Soft delete (P50): storage stays restorable until the purge.
+    app.drain_jobs().await;
+    assert!(store.exists(id), "storage kept for restore");
+    assert_eq!(app.purge_deleted_repos().await, 1);
     assert!(!store.exists(id), "storage removed by job");
 }
 

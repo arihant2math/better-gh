@@ -151,10 +151,13 @@ async fn renames_and_deletes_users() {
         .send()
         .await
         .assert_status(200);
-    app.get("/api/v3/users/alice")
-        .send()
-        .await
-        .assert_status(404);
+    // The old login redirects (P50) and stays reserved.
+    let res = app.get("/api/v3/users/alice").send().await;
+    res.assert_status(301);
+    assert_eq!(
+        res.header("location").unwrap(),
+        app.url(&format!("/api/v3/user/{}", alice.id))
+    );
 
     // Taken login.
     let res = app
@@ -196,15 +199,15 @@ async fn renames_and_deletes_users() {
         .await
         .unwrap();
     assert_eq!(repos, 0);
-    // Storage cleanup is queued.
-    let job: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM jobs WHERE kind = 'repos.delete_storage' AND (payload->>'repo_id')::bigint = $1",
-    )
-    .bind(repo_id)
-    .fetch_one(&app.state.db)
-    .await
-    .unwrap();
-    assert_eq!(job, 1);
+    // Owned repositories are soft-deleted (P50); storage is purged after
+    // the retention by `repos.purge_deleted`.
+    let deleted: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM deleted_repositories WHERE id = $1")
+            .bind(repo_id)
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(deleted, 1);
     // The user's token no longer works.
     app.get("/api/v3/user")
         .auth(&alice)

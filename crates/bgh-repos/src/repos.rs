@@ -2,30 +2,59 @@
 
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::http::{HeaderMap, HeaderValue, header};
+use axum::response::{IntoResponse, Response};
 use bgh_core::audit;
-use bgh_core::models::api::{MinimalRepository, Repository};
+use bgh_core::lifecycle;
+use bgh_core::models::api::MinimalRepository;
 use bgh_core::perms;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_core::views;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::jobs::DeleteStorage;
 use crate::json::full_repo;
 
-/// `GET /repos/{owner}/{repo}`
+/// `GET /repos/{owner}/{repo}`. An old name (renamed or transferred
+/// repository, renamed owner) answers 301 to `/repositories/{id}` like
+/// GitHub, for callers that can read the repository.
 pub async fn get_repo(
     State(state): State<AppState>,
     auth: MaybeUser,
     Path((owner, repo)): Path<(String, String)>,
-) -> ApiResult<Json<Repository>> {
+) -> ApiResult<Response> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    Ok(Json(full_repo(&state, auth.as_ref(), &access).await?))
+    if access.is_redirect(&owner, &repo) {
+        return Ok(moved_permanently(
+            &state.urls.api(&format!("/repositories/{}", access.repo.id)),
+        ));
+    }
+    Ok(Json(full_repo(&state, auth.as_ref(), &access).await?).into_response())
+}
+
+/// GitHub's 301 for a moved resource.
+pub fn moved_permanently(url: &str) -> Response {
+    let mut headers = HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(url) {
+        headers.insert(header::LOCATION, v);
+    }
+    (
+        StatusCode::MOVED_PERMANENTLY,
+        headers,
+        axum::Json(json!({
+            "message": "Moved Permanently",
+            "url": url,
+            "documentation_url": "https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api#follow-redirects",
+        })),
+    )
+        .into_response()
 }
 
 /// `DELETE /repos/{owner}/{repo}`: admins only; tokens need `delete_repo`.
-/// Storage is removed asynchronously by the `repos.delete_storage` job.
+/// The repository is soft-deleted (`bgh_core::lifecycle`): the name is
+/// free at once, owners can restore it for 90 days
+/// (`POST /_bgh/repos/{id}/restore`), then `repos.purge_deleted` removes
+/// its storage.
 pub async fn delete_repo(
     State(state): State<AppState>,
     auth: RequireUser,
@@ -38,22 +67,6 @@ pub async fn delete_repo(
     let repo = &access.repo;
 
     let mut tx = Tx::begin(&state).await?;
-    let forks: Vec<i64> = sqlx::query_scalar("SELECT id FROM repositories WHERE parent_id = $1")
-        .bind(repo.id)
-        .fetch_all(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM repositories WHERE id = $1")
-        .bind(repo.id)
-        .execute(&mut *tx)
-        .await?;
-    if let Some(parent) = repo.parent_id {
-        sqlx::query(
-            "UPDATE repositories SET forks_count = greatest(forks_count - 1, 0) WHERE id = $1",
-        )
-        .bind(parent)
-        .execute(&mut *tx)
-        .await?;
-    }
     audit::log(
         &mut *tx,
         Some(&auth.user),
@@ -65,19 +78,7 @@ pub async fn delete_repo(
         json!({ "name": access.full_name() }),
     )
     .await?;
-    tx.sync_delete(&sync::repo_scope(repo.id), SyncModel::Repo, repo.id)
-        .await?;
-    tx.enqueue(&DeleteStorage {
-        repo_id: repo.id,
-        forks,
-    })
-    .await?;
-    tx.emit(Event::RepositoryDeleted {
-        repo_id: repo.id,
-        owner_id: repo.owner_id,
-        full_name: access.full_name(),
-        actor_id: auth.user.id,
-    });
+    lifecycle::soft_delete_repo_in(&mut tx, auth.user.id, &access.owner, repo).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

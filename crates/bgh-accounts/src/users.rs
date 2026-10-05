@@ -2,7 +2,7 @@
 //! `GET /users`, `GET /user/{account_id}`.
 
 use axum::extract::State;
-use axum::http::{HeaderValue, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use bgh_core::audit;
 use bgh_core::crypto;
@@ -183,14 +183,38 @@ pub async fn get_authenticated_user(
 }
 
 /// `GET /users/{username}` (also resolves organizations, like GitHub).
+/// A renamed account's old login answers 301 to `/user/{id}`.
 pub async fn get_user(
     State(state): State<AppState>,
     _auth: MaybeUser,
     Path(username): Path<String>,
-) -> ApiResult<Json<PublicUser>> {
+) -> ApiResult<axum::response::Response> {
     let user = util::find_account(&state, &username).await?;
+    if !user.login.eq_ignore_ascii_case(&username) {
+        return Ok(moved_permanently(
+            &state.urls.api(&format!("/user/{}", user.id)),
+        ));
+    }
     let stats = user_stats(&state, user.id).await?;
-    Ok(Json(PublicUser::new(&state.urls, &user, stats)))
+    Ok(Json(PublicUser::new(&state.urls, &user, stats)).into_response())
+}
+
+/// GitHub's 301 for a moved resource.
+fn moved_permanently(url: &str) -> axum::response::Response {
+    let mut headers = axum::http::HeaderMap::new();
+    if let Ok(v) = HeaderValue::from_str(url) {
+        headers.insert(header::LOCATION, v);
+    }
+    (
+        StatusCode::MOVED_PERMANENTLY,
+        headers,
+        axum::Json(json!({
+            "message": "Moved Permanently",
+            "url": url,
+            "documentation_url": "https://docs.github.com/rest/guides/best-practices-for-using-the-rest-api#follow-redirects",
+        })),
+    )
+        .into_response()
 }
 
 /// `GET /user/{account_id}`
@@ -256,6 +280,9 @@ pub async fn list_users(
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserBody {
+    /// New login (self-service rename, `crate::lifecycle::rename`).
+    #[serde(default)]
+    pub login: Option<String>,
     #[serde(default)]
     pub name: Patch<String>,
     #[serde(default)]
@@ -299,6 +326,9 @@ pub async fn update_authenticated_user(
     Json(body): Json<UpdateUserBody>,
 ) -> ApiResult<Json<PrivateUser>> {
     auth.require_scope("user")?;
+    if let Some(login) = body.login.as_deref() {
+        crate::lifecycle::rename(&state, &auth.user, &auth.user, login).await?;
+    }
     let mut errors = Vec::new();
     let name = text_field(&mut errors, "name", body.name, 255);
     let blog = text_field(&mut errors, "blog", body.blog, 255);

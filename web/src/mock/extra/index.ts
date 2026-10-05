@@ -15,6 +15,7 @@ import { installFineGrainedTokenMocks } from './fineGrainedTokens';
 import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
 import { installLicenseMocks } from './licenses';
+import { installLifecycleMocks } from './lifecycle';
 import { installMannequinMocks } from './mannequins';
 import { installMetadataImportMocks } from './metadataImports';
 import { installModerationMocks } from './moderation';
@@ -53,4 +54,6 @@ export function installExtraMocks(server: MockServer): void {
   installCacheMocks(server);
   installFineGrainedTokenMocks(server);
   installSecretScanningMocks(server);
+  // Last: its overrides (rename, transfer to a user, delete snapshots) run before the routes above.
+  installLifecycleMocks(server);
 }

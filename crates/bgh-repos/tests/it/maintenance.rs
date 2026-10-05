@@ -498,6 +498,8 @@ async fn deleting_parent_makes_forks_self_contained() {
         .await
         .assert_status(204);
     app.drain_jobs().await;
+    assert!(s.path(n.ids[0]).exists(), "kept until the purge");
+    app.purge_deleted_repos().await;
     assert!(!s.path(n.ids[0]).exists());
     for id in &n.ids[1..] {
         assert!(!s.path(*id).join("objects/info/alternates").exists());

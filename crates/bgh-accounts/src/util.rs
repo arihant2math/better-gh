@@ -68,8 +68,10 @@ impl axum::extract::FromRequestParts<AppState> for ClientInfo {
 }
 
 /// A user or organization by login, else 404.
+/// Renamed accounts keep resolving on their old login
+/// (`bgh_core::lifecycle::resolve_owner`).
 pub async fn find_account(state: &AppState, login: &str) -> ApiResult<db::User> {
-    db::User::find_by_login(&state.db, login)
+    bgh_core::lifecycle::resolve_owner(&state.db, login)
         .await?
         .ok_or(ApiError::NotFound)
 }
