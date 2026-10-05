@@ -587,3 +587,72 @@ async fn events_are_dispatched_to_subscribed_hooks() {
         .await
         .assert_status(204);
 }
+
+#[tokio::test]
+async fn global_hooks_receive_site_events_and_pings() {
+    let app = app_allowing_loopback().await;
+    let rx = Receiver::start().await;
+    let admin = app.create_admin("root").await;
+    let alice = app.create_user("alice").await;
+    let hook_id: i64 = sqlx::query_scalar(
+        "INSERT INTO webhooks (url, content_type, events) VALUES ($1, 'json', '{user,organization}') RETURNING id",
+    )
+    .bind(&rx.url)
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    // A repo hook elsewhere must not get site events.
+    app.create_repo(&alice, "hello").await;
+    let repo_rx = Receiver::start().await;
+    create_hook(
+        &app,
+        &alice,
+        "/api/v3/repos/alice/hello/hooks",
+        json!({"events": ["*"], "config": {"url": repo_rx.url, "content_type": "json"}}),
+    )
+    .await;
+
+    app.state.events.emit(Event::UserAccountChanged {
+        user_id: alice.id,
+        login: "alice".into(),
+        action: "renamed".into(),
+        actor_id: admin.id,
+        data: json!({"from": "alicia"}),
+    });
+    app.state.events.emit(Event::GlobalHookPing {
+        hook_id,
+        actor_id: admin.id,
+    });
+    wait_for("global deliveries", || async {
+        let n: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM webhook_deliveries WHERE hook_id = $1")
+                .bind(hook_id)
+                .fetch_one(&app.state.db)
+                .await
+                .unwrap();
+        n >= 2
+    })
+    .await;
+    app.drain_jobs().await;
+    let mut got = rx.take();
+    got.sort_by_key(|r| header(r, "x-github-event").to_string());
+    assert_eq!(got.len(), 2);
+    assert_eq!(header(&got[0], "x-github-event"), "ping");
+    let ping: Value = serde_json::from_slice(&got[0].body).unwrap();
+    assert_eq!(ping["hook"]["type"], "Global");
+    assert_eq!(ping["hook_id"], hook_id);
+    assert_eq!(ping["sender"]["login"], "root");
+    assert_eq!(header(&got[1], "x-github-event"), "user");
+    let user: Value = serde_json::from_slice(&got[1].body).unwrap();
+    assert_eq!(user["action"], "renamed");
+    assert_eq!(user["user"]["login"], "alice");
+    assert_eq!(user["changes"]["login"]["from"], "alicia");
+    // Site events never reach the repo hook (its creation ping and a late
+    // `repository` created delivery may race in).
+    assert!(
+        repo_rx
+            .take()
+            .iter()
+            .all(|r| !matches!(header(r, "x-github-event"), "user" | "organization"))
+    );
+}

@@ -108,6 +108,9 @@ async fn candidate_hooks(
 
 /// Create deliveries for one domain event. Returns how many were queued.
 pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
+    if let Event::GlobalHookPing { hook_id, actor_id } = event {
+        return ping_global(state, *hook_id, *actor_id).await;
+    }
     let names = payloads::event_names(event);
     if names.is_empty() {
         return Ok(0);
@@ -157,6 +160,27 @@ pub async fn dispatch(state: &AppState, event: &Event) -> ApiResult<usize> {
     }
     tx.commit().await?;
     Ok(n)
+}
+
+/// `ping` for a global (site admin) hook, requested by bgh-admin via
+/// [`Event::GlobalHookPing`].
+async fn ping_global(state: &AppState, hook_id: i64, actor_id: i64) -> ApiResult<usize> {
+    let hook: Option<HookRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM webhooks WHERE id = $1 AND repo_id IS NULL AND org_id IS NULL",
+        HookRow::COLUMNS
+    ))
+    .bind(hook_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(hook) = hook else { return Ok(0) };
+    let hook_value = serde_json::to_value(super::global_hook_json(state, &hook))?;
+    let payload = payloads::ping(state, hook.id, hook_value, None, None, Some(actor_id))
+        .await
+        .map_err(ApiError::internal)?;
+    let mut tx = Tx::begin(state).await?;
+    queue_delivery(&mut tx, &hook, "ping", None, None, &payload, false).await?;
+    tx.commit().await?;
+    Ok(1)
 }
 
 /// Event listener (`notify.webhooks`).

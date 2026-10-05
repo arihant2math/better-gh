@@ -183,3 +183,91 @@ async fn account_emails_go_through_the_queue() {
         mails[0].contains("http://x/reset?t=3Dabc") || mails[0].contains("http://x/reset?t=abc")
     );
 }
+
+/// Minimal SMTP server: accepts one session per connection and records DATA.
+async fn fake_smtp() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let store = got.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((sock, _)) = listener.accept().await else {
+                return;
+            };
+            let store = store.clone();
+            tokio::spawn(async move {
+                let (r, mut w) = sock.into_split();
+                let mut lines = BufReader::new(r).lines();
+                w.write_all(b"220 fake ESMTP\r\n").await.unwrap();
+                let mut data: Option<String> = None;
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(buf) = data.as_mut() {
+                        if line == "." {
+                            store.lock().unwrap().push(data.take().unwrap());
+                            w.write_all(b"250 OK queued\r\n").await.unwrap();
+                        } else {
+                            buf.push_str(&line);
+                            buf.push('\n');
+                        }
+                        continue;
+                    }
+                    let cmd = line.to_ascii_uppercase();
+                    let reply: &[u8] = if cmd.starts_with("EHLO") {
+                        b"250-fake\r\n250 8BITMIME\r\n"
+                    } else if cmd.starts_with("DATA") {
+                        data = Some(String::new());
+                        b"354 go ahead\r\n"
+                    } else if cmd.starts_with("QUIT") {
+                        let _ = w.write_all(b"221 bye\r\n").await;
+                        return;
+                    } else {
+                        b"250 OK\r\n"
+                    };
+                    w.write_all(reply).await.unwrap();
+                }
+            });
+        }
+    });
+    (port, got)
+}
+
+#[tokio::test]
+async fn smtp_settings_from_site_settings() {
+    let app = bgh_server::test_app().await;
+    let (port, got) = fake_smtp().await;
+    sqlx::query("INSERT INTO site_settings (key, value) VALUES ('smtp', $1)")
+        .bind(json!({
+            "enabled": true,
+            "host": "127.0.0.1",
+            "port": port,
+            "tls": "none",
+            "from": "Site Admin <admin@example.org>"
+        }))
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    bgh_core::mail::enqueue(
+        &app.state.db,
+        bgh_core::mail::templates::verify_email(
+            "Better GitHub",
+            "x@example.com",
+            "x",
+            "http://v",
+            72,
+        ),
+    )
+    .await
+    .unwrap();
+    app.drain_jobs().await;
+    let got = got.lock().unwrap().clone();
+    assert_eq!(got.len(), 1, "sent through SMTP");
+    assert!(
+        got[0].contains("From: \"Site Admin\" <admin@example.org>"),
+        "{}",
+        got[0]
+    );
+    assert!(got[0].contains("To: x@example.com"));
+    assert!(outbox(&app).is_empty(), "dev transport not used");
+}
