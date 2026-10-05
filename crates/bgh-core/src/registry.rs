@@ -36,10 +36,23 @@ pub struct AppFactory {
     pub register: fn(&mut Registry),
 }
 
+type ServiceFn = Arc<dyn Fn(AppState, CancellationToken) -> BoxFuture<'static, ()> + Send + Sync>;
+
+/// A named long-running background task (e.g. the built-in CI runner or a
+/// scheduler), started by the server binary next to the job workers. The
+/// task must return once its `CancellationToken` is cancelled. Not started
+/// by the test harness (tests drive the work deterministically).
+#[derive(Clone)]
+pub struct Service {
+    pub name: &'static str,
+    run: ServiceFn,
+}
+
 #[derive(Clone, Default)]
 pub struct Registry {
     pub jobs: JobRegistry,
     pub listeners: Vec<Listener>,
+    pub services: Vec<Service>,
 }
 
 impl Registry {
@@ -71,6 +84,36 @@ impl Registry {
         });
         self
     }
+}
+
+impl Registry {
+    /// Register a long-running background service (see [`Service`]).
+    pub fn service<F, Fut>(&mut self, name: &'static str, run: F) -> &mut Self
+    where
+        F: Fn(AppState, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.services.push(Service {
+            name,
+            run: Arc::new(move |s, c| run(s, c).boxed()),
+        });
+        self
+    }
+}
+
+/// Spawn every service; each runs until `shutdown` is cancelled.
+pub fn spawn_services(
+    state: &AppState,
+    services: &[Service],
+    shutdown: CancellationToken,
+) -> Vec<JoinHandle<()>> {
+    services
+        .iter()
+        .map(|svc| {
+            tracing::info!(service = svc.name, "starting service");
+            tokio::spawn((svc.run)(state.clone(), shutdown.clone()))
+        })
+        .collect()
 }
 
 /// Spawn one task per listener, each consuming the event bus in order until

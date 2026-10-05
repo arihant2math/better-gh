@@ -157,6 +157,22 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    /// Actions workflow run lifecycle; `action` is `requested` |
+    /// `in_progress` | `completed` (GitHub's `workflow_run` webhook).
+    WorkflowRunUpdated {
+        repo_id: i64,
+        run_id: i64,
+        action: String,
+        actor_id: Option<i64>,
+    },
+    /// Actions job lifecycle; `action` is `queued` | `in_progress` |
+    /// `completed` | `waiting` (GitHub's `workflow_job` webhook).
+    WorkflowJobUpdated {
+        repo_id: i64,
+        run_id: i64,
+        job_id: i64,
+        action: String,
+    },
 }
 
 impl Event {
@@ -182,6 +198,8 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
+            Self::WorkflowJobUpdated { .. } => "workflow_job_updated",
         }
     }
 
@@ -205,7 +223,9 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
-            | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
+            | Self::ReleasePublished { repo_id, .. }
+            | Self::WorkflowRunUpdated { repo_id, .. }
+            | Self::WorkflowJobUpdated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
         }
     }
@@ -214,7 +234,9 @@ impl Event {
     pub fn actor_id(&self) -> Option<i64> {
         match self {
             Self::Push(p) => p.pusher_id,
-            Self::PullRequestSynchronized { actor_id, .. } => *actor_id,
+            Self::PullRequestSynchronized { actor_id, .. }
+            | Self::WorkflowRunUpdated { actor_id, .. } => *actor_id,
+            Self::WorkflowJobUpdated { .. } => None,
             Self::RepositoryCreated { actor_id, .. }
             | Self::RepositoryDeleted { actor_id, .. }
             | Self::RepositoryUpdated { actor_id, .. }

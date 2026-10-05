@@ -85,6 +85,14 @@ comrak = { version = "0.55", default-features = false }
 ammonia = "4"
 gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
 
+# actions
+serde_yaml = "0.9"
+indexmap = { version = "2", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+crypto_box = { version = "0.9", features = ["seal", "chacha20"] }
+chacha20poly1305 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "http2"] }
+
 # testing
 tempfile = "3"
 
