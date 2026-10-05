@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P28 Actions OIDC id-tokens: issuer + discovery + JWKS, key rotation, job token requests, GitHub claims, sub customization (repo + org).
 
 # P28 — Actions OIDC id-token
