@@ -6,7 +6,7 @@ import { Link } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { hasSync, store } from '../../sync';
 import { useIssueDetails } from '../../sync/hooks';
-import type { Comment, Issue, IssueEvent, Review } from '../../sync/models';
+import type { Comment, Issue, IssueEvent, IssueTypeColor, Review } from '../../sync/models';
 import { closeIssue, createComment, deleteComment, editComment, reopenIssue, updateIssue } from '../../sync/mutations';
 import { canWrite, commentsForIssue, eventsForIssue, reviewsForIssue } from '../../sync/selectors';
 import { loadViewerReactions } from '../../sync/viewerReactions';
@@ -15,6 +15,7 @@ import { Button, IconButton, cx } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
 import {
   ArrowSwitchIcon,
+  BlockedIcon,
   BellIcon,
   CheckCircleIcon,
   CircleSlashIcon,
@@ -51,6 +52,7 @@ import { Markdown } from '../../ui/Markdown';
 import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
+import { DuplicatePicker, IssueTypeChip } from './IssueRelations';
 import styles from './IssueView.module.css';
 import { ReactionBar } from './Reactions';
 import { groupEvents } from './timelineGroups';
@@ -322,6 +324,16 @@ const EVENT_ICONS: Partial<Record<IssueEvent['event'], Icon>> = {
   head_ref_force_pushed: FileDiffIcon,
   connected: LinkIcon,
   disconnected: LinkIcon,
+  // P41: issue types, dependencies, duplicates.
+  issue_type_added: TagIcon,
+  issue_type_changed: TagIcon,
+  issue_type_removed: TagIcon,
+  blocked_by_added: BlockedIcon,
+  blocked_by_removed: BlockedIcon,
+  blocking_added: BlockedIcon,
+  blocking_removed: BlockedIcon,
+  marked_as_duplicate: DuplicateIcon,
+  unmarked_as_duplicate: DuplicateIcon,
 };
 
 const LOCK_REASONS: Record<string, string> = { 'off-topic': 'off-topic', 'too heated': 'too heated', resolved: 'resolved', spam: 'spam' };
@@ -444,6 +456,11 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
       const v = closedVisual(d.stateReason);
       icon = v.icon;
       cls = v.cls;
+      if (d.stateReason === 'duplicate' && d.otherIssueNumber != null) {
+        text = <>closed this as a duplicate of</>;
+        extra = <IssueRef id={d.otherIssueId} number={d.otherIssueNumber} repository={d.otherIssueRepository} current={repo} />;
+        break;
+      }
       if (d.sourceIsPr) {
         // Closed by merging a linked pull request.
         text = <>{v.text} in</>;
@@ -526,6 +543,44 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
     case 'parent_issue_removed':
       text = <>{event.event === 'parent_issue_added' ? 'added a parent issue' : 'removed a parent issue'}</>;
       extra = <IssueRef id={d.parentIssueId} number={d.parentIssueNumber} repository={d.parentIssueRepository} current={repo} />;
+      break;
+    // P41: issue types, dependencies, duplicates.
+    case 'issue_type_added':
+      text = (
+        <>
+          added the <IssueTypeChip name={d.issueTypeName ?? '?'} color={d.issueTypeColor as IssueTypeColor | undefined} /> issue type
+        </>
+      );
+      break;
+    case 'issue_type_changed':
+      text = (
+        <>
+          changed the issue type from <IssueTypeChip name={d.prevIssueTypeName ?? '?'} color={d.prevIssueTypeColor as IssueTypeColor | undefined} /> to{' '}
+          <IssueTypeChip name={d.issueTypeName ?? '?'} color={d.issueTypeColor as IssueTypeColor | undefined} />
+        </>
+      );
+      break;
+    case 'issue_type_removed':
+      text = (
+        <>
+          removed the <IssueTypeChip name={d.issueTypeName ?? '?'} color={d.issueTypeColor as IssueTypeColor | undefined} /> issue type
+        </>
+      );
+      break;
+    case 'blocked_by_added':
+    case 'blocked_by_removed':
+      text = <>{event.event === 'blocked_by_added' ? 'marked this issue as blocked by' : 'removed a blocking issue'}</>;
+      extra = <IssueRef id={d.otherIssueId} number={d.otherIssueNumber} repository={d.otherIssueRepository} current={repo} />;
+      break;
+    case 'blocking_added':
+    case 'blocking_removed':
+      text = <>{event.event === 'blocking_added' ? 'marked this issue as blocking' : 'removed a blocked issue'}</>;
+      extra = <IssueRef id={d.otherIssueId} number={d.otherIssueNumber} repository={d.otherIssueRepository} current={repo} />;
+      break;
+    case 'marked_as_duplicate':
+    case 'unmarked_as_duplicate':
+      text = <>{event.event === 'marked_as_duplicate' ? 'marked this as a duplicate of' : 'unmarked this as a duplicate of'}</>;
+      extra = <IssueRef id={d.otherIssueId} number={d.otherIssueNumber} repository={d.otherIssueRepository} current={repo} />;
       break;
     case 'review_requested':
       text = event.actorId === d.reviewerId ? <>self-requested a review</> : <>requested a review from {who(d.reviewerId)}</>;
@@ -661,6 +716,7 @@ const Composer = observer(function Composer({ issue, repoFullName }: { issue: Is
 /** "Close issue" with a reason menu (completed / not planned), or "Reopen". */
 const CloseButton = observer(function CloseButton({ issue, body, onDone }: { issue: Issue; body: string; onDone: () => void }) {
   const [open, setOpen] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const withComment = () => {
     if (body.trim()) createComment(issue, body.trim());
@@ -707,8 +763,10 @@ const CloseButton = observer(function CloseButton({ issue, body, onDone }: { iss
         items={[
           { id: 'completed', label: 'Close as completed', description: 'Done, closed, fixed, resolved', icon: IssueClosedIcon, onSelect: () => close('completed') },
           { id: 'not_planned', label: 'Close as not planned', description: 'Won’t fix, can’t repro, stale', icon: SkipIcon, onSelect: () => close('not_planned') },
+          { id: 'duplicate', label: 'Close as duplicate', description: 'Duplicate of another issue', icon: DuplicateIcon, onSelect: () => setDupOpen(true) },
         ]}
       />
+      <DuplicatePicker issue={issue} open={dupOpen} onClose={() => setDupOpen(false)} anchor={ref} onDone={withComment} />
     </span>
   );
 });

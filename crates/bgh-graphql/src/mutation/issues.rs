@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use async_graphql::{Context, ID, InputObject, Interface, Object, SimpleObject};
+use async_graphql::{Context, ID, InputObject, Interface, MaybeUndefined, Object, SimpleObject};
 use axum::extract::State;
 use bgh_core::auth::RequireUser;
 use bgh_core::node_id::NodeType;
@@ -48,6 +48,21 @@ pub async fn issue_like(ctx: &Context<'_>, id: i64) -> GResult<IssueLike> {
     }
 }
 
+/// Name of the issue type `id` (REST takes names).
+async fn issue_type_name(ctx: &Context<'_>, id: &ID) -> GResult<String> {
+    let n = decode(id, &[NodeType::IssueType], "an IssueType")?;
+    bgh_issues::issue_types::by_id(&gql(ctx).state.db, n)
+        .await
+        .map_err(api_err)?
+        .map(|t| t.name)
+        .ok_or_else(|| {
+            not_found(format!(
+                "Could not resolve to an IssueType with the global id of '{}'.",
+                id.0
+            ))
+        })
+}
+
 fn st(ctx: &Context<'_>) -> State<AppState> {
     State(gql(ctx).state.clone())
 }
@@ -89,7 +104,8 @@ pub struct UpdateIssueInput {
     pub milestone_id: Option<ID>,
     pub state: Option<IssueState>,
     pub project_ids: Option<Vec<ID>>,
-    pub issue_type_id: Option<ID>,
+    /// `null` removes the issue type.
+    pub issue_type_id: MaybeUndefined<ID>,
     pub client_mutation_id: Option<String>,
 }
 
@@ -427,6 +443,12 @@ impl IssueMutations {
         if let Some(m) = &input.milestone_id {
             b["milestone"] = json!(milestone_number(ctx, repo.repo.id, m).await?);
         }
+        if let Some(t) = &input.issue_type_id {
+            b["type"] = json!(issue_type_name(ctx, t).await?);
+        }
+        if let Some(t) = &input.issue_template {
+            b["template"] = json!(t);
+        }
         let (o, r) = owner_repo(&repo);
         let v = into_json(
             bgh_issues::issues::create(
@@ -481,6 +503,11 @@ impl IssueMutations {
         if let Some(m) = &input.milestone_id {
             b["milestone"] = json!(milestone_number(ctx, repo.repo.id, m).await?);
         }
+        match &input.issue_type_id {
+            MaybeUndefined::Value(t) => b["type"] = json!(issue_type_name(ctx, t).await?),
+            MaybeUndefined::Null => b["type"] = serde_json::Value::Null,
+            MaybeUndefined::Undefined => {}
+        }
         patch_issue(ctx, &issue, &repo, b).await?;
         let a = guard(ctx)?;
         Ok(UpdateIssuePayload {
@@ -501,13 +528,12 @@ impl IssueMutations {
             .state_reason
             .unwrap_or(IssueClosedStateReason::Completed)
             .rest();
-        patch_issue(
-            ctx,
-            &issue,
-            &repo,
-            json!({"state": "closed", "state_reason": reason}),
-        )
-        .await?;
+        let mut b = json!({"state": "closed", "state_reason": reason});
+        if let Some(d) = &input.duplicate_issue_id {
+            b["duplicate_of"] = json!(decode(d, &[NodeType::Issue], "an Issue")?);
+            b["state_reason"] = json!("duplicate");
+        }
+        patch_issue(ctx, &issue, &repo, b).await?;
         Ok(CloseIssuePayload {
             issue: as_issue(issue_like(ctx, issue.id).await?),
             client_mutation_id: input.client_mutation_id,

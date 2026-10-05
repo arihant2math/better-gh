@@ -222,6 +222,26 @@ pub async fn filters(
                 "archived" => {
                     s.raw(format!("{not}r.archived"));
                 }
+                "blocked" if key == "is" => {
+                    s.raw(format!(
+                        "{not}EXISTS (SELECT 1 FROM issue_dependencies d JOIN issues b ON b.id = d.blocking_id
+                           WHERE d.blocked_id = i.id AND b.state = 'open')"
+                    ));
+                }
+                "blocking" if key == "is" => {
+                    s.raw(format!(
+                        "{not}EXISTS (SELECT 1 FROM issue_dependencies d JOIN issues b ON b.id = d.blocked_id
+                           WHERE d.blocking_id = i.id AND b.state = 'open')"
+                    ));
+                }
+                // `type:Bug`: organization issue type by name.
+                name if key == "type" => {
+                    s.raw(format!(
+                        "{not}coalesce(i.issue_type_id IN (SELECT t.id FROM issue_types t WHERE lower(t.name) = "
+                    ))
+                    .text(name.to_string())
+                    .raw("), false)");
+                }
                 _ => {
                     return Err(invalid(&format!(
                         "Invalid value {value:?} for is: qualifier"
@@ -324,6 +344,7 @@ pub async fn filters(
                         "NOT EXISTS (SELECT 1 FROM issue_assignees a WHERE a.issue_id = i.id)"
                     }
                     "project" => "TRUE",
+                    "type" => "i.issue_type_id IS NULL",
                     _ => return Err(invalid("Invalid value for no: qualifier")),
                 };
                 s.raw(format!("{not}({cond})"));

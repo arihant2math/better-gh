@@ -178,11 +178,12 @@ pub struct Row {
 /// Issue columns (aliases are the JSON keys; `row_to_json` is about twice
 /// as fast as `json_build_object` for wide rows). `i` = issue row, `aa`,
 /// `la`, `ra` = pre-aggregated assignees, labels, reactions; `si` = parent
-/// (sub-issues), `pin` = pinned.
+/// (sub-issues), `pin` = pinned, `ity` = issue type, `dbb` / `dbk` =
+/// dependencies (blocked by / blocking).
 const ISSUE_COLS: &str = r#"
     i.id AS "id", i.repo_id AS "repoId", i.number AS "number", i.title AS "title",
     i.state AS "state",
-    CASE i.state_reason WHEN 'duplicate' THEN 'not_planned' ELSE i.state_reason END AS "stateReason",
+    i.state_reason AS "stateReason",
     i.author_id AS "authorId", coalesce(aa.ids, '{}') AS "assigneeIds",
     coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
     i.comments_count AS "comments", i.locked AS "locked",
@@ -190,7 +191,11 @@ const ISSUE_COLS: &str = r#"
     si.parent_id AS "parentId", coalesce(sc.ids, '{}') AS "subIssueIds",
     (pin.issue_id IS NOT NULL) AS "pinned", coalesce(lp.ids, '{}') AS "linkedPullIds",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
-    bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
+    bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr",
+    CASE WHEN ity.id IS NOT NULL THEN json_build_object(
+        'id', ity.id, 'name', ity.name, 'color', ity.color) END AS "issueType",
+    i.duplicate_of_id AS "duplicateOfId", coalesce(dbb.ids, '{}') AS "blockedByIds",
+    coalesce(dbb.open, 0) AS "openBlockedBy", coalesce(dbk.ids, '{}') AS "blockingIds""#;
 
 /// Pull request columns (`p` = pull_requests, `rq` = requested reviewers,
 /// `rd` = review decision, `ck` = combined checks). The last five are
@@ -243,6 +248,15 @@ fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
                FROM sub_issues s JOIN issues x ON x.id = s.parent_id
               WHERE {fx} GROUP BY s.parent_id) sc ON sc.parent_id = i.id
   LEFT JOIN pinned_issues pin ON pin.issue_id = i.id
+  LEFT JOIN issue_types ity ON ity.id = i.issue_type_id
+  LEFT JOIN (SELECT d.blocked_id, array_agg(d.blocking_id ORDER BY d.created_at, d.blocking_id) AS ids,
+                    count(*) FILTER (WHERE o.state = 'open') AS open
+               FROM issue_dependencies d JOIN issues x ON x.id = d.blocked_id
+               JOIN issues o ON o.id = d.blocking_id
+              WHERE {fx} GROUP BY d.blocked_id) dbb ON dbb.blocked_id = i.id
+  LEFT JOIN (SELECT d.blocking_id, array_agg(d.blocked_id ORDER BY d.created_at, d.blocked_id) AS ids
+               FROM issue_dependencies d JOIN issues x ON x.id = d.blocking_id
+              WHERE {fx} GROUP BY d.blocking_id) dbk ON dbk.blocking_id = i.id
   LEFT JOIN (SELECT k.issue_id, array_agg(k.pull_id ORDER BY k.created_at, k.pull_id) AS ids
                FROM issue_pr_links k JOIN issues x ON x.id = k.issue_id
               WHERE {fx} GROUP BY k.issue_id) lp ON lp.issue_id = i.id
@@ -458,6 +472,20 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                      'parentIssueNumber', e.data->'parent_issue'->'number',
                      'parentIssueRepository', e.data->'parent_issue'->'repository',
                      'fromRepository', e.data->'from_repository',
+                     'issueTypeName', e.data->'issue_type'->'name',
+                     'issueTypeColor', e.data->'issue_type'->'color',
+                     'prevIssueTypeName', e.data->'prev_issue_type'->'name',
+                     'prevIssueTypeColor', e.data->'prev_issue_type'->'color',
+                     'otherIssueId', coalesce(e.data->'blocking_issue'->'id', e.data->'blocked_issue'->'id',
+                                              e.data->'canonical'->'id', e.data->'duplicate_of'->'id'),
+                     'otherIssueNumber', coalesce(e.data->'blocking_issue'->'number',
+                                                  e.data->'blocked_issue'->'number',
+                                                  e.data->'canonical'->'number',
+                                                  e.data->'duplicate_of'->'number'),
+                     'otherIssueRepository', coalesce(e.data->'blocking_issue'->'repository',
+                                                      e.data->'blocked_issue'->'repository',
+                                                      e.data->'canonical'->'repository',
+                                                      e.data->'duplicate_of'->'repository'),
                      'teamId', e.data->'requested_team_id',
                      'before', e.data->'before',
                      'after', e.data->'after',

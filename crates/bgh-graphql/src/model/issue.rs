@@ -458,6 +458,27 @@ impl IssueOnly {
     pub async fn tracked_issues(&self) -> crate::model::actor::CountOnly {
         crate::model::actor::CountOnly(0)
     }
+    /// The issue's type (organization issue types).
+    pub async fn issue_type(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<super::issue_type::IssueType>> {
+        let l = ctx.data_unchecked::<Loaders>();
+        Ok(one(&l.issue_types, self.i.id)
+            .await?
+            .map(super::issue_type::IssueType))
+    }
+    /// Summary of the issue's dependencies (blocked by / blocking).
+    pub async fn issue_dependencies_summary(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<super::issue_type::IssueDependenciesSummary> {
+        let l = ctx.data_unchecked::<Loaders>();
+        Ok(one(&l.issue_deps, self.i.id)
+            .await?
+            .unwrap_or_default()
+            .into())
+    }
 }
 
 /// An Issue is a place to discuss ideas, enhancements, tasks, and bugs.

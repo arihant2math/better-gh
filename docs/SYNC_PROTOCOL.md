@@ -194,6 +194,11 @@ interface Issue {             // issues and pull requests share this model
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
   isPr: boolean;
+  issueType?: { id: ID; name: string; color: IssueTypeColor | null } | null; // org issue type
+  duplicateOfId?: ID | null;  // closed as a duplicate of this issue (may be in another repo)
+  blockedByIds?: ID[];        // dependencies: issues blocking this one (may be in other repos)
+  openBlockedBy?: number;     // how many of blockedByIds are open ("Blocked" badge)
+  blockingIds?: ID[];         // issues this one blocks
   // Present iff isPr === true:
   draft?: boolean;
   merged?: boolean;
@@ -252,7 +257,10 @@ interface IssueEvent {        // timeline event (LAZY model)
     | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed'
     | 'mentioned' | 'subscribed' | 'cross-referenced' | 'pinned' | 'unpinned'
     | 'transferred' | 'sub_issue_added' | 'sub_issue_removed'
-    | 'parent_issue_added' | 'parent_issue_removed';
+    | 'parent_issue_added' | 'parent_issue_removed'
+    | 'issue_type_added' | 'issue_type_changed' | 'issue_type_removed'
+    | 'blocked_by_added' | 'blocked_by_removed' | 'blocking_added' | 'blocking_removed'
+    | 'marked_as_duplicate' | 'unmarked_as_duplicate';
   data: {                     // only the keys relevant to `event`
     labelId?: ID; labelName?: string; labelColor?: string;
     assigneeId?: ID; reviewerId?: ID;
@@ -266,6 +274,11 @@ interface IssueEvent {        // timeline event (LAZY model)
     subIssueId?: ID; subIssueNumber?: number; subIssueRepository?: string;          // sub_issue_*
     parentIssueId?: ID; parentIssueNumber?: number; parentIssueRepository?: string; // parent_issue_*
     fromRepository?: string;                      // transferred ("owner/repo")
+    issueTypeName?: string; issueTypeColor?: string;          // issue_type_*
+    prevIssueTypeName?: string; prevIssueTypeColor?: string;  // issue_type_changed
+    // blocked_by_* / blocking_* (the other issue), marked/unmarked_as_duplicate
+    // (the original), closed as duplicate (the original):
+    otherIssueId?: ID; otherIssueNumber?: number; otherIssueRepository?: string;
   };
   createdAt: Timestamp;
 }
@@ -286,8 +299,9 @@ interface Notification {      // scope user:{viewer}
 ```
 
 Server notes: `authorId` / `actorId` / `mergedById` are `null` when the
-user was deleted (GitHub's "ghost"). `stateReason` `duplicate` is sent as
-`not_planned`; `mergeableState` `has_hooks` as `clean`, `draft` as
+user was deleted (GitHub's "ghost"). `IssueTypeColor` is one of GitHub's
+issue type colors (`gray`, `blue`, `green`, `yellow`, `orange`, `red`,
+`pink`, `purple`). `mergeableState` `has_hooks` as `clean`, `draft` as
 `blocked`. `reactions` is always present (`{}` when empty) so a removed
 last reaction reaches the client.
 

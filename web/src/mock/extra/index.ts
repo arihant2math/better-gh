@@ -17,6 +17,7 @@ import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
+import { installRelationshipMocks } from './relationships';
 import { installRepoNavMocks } from './repoNav';
 import { installRulesetMocks } from './rulesets';
 import { installUploadMocks } from './uploads';
@@ -39,4 +40,5 @@ export function installExtraMocks(server: MockServer): void {
   installPackageMocks(server);
   installInsightsMocks(server);
   installAppsMocks(server);
+  installRelationshipMocks(server);
 }

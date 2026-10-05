@@ -441,6 +441,10 @@ pub struct Issue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<IssuePullRequest>,
     pub sub_issues_summary: SubIssuesSummary,
+    pub issue_dependencies_summary: crate::dependencies::Summary,
+    /// Organization issue type (`null` when unset).
+    #[serde(rename = "type")]
+    pub issue_type: Option<crate::issue_types::IssueType>,
     #[serde(flatten)]
     pub bodies: Bodies,
     /// Present on single-issue responses.
@@ -573,6 +577,8 @@ pub async fn issues(
     .map(|(id, t, c)| (id, (t, c)))
     .collect();
     let reactions = reaction_counts(state, "issue", &ids).await?;
+    let types = crate::issue_types::for_issues(&state.db, &ids).await?;
+    let deps = crate::dependencies::summaries(&state.db, &ids).await?;
     let users = views::users_by_id(
         state,
         rows.iter()
@@ -672,6 +678,8 @@ pub async fn issues(
                     completed * 100 / total
                 },
             },
+            issue_dependencies_summary: deps.get(&i.id).copied().unwrap_or_default(),
+            issue_type: types.get(&i.id).map(crate::issue_types::IssueType::from),
             bodies: Bodies::new(state, fmt, o, r, i.body.as_deref()),
             closed_by: opts.closed_by.then(|| {
                 i.closed_by_id
