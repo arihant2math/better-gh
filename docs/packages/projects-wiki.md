@@ -5,7 +5,7 @@ Branch `bgh/projects-wiki`. Crates `bgh-projects` (migrations 1100-1199) and
 
 Status: **complete** (backend, tests, web UI). See "Known gaps" for what's left.
 
-Tests: `cargo test -p bgh-projects` (5 unit + 10 integration), `cargo test -p bgh-wiki`
+Tests: `cargo test -p bgh-projects` (5 unit + 12 integration), `cargo test -p bgh-wiki`
 (unit + pages + git transport); web: `npm run typecheck/lint/test/build` (bundle budget OK).
 
 ### Web UI (web/)
@@ -215,7 +215,13 @@ Details:
 ## Shared-code changes (additive)
 
 * Workspace `Cargo.toml`, `bgh-server` (mount both crates).
-* `bgh_core::sync`: scope-provider hook for bootstrap (see below).
+* `bgh_core::sync`: scope-provider hook for bootstrap (`ScopeProvider`,
+  `Registry::scope_provider`, `load_provided`); `shapes::referenced_users` reads `creatorId`.
+* `bgh-sync`: bootstrap calls `load_provided` for org/user scopes (see "Sync integration").
+* `bgh_core::auth`: the `project` token scope implies `read:project`.
+* Web shared code: `sync/pool.ts` (`removeRows`, scope lookup), `sync/overlay.ts` (`$merge`),
+  `sync/schema.ts` (optional `lookup` for scope functions); docs in FRONTEND.md and
+  SYNC_PROTOCOL.md §7/§11.
 * `bgh-git`: `RepoStore::wiki()` / `is_wiki()` and the `suffix` field (same layout,
   `.wiki.git` suffix; `REPO_SUFFIX`/`WIKI_SUFFIX` consts); `GitRepo::diff(base, head,
   paths)`; path-limited `log` and `diff` use `--literal-pathspecs`; fix:
