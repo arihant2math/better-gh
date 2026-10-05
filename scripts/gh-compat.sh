@@ -231,6 +231,21 @@ if run_case "create repo $OWNER/to-delete (REST)" --kind fixture -- \
   api POST /user/repos '{"name":"to-delete"}'; then
   FX_DELREPO=1
 fi
+# Rulesets: an evaluate-mode repository ruleset (enforces nothing) and an
+# organization (site admin API) with a ruleset.
+FX_RULESET="" FX_ORG="" FX_ORG_RULESET=""
+if [[ -n $FX_REPO ]] && run_case "create repository ruleset (REST)" --kind fixture -- \
+  api POST "/repos/$NWO/rulesets" '{"name":"compat rules","enforcement":"evaluate","conditions":{"ref_name":{"include":["refs/heads/release/*"],"exclude":[]}},"rules":[{"type":"deletion"}]}'; then
+  FX_RULESET="$(jfield id <"$LAST_OUT")"
+fi
+if run_case "create organization $OWNER-org (REST, site admin)" --kind fixture -- \
+  api POST /admin/organizations "{\"login\":\"$OWNER-org\",\"admin\":\"$OWNER\"}"; then
+  FX_ORG="$OWNER-org"
+fi
+if [[ -n $FX_ORG ]] && run_case "create organization ruleset (REST)" --kind fixture -- \
+  api POST "/orgs/$FX_ORG/rulesets" '{"name":"org compat rules","enforcement":"active","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]},"repository_name":{"include":["~ALL"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"}]}'; then
+  FX_ORG_RULESET="$(jfield id <"$LAST_OUT")"
+fi
 echo "release asset" >"$WORK/asset.txt"
 
 # --- the gh matrix ------------------------------------------------------------------
@@ -309,6 +324,16 @@ run_case "gh pr review --comment" --needs FX_PR -- \
   "$GH" pr review "$FX_PR" -R "$NWO" --comment --body "review from gh"
 run_case "gh pr merge --merge" --needs FX_PR -- "$GH" pr merge "$FX_PR" -R "$NWO" --merge
 
+echo "-- rulesets"
+run_case "gh ruleset list" --needs FX_RULESET --expect "compat rules" -- "$GH" ruleset list -R "$NWO"
+run_case "gh ruleset view" --needs FX_RULESET --expect "compat rules" -- \
+  "$GH" ruleset view "$FX_RULESET" -R "$NWO"
+run_case "gh ruleset check" --needs FX_RULESET -- "$GH" ruleset check main -R "$NWO"
+run_case "gh ruleset list --org" --needs FX_ORG_RULESET --expect "org compat rules" -- \
+  "$GH" ruleset list --org "${FX_ORG:-x}"
+run_case "gh ruleset view --org" --needs FX_ORG_RULESET --expect "non_fast_forward" -- \
+  "$GH" ruleset view "${FX_ORG_RULESET:-0}" --org "${FX_ORG:-x}"
+
 echo "-- projects"
 FX_PROJECT=""
 if run_case "gh project create" --expect "/users/$OWNER/projects/[0-9]+" -- \
@@ -386,6 +411,28 @@ dispatch_run() { # the dispatch starts a repository_dispatch run (async trigger)
 }
 run_case "gh api actions/runs?event=repository_dispatch" --needs FX_DISPATCH --expect "^repository_dispatch\$" -- \
   dispatch_run
+
+# Cache entries are written by running jobs; the throwaway server has no
+# runner, so seed two committed entries directly (only with our own DB).
+FX_CACHE=""
+# shellcheck disable=SC2016 # expanded by the inner bash
+if [[ -n $FX_REPO && -n $TS_DB_NAME ]] && run_case "seed actions caches (SQL)" --kind fixture -- bash -c '
+    psql -qAt "$(python3 -c "import sys,urllib.parse as u;p=u.urlsplit(sys.argv[1]);print(u.urlunsplit(p._replace(path=\"/\"+sys.argv[2])))" "$1" "$2")" -c "
+      INSERT INTO actions_caches (repo_id, key, version, ref, size_in_bytes, committed)
+      SELECT r.id, k, '"'"'v1'"'"', '"'"'refs/heads/main'"'"', 1024, true
+        FROM repositories r JOIN users u ON u.id = r.owner_id,
+             unnest(ARRAY['"'"'gh-compat-npm-1'"'"', '"'"'gh-compat-npm-2'"'"']) k
+       WHERE lower(u.login) = lower('"'"'$3'"'"') AND lower(r.name) = lower('"'"'$4'"'"')"
+  ' _ "${DATABASE_URL:-postgres://postgres:postgres@localhost/bgh}" "$TS_DB_NAME" "$OWNER" "$REPO"; then
+  FX_CACHE=1
+fi
+run_case "gh cache list" --needs FX_CACHE --expect "gh-compat-npm-2" -- "$GH" cache list -R "$NWO"
+run_case "gh cache list --json" --needs FX_CACHE --expect "^refs/heads/main\$" -- \
+  "$GH" cache list -R "$NWO" --key gh-compat-npm-1 --json ref --jq '.[].ref'
+run_case "gh cache delete <key>" --needs FX_CACHE -- "$GH" cache delete gh-compat-npm-1 -R "$NWO"
+run_case "gh cache delete --all" --needs FX_CACHE -- "$GH" cache delete --all -R "$NWO"
+run_case "gh api actions/cache/usage" --needs FX_REPO --expect "^0\$" -- \
+  "$GH" api "repos/$NWO/actions/cache/usage" --jq .active_caches_count
 
 echo "-- releases"
 run_case "gh release create" --needs FX_REPO --expect "/releases/tag/v1\\.0\\.0" -- \

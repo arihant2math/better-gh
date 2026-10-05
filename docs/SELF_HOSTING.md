@@ -304,6 +304,22 @@ runner. Plan for that:
   OAuth tokens need the `workflow` scope for that (git push over HTTP and
   the contents API); SSH keys and browser sessions are full credentials.
 
+**Cache and toolkit services.** Jobs get `ACTIONS_RUNTIME_TOKEN` (a JWT
+valid only while the job runs), `ACTIONS_CACHE_URL` /
+`ACTIONS_RUNTIME_URL` (`<base>/_bgh/actions/runtime/`) and
+`ACTIONS_RESULTS_URL` (`<base>/`), so `actions/cache` (handled natively),
+`setup-node`/`setup-go`/… `cache:` inputs and actions built on
+`@actions/cache` work. Runners and job containers must reach
+`BGH_BASE_URL` for this. Archives live in `BGH_DATA_DIR/actions/caches/`
+(regenerable; may be excluded from backups). Each repository keeps up to
+`BGH_ACTIONS_CACHE_SIZE_LIMIT_GB` (default 10, repository admins may lower
+it with `PATCH /repos/{o}/{r}/actions/cache/usage-policy`); least recently
+used entries are evicted beyond it, and entries unused for
+`BGH_ACTIONS_CACHE_RETENTION_DAYS` (default 7) are deleted. Note that
+`@actions/artifact` v2 (`upload-artifact@v4` run as JavaScript) refuses to
+run against hosts it considers GHES; the native `upload-artifact` /
+`download-artifact` handling covers those actions.
+
 ## Backup and restore
 
 What to back up:

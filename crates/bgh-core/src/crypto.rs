@@ -16,6 +16,10 @@ pub const OAUTH_TOKEN_PREFIX: &str = "bgho_";
 /// `ghs_`).
 pub const INSTALLATION_TOKEN_PREFIX: &str = "bghs_";
 
+/// Prefix of fine-grained personal access tokens (`bgh_pat_…`, GitHub's
+/// `github_pat_`).
+pub const FINE_GRAINED_PAT_PREFIX: &str = "bgh_pat_";
+
 /// Hash a password with Argon2id (PHC string format).
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
@@ -59,6 +63,11 @@ pub fn new_oauth_token() -> String {
 /// New installation access token: `bghs_` + 40 alphanumerics.
 pub fn new_installation_token() -> String {
     format!("{INSTALLATION_TOKEN_PREFIX}{}", random_token(40))
+}
+
+/// New fine-grained personal access token: `bgh_pat_` + 60 alphanumerics.
+pub fn new_fine_grained_pat() -> String {
+    format!("{FINE_GRAINED_PAT_PREFIX}{}", random_token(60))
 }
 
 /// Constant-time string comparison (for secrets compared in memory).

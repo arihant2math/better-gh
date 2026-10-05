@@ -8,6 +8,7 @@ mod accounts;
 mod apps;
 mod auth;
 mod boot;
+mod fine_grained;
 mod invitations;
 mod ldap;
 mod oauth;
