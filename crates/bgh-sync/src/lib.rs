@@ -69,6 +69,15 @@ async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
             user_id: *user_id,
             ..Default::default()
         },
+        // Sign-outs that didn't go through `auth::destroy_session` (e.g.
+        // session revocation in bgh-accounts) close that session's sockets.
+        Event::SessionEnded {
+            user_id,
+            session_id,
+        } => {
+            bgh_core::sync::signal_signed_out(&state, *user_id, *session_id).await;
+            return Ok(());
+        }
         _ => return Ok(()),
     };
     publish_access_change(&state, &change).await;

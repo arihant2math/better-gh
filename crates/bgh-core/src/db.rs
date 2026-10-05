@@ -10,7 +10,7 @@ use crate::error::ApiResult;
 use crate::events::Event;
 use crate::jobs::{self, JobPayload};
 use crate::state::AppState;
-use crate::sync::{self, SyncAction, SyncRecord};
+use crate::sync::{self, PendingSync, SyncAction};
 
 pub use crate::error::unique_violation;
 
@@ -34,10 +34,15 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
 /// ```
 ///
 /// Dropping a `Tx` without committing rolls back and discards side effects.
+///
+/// Sync actions are written to `sync_actions` at [`Tx::commit`] (one
+/// statement, right before the commit), so the ordering lock
+/// ([`sync::SYNC_LOCK`]) is held only for the commit itself and never while
+/// the transaction still takes row locks.
 pub struct Tx {
     tx: Transaction<'static, Postgres>,
     state: AppState,
-    sync: Vec<SyncRecord>,
+    sync: Vec<PendingSync>,
     events: Vec<Event>,
 }
 
@@ -51,9 +56,11 @@ impl Tx {
         })
     }
 
-    /// Record a sync action in this transaction; it's published to clients
-    /// after commit. `data` is the client-shape JSON of the model (for
-    /// deletes, typically `{}` or `{"id": ..}`).
+    /// Record a sync action in this transaction (written at commit, then
+    /// published to clients). `data` is the client-shape JSON of the model
+    /// (`null` for deletes). Domain crates use the shape helpers
+    /// (`sync_model`, `sync_issue`, `sync_delete`, ...) instead of building
+    /// `data` themselves (BACKEND_PATTERNS.md §8a).
     pub async fn sync(
         &mut self,
         scope: &str,
@@ -62,9 +69,14 @@ impl Tx {
         action: SyncAction,
         data: &impl Serialize,
     ) -> ApiResult<()> {
-        let data = serde_json::to_value(data)?;
-        let rec = sync::record(&mut self.tx, scope, model, model_id, action, &data).await?;
-        self.sync.push(rec);
+        self.sync.push(PendingSync {
+            scope: scope.to_string(),
+            model: model.to_string(),
+            model_id,
+            action,
+            data: serde_json::to_value(data)?,
+            tx: sync::client_tx(),
+        });
         Ok(())
     }
 
@@ -78,16 +90,18 @@ impl Tx {
         jobs::enqueue_job(&mut *self.tx, job).await
     }
 
-    /// Commit, then publish sync records and emit events.
+    /// Write the pending sync actions, commit, then publish them and emit
+    /// events.
     pub async fn commit(self) -> Result<(), sqlx::Error> {
         let Self {
-            tx,
+            mut tx,
             state,
             sync,
             events,
         } = self;
+        let records = sync::record_all(&mut tx, sync).await?;
         tx.commit().await?;
-        sync::notify(&state, &sync).await;
+        sync::notify(&state, &records).await;
         for event in events {
             state.events.emit(event);
         }

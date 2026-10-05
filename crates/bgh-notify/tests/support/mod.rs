@@ -159,12 +159,15 @@ pub async fn notification_count(app: &TestApp, user: &TestUser) -> i64 {
         .unwrap()
 }
 
-/// Sent mail of the dev transport (after `drain_jobs`), oldest first.
+/// Sent mail of the dev transport (raw messages, after `drain_jobs`),
+/// oldest first.
 pub fn outbox(app: &TestApp) -> Vec<String> {
     let dir = app.state.config.data_dir.join("mail");
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .map(|d| d.filter_map(|e| e.ok()).map(|e| e.path()).collect())
         .unwrap_or_default();
+    // `.eml` = the raw message (`.json` is the structured copy).
+    files.retain(|p| p.extension().is_some_and(|x| x == "eml"));
     files.sort();
     files
         .into_iter()

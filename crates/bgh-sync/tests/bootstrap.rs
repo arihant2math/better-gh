@@ -196,6 +196,7 @@ async fn bootstrap_shapes_of_every_model() {
         json!({"id": i1, "repoId": repo, "number": 1, "title": "First", "state": "closed",
                "stateReason": "completed", "authorId": bob.id, "assigneeIds": [ada.id],
                "labelIds": [bug], "milestoneId": ms, "comments": 0, "locked": false,
+               "activeLockReason": null, "parentId": null, "pinned": false,
                "reactions": {"+1": 2, "heart": 1},
                "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-02T03:04:05Z",
                "closedAt": "2024-01-03T00:00:00Z", "isPr": false})
@@ -224,6 +225,12 @@ async fn bootstrap_shapes_of_every_model() {
         ("changedFiles", json!(3)),
         ("commits", json!(4)),
         ("reactions", json!({})),
+        // Extensions (SYNC_PROTOCOL.md §3.2).
+        ("mergeCommitSha", Value::Null),
+        ("rebaseable", Value::Null),
+        ("maintainerCanModify", json!(false)),
+        ("autoMerge", Value::Null),
+        ("reviewComments", json!(0)),
     ] {
         assert_eq!(p[k], v, "{k}");
     }
@@ -536,6 +543,7 @@ async fn tx_helpers_record_bootstrap_shapes() {
     let repo = repo_id(&app, &ada, "api", false).await;
     let i = issue(&app, repo, 1, ada.id, "Shape").await;
     let l = label(&app, repo, "bug", "ff0000").await;
+    let since = scalar(&app, "SELECT coalesce(max(id), 0) FROM sync_actions").await;
 
     let mut tx = Tx::begin(&app.state).await.unwrap();
     assert!(tx.sync_issue(i, SyncAction::Update, true).await.unwrap());
@@ -558,8 +566,9 @@ async fn tx_helpers_record_bootstrap_shapes() {
 
     let recorded: Vec<(String, String, i64, String, Value)> = sqlx::query_as(
         "SELECT scope, model, model_id, action::text, data FROM sync_actions
-          WHERE model <> 'repo' ORDER BY id",
+          WHERE id > $1 ORDER BY id",
     )
+    .bind(since)
     .fetch_all(&app.state.db)
     .await
     .unwrap();
@@ -604,11 +613,6 @@ async fn tx_helpers_record_bootstrap_shapes() {
         ),
         (rs.clone(), "milestone".into(), 77, "D".into(), Value::Null),
     ];
-    // viewerRepo of the creator was also recorded by bgh-repos on create.
-    let recorded: Vec<_> = recorded
-        .into_iter()
-        .skip_while(|r| r.1 == "viewerRepo")
-        .collect();
     assert_eq!(recorded, want);
 }
 

@@ -302,7 +302,6 @@ pub fn web_router() -> Router<AppState> {
         .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
 }
 
-/// Background jobs and event listeners.
-pub fn register(reg: &mut Registry) {
-    reg.job(util::send_mail_job);
-}
+/// Background jobs and event listeners: none (account mail is queued as
+/// the shared `mail.send` job of `bgh_core::mail`).
+pub fn register(_reg: &mut Registry) {}
