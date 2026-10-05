@@ -221,6 +221,13 @@ pub async fn create_org(
         &util::user_sync_json(&state.urls, admin),
     )
     .await?;
+    tx.emit(Event::OrganizationChanged {
+        org_id: org.id,
+        login: org.login.clone(),
+        action: "created".into(),
+        actor_id: actor.id,
+        data: json!({}),
+    });
     tx.emit(Event::OrgMemberAdded {
         org_id: org.id,
         user_id: admin.id,

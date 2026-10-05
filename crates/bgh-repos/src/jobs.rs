@@ -3,11 +3,8 @@
 use bgh_core::events::{Event, PushEvent, RefUpdate};
 use bgh_core::jobs::JobPayload;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_git::write;
 use serde::{Deserialize, Serialize};
-
-use crate::json::repo_sync_json;
 
 /// Enqueued after a successful `git push`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,10 +18,15 @@ impl JobPayload for PostReceive {
     const KIND: &'static str = "repos.post_receive";
 }
 
-/// Remove a deleted repository's storage.
+/// Remove a deleted repository's storage. Forks borrowing its objects
+/// (`objects/info/alternates`) are made self-contained first, so deleting a
+/// fork network's source never breaks its forks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteStorage {
     pub repo_id: i64,
+    /// Direct forks at deletion time (their `parent_id` is nulled by then).
+    #[serde(default)]
+    pub forks: Vec<i64>,
 }
 
 impl JobPayload for DeleteStorage {
@@ -60,9 +62,6 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
     let Some(repo) = db::Repository::find(&state.db, job.repo_id).await? else {
         return Ok(()); // deleted meanwhile
     };
-    let Some(owner) = db::User::find(&state.db, repo.owner_id).await? else {
-        return Ok(());
-    };
     let store = crate::store(&state);
     let branches: Vec<String> = store
         .read(repo.id, |r| {
@@ -77,6 +76,10 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
         write::set_head(&store, repo.id, branch).await?;
     }
     let size = store.disk_size_kb(repo.id).await?;
+    let default_moved = job
+        .updates
+        .iter()
+        .any(|u| u.branch() == Some(new_default.as_deref().unwrap_or(&repo.default_branch)));
 
     let mut tx = Tx::begin(&state).await?;
     let repo: db::Repository = sqlx::query_as(&format!(
@@ -91,15 +94,12 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
     .bind(new_default.as_deref())
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "repository",
-        repo.id,
-        SyncAction::Update,
-        &repo_sync_json(&repo, &owner.login),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Update)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    if default_moved {
+        crate::stats::enqueue_languages(&mut tx, repo.id).await?;
+    }
     tx.emit(Event::Push(PushEvent {
         repo_id: repo.id,
         pusher_id: job.pusher_id,
@@ -117,7 +117,14 @@ pub async fn delete_storage(state: AppState, job: DeleteStorage) -> anyhow::Resu
     {
         return Ok(());
     }
-    crate::store(&state).delete(job.repo_id).await?;
+    let store = crate::store(&state);
+    for fork in &job.forks {
+        // Direct forks borrow from the deleted repository (`clone --shared`).
+        if let Ok(git) = store.cli(*fork) {
+            git.dissociate().await?;
+        }
+    }
+    store.delete(job.repo_id).await?;
     Ok(())
 }
 

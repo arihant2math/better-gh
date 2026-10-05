@@ -47,6 +47,8 @@ pub fn register(reg: &mut Registry) {
     bgh_sync::register(reg);
     bgh_graphql::register(reg);
     bgh_actions::register(reg);
+    bgh_projects::register(reg);
+    bgh_wiki::register(reg);
 }
 
 /// REST API routes of every crate (relative to `/api/v3`).
@@ -63,6 +65,8 @@ fn api_routes() -> Router<AppState> {
         .merge(bgh_sync::router())
         .merge(bgh_graphql::router())
         .merge(bgh_actions::router())
+        .merge(bgh_projects::router())
+        .merge(bgh_wiki::router())
 }
 
 /// Non-API routes of every crate (absolute paths).
@@ -79,6 +83,8 @@ fn web_routes() -> Router<AppState> {
         .merge(bgh_sync::web_router())
         .merge(bgh_graphql::web_router())
         .merge(bgh_actions::web_router())
+        .merge(bgh_projects::web_router())
+        .merge(bgh_wiki::web_router())
 }
 
 /// Build the complete application router.
@@ -87,7 +93,7 @@ pub fn app(state: AppState) -> Router {
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            bgh_core::ratelimit::middleware,
+            bgh_core::ratelimit::rate_limit_middleware,
         ))
         .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn(etag))
@@ -107,7 +113,11 @@ pub fn app(state: AppState) -> Router {
     // Don't spend CPU compressing git packs (already compressed) or tiny bodies.
     let compress_when = DefaultPredicate::new()
         .and(SizeAbove::new(256))
-        .and(NotForContentType::const_new("application/x-git"));
+        .and(NotForContentType::const_new("application/x-git"))
+        // Already compressed or binary downloads (archives, LFS objects).
+        .and(NotForContentType::const_new("application/zip"))
+        .and(NotForContentType::const_new("application/x-gzip"))
+        .and(NotForContentType::const_new("application/octet-stream"));
 
     Router::new()
         .route("/healthz", get(healthz))
@@ -122,6 +132,14 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             (spa_files, state.clone()),
             web::spa_pages,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_sync::http_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::settings::maintenance_middleware,
         ))
         .layer(middleware::from_fn(bgh_core::auth::csrf_middleware))
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
@@ -197,10 +215,8 @@ async fn healthz(State(state): State<AppState>) -> Response {
 async fn api_headers(req: Request, next: Next) -> Response {
     let mut resp = next.run(req).await;
     let h = resp.headers_mut();
-    h.insert(
-        "x-github-media-type",
-        HeaderValue::from_static("github.v3; format=json"),
-    );
+    h.entry("x-github-media-type")
+        .or_insert(HeaderValue::from_static("github.v3; format=json"));
     h.entry("x-github-api-version-selected")
         .or_insert(HeaderValue::from_static("2022-11-28"));
     resp

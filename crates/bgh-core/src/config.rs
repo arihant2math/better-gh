@@ -62,6 +62,14 @@ pub struct Config {
     /// `BGH_TRUST_PROXY` (default false): take the client IP from
     /// `X-Forwarded-For` / `X-Real-IP` (set when behind a reverse proxy).
     pub trust_proxy: bool,
+    /// `BGH_WEBHOOK_ALLOWED_HOSTS` (comma separated, default empty): hosts,
+    /// IPs or CIDR ranges webhooks may target even though they resolve to
+    /// private/loopback addresses. `*` allows everything.
+    pub webhook_allowed_hosts: Vec<String>,
+    /// `BGH_WEBHOOK_TIMEOUT_SECS` (default 10): per-delivery HTTP timeout.
+    pub webhook_timeout_secs: u64,
+    /// `BGH_ACTIONS_*` settings (CI, see [`ActionsConfig`]).
+    pub actions: ActionsConfig,
 }
 
 impl Default for Config {
@@ -88,6 +96,9 @@ impl Default for Config {
             rate_limit_authenticated: 5000,
             rate_limit_anonymous: 60,
             trust_proxy: false,
+            webhook_allowed_hosts: Vec::new(),
+            webhook_timeout_secs: 10,
+            actions: ActionsConfig::default(),
         }
     }
 }
@@ -176,6 +187,20 @@ impl Config {
                 d.rate_limit_anonymous,
             )?,
             trust_proxy: boolean("BGH_TRUST_PROXY", d.trust_proxy)?,
+            webhook_allowed_hosts: parse("BGH_WEBHOOK_ALLOWED_HOSTS")?
+                .map(|v| {
+                    v.split(',')
+                        .map(|h| h.trim().to_string())
+                        .filter(|h| !h.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            webhook_timeout_secs: typed(
+                "BGH_WEBHOOK_TIMEOUT_SECS",
+                parse("BGH_WEBHOOK_TIMEOUT_SECS")?,
+                d.webhook_timeout_secs,
+            )?,
+            actions: ActionsConfig::from_lookup(&get)?,
         })
     }
 
@@ -218,6 +243,122 @@ impl Config {
     /// Directory holding bare git repositories.
     pub fn repos_dir(&self) -> PathBuf {
         self.data_dir.join("repos")
+    }
+}
+
+/// GitHub Actions compatible CI (`bgh-actions`).
+#[derive(Debug, Clone)]
+pub struct ActionsConfig {
+    /// `BGH_ACTIONS_ENABLED` (default true). Triggering of workflows.
+    pub enabled: bool,
+    /// `BGH_ACTIONS_BUILTIN_RUNNER` (default true). Run jobs in-process.
+    pub builtin_runner: bool,
+    /// `BGH_ACTIONS_EXECUTOR`: `auto` (default: docker when usable, else
+    /// shell), `docker` or `shell` (runs steps directly on the host).
+    pub executor: String,
+    /// `BGH_ACTIONS_DEFAULT_IMAGE` (default `catthehacker/ubuntu:act-latest`):
+    /// image for jobs without `container:` under the docker executor.
+    pub default_image: String,
+    /// `BGH_ACTIONS_MAX_JOBS` (default 2): concurrent jobs of the built-in runner.
+    pub max_jobs: usize,
+    /// `BGH_ACTIONS_RUNNER_LABELS` (comma separated): labels of the built-in runner.
+    pub runner_labels: Vec<String>,
+    /// `BGH_ACTIONS_WORK_DIR` (default `{data_dir}/actions/work`).
+    pub work_dir: Option<PathBuf>,
+    /// `BGH_ACTIONS_SECRET_KEY`: base64 of 32 bytes encrypting secrets at
+    /// rest. When unset, a key is generated in `{data_dir}/actions/server.key`.
+    pub secret_key: Option<String>,
+    /// `BGH_ACTIONS_ARTIFACT_RETENTION_DAYS` (default 90).
+    pub artifact_retention_days: i64,
+    /// `BGH_ACTIONS_REMOTE_ACTIONS` (default true): fetch `owner/repo@ref`
+    /// actions missing on this server from `BGH_ACTIONS_GITHUB_URL`
+    /// (default `https://github.com`).
+    pub remote_actions: bool,
+    pub github_url: String,
+    /// `BGH_DOCKER_BIN` (default `docker`).
+    pub docker_bin: String,
+}
+
+impl Default for ActionsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            builtin_runner: true,
+            executor: "auto".into(),
+            default_image: "catthehacker/ubuntu:act-latest".into(),
+            max_jobs: 2,
+            runner_labels: [
+                "self-hosted",
+                "linux",
+                "x64",
+                "ubuntu-latest",
+                "ubuntu-24.04",
+                "ubuntu-22.04",
+            ]
+            .map(String::from)
+            .to_vec(),
+            work_dir: None,
+            secret_key: None,
+            artifact_retention_days: 90,
+            remote_actions: true,
+            github_url: "https://github.com".into(),
+            docker_bin: "docker".into(),
+        }
+    }
+}
+
+impl ActionsConfig {
+    fn from_lookup(get: &impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
+        let d = Self::default();
+        let val = |k: &str| get(k).filter(|v| !v.trim().is_empty());
+        let boolean = |k: &str, default: bool| -> anyhow::Result<bool> {
+            match val(k) {
+                None => Ok(default),
+                Some(s) => match s.trim().to_ascii_lowercase().as_str() {
+                    "1" | "true" | "yes" | "on" => Ok(true),
+                    "0" | "false" | "no" | "off" => Ok(false),
+                    _ => anyhow::bail!("invalid boolean for {k}: {s:?}"),
+                },
+            }
+        };
+        let executor = val("BGH_ACTIONS_EXECUTOR").unwrap_or(d.executor);
+        if !matches!(executor.as_str(), "auto" | "docker" | "shell") {
+            anyhow::bail!("invalid value for BGH_ACTIONS_EXECUTOR: {executor:?}");
+        }
+        Ok(Self {
+            enabled: boolean("BGH_ACTIONS_ENABLED", d.enabled)?,
+            builtin_runner: boolean("BGH_ACTIONS_BUILTIN_RUNNER", d.builtin_runner)?,
+            executor,
+            default_image: val("BGH_ACTIONS_DEFAULT_IMAGE").unwrap_or(d.default_image),
+            max_jobs: match val("BGH_ACTIONS_MAX_JOBS") {
+                None => d.max_jobs,
+                Some(s) => s
+                    .trim()
+                    .parse()
+                    .with_context(|| format!("invalid value for BGH_ACTIONS_MAX_JOBS: {s:?}"))?,
+            },
+            runner_labels: val("BGH_ACTIONS_RUNNER_LABELS")
+                .map(|s| {
+                    s.split(',')
+                        .map(|l| l.trim().to_ascii_lowercase())
+                        .filter(|l| !l.is_empty())
+                        .collect()
+                })
+                .unwrap_or(d.runner_labels),
+            work_dir: val("BGH_ACTIONS_WORK_DIR").map(PathBuf::from),
+            secret_key: val("BGH_ACTIONS_SECRET_KEY"),
+            artifact_retention_days: match val("BGH_ACTIONS_ARTIFACT_RETENTION_DAYS") {
+                None => d.artifact_retention_days,
+                Some(s) => s.trim().parse().with_context(|| {
+                    format!("invalid value for BGH_ACTIONS_ARTIFACT_RETENTION_DAYS: {s:?}")
+                })?,
+            },
+            remote_actions: boolean("BGH_ACTIONS_REMOTE_ACTIONS", d.remote_actions)?,
+            github_url: val("BGH_ACTIONS_GITHUB_URL")
+                .map(|s| s.trim_end_matches('/').to_string())
+                .unwrap_or(d.github_url),
+            docker_bin: val("BGH_DOCKER_BIN").unwrap_or(d.docker_bin),
+        })
     }
 }
 

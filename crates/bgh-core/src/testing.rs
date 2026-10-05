@@ -291,6 +291,9 @@ impl TestApp {
         // In-process requests have no client IP, so every anonymous request
         // of a test shares one bucket; keep it well above GitHub's 60/h.
         config.rate_limit_anonymous = 5000;
+        // Tests stand in for a reverse proxy: `X-Forwarded-For` names the
+        // client (audit IPs, per-IP rate-limit buckets).
+        config.trust_proxy = true;
         tweak(&mut config);
 
         let pool = PgPoolOptions::new()

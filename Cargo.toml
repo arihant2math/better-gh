@@ -24,6 +24,8 @@ bgh-admin = { path = "crates/bgh-admin" }
 bgh-sync = { path = "crates/bgh-sync" }
 bgh-graphql = { path = "crates/bgh-graphql" }
 bgh-actions = { path = "crates/bgh-actions" }
+bgh-projects = { path = "crates/bgh-projects" }
+bgh-wiki = { path = "crates/bgh-wiki" }
 bgh-server = { path = "crates/bgh-server" }
 
 # web / async
@@ -65,6 +67,7 @@ redis = { version = "0.32", default-features = false, features = ["tokio-comp", 
 # serialization / utils
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 thiserror = "2"
 anyhow = "1"
@@ -83,9 +86,14 @@ hex = "0.4"
 # content
 comrak = { version = "0.55", default-features = false }
 ammonia = "4"
-gix = { version = "0.88", default-features = false, features = ["revision", "sha1"] }
+gix = { version = "0.88", default-features = false, features = ["revision", "sha1", "parallel"] }
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-onig"] }
+two-face = { version = "0.4", default-features = false, features = ["syntect-onig"] }
 
-# mail / http clients
+# ssh
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2"] }
+
+# mail / http clients (accounts, notify webhooks)
 lettre = { version = "0.11", default-features = false, features = [
     "smtp-transport",
     "pool",
@@ -93,14 +101,24 @@ lettre = { version = "0.11", default-features = false, features = [
     "builder",
     "tokio1",
     "tokio1-rustls",
+    "tokio1-rustls-tls",
     "rustls-tls",
 ] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "stream", "http2"] }
 hmac = "0.12"
 sha1 = "0.10"
 flate2 = "1"
 crc32fast = "1"
 url = "2"
+
+# search
+regex = "1"
+
+# actions
+indexmap = { version = "2", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+crypto_box = { version = "0.9", features = ["seal", "chacha20"] }
+chacha20poly1305 = "0.10"
 
 # testing
 tempfile = "3"

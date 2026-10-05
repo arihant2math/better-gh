@@ -70,6 +70,7 @@ fn implied(granted: &str, wanted: &str) -> bool {
         "write:gpg_key" => wanted == "read:gpg_key",
         "user" => matches!(wanted, "read:user" | "user:email" | "user:follow"),
         "write:packages" => wanted == "read:packages",
+        "project" => wanted == "read:project",
         "workflow" => false,
         "site_admin" => false,
         _ => false,
@@ -350,12 +351,16 @@ pub async fn create_session(
 /// Delete a session by its secret cookie value (and evict the cache).
 pub async fn destroy_session(state: &AppState, token: &str) -> ApiResult<()> {
     let hash = crypto::sha256_hex(token);
-    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
-        .bind(&hash)
-        .execute(&state.db)
-        .await?;
+    let deleted: Option<(i64, i64)> =
+        sqlx::query_as("DELETE FROM sessions WHERE token_hash = $1 RETURNING id, user_id")
+            .bind(&hash)
+            .fetch_optional(&state.db)
+            .await?;
     let mut redis = state.redis.clone();
     let _: Result<(), _> = redis.del(state.redis_key(&format!("session:{hash}"))).await;
+    if let Some((session_id, user_id)) = deleted {
+        crate::sync::signal_signed_out(state, user_id, Some(session_id)).await;
+    }
     Ok(())
 }
 
@@ -373,6 +378,7 @@ pub async fn destroy_user_sessions(state: &AppState, user_id: i64) -> ApiResult<
             .collect();
         let mut redis = state.redis.clone();
         let _: Result<(), _> = redis.del(keys).await;
+        crate::sync::signal_signed_out(state, user_id, None).await;
     }
     Ok(())
 }
@@ -495,6 +501,20 @@ pub fn client_ip(config: &Config, headers: &HeaderMap, extensions: &Extensions) 
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .map(|ci| ci.0.ip().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// First `X-Forwarded-For` hop, else `X-Real-IP`, regardless of
+/// `BGH_TRUST_PROXY` (spoofable: informational use only, e.g. audit
+/// entries written where only headers are at hand). Prefer [`client_ip`].
+pub fn forwarded_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Optional authentication: `MaybeUser(None)` for anonymous callers.

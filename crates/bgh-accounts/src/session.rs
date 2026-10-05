@@ -79,6 +79,17 @@ pub async fn start_session(
         Some(&client.ip),
     )
     .await?;
+    if status == StatusCode::OK {
+        audit::log_with_ip(
+            &state.db,
+            Some(user),
+            "user.login",
+            audit::Target::User(user.id),
+            json!({}),
+            Some(client.ip.as_str()),
+        )
+        .await?;
+    }
     let body = users::private_user_json(state, user).await?;
     Ok((
         status,
@@ -154,6 +165,7 @@ pub async fn signup(
     if ratelimit::hit(&state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
         return Err(too_many("Too many sign ups. Please try again later."));
     }
+    bgh_core::settings::check_signup(&state, body.email.trim()).await?;
     let user = users::create_user(
         &state,
         NewAccount {
@@ -204,12 +216,31 @@ pub async fn password_login(
             "Too many failed login attempts. Please try again later.",
         ));
     }
+    let ip = Some(client.ip.as_str());
     let Some(user) = auth::verify_login(state, login, password).await? else {
         ratelimit::hit(state, &login_key(login), LOGIN_WINDOW_SECS).await?;
         ratelimit::hit(state, &ip_key(&client.ip), LOGIN_WINDOW_SECS).await?;
+        audit::log_with_ip(
+            &state.db,
+            None,
+            "user.failed_login",
+            audit::Target::None,
+            json!({ "login": login }),
+            ip,
+        )
+        .await?;
         return Err(ApiError::bad_credentials());
     };
     if user.is_suspended() {
+        audit::log_with_ip(
+            &state.db,
+            Some(&user),
+            "user.failed_login",
+            audit::Target::User(user.id),
+            json!({ "reason": "suspended" }),
+            ip,
+        )
+        .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
     ratelimit::clear(state, &login_key(login)).await;
@@ -280,6 +311,15 @@ pub async fn verify_pending_two_factor(
         .await?
         .ok_or_else(ApiError::bad_credentials)?;
     if user.is_suspended() {
+        audit::log_with_ip(
+            &state.db,
+            Some(&user),
+            "user.failed_login",
+            audit::Target::User(user.id),
+            json!({ "reason": "suspended" }),
+            None,
+        )
+        .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
     Ok(user)
@@ -297,8 +337,27 @@ pub async fn two_factor(
 }
 
 /// `DELETE /_bgh/session` → 204, clears the cookie.
-pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+pub async fn logout(
+    State(state): State<AppState>,
+    client: ClientInfo,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let caller = auth::authenticate(&state, &headers, Default::default())
+        .await
+        .ok()
+        .flatten();
     end_cookie_session(&state, &headers).await?;
+    if let Some(ctx) = &caller {
+        audit::log_with_ip(
+            &state.db,
+            Some(&ctx.user),
+            "user.logout",
+            audit::Target::User(ctx.user.id),
+            json!({}),
+            Some(client.ip.as_str()),
+        )
+        .await?;
+    }
     Ok((
         StatusCode::NO_CONTENT,
         [(

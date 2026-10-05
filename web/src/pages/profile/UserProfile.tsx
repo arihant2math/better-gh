@@ -8,7 +8,7 @@ import type { User } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
-import { BookIcon, LinkIcon, LocationIcon, MailIcon, MentionIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon } from '../../ui/icons';
+import { BookIcon, LinkIcon, LocationIcon, MailIcon, MentionIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon, TableIcon } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
 import { Activity } from './Activity';
 import { FollowButton, useFollowCheck, useFollowDelta, useMyFollowingDelta } from './follow';
@@ -52,6 +52,7 @@ export const UserProfile = observer(function UserProfile({ login, synced }: { lo
               { id: 'overview', label: 'Overview', icon: BookIcon, href: base },
               { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repoCount, href: `${base}?tab=repositories` },
               { id: 'stars', label: 'Stars', icon: StarIcon, count: starredCount, href: `${base}?tab=stars` },
+              { id: 'projects', label: 'Projects', icon: TableIcon, href: `/users${base}/projects` },
             ]}
           />
           {tab === 'overview' && <Overview login={displayLogin} repos={repos} isViewer={isViewer} />}

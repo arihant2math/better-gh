@@ -31,7 +31,15 @@ pub struct RepoStore {
     pub git_bin: String,
     /// Blob size limit for API reads (bytes).
     pub max_blob_size: u64,
+    /// Directory name suffix: `.git` for repositories, `.wiki.git` for
+    /// their wikis (see [`Self::wiki`]).
+    pub suffix: &'static str,
 }
+
+/// Directory suffix of main repositories.
+pub const REPO_SUFFIX: &str = ".git";
+/// Directory suffix of wiki repositories.
+pub const WIKI_SUFFIX: &str = ".wiki.git";
 
 impl RepoStore {
     pub fn new(root: impl Into<PathBuf>, git_bin: impl Into<String>) -> Self {
@@ -39,6 +47,7 @@ impl RepoStore {
             root: root.into(),
             git_bin: git_bin.into(),
             max_blob_size: 10 * 1024 * 1024,
+            suffix: REPO_SUFFIX,
         }
     }
 
@@ -47,14 +56,30 @@ impl RepoStore {
             root: config.repos_dir(),
             git_bin: config.git_bin.clone(),
             max_blob_size: config.max_blob_size,
+            suffix: REPO_SUFFIX,
         }
     }
 
-    /// `{root}/{id % 256 as 2-hex}/{id}.git`
+    /// The same store addressing wiki repositories
+    /// (`{root}/{id % 256 as 2-hex}/{id}.wiki.git`, next to the main repo).
+    /// Every read/write/transport helper works unchanged on it.
+    pub fn wiki(&self) -> RepoStore {
+        RepoStore {
+            suffix: WIKI_SUFFIX,
+            ..self.clone()
+        }
+    }
+
+    /// Whether this store addresses wiki repositories.
+    pub fn is_wiki(&self) -> bool {
+        self.suffix == WIKI_SUFFIX
+    }
+
+    /// `{root}/{id % 256 as 2-hex}/{id}{suffix}` (suffix `.git` by default)
     pub fn path(&self, repo_id: i64) -> PathBuf {
         self.root
             .join(format!("{:02x}", repo_id.rem_euclid(256)))
-            .join(format!("{repo_id}.git"))
+            .join(format!("{repo_id}{}", self.suffix))
     }
 
     pub fn exists(&self, repo_id: i64) -> bool {
@@ -142,6 +167,7 @@ impl RepoStore {
 
     /// Remove a repository from disk (idempotent).
     pub async fn delete(&self, repo_id: i64) -> GitResult<()> {
+        crate::cache::evict(&self.path(repo_id));
         match tokio::fs::remove_dir_all(self.path(repo_id)).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -154,7 +180,10 @@ impl RepoStore {
         if !self.exists(repo_id) {
             return Err(GitError::NotFound(format!("repository {repo_id}")));
         }
-        Ok(GitRepo::open(&self.path(repo_id), self.max_blob_size)?.with_git_bin(&self.git_bin))
+        Ok(
+            GitRepo::open_cached(&self.path(repo_id), self.max_blob_size)?
+                .with_git_bin(&self.git_bin),
+        )
     }
 
     /// Run a blocking read against a repository on the blocking thread pool.

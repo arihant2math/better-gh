@@ -1,10 +1,7 @@
-//! API root (`GET /api/v3/`) and `GET /rate_limit`.
+//! API root (`GET /api/v3/`). (`GET /rate_limit` is served by bgh-admin.)
 
 use axum::extract::State;
-use axum::http::Request;
-use bgh_core::auth;
 use bgh_core::prelude::*;
-use bgh_core::ratelimit::{self, RateLimit, Resource};
 use serde_json::{Value, json};
 
 /// `GET /` (the API root): hypermedia URL templates, like GitHub. Clients
@@ -41,39 +38,4 @@ pub async fn root(State(state): State<AppState>, _auth: MaybeUser) -> Json<Value
         "user_repositories_url": a("/users/{user}/repos{?type,page,per_page,sort}"),
         "user_search_url": a("/search/users?q={query}{&page,per_page,sort,order}"),
     }))
-}
-
-/// `GET /rate_limit` → the caller's buckets (not counted). 404 when rate
-/// limiting is disabled, like GHES.
-pub async fn rate_limit(
-    State(state): State<AppState>,
-    auth: MaybeUser,
-    req: Request<axum::body::Body>,
-) -> ApiResult<Json<Value>> {
-    let ip = auth::client_ip(&state.config, req.headers(), req.extensions());
-    let caller = ratelimit::caller_key(auth.as_ref(), &ip);
-    let authed = auth.as_ref().is_some();
-    let mut out = serde_json::Map::new();
-    for resource in [Resource::Core, Resource::Search] {
-        let Some(limit) = resource.limit(&state, authed) else {
-            return Err(ApiError::Status(
-                axum::http::StatusCode::NOT_FOUND,
-                "Rate limiting is not enabled.".into(),
-            ));
-        };
-        let rl: RateLimit = ratelimit::peek(&state, resource, &caller, limit).await?;
-        out.insert(
-            resource.name().into(),
-            json!({
-                "limit": rl.limit, "used": rl.used.min(rl.limit), "remaining": rl.remaining,
-                "reset": rl.reset, "resource": resource.name(),
-            }),
-        );
-    }
-    let core = out["core"].clone();
-    // GraphQL shares the core budget here.
-    let mut graphql = core.clone();
-    graphql["resource"] = json!("graphql");
-    out.insert("graphql".into(), graphql);
-    Ok(Json(json!({ "resources": out, "rate": core })))
 }

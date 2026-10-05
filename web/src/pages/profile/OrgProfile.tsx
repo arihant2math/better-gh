@@ -9,7 +9,7 @@ import type { Membership, Org, Team } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Box, EmptyState, Skeleton } from '../../ui/EmptyState';
-import { BookIcon, GearIcon, LinkIcon, LocationIcon, MailIcon, PeopleIcon, PlusIcon, RepoIcon, VerifiedIcon } from '../../ui/icons';
+import { BookIcon, GearIcon, LinkIcon, LocationIcon, MailIcon, PeopleIcon, PlusIcon, RepoIcon, VerifiedIcon, TableIcon } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
 import { useOwnerRepos, type ReposState } from './profileData';
 import styles from './ProfilePage.module.css';
@@ -96,6 +96,7 @@ export const OrgProfile = observer(function OrgProfile({ login, synced }: { logi
         items={[
           { id: 'overview', label: 'Overview', icon: BookIcon, href: base },
           { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.items.length || (o ? o.public_repos + (o.total_private_repos ?? 0) : undefined), href: `${base}?tab=repositories` },
+              { id: 'projects', label: 'Projects', icon: TableIcon, href: `/orgs${base}/projects` },
           { id: 'people', label: 'People', icon: PeopleIcon, count: people?.length, href: `${base}?tab=people` },
           ...(isMember ? [{ id: 'teams', label: 'Teams', icon: PeopleIcon, count: teamRows.length, href: `${base}?tab=teams` }] : []),
         ]}
