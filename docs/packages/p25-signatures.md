@@ -1,5 +1,5 @@
 Integration: landed
-Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (c783bac, with P23).
+Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (91dbfa8, with P23, P28, P51, P61, P65).
 
 # P25 — Commit and tag signature verification, SSH signing keys, required_signatures, web-flow signing
 
@@ -160,11 +160,11 @@ live from the owner's verified e-mails.
   scopes, pagination, public list.
 * `bgh-graphql` `tests/it/signatures.rs`: `Commit.signature`.
 
-## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at c783bac)
+## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at 91dbfa8)
 
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
-warnings`, `cargo test --workspace` (1165 passed, 14 ignored), web
-`typecheck && lint && test (513) && build` (budget OK, 144.8 KB), `api-smoke.sh`
+warnings`, `cargo test --workspace` (1206 passed, 16 ignored), web
+`typecheck && lint && test (521) && build` (budget OK, 145.3 KB), `api-smoke.sh`
 (45/45), `gh-compat.sh` (63/63), Playwright `web/scripts/signatures-smoke.mjs`
 (mock, light + dark).
 
