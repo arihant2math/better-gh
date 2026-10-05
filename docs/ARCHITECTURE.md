@@ -168,7 +168,16 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
 * Auth: `Authorization: token <t>` / `Bearer <t>` / Basic (user:token) ;
   session cookie for the web client. Scopes via `X-OAuth-Scopes`.
 * Headers: `X-GitHub-Media-Type`, `X-RateLimit-*`, `ETag` +
-  `If-None-Match` → 304 on GETs.
+  `If-None-Match` → 304 on GETs (`Last-Modified` from a top-level
+  `updated_at`, honoring `If-Modified-Since` when no `If-None-Match`).
+  Validators are computed for JSON bodies up to 1 MiB, or any size when
+  the request is conditional. The ETag layer sits inside the rate limiter,
+  and 304s are refunded (`ratelimit::refund`), so they are free. Every `/api/*`
+  response carries `X-GitHub-Enterprise-Version` and `X-GitHub-Request-Id`
+  (= `x-request-id`). REST rejects an unsupported `X-GitHub-Api-Version`
+  with 400 (`bgh_core::API_VERSIONS`). Scope-gated endpoints
+  (`require_scope`) send `X-Accepted-OAuth-Scopes`. A known path with the
+  wrong method gets a JSON 404, not an empty 405.
 * Media types: `application/vnd.github+json`, `.raw`, `.html`, `.diff`,
   `.patch` where GitHub supports them.
 * `node_id`: GitHub's legacy format, base64 of `"{len:02}:{Type}{id}"`
