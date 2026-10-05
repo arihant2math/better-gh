@@ -4,6 +4,9 @@
 //! `Authorization: token|Bearer`. Anonymous callers that need credentials
 //! (private repo, or any push) get `401` + `WWW-Authenticate: Basic` so git
 //! prompts; authenticated callers without access get 404 (read) / 403 (write).
+//!
+//! Wiki repositories (`{repo}.wiki.git` / `{repo}.wiki`) can't be routed
+//! separately by axum, so each handler delegates them to `bgh_wiki::git`.
 
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -87,6 +90,10 @@ pub async fn info_refs(
     Query(q): Query<InfoRefsQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::info_refs(&state, &owner, &repo, q.service.as_deref(), &headers)
+            .await;
+    }
     let service = q
         .service
         .as_deref()
@@ -104,6 +111,9 @@ pub async fn upload_pack(
     Path((owner, repo)): Path<(String, String)>,
     req: Request,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::upload_pack(&state, &owner, &repo, req).await;
+    }
     let (parts, body) = req.into_parts();
     let (access, _) =
         git_access(&state, &parts.headers, &owner, &repo, Service::UploadPack).await?;
@@ -119,6 +129,9 @@ pub async fn receive_pack(
     Path((owner, repo)): Path<(String, String)>,
     req: Request,
 ) -> ApiResult<Response> {
+    if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
+        return bgh_wiki::git::receive_pack(&state, &owner, &repo, req).await;
+    }
     let (parts, body): (_, Body) = req.into_parts();
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;

@@ -70,6 +70,7 @@ fn implied(granted: &str, wanted: &str) -> bool {
         "write:gpg_key" => wanted == "read:gpg_key",
         "user" => matches!(wanted, "read:user" | "user:email" | "user:follow"),
         "write:packages" => wanted == "read:packages",
+        "project" => wanted == "read:project",
         "workflow" => false,
         "site_admin" => false,
         _ => false,

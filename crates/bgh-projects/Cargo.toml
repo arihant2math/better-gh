@@ -1,6 +1,6 @@
 [package]
-name = "bgh-repos"
-description = "Repositories: CRUD, collaborators, forks, stars, contents/refs APIs, branch protection, git transport routes"
+name = "bgh-projects"
+description = "Projects (v2-style boards): items, custom fields, views, workflows"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,20 +8,18 @@ publish.workspace = true
 
 [dependencies]
 bgh-core.workspace = true
-bgh-git.workspace = true
-bgh-wiki.workspace = true
 axum.workspace = true
-tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+rand.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
 tokio.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true

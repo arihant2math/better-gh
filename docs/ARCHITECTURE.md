@@ -268,7 +268,9 @@ optimistic-mutation reconciliation) is specified normatively in
   `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
   (alternates) — a source repo with forks must be repacked into them
   before deletion (TODO). Repo deletion removes the row immediately and
-  the directory in the `repos.delete_storage` job.
+  the directory in the `repos.delete_storage` job. Wikis live next to the
+  repository as `{id}.wiki.git` (`RepoStore::wiki()`, owned by bgh-wiki;
+  bgh-repos' git routes delegate `{repo}.wiki(.git)` to `bgh_wiki::git`).
 * Reads via `gix` (fast, in-process): refs, trees, blobs, commits, log.
   gix is used for the object database and refs only; commit/tree/tag
   bytes are parsed by `bgh_git::objects` (stable across gix releases).

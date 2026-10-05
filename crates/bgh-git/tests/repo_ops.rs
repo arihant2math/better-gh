@@ -202,3 +202,99 @@ async fn rejects_invalid_input() {
         Err(GitError::NotFound(_))
     ));
 }
+
+#[tokio::test]
+async fn wiki_store_and_diff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(&tmp);
+    store.init(7, "main").await.unwrap();
+    let wiki = store.wiki();
+    assert!(wiki.is_wiki() && !store.is_wiki());
+    assert!(!wiki.exists(7));
+    let path = wiki.init(7, "master").await.unwrap();
+    assert!(path.ends_with("07/7.wiki.git"), "{path:?}");
+    assert!(store.path(7).ends_with("07/7.git"));
+    assert!(wiki.exists(7) && store.exists(7));
+
+    let changes = [FileChange::write("Home.md", "one\n")];
+    let ident = Identity::new("Ada", "ada@example.com");
+    let c1 = write::commit_changes(
+        &wiki,
+        7,
+        CommitRequest {
+            branch: "master",
+            parent: None,
+            changes: &changes,
+            message: "first",
+            author: &ident,
+            committer: None,
+        },
+    )
+    .await
+    .unwrap();
+    let changes = [
+        FileChange::write("Home.md", "two\n"),
+        FileChange::write("Other.md", "x\n"),
+    ];
+    let c2 = write::commit_changes(
+        &wiki,
+        7,
+        CommitRequest {
+            branch: "master",
+            parent: Some(&c1),
+            changes: &changes,
+            message: "second",
+            author: &ident,
+            committer: None,
+        },
+    )
+    .await
+    .unwrap();
+    // Deleting a file works in a bare repository.
+    let changes = [FileChange::Delete {
+        path: "Other.md".into(),
+    }];
+    let c3 = write::commit_changes(
+        &wiki,
+        7,
+        CommitRequest {
+            branch: "master",
+            parent: Some(&c2),
+            changes: &changes,
+            message: "third",
+            author: &ident,
+            committer: None,
+        },
+    )
+    .await
+    .unwrap();
+    let names = wiki
+        .read(7, move |r| match r.lookup_path(&c3, "")? {
+            PathLookup::Tree { entries, .. } => {
+                Ok(entries.into_iter().map(|e| e.name).collect::<Vec<_>>())
+            }
+            _ => unreachable!(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(names, ["Home.md"]);
+    // The main repository is untouched.
+    assert!(store.read(7, |r| r.is_empty()).await.unwrap());
+    let (all, one) = wiki
+        .read(7, move |r| {
+            Ok((r.diff(&c1, &c2, &[])?, r.diff(&c1, &c2, &["Home.md"])?))
+        })
+        .await
+        .unwrap();
+    assert!(
+        all.contains("-one\n+two\n") && all.contains("+++ b/Other.md"),
+        "{all}"
+    );
+    assert!(one.contains("+two") && !one.contains("Other.md"), "{one}");
+    let bad = wiki
+        .read(7, |r| r.diff("--output=/tmp/x", "HEAD", &[]))
+        .await;
+    assert!(matches!(bad, Err(GitError::NotFound(_))));
+    wiki.delete(7).await.unwrap();
+    assert!(!wiki.exists(7) && store.exists(7));
+}

@@ -71,6 +71,13 @@ impl Registry {
         });
         self
     }
+
+    /// Register a bootstrap scope provider for synced models owned by this
+    /// crate (see [`crate::sync::ScopeProvider`]).
+    pub fn scope_provider(&mut self, provider: crate::sync::ScopeProvider) -> &mut Self {
+        crate::sync::register_scope_provider(provider);
+        self
+    }
 }
 
 /// Spawn one task per listener, each consuming the event bus in order until

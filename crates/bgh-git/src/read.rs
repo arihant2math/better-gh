@@ -318,6 +318,7 @@ impl GitRepo {
                 &self.git_bin,
                 &self.path,
                 &[
+                    "--literal-pathspecs",
                     "log",
                     "--format=%H",
                     &skip_arg,
@@ -390,6 +391,27 @@ impl GitRepo {
             }
         }
         Ok(out)
+    }
+
+    /// Unified diff (`git diff`) between two revisions, optionally limited
+    /// to `paths`. Both revisions are resolved to commits first, so user
+    /// input never reaches git's option parser.
+    pub fn diff(&self, base: &str, head: &str, paths: &[&str]) -> GitResult<String> {
+        let base = self.resolve_commit(base)?;
+        let head = self.resolve_commit(head)?;
+        let mut args = vec![
+            "--literal-pathspecs",
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            base.as_str(),
+            head.as_str(),
+            "--",
+        ];
+        args.extend(paths.iter().copied());
+        let out = cmd::run_blocking(&self.git_bin, &self.path, &args)?;
+        Ok(String::from_utf8_lossy(&out).into_owned())
     }
 
     /// Whether `ancestor` is reachable from `descendant`.
