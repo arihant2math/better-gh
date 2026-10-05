@@ -297,33 +297,6 @@ async fn session_auth(state: &AppState, token: &str) -> ApiResult<Option<AuthCon
     }))
 }
 
-/// CSRF token bound to a session: derived from the secret session cookie
-/// value, so it needs no storage. The web client receives it as `boot.csrf`
-/// and sends it as `X-CSRF-Token` on cookie-authenticated writes
-/// (docs/SYNC_PROTOCOL.md §10).
-pub fn csrf_token(session_secret: &str) -> String {
-    crypto::sha256_hex(&format!("bgh-csrf:{session_secret}"))
-}
-
-/// Check `X-CSRF-Token` against the request's session cookie (403 when
-/// missing or wrong). Only meaningful for session-authenticated requests.
-pub fn verify_csrf(headers: &HeaderMap) -> ApiResult<()> {
-    let expected = cookie(headers, SESSION_COOKIE).map(|s| csrf_token(&s));
-    let given = headers.get("x-csrf-token").and_then(|v| v.to_str().ok());
-    match (expected, given) {
-        (Some(e), Some(g))
-            if e.len() == g.len()
-                && e.bytes()
-                    .zip(g.bytes())
-                    .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-                    == 0 =>
-        {
-            Ok(())
-        }
-        _ => Err(ApiError::forbidden("Missing or invalid CSRF token.")),
-    }
-}
-
 /// Read a cookie value from request headers.
 pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers

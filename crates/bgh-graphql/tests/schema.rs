@@ -80,35 +80,6 @@ async fn get_allows_queries_not_mutations() {
 }
 
 #[tokio::test]
-async fn session_requires_csrf_token() {
-    let app = bgh_server::test_app().await;
-    let alice = app.create_user("alice").await;
-    let cookie = app.session_cookie(&alice).await;
-    let q = json!({"query": "{ viewer { login } }"});
-    let res = app
-        .post("/api/graphql")
-        .cookie(&cookie)
-        .json(&q)
-        .send()
-        .await;
-    res.assert_status(403);
-    let secret = cookie
-        .split(';')
-        .find_map(|p| p.trim().strip_prefix("bgh_session="))
-        .unwrap()
-        .to_string();
-    let res = app
-        .post("/api/graphql")
-        .cookie(&cookie)
-        .header("x-csrf-token", &bgh_core::auth::csrf_token(&secret))
-        .json(&q)
-        .send()
-        .await;
-    res.assert_status(200);
-    assert_eq!(res.json()["data"]["viewer"]["login"], "alice");
-}
-
-#[tokio::test]
 async fn not_found_errors_have_github_type() {
     let app = bgh_server::test_app().await;
     let alice = app.create_user("alice").await;

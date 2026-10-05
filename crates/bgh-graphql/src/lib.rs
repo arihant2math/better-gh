@@ -25,10 +25,9 @@ use async_graphql::{EmptySubscription, Schema};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{RawQuery, State};
-use axum::http::{HeaderMap, HeaderValue, Method};
+use axum::http::{HeaderValue, Method};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use bgh_core::auth::AuthMethod;
 use bgh_core::prelude::*;
 use serde_json::{Value, json};
 
@@ -75,15 +74,10 @@ pub fn register(_reg: &mut Registry) {}
 async fn post_graphql(
     State(state): State<AppState>,
     auth: MaybeUser,
-    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(a) = auth.as_ref()
-        && matches!(a.method, AuthMethod::Session { .. })
-        && let Err(e) = bgh_core::auth::verify_csrf(&headers)
-    {
-        return e.into_response();
-    }
+    // Cookie-authenticated POSTs are CSRF-checked by the server-wide
+    // middleware (bgh_core::auth::csrf_middleware).
     let request: async_graphql::Request = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => return problems_parsing(&e.to_string()),
