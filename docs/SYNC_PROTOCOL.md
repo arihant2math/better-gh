@@ -271,6 +271,12 @@ interface Notification {      // scope user:{viewer}
 }
 ```
 
+Server notes: `authorId` / `actorId` / `mergedById` are `null` when the
+user was deleted (GitHub's "ghost"). `stateReason` `duplicate` is sent as
+`not_planned`; `mergeableState` `has_hooks` as `clean`, `draft` as
+`blocked`. `reactions` is always present (`{}` when empty) so a removed
+last reaction reaches the client.
+
 ### 3.1 Users
 
 `user` rows are not owned by a scope. The server includes every user
@@ -362,6 +368,20 @@ Same-origin, authenticated by the session cookie (the server must verify the
 Close codes: `4001` unauthenticated (client goes to login), `4009` rebootstrap
 required (equivalent to the message), anything else → reconnect.
 
+Server notes (bgh-sync; compatible with the client above):
+* The client may pass its schema version as `?v=1`; a mismatch answers
+  `rebootstrap` (`"schema"`) and closes with `4009`.
+* A connection whose outgoing queue overflows gets
+  `{"t":"error","code":"slow_consumer",...}` and is closed with `1013`;
+  the client reconnects and resumes from `lastSyncId` (nothing is lost).
+* Signing out (`/_bgh/auth/logout`, session revocation, suspension)
+  closes the affected sockets with `4001`.
+* Deltas in scopes the viewer can't read are never sent: on `sub`, every
+  unreadable or malformed scope is answered with a `revoke`, and `ready.scopes`
+  lists only the subscribed (readable) ones.
+* `ready.id` is the server head when the replay finished; every action
+  `<= id` of the subscribed scopes has been sent before `ready`.
+
 ### Delta
 
 ```jsonc
@@ -389,7 +409,9 @@ as upserts. `D` removes the row; deleting an `issue` also removes its
 ### Ordering, batching, liveness
 
 * On one connection ids are strictly ascending (replay is merged with the
-  live stream server-side; actions already sent are not repeated).
+  live stream server-side; actions already sent are not repeated). A later
+  `sub` that adds a scope replays that scope from its own `since`, so its
+  replay batch may contain ids below ones already streamed for other scopes.
 * Replay is sent in `batch`es of ≤ 500 items. Live actions SHOULD be
   coalesced in windows of ~10 ms into a `batch`.
 * The client treats ≥ 60 s without any server message as a dead connection.
@@ -456,7 +478,9 @@ Content-Type: application/json
 3. **Idempotency:** the server remembers `(user_id, tx) → (status, body,
    sync id)` for 24 h. A repeated request with the same tx returns the stored
    response without re-executing it (header `Idempotent-Replayed: true`).
-   This makes client retries after a reload safe.
+   This makes client retries after a reload safe. While the first request
+   with a tx is still executing, a duplicate gets `429` with
+   `Retry-After: 1` (the client keeps its overlay and retries).
 
 ### Client algorithm
 

@@ -206,10 +206,15 @@ optimistic-mutation reconciliation) is specified normatively in
 [`docs/SYNC_PROTOCOL.md`](SYNC_PROTOCOL.md); this section is a summary.
 
 * Use `bgh_core::db::Tx` (a transaction that collects post-commit side
-  effects): `tx.sync(scope, model, id, action, &data)` records the row in
-  the transaction and publishes it after `tx.commit()`; `tx.emit(event)` and
-  `tx.enqueue(&job)` likewise. Published messages are the JSON of
-  `bgh_core::sync::SyncRecord` (`{"id","scope","model","mid","a","d"}`).
+  effects): `tx.sync_model(SyncModel::Issue, id, action)` (and
+  `sync_issue`, `sync_delete`, `sync_user`, `sync_viewer_repo`) loads the
+  row's compact client shape from `bgh_core::sync::shapes` — the single
+  place that builds them, shared with bootstrap and partial sync — records
+  it in the transaction and publishes it after `tx.commit()`;
+  `tx.emit(event)` and `tx.enqueue(&job)` likewise. Published messages are
+  the JSON of `bgh_core::sync::SyncRecord`
+  (`{"id","scope","model","mid","a","d","tx"}`). How domain crates must
+  record changes: BACKEND_PATTERNS.md §8a.
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
   JSONB, tx UUID NULL, created_at)` **in the same transaction** via
@@ -218,7 +223,22 @@ optimistic-mutation reconciliation) is specified normatively in
   the delta echoes it. `record` serializes writers with a transaction-scoped
   advisory lock so sync ids become visible in id order. After commit, call
   `bgh_core::sync::notify(&state, ...)` which publishes on the Redis channel
-  `sync:{scope}`.
+  `sync:{scope}`. The request context is a tokio task-local installed by
+  `bgh_sync::http_middleware` (mounted for every route), which also adds
+  `X-Bgh-Sync-Id` and implements `X-Client-Tx` idempotency in Redis.
+* Fan-out: one `PSUBSCRIBE {prefix}sync:*` connection per process
+  (`bgh_sync::hub`), multiplexed to all sockets through bounded queues
+  (slow sockets are closed with 1013 and resume). The hub delivers in id
+  order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
+  from `sync_actions`; a socket subscribing at hub position `L` replays
+  `(since, L]` from the log and receives `> L` live. Access changes
+  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
+  `membership`/`team`/`viewerRepo` deltas, sign-outs via
+  `sync:!access`) trigger permission rechecks and `revoke`s.
+* Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
+  actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
+  `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
+  latest action per row instead.
 * Scopes: `repo:{id}` (repo, issues + PR metadata, labels, milestones,
   comments, reviews, timeline events), `user:{id}` (notifications,
   viewer-specific repo data: permission/starred), `org:{id}` (org,

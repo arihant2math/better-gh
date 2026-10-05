@@ -516,13 +516,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "bgh-core",
  "bgh-server",
+ "brotli",
+ "chrono",
+ "flate2",
+ "futures",
+ "http",
+ "redis",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

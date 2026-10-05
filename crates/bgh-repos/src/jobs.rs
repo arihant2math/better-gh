@@ -3,11 +3,8 @@
 use bgh_core::events::{Event, PushEvent, RefUpdate};
 use bgh_core::jobs::JobPayload;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use bgh_git::write;
 use serde::{Deserialize, Serialize};
-
-use crate::json::repo_sync_json;
 
 /// Enqueued after a successful `git push`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,9 +57,6 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
     let Some(repo) = db::Repository::find(&state.db, job.repo_id).await? else {
         return Ok(()); // deleted meanwhile
     };
-    let Some(owner) = db::User::find(&state.db, repo.owner_id).await? else {
-        return Ok(());
-    };
     let store = crate::store(&state);
     let branches: Vec<String> = store
         .read(repo.id, |r| {
@@ -91,15 +85,9 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
     .bind(new_default.as_deref())
     .fetch_one(&mut *tx)
     .await?;
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "repository",
-        repo.id,
-        SyncAction::Update,
-        &repo_sync_json(&repo, &owner.login),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("{e}"))?;
+    tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Update)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     tx.emit(Event::Push(PushEvent {
         repo_id: repo.id,
         pusher_id: job.pusher_id,
