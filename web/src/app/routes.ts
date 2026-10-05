@@ -94,6 +94,7 @@ function prefetchPackages(p: Params) {
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
+const CachesPage = () => import('../pages/actions/caches/CachesPage');
 const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
 
 function prefetchActions(p: Params) {
@@ -348,6 +349,7 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/actions/runs/:run', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/attempts/:attempt', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/job/:job', layout: RepoLayout, load: JobPage, prefetch: prefetchActions, title: (p) => `Job ${p.job} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/caches', layout: RepoLayout, load: CachesPage, prefetch: prefetchActions, title: (p) => `Caches · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/secrets/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },
