@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/// <reference types="node" />
 /**
  * Client/server Markdown parity: renders the shared corpus in
  * `testdata/markdown/` and compares with the server's snapshots
@@ -11,6 +12,7 @@ import emoji from './emoji.json';
 import { renderMarkdown, setEmoji } from './render';
 
 const dir = resolve(import.meta.dirname, '../../../../testdata/markdown');
+const file = (name: string) => readFileSync(join(dir, name), 'utf8');
 const ctx = {
   base: 'https://bgh.example',
   origin: 'https://bgh.example',
@@ -45,8 +47,8 @@ describe('markdown parity corpus', () => {
   it('has a corpus', () => expect(names.length).toBeGreaterThanOrEqual(6));
   for (const f of names) {
     it(f, () => {
-      const md = readFileSync(join(dir, f), 'utf8');
-      const want = readFileSync(join(dir, f.replace(/\.md$/, '.html')), 'utf8');
+      const md = file(f);
+      const want = file(f.replace(/\.md$/, '.html'));
       expect(canon(renderMarkdown(md, ctx))).toBe(canon(want));
     });
   }

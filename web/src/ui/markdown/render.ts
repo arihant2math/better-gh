@@ -165,6 +165,14 @@ function markedInstance(): Marked {
 let instance: Marked | null = null;
 
 let tasksEnabled = false;
+/** Origin of this instance during a sanitize call (external images go through camo). */
+let imageOrigin = '';
+
+/** Absolute http(s) URL not on this instance (server: `camo::is_external`). */
+function isExternal(src: string): boolean {
+  if (!/^https?:\/\//i.test(src)) return false;
+  return !imageOrigin || !src.toLowerCase().startsWith(`${imageOrigin.toLowerCase()}/`);
+}
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   const el = node as Element;
   switch (el.tagName) {
@@ -172,10 +180,18 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
       if (!tasksEnabled || !el.classList.contains('task-list-item-checkbox')) el.setAttribute('disabled', '');
       else el.removeAttribute('disabled');
       break;
-    case 'IMG':
+    case 'IMG': {
       el.setAttribute('loading', 'lazy');
       el.setAttribute('decoding', 'async');
+      // Never contact third-party hosts directly: enhance() swaps in a
+      // signed /_bgh/camo URL (or the original when the proxy is off).
+      const src = el.getAttribute('src');
+      if (src && isExternal(src)) {
+        el.setAttribute('data-canonical-src', src);
+        el.removeAttribute('src');
+      }
       break;
+    }
   }
   // Author ids can't clobber the app's (comrak/ammonia prefix them too).
   const id = el.getAttribute?.('id');
@@ -253,6 +269,7 @@ export function renderMarkdown(src: string, ctx: RenderContext = {}): string {
   instance ??= markedInstance();
   const html = instance.parse(src) as string;
   tasksEnabled = !!ctx.tasks;
+  imageOrigin = (ctx.origin ?? (typeof location === 'undefined' ? '' : location.origin)).replace(/\/+$/, '');
   const clean = DOMPurify.sanitize(html, {
     ADD_TAGS: ['g-emoji'],
     ADD_ATTR: ['target', 'controls', 'preload', 'loading', 'decoding', 'alias', 'lang'],
@@ -264,3 +281,6 @@ export function renderMarkdown(src: string, ctx: RenderContext = {}): string {
   linkText(box.content, ctx);
   return box.innerHTML;
 }
+
+export { enhance } from './enhance';
+export { countTasks, setTask } from './tasks';
