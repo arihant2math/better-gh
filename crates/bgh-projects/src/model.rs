@@ -181,6 +181,7 @@ pub struct ItemRow {
     pub body: Option<String>,
     pub assignee_ids: Vec<i64>,
     pub archived: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     pub position: String,
     pub view_positions: Value,
     pub field_values: Value,
@@ -192,7 +193,7 @@ pub struct ItemRow {
 impl ItemRow {
     /// `SELECT` list over `project_items i` (values aggregated per item).
     pub const SELECT: &'static str = "SELECT i.id, i.project_id, i.content_type, i.issue_id, \
-        i.title, i.body, i.assignee_ids, i.archived, i.position, i.view_positions, \
+        i.title, i.body, i.assignee_ids, i.archived, i.archived_at, i.position, i.view_positions, \
         COALESCE((SELECT jsonb_object_agg(v.field_id::text, v.value) FROM project_item_values v \
                   WHERE v.item_id = i.id), '{}'::jsonb) AS field_values, \
         i.creator_id, i.created_at, i.updated_at FROM project_items i";
