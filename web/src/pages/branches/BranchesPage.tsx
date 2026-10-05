@@ -3,6 +3,7 @@ import { useMemo, useReducer, useRef, useState, type FormEvent, type ReactNode }
 import { invalidate, load, useResource } from '../../api/cache';
 import { codeKeys, createBranch, deleteBranch, getBranchList, type BranchList, type BranchOverview } from '../../api/code';
 import { browseKeys, getRefs, isSha } from '../../api/endpoints';
+import { activeBranchRulesets, type Ruleset } from '../../api/rulesets';
 import { RefPicker, refLabel } from '../../components/code/RefPicker';
 import { Link, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -13,17 +14,19 @@ import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { AlertIcon, CopyIcon, GitBranchIcon, GitPullRequestIcon, PlusIcon, SearchIcon, ShieldIcon, TrashIcon } from '../../ui/icons';
+import { AlertIcon, CopyIcon, GitBranchIcon, GitPullRequestIcon, PlusIcon, SearchIcon, ShieldIcon, ShieldLockIcon, TrashIcon } from '../../ui/icons';
 import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { TabNav } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
 import { VirtualList } from '../../ui/VirtualList';
+import { selectsRef } from '../rulesets/match';
 import { OVERVIEW_LIMIT, barFraction, branchDate, classifyBranches, parseView, type BranchView } from './classify';
 import styles from './Branches.module.css';
 
 const enc = encodeURIComponent;
 const VIRTUALIZE_OVER = 100;
+const NO_RULESETS: Ruleset[] = [];
 
 const VIEW_LABEL: Record<BranchView, string> = { overview: 'Overview', yours: 'Yours', active: 'Active', stale: 'Stale', all: 'All' };
 const SECTION_TITLE: Record<Exclude<BranchView, 'overview'>, string> = {
@@ -134,7 +137,9 @@ const Branches = observer(function Branches({ repo, view }: { repo: Repo; view: 
   };
 
   const defaultBranch = data?.default_branch ?? repo.defaultBranch;
-  const rowProps = { repo, defaultBranch, max, canPush, onDelete: remove };
+  // Active branch rulesets (own and inherited), matched per row for the ruleset badges.
+  const rulesets = useResource<Ruleset[]>(`rulesets:active:${o}/${r}/`, () => activeBranchRulesets(o, r).catch(() => []));
+  const rowProps = { repo, defaultBranch, max, canPush, onDelete: remove, rulesets: rulesets.data ?? NO_RULESETS, isAdmin: perm === 'admin' };
 
   let body: ReactNode;
   if (res.error && !data) {
@@ -273,6 +278,8 @@ function BranchRow({
   max,
   canPush,
   onDelete,
+  rulesets,
+  isAdmin,
 }: {
   b: BranchOverview;
   repo: Repo;
@@ -280,11 +287,14 @@ function BranchRow({
   max: number;
   canPush: boolean;
   onDelete: (b: BranchOverview) => void;
+  rulesets: Ruleset[];
+  isAdmin: boolean;
 }) {
   const base = `/${repo.owner}/${repo.name}`;
   const isDefault = b.name === defaultBranch;
   const author = b.commit.author;
   const user = { login: author.login ?? author.name, avatarUrl: author.avatar_url ?? '', name: author.name };
+  const protecting = rulesets.filter((rs) => selectsRef(rs.conditions?.ref_name, 'branch', `refs/heads/${b.name}`, defaultBranch));
   return (
     <div className={styles.row} role="listitem">
       <div className={styles.nameCell}>
@@ -293,11 +303,12 @@ function BranchRow({
         </Link>
         <IconButton icon={CopyIcon} label="Copy branch name" size="sm" onClick={() => copy(b.name)} />
         {isDefault && <span className={styles.badge}>default</span>}
-        {b.protected && (
+        {b.protected && !protecting.length && (
           <span className={styles.protected} title="Protected branch">
             <ShieldIcon size={14} />
           </span>
         )}
+        {protecting.length > 0 && <RulesetBadge rulesets={protecting} href={isAdmin ? `${base}/settings/rules${protecting.length === 1 && protecting[0]!.source_type === 'Repository' ? `/${protecting[0]!.id}` : ''}` : null} />}
       </div>
       <div className={styles.updated}>
         <Avatar user={user} size={16} title={author.login ?? author.name} />
@@ -324,6 +335,27 @@ function BranchRow({
         {canPush && !isDefault && !b.protected && <IconButton icon={TrashIcon} label={`Delete ${b.name}`} size="sm" onClick={() => onDelete(b)} />}
       </div>
     </div>
+  );
+}
+
+/** "Protected by rulesets" badge: the ruleset name (or count), linking to the rulesets for admins. */
+function RulesetBadge({ rulesets, href }: { rulesets: Ruleset[]; href: string | null }) {
+  const label = rulesets.length === 1 ? rulesets[0]!.name : `${rulesets.length} rulesets`;
+  const title = `Protected by ${rulesets.length === 1 ? 'ruleset' : 'rulesets'}: ${rulesets.map((r) => r.name).join(', ')}`;
+  const body = (
+    <>
+      <ShieldLockIcon size={12} />
+      {label}
+    </>
+  );
+  return href ? (
+    <Link to={href} className={styles.ruleset} title={title} aria-label={title}>
+      {body}
+    </Link>
+  ) : (
+    <span className={styles.ruleset} title={title} aria-label={title}>
+      {body}
+    </span>
   );
 }
 

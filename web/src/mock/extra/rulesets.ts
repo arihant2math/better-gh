@@ -10,7 +10,7 @@ import { selectsRef, selectsRepo } from '../../pages/rulesets/match';
 import type { ID, Org, Repo } from '../../sync/models';
 import { fakeSha } from '../rng';
 import type { Ctx, MockServer, Resp } from '../server';
-import { invalid, noContent, notFound, ok, param, state } from './util';
+import { invalid, noContent, notFound, ok, param, simpleUser, state } from './util';
 
 interface StoredRuleset {
   id: number;
@@ -452,6 +452,24 @@ export function installRulesetMocks(server: MockServer): void {
   const nameTaken = (name: string, scope: { repoId: ID | null; orgId: ID | null }, except?: number) =>
     S(server).rulesets.some((r) => r.id !== except && r.repoId === scope.repoId && r.orgId === scope.orgId && r.name.toLowerCase() === name.toLowerCase());
   const taken = () => invalid('Validation Failed', 'name', 'already_exists', 'Ruleset');
+
+  // ---------------- org membership (the org settings pages check it; appended so a fuller mock wins)
+
+  server.route('GET', '/api/v3/orgs/:org/memberships/:user', (ctx) => {
+    const org = orgByLogin(server, param(ctx, 1));
+    const login = param(ctx, 2).toLowerCase();
+    const user = [...t.user.values()].find((u) => u.login.toLowerCase() === login);
+    const m = org && user && [...t.membership.values()].find((x) => x.orgId === org.id && x.userId === user.id);
+    if (!org || !user || !m) return notFound();
+    return ok({
+      url: `/api/v3/orgs/${org.login}/memberships/${user.login}`,
+      state: 'active',
+      role: m.role,
+      organization_url: `/api/v3/orgs/${org.login}`,
+      organization: { login: org.login, id: org.id },
+      user: simpleUser(server, user.id),
+    });
+  });
 
   // ---------------- repository rulesets
 
