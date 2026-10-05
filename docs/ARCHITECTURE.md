@@ -99,7 +99,11 @@ every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
-`bgh admin create-org --login --admin <user> [--name]`.
+`bgh admin create-org --login --admin <user> [--name]`,
+`bgh admin create-token --user <login> [--scopes a,b] [--name]
+[--expires-in-days]` (prints a PAT), `bgh healthcheck` (probes `/healthz`
+on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
+reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
 ## HTTP surface
 
@@ -197,6 +201,10 @@ add a new one.
 
 ## Sync engine (local-first)
 
+The wire protocol (bootstrap, WebSocket messages, partial sync, model shapes,
+optimistic-mutation reconciliation) is specified normatively in
+[`docs/SYNC_PROTOCOL.md`](SYNC_PROTOCOL.md); this section is a summary.
+
 * Use `bgh_core::db::Tx` (a transaction that collects post-commit side
   effects): `tx.sync(scope, model, id, action, &data)` records the row in
   the transaction and publishes it after `tx.commit()`; `tx.emit(event)` and
@@ -204,23 +212,35 @@ add a new one.
   `bgh_core::sync::SyncRecord` (`{"id","scope","model","mid","a","d"}`).
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
-  JSONB, created_at)` **in the same transaction** via
-  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)`. After
-  commit, call `bgh_core::sync::notify(&state, ...)` which publishes on the
-  Redis channel `sync:{scope}`.
-* Scopes: `repo:{id}` (issues, PR metadata, labels, milestones, comments,
-  reviews, branches/refs summary), `user:{id}` (notifications, prefs),
-  `org:{id}` (members, teams, projects).
-* `GET /_bgh/sync/bootstrap?scopes=...` → `{lastSyncId, models: {issue: [...],
-  label: [...], ...}}` in compact client shapes (not GitHub REST shapes).
+  JSONB, tx UUID NULL, created_at)` **in the same transaction** via
+  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)`. `tx` is
+  the request's `X-Client-Tx` header (taken from the request context), so
+  the delta echoes it. `record` serializes writers with a transaction-scoped
+  advisory lock so sync ids become visible in id order. After commit, call
+  `bgh_core::sync::notify(&state, ...)` which publishes on the Redis channel
+  `sync:{scope}`.
+* Scopes: `repo:{id}` (repo, issues + PR metadata, labels, milestones,
+  comments, reviews, timeline events), `user:{id}` (notifications,
+  viewer-specific repo data: permission/starred), `org:{id}` (org,
+  memberships, teams). `data` is the compact client shape (camelCase), not
+  the GitHub REST shape.
+* `GET /_bgh/sync/bootstrap?scopes=...` → `{schemaVersion, lastSyncId,
+  userId, scopes, denied, models: {issue: [...], label: [...], ...}}`.
+  Without `scopes` the server picks the viewer's default scope set.
+* `GET /_bgh/sync/partial?model=comment,review,issueEvent&issue=ID` loads lazy
+  models (comments, reviews, timeline events, issue bodies) on demand.
 * `GET /_bgh/sync/ws` WebSocket. Client → `{"t":"sub","scopes":[...],
   "since":N}`; server replays missed actions then streams live
-  `{"t":"delta","id":N,"scope":..,"model":..,"mid":..,"a":"U","d":{...}}`.
-  Server rechecks permissions on subscribe; emits `{"t":"revoke","scope"}`.
+  `{"t":"delta","id":N,"scope":..,"model":..,"mid":..,"a":"U","d":{...},
+  "tx":..}` (or `{"t":"batch","items":[...]}`), then `{"t":"ready"}`.
+  Server rechecks permissions on subscribe; emits `{"t":"revoke","scope"}`;
+  `{"t":"rebootstrap"}` when `since` is older than the retained log.
 * Mutations go through the normal REST API with an `X-Client-Tx` header so
-  the client can reconcile its optimistic write with the echoed delta.
-* Large/cold data (file contents, diffs, comment bodies for old issues) is
-  fetched on demand and cached (immutable when keyed by SHA).
+  the client can reconcile its optimistic write with the echoed delta. The
+  server answers with `X-Bgh-Sync-Id` and treats `X-Client-Tx` as an
+  idempotency key (24 h).
+* Large/cold data (file contents, diffs, highlighted blobs) is fetched on
+  demand and cached (immutable when keyed by SHA).
 
 ## Background work
 
@@ -280,7 +300,10 @@ add a new one.
 * Keyboard-first: command palette (⌘K), `g i`, `c`, `j/k` navigation etc.
 * Virtualized lists and diffs; skeleton-free instant navigation from local
   data; prefetch on hover.
-* Built assets embedded/served by `bgh-server` with brotli precompression.
+* Built assets served by `bgh-server` with brotli precompression, from
+  `BGH_WEB_DIR` by default or compiled into the binary with the cargo
+  feature `embed-web` (release/Docker builds; a `BGH_WEB_DIR` containing
+  an `index.html` still wins).
 
 ## Testing
 
@@ -295,5 +318,8 @@ add a new one.
   them); leftovers of dead processes are cleaned up on the next run.
 * Each domain crate has integration tests in `tests/` hitting the HTTP
   router with real requests and asserting GitHub-compatible JSON.
-* `scripts/gh-compat.sh` exercises the real `gh` CLI against a running
-  server.
+* `scripts/gh-compat.sh` exercises the real `gh` CLI (GHES mode, behind a
+  throwaway TLS proxy) against a fresh server or a running one and reports
+  PASS/FAIL/SKIP per command (`--json` for machine-readable results);
+  `scripts/api-smoke.sh` checks core REST shapes with curl + jq. Both start
+  `bgh` on a temporary database by default (`scripts/lib/test-server.sh`).

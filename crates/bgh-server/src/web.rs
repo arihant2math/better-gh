@@ -7,6 +7,10 @@
 //!
 //! Precompressed `.br` / `.gz` siblings are served when the client accepts
 //! them. Non-GET requests and API-looking paths get a JSON 404.
+//!
+//! With the `embed-web` cargo feature the files compiled into the binary
+//! are served (same rules, see [`crate::embedded`]) unless `BGH_WEB_DIR`
+//! points at a directory containing an `index.html`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,17 +22,41 @@ use bgh_core::error::ApiError;
 use tower::ServiceExt;
 use tower_http::services::{ServeDir, ServeFile};
 
-const IMMUTABLE: &str = "public, max-age=31536000, immutable";
-const NO_CACHE: &str = "no-cache";
+use crate::embedded::EmbeddedFiles;
+
+pub(crate) const IMMUTABLE: &str = "public, max-age=31536000, immutable";
+pub(crate) const NO_CACHE: &str = "no-cache";
 
 #[derive(Clone)]
 pub struct WebFiles {
     dir: Arc<PathBuf>,
+    embedded: Option<EmbeddedFiles>,
 }
 
 impl WebFiles {
+    /// Serve from `dir`, or from the embedded client (feature `embed-web`)
+    /// when `dir` has no `index.html`.
     pub fn new(dir: PathBuf) -> Self {
-        Self { dir: Arc::new(dir) }
+        #[cfg(feature = "embed-web")]
+        if !dir.join("index.html").is_file() {
+            let files = crate::embedded::bundled();
+            if files.has_index() {
+                tracing::debug!("serving the embedded web client");
+                return Self::embedded(files);
+            }
+        }
+        Self {
+            dir: Arc::new(dir),
+            embedded: None,
+        }
+    }
+
+    /// Serve the given in-memory files.
+    pub fn embedded(files: EmbeddedFiles) -> Self {
+        Self {
+            dir: Arc::new(PathBuf::new()),
+            embedded: Some(files),
+        }
     }
 
     pub async fn serve(&self, req: Request) -> Response {
@@ -38,6 +66,9 @@ impl WebFiles {
             || path.starts_with("/_bgh/")
         {
             return ApiError::NotFound.into_response();
+        }
+        if let Some(files) = &self.embedded {
+            return files.serve(&req);
         }
         let index = self.dir.join("index.html");
         if !index.is_file() {
