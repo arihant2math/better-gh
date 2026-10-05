@@ -1,4 +1,5 @@
-Integration: in progress
+Integration: ready
+Commit-range diffs + "since your last review", server-side viewed files (synced `viewedFile`), batch suggestion commits (server-side, CRLF-safe, co-author trailers, auto-resolve); backend + web + tests, full gate green after merging the integration branch.
 
 # P38 review-workflow — status
 
@@ -107,8 +108,9 @@ recording a delta — it loads any row). Unmark records `D`.
   subset), `/viewed` PUT/DELETE, `viewedFile` in `/sync`,
   `/suggestions/apply`; PR commits now end at the PR head and carry
   `parents`.
-* Bundle: initial JS 142.7 KB gzip (was 143.2: the client-side suggestion
-  code moved to the server); all new UI ships in the PR chunk.
+* Bundle: initial JS −0.5 KB gzip (142.7 vs 143.2 before this package; 143.6
+  after merging the current integration branch): the client-side suggestion
+  code moved to the server; all new UI ships in the PR chunk.
 
 ## Tests
 
@@ -124,7 +126,12 @@ recording a delta — it loads any row). Unmark records `D`.
 * `crates/bgh-sync/tests/it/shapes.rs`: covers `viewedFile`.
 * `web/src/pages/pulls/review.test.ts`: range parsing/resolution/toggling,
   last review, batch store, mock viewed + suggestions flow.
-* Playwright smoke against a real server (see below).
+* Playwright smoke against a real `bgh serve` + built web (two users, CRLF
+  file, review then push): all changes / since last review / one commit
+  show the right files; viewed state shows in a second browser context and
+  resets after the file changes; two batched suggestions → one commit
+  `Apply review suggestions` + description + `Co-authored-by: bob
+  <bob@example.com>`, CRLF intact, threads resolved.
 
 ## Shared-code changes (additive)
 
