@@ -327,6 +327,15 @@ pub struct ReceivePackOutcome {
     pub rejected: Option<String>,
 }
 
+/// Transport-independent result of [`receive_pack_stream`].
+pub struct PushResult {
+    /// Bytes to send back to the git client (report-status etc.).
+    pub output: Bytes,
+    pub applied: Vec<RefUpdate>,
+    pub requested: Vec<RefUpdate>,
+    pub rejected: Option<String>,
+}
+
 /// `POST git-receive-pack`.
 ///
 /// `authorize` receives the requested ref updates before any data reaches
@@ -343,20 +352,62 @@ where
     F: FnOnce(Vec<RefUpdate>) -> Fut,
     Fut: Future<Output = Result<(), String>>,
 {
+    store.git_dir(repo_id)?;
+    let reader = body_reader(headers, body);
+    let r = receive_pack_stream(store, repo_id, reader, authorize).await?;
+    Ok(ReceivePackOutcome {
+        response: response(
+            StatusCode::OK,
+            "application/x-git-receive-pack-result",
+            Body::from(r.output),
+        ),
+        applied: r.applied,
+        requested: r.requested,
+        rejected: r.rejected,
+    })
+}
+
+/// The receive-pack request half shared by HTTP and SSH: read the ref
+/// update commands from `reader`, authorize them, then feed commands and
+/// pack to `git receive-pack --stateless-rpc` and collect its report.
+///
+/// git exits once it has read the pack (which is self-delimiting), so the
+/// reader does not need to reach EOF (SSH clients keep the channel open).
+pub async fn receive_pack_stream<R, F, Fut>(
+    store: &RepoStore,
+    repo_id: i64,
+    mut reader: R,
+    authorize: F,
+) -> GitResult<PushResult>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    F: FnOnce(Vec<RefUpdate>) -> Fut,
+    Fut: Future<Output = Result<(), String>>,
+{
     let dir = store.git_dir(repo_id)?;
-    let mut reader = body_reader(headers, body);
     let cmds = read_push_commands(&mut reader).await?;
-    const CT: &str = "application/x-git-receive-pack-result";
+    if cmds.updates.is_empty() {
+        // Nothing to update (e.g. "Everything up-to-date" over SSH).
+        return Ok(PushResult {
+            output: Bytes::new(),
+            applied: vec![],
+            requested: vec![],
+            rejected: None,
+        });
+    }
 
     if let Err(reason) = authorize(cmds.updates.clone()).await {
-        // Consume the pack so the client sees our report instead of EPIPE.
-        let _ = tokio::io::copy(&mut reader, &mut tokio::io::sink()).await;
-        return Ok(ReceivePackOutcome {
-            response: response(
-                StatusCode::OK,
-                CT,
-                Body::from(rejection_report(&cmds, &reason)),
-            ),
+        // Consume the pack so the client sees our report instead of EPIPE
+        // (until EOF, or until the client goes quiet).
+        let mut buf = vec![0u8; 64 * 1024];
+        let idle = std::time::Duration::from_secs(10);
+        while let Ok(Ok(n)) = tokio::time::timeout(idle, reader.read(&mut buf)).await {
+            if n == 0 {
+                break;
+            }
+        }
+        return Ok(PushResult {
+            output: rejection_report(&cmds, &reason),
             applied: vec![],
             requested: cmds.updates,
             rejected: Some(reason),
@@ -398,7 +449,8 @@ where
         s
     });
     let status = child.wait().await?;
-    let _ = writer.await;
+    // git has read everything it needs; don't wait for the client to close.
+    writer.abort();
     let out = out_task.await.unwrap_or_default();
     let err = err_task.await.unwrap_or_default();
     if !status.success() {
@@ -429,12 +481,96 @@ where
         .map_err(|e| GitError::Object(e.to_string()))??
     };
 
-    Ok(ReceivePackOutcome {
-        response: response(StatusCode::OK, CT, Body::from(out)),
+    Ok(PushResult {
+        output: Bytes::from(out),
         applied,
         requested: cmds.updates,
         rejected: None,
     })
+}
+
+/// Raw ref advertisement of `git <service> --advertise-refs` (no smart-HTTP
+/// `# service=` header), as sent first on an SSH connection.
+pub async fn advertise_refs(
+    store: &RepoStore,
+    repo_id: i64,
+    service: Service,
+    protocol: Option<&str>,
+) -> GitResult<Vec<u8>> {
+    let dir = store.git_dir(repo_id)?;
+    let mut envs: Vec<(&str, &str)> = Vec::new();
+    if let Some(p) = protocol {
+        envs.push(("GIT_PROTOCOL", p));
+    }
+    let dir_s = dir.to_string_lossy().to_string();
+    cmd::run(
+        &store.git_bin,
+        None,
+        &[
+            service.command(),
+            "--stateless-rpc",
+            "--advertise-refs",
+            &dir_s,
+        ],
+        &envs,
+        None,
+    )
+    .await
+}
+
+/// Validate a `GIT_PROTOCOL` value received from a client (SSH env request).
+pub fn valid_protocol(v: &str) -> bool {
+    !v.is_empty()
+        && v.len() <= 256
+        && v.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"=:._-".contains(&b))
+}
+
+/// Run `git upload-pack` (full duplex, not stateless) between `input` and
+/// `output`, as for git over SSH. Returns git's exit code.
+pub async fn upload_pack_duplex<R, W, E>(
+    store: &RepoStore,
+    repo_id: i64,
+    protocol: Option<&str>,
+    mut input: R,
+    mut output: W,
+    mut errors: E,
+) -> GitResult<i32>
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    W: tokio::io::AsyncWrite + Send + Unpin,
+    E: tokio::io::AsyncWrite + Send + Unpin,
+{
+    let dir = store.git_dir(repo_id)?;
+    let mut c = cmd::git(&store.git_bin, None);
+    c.arg("upload-pack")
+        .arg(&dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(p) = protocol.filter(|p| valid_protocol(p)) {
+        c.env("GIT_PROTOCOL", p);
+    }
+    let mut child = c.spawn()?;
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = child.stdout.take().expect("stdout");
+    let mut stderr = child.stderr.take().expect("stderr");
+    let feeder = tokio::spawn(async move {
+        let _ = tokio::io::copy(&mut input, &mut stdin).await;
+        let _ = stdin.shutdown().await;
+    });
+    let (out, err) = tokio::join!(
+        tokio::io::copy(&mut stdout, &mut output),
+        tokio::io::copy(&mut stderr, &mut errors)
+    );
+    let _ = output.flush().await;
+    let _ = errors.flush().await;
+    let status = child.wait().await?;
+    feeder.abort();
+    if let Err(e) = out.and(err) {
+        tracing::debug!(?e, "upload-pack: copying output failed");
+    }
+    Ok(status.code().unwrap_or(1))
 }
 
 #[cfg(test)]

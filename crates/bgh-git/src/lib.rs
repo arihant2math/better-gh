@@ -11,7 +11,13 @@
 //! This crate knows nothing about users or permissions; `bgh-repos` mounts
 //! the HTTP routes and performs authorization.
 
+pub mod archive;
+pub mod blame;
+pub mod cache;
 mod cmd;
+pub mod highlight;
+pub mod lastcommit;
+pub mod lfs;
 pub mod merge;
 pub mod objects;
 pub mod patch;
@@ -19,6 +25,7 @@ pub mod pktline;
 pub mod read;
 pub mod smart_http;
 pub mod storage;
+pub mod stream;
 pub mod write;
 
 pub use bgh_core::events::{RefUpdate, ZERO_SHA};

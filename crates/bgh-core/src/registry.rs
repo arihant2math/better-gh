@@ -20,6 +20,19 @@ use crate::state::AppState;
 type ListenerFn =
     Arc<dyn Fn(AppState, Arc<Event>) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync>;
 
+type ServiceFn = Arc<
+    dyn Fn(AppState, CancellationToken) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+>;
+
+/// A named long-running background service (e.g. the SSH server), started
+/// by `bgh serve` via [`spawn_services`]. The test harness does not start
+/// services; tests start what they need explicitly.
+#[derive(Clone)]
+pub struct Service {
+    pub name: &'static str,
+    run: ServiceFn,
+}
+
 /// A named event listener.
 #[derive(Clone)]
 pub struct Listener {
@@ -40,6 +53,7 @@ pub struct AppFactory {
 pub struct Registry {
     pub jobs: JobRegistry,
     pub listeners: Vec<Listener>,
+    pub services: Vec<Service>,
 }
 
 impl Registry {
@@ -71,6 +85,42 @@ impl Registry {
         });
         self
     }
+}
+
+impl Registry {
+    /// Register a long-running service. It must return when `shutdown` is
+    /// cancelled.
+    pub fn service<F, Fut>(&mut self, name: &'static str, run: F) -> &mut Self
+    where
+        F: Fn(AppState, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        self.services.push(Service {
+            name,
+            run: Arc::new(move |s, c| run(s, c).boxed()),
+        });
+        self
+    }
+}
+
+/// Spawn every registered service; errors are logged.
+pub fn spawn_services(
+    state: &AppState,
+    services: &[Service],
+    shutdown: CancellationToken,
+) -> Vec<JoinHandle<()>> {
+    services
+        .iter()
+        .cloned()
+        .map(|svc| {
+            let fut = (svc.run)(state.clone(), shutdown.clone());
+            tokio::spawn(async move {
+                if let Err(err) = fut.await {
+                    tracing::error!(service = svc.name, ?err, "service failed");
+                }
+            })
+        })
+        .collect()
 }
 
 /// Spawn one task per listener, each consuming the event bus in order until
