@@ -536,6 +536,7 @@ async fn tx_helpers_record_bootstrap_shapes() {
     let repo = repo_id(&app, &ada, "api", false).await;
     let i = issue(&app, repo, 1, ada.id, "Shape").await;
     let l = label(&app, repo, "bug", "ff0000").await;
+    let since = scalar(&app, "SELECT coalesce(max(id), 0) FROM sync_actions").await;
 
     let mut tx = Tx::begin(&app.state).await.unwrap();
     assert!(tx.sync_issue(i, SyncAction::Update, true).await.unwrap());
@@ -558,8 +559,9 @@ async fn tx_helpers_record_bootstrap_shapes() {
 
     let recorded: Vec<(String, String, i64, String, Value)> = sqlx::query_as(
         "SELECT scope, model, model_id, action::text, data FROM sync_actions
-          WHERE model <> 'repo' ORDER BY id",
+          WHERE id > $1 ORDER BY id",
     )
+    .bind(since)
     .fetch_all(&app.state.db)
     .await
     .unwrap();
@@ -604,11 +606,6 @@ async fn tx_helpers_record_bootstrap_shapes() {
         ),
         (rs.clone(), "milestone".into(), 77, "D".into(), Value::Null),
     ];
-    // viewerRepo of the creator was also recorded by bgh-repos on create.
-    let recorded: Vec<_> = recorded
-        .into_iter()
-        .skip_while(|r| r.1 == "viewerRepo")
-        .collect();
     assert_eq!(recorded, want);
 }
 

@@ -3,38 +3,13 @@
 use bgh_core::testing::{TestApp, TestUser};
 use serde_json::{Value, json};
 
-/// Wait until the default-labels listener has run for `owner/repo`.
-pub async fn wait_default_labels(app: &TestApp, owner: &str, repo: &str) {
-    for _ in 0..100 {
-        let n: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM labels l JOIN repositories r ON r.id = l.repo_id
-               JOIN users u ON u.id = r.owner_id
-              WHERE lower(u.login) = lower($1) AND lower(r.name) = lower($2) AND l.is_default",
-        )
-        .bind(owner)
-        .bind(repo)
-        .fetch_one(&app.state.db)
-        .await
-        .unwrap();
-        if n >= 9 {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-    panic!("default labels were not created for {owner}/{repo}");
-}
-
-/// Create a public repo and wait for its default labels.
+/// Create a public repo (with its default labels).
 pub async fn repo(app: &TestApp, owner: &TestUser, name: &str) -> Value {
-    let v = app.create_repo(owner, name).await;
-    wait_default_labels(app, &owner.login, name).await;
-    v
+    app.create_repo(owner, name).await
 }
 
 pub async fn private_repo(app: &TestApp, owner: &TestUser, name: &str) -> Value {
-    let v = app.create_private_repo(owner, name).await;
-    wait_default_labels(app, &owner.login, name).await;
-    v
+    app.create_private_repo(owner, name).await
 }
 
 /// Add a direct collaborator with `permission`.

@@ -629,7 +629,6 @@ async fn cross_repository_lists() {
         json!({"name": "widgets", "private": true}),
     )
     .await;
-    wait_default_labels(&app, "acme", "widgets").await;
     private_repo(&app, &alice, "mine").await;
     repo(&app, &carol, "pub").await;
 

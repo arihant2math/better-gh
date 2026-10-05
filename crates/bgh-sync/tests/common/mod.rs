@@ -11,9 +11,7 @@ pub async fn repo_id(app: &TestApp, user: &TestUser, name: &str, private: bool) 
     } else {
         app.create_repo(user, name).await
     };
-    let id = v["id"].as_i64().unwrap();
-    clear_default_labels(app, id).await;
-    id
+    v["id"].as_i64().unwrap()
 }
 
 pub async fn org_repo(
@@ -30,36 +28,7 @@ pub async fn org_repo(
             serde_json::json!({"name": name, "private": private}),
         )
         .await;
-    let id = v["id"].as_i64().unwrap();
-    clear_default_labels(app, id).await;
-    id
-}
-
-/// bgh-issues creates GitHub's default labels for new repositories from an
-/// event listener (asynchronously). Wait for them and remove them (rows and
-/// their sync log entries) so fixtures start from an empty label set.
-pub async fn clear_default_labels(app: &TestApp, repo: i64) {
-    for _ in 0..200 {
-        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM labels WHERE repo_id = $1")
-            .bind(repo)
-            .fetch_one(&app.state.db)
-            .await
-            .unwrap();
-        if n >= 9 {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    sqlx::query("DELETE FROM labels WHERE repo_id = $1")
-        .bind(repo)
-        .execute(&app.state.db)
-        .await
-        .unwrap();
-    sqlx::query("DELETE FROM sync_actions WHERE scope = $1 AND model = 'label'")
-        .bind(format!("repo:{repo}"))
-        .execute(&app.state.db)
-        .await
-        .unwrap();
+    v["id"].as_i64().unwrap()
 }
 
 pub async fn exec(app: &TestApp, sql: &str) {
@@ -73,14 +42,20 @@ pub async fn scalar(app: &TestApp, sql: &str) -> i64 {
         .unwrap()
 }
 
+/// A label `name` with `color` and no description (new repositories
+/// already have GitHub's default labels: an existing one is overwritten).
 pub async fn label(app: &TestApp, repo: i64, name: &str, color: &str) -> i64 {
-    sqlx::query_scalar("INSERT INTO labels (repo_id, name, color) VALUES ($1, $2, $3) RETURNING id")
-        .bind(repo)
-        .bind(name)
-        .bind(color)
-        .fetch_one(&app.state.db)
-        .await
-        .unwrap()
+    sqlx::query_scalar(
+        "INSERT INTO labels (repo_id, name, color) VALUES ($1, $2, $3)
+         ON CONFLICT (repo_id, lower(name))
+         DO UPDATE SET color = EXCLUDED.color, description = NULL RETURNING id",
+    )
+    .bind(repo)
+    .bind(name)
+    .bind(color)
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap()
 }
 
 pub async fn milestone(app: &TestApp, repo: i64, number: i64, title: &str) -> i64 {

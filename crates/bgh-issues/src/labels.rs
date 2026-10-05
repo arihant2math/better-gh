@@ -1,7 +1,5 @@
-//! Labels: repository CRUD, issue labels, milestone labels, and the default
-//! label set created for new repositories.
-
-use std::sync::Arc;
+//! Labels: repository CRUD, issue labels and milestone labels. The default
+//! label set is created with the repository (`bgh_core::labels`).
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -10,7 +8,6 @@ use bgh_core::error::unique_violation;
 use bgh_core::models::api::Label;
 use bgh_core::perms::RepoAccess;
 use bgh_core::prelude::*;
-use bgh_core::sync;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -18,73 +15,8 @@ use crate::issues::{self, double};
 use crate::json;
 use crate::service;
 
-/// GitHub's default labels: (name, color, description).
-pub const DEFAULT_LABELS: [(&str, &str, &str); 9] = [
-    ("bug", "d73a4a", "Something isn't working"),
-    (
-        "documentation",
-        "0075ca",
-        "Improvements or additions to documentation",
-    ),
-    (
-        "duplicate",
-        "cfd3d7",
-        "This issue or pull request already exists",
-    ),
-    ("enhancement", "a2eeef", "New feature or request"),
-    ("good first issue", "7057ff", "Good for newcomers"),
-    ("help wanted", "008672", "Extra attention is needed"),
-    ("invalid", "e4e669", "This doesn't seem right"),
-    ("question", "d876e3", "Further information is requested"),
-    ("wontfix", "ffffff", "This will not be worked on"),
-];
-
-/// Create the default labels for a repository (idempotent).
-pub async fn create_default_labels(state: &AppState, repo_id: i64) -> ApiResult<()> {
-    let mut tx = Tx::begin(state).await?;
-    for (name, color, description) in DEFAULT_LABELS {
-        let label: Option<db::Label> = sqlx::query_as(&format!(
-            "INSERT INTO labels (repo_id, name, color, description, is_default)
-             VALUES ($1, $2, $3, $4, true) ON CONFLICT DO NOTHING RETURNING {}",
-            db::Label::COLUMNS
-        ))
-        .bind(repo_id)
-        .bind(name)
-        .bind(color)
-        .bind(description)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if let Some(l) = label {
-            tx.sync(
-                &sync::repo_scope(repo_id),
-                "label",
-                l.id,
-                SyncAction::Insert,
-                &json::label_sync_json(&l),
-            )
-            .await?;
-        }
-    }
-    tx.commit().await?;
-    Ok(())
-}
-
-/// Listener: default labels on [`Event::RepositoryCreated`] (not for
-/// forks, which GitHub creates without labels).
-pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> {
-    if let Event::RepositoryCreated { repo_id, .. } = &*event {
-        let fork: Option<bool> = sqlx::query_scalar("SELECT fork FROM repositories WHERE id = $1")
-            .bind(repo_id)
-            .fetch_optional(&state.db)
-            .await?;
-        if fork == Some(false) {
-            create_default_labels(&state, *repo_id)
-                .await
-                .map_err(|e| anyhow::anyhow!("creating default labels: {e}"))?;
-        }
-    }
-    Ok(())
-}
+/// GitHub's default labels (created with the repository by bgh-repos).
+pub use bgh_core::labels::DEFAULT_LABELS;
 
 async fn find_label(
     db: impl sqlx::PgExecutor<'_>,
