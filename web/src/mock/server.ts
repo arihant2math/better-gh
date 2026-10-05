@@ -91,6 +91,7 @@ export class MockServer implements Transport {
     this.db = db ?? seed(opts.now);
     this.buildRoutes();
     mockFeatures().installExtraMocks(this);
+    mockFeatures().installMoreExtraMocks(this);
     if (opts.live) this.scheduleLive();
   }
 

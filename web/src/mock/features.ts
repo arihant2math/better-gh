@@ -6,6 +6,7 @@
 import type { installActionsRoutes } from './actions';
 import type { installCodeRoutes } from './code';
 import type { installExtraMocks } from './extra';
+import type { installMoreExtraMocks } from './extra/more';
 import type { installInboxSearchRoutes } from './inboxSearch';
 import type { installProjectRoutes } from './projects';
 import type { branchNames, pullDiffText, registerPullRoutes } from './pulls';
@@ -15,6 +16,7 @@ export interface MockFeatures {
   installActionsRoutes: typeof installActionsRoutes;
   installCodeRoutes: typeof installCodeRoutes;
   installExtraMocks: typeof installExtraMocks;
+  installMoreExtraMocks: typeof installMoreExtraMocks;
   installInboxSearchRoutes: typeof installInboxSearchRoutes;
   installProjectRoutes: typeof installProjectRoutes;
   installWikiRoutes: typeof installWikiRoutes;
@@ -37,15 +39,17 @@ export function loadMockFeatures(): Promise<MockFeatures> {
     import('./actions'),
     import('./code'),
     import('./extra'),
+    import('./extra/more'),
     import('./inboxSearch'),
     import('./projects'),
     import('./pulls'),
     import('./wiki'),
-  ]).then(([actions, code, extra, inbox, projects, pulls, wiki]) => {
+  ]).then(([actions, code, extra, extraMore, inbox, projects, pulls, wiki]) => {
     loaded = {
       installActionsRoutes: actions.installActionsRoutes,
       installCodeRoutes: code.installCodeRoutes,
       installExtraMocks: extra.installExtraMocks,
+      installMoreExtraMocks: extraMore.installMoreExtraMocks,
       installInboxSearchRoutes: inbox.installInboxSearchRoutes,
       installProjectRoutes: projects.installProjectRoutes,
       installWikiRoutes: wiki.installWikiRoutes,
