@@ -130,6 +130,11 @@ mime_guess = "2"
 [profile.dev]
 # Faster builds; enough debuginfo for backtraces with file:line in our code.
 debug = "line-tables-only"
+# Keep DWARF in the per-crate object files instead of copying it into every
+# linked binary (one integration-test binary per crate, each ~all of the
+# server): smaller test binaries and less linker I/O. Backtraces still
+# resolve file:line.
+split-debuginfo = "unpacked"
 
 [profile.dev.package."*"]
 # Dependencies: lightly optimized (tests and the dev server stay snappy) and
