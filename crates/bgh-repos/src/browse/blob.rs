@@ -53,7 +53,7 @@ pub struct BlobView {
     pub highlighted: bool,
     /// Number of lines in `lines` (after truncation).
     pub line_count: usize,
-    /// HTML per line (class-based highlighting, see `/_bgh/highlight.css`);
+    /// HTML per line (`hl-k|s|c|n|t|f|a` spans, docs/SYNC_PROTOCOL.md §10);
     /// `null` for binary / too large / LFS content.
     pub lines: Option<Vec<String>>,
     /// Rendered HTML for Markdown files.
@@ -204,7 +204,7 @@ pub async fn highlighted(
     truncated: bool,
 ) -> Highlighted {
     let lang = highlight::find_syntax(path, text)
-        .map(|s| s.name.clone())
+        .map(highlight::language_id)
         .unwrap_or_else(|| "plain".into());
     let key = format!(
         "hl:{CACHE_VERSION}:{blob_sha}:{lang}{}",

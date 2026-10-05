@@ -370,6 +370,32 @@ async fn permissions_over_ssh() {
         .await;
     assert!(out.stderr.contains("Permission denied"), "{}", out.stderr);
 
+    // Disabled repositories are blocked (except for site admins).
+    sqlx::query("UPDATE repositories SET disabled = true WHERE name = 'secret'")
+        .execute(&s.app.state.db)
+        .await
+        .unwrap();
+    let out = s
+        .git(
+            &bob_key,
+            s.tmp.path(),
+            &["ls-remote", &s.url("alice", "secret")],
+        )
+        .await;
+    assert!(
+        out.stderr.contains("Repository access blocked"),
+        "{}",
+        out.stderr
+    );
+    let root = s.app.create_admin("root").await;
+    let root_key = s.user_key(&root).await;
+    ok(s.git(
+        &root_key,
+        s.tmp.path(),
+        &["ls-remote", &s.url("alice", "secret")],
+    )
+    .await);
+
     // Archived repositories are read-only.
     sqlx::query("UPDATE repositories SET archived = true WHERE name = 'demo'")
         .execute(&s.app.state.db)
