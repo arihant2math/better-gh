@@ -75,7 +75,11 @@ async fn create_and_get_repository() {
 
     // Sync action recorded in the repo scope.
     let models: Vec<(String, String)> =
-        sqlx::query_as("SELECT model, action::text FROM sync_actions WHERE scope = $1 ORDER BY id")
+        // (bgh-issues adds default `label` rows from an event listener.)
+        sqlx::query_as(
+            "SELECT model, action::text FROM sync_actions
+              WHERE scope = $1 AND model <> 'label' ORDER BY id",
+        )
             .bind(format!("repo:{id}"))
             .fetch_all(&app.state.db)
             .await
