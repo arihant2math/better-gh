@@ -28,7 +28,7 @@ export function announcementId(message: string): string {
  * "Site admin" menu entry). Loaded in the background after sign-in; nothing
  * waits on it.
  */
-class SiteState {
+export class SiteState {
   info: PublicSiteInfo | null = null;
   /** `null` until known. */
   viewerSiteAdmin: boolean | null = null;
@@ -85,6 +85,12 @@ class SiteState {
     if (a.expires_at && Date.parse(a.expires_at) <= Date.now()) return null;
     if (a.user_dismissible && this.dismissed === announcementId(a.message)) return null;
     return a;
+  }
+
+  /** Some banner should be visible (the banner chunk is loaded only then). */
+  get hasBanner(): boolean {
+    const m = this.info?.maintenance;
+    return !!this.announcement || !!m?.enabled || (!!m?.scheduled_at && Date.parse(m.scheduled_at) > Date.now());
   }
 
   dismissAnnouncement(): void {

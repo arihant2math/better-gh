@@ -3,7 +3,8 @@ import { IconButton } from '../ui/Button';
 import { AlertIcon, MegaphoneIcon, ToolsIcon, XIcon } from '../ui/icons';
 import { formatRelative } from '../ui/RelativeTime';
 import styles from './SiteBanners.module.css';
-import { site } from './site';
+import type { SiteState } from './site';
+
 
 /** One announcement banner (also used as the live preview in site admin). */
 export function AnnouncementBanner({ message, dismissible, onDismiss }: { message: string; dismissible?: boolean; onDismiss?: () => void }) {
@@ -30,8 +31,8 @@ export function MaintenanceBanner({ enabled, message, scheduledAt }: { enabled: 
   );
 }
 
-/** App-wide banners (announcement + maintenance), above the top bar. */
-export const SiteBanners = observer(function SiteBanners() {
+/** App-wide banners (announcement + maintenance); lazily loaded by the shell when one is active. */
+const SiteBanners = observer(function SiteBanners({ site }: { site: SiteState }) {
   const info = site.info;
   if (!info) return null;
   const a = site.announcement;
@@ -42,3 +43,5 @@ export const SiteBanners = observer(function SiteBanners() {
     </>
   );
 });
+
+export default SiteBanners;

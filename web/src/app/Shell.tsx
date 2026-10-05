@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { navigate, useScrollContainer } from '../router';
 import { useShortcuts } from '../shortcuts/useShortcuts';
 import { Spinner } from '../ui/Spinner';
@@ -22,7 +22,6 @@ import { NewIssueDialog } from './NewIssueDialog';
 import { session } from './session';
 import styles from './Shell.module.css';
 import { ShortcutHelp } from './ShortcutHelp';
-import { SiteBanners } from './SiteBanners';
 import { site } from './site';
 import { Sidebar } from './Sidebar';
 import { theme } from './theme';
@@ -88,6 +87,8 @@ function GlobalShortcuts() {
   return null;
 }
 
+const SiteBanners = lazy(() => import('./SiteBanners'));
+
 /** Palette commands for site admins (registered once the viewer is known to be one). */
 const AdminCommands = observer(function AdminCommands() {
   const admin = site.viewerSiteAdmin === true;
@@ -124,7 +125,11 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
       <AdminCommands />
       <Sidebar />
       <div className={styles.main}>
-        <SiteBanners />
+        {site.hasBanner && (
+          <Suspense fallback={null}>
+            <SiteBanners site={site} />
+          </Suspense>
+        )}
         <TopBar />
         <main id="content" ref={setContent} className={styles.content} tabIndex={-1}>
           {session.ready ? (

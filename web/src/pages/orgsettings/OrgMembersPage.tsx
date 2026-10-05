@@ -9,7 +9,7 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
-import { LinkExternalIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
+import { CheckIcon, LinkExternalIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
 import { collaboratorsPrefix, convertToOutsideCollaborator, membersPath, removeMember, setMembership, type OrgRole, type SimpleUser } from './api';
@@ -131,7 +131,7 @@ export default function OrgMembersPage() {
             id: `role-${o.value}`,
             label: o.label,
             description: o.description,
-            trailing: row.role === o.value ? '✓' : undefined,
+            trailing: row.role === o.value ? <CheckIcon size={14} /> : undefined,
             onSelect: () => void changeRole(row, o.value),
           })),
           { separator: true, id: 's1' },

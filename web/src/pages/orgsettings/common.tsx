@@ -86,7 +86,7 @@ export function RowMenu({ label, items }: { label: string; items: MenuEntry[] })
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
-    <span className={local.rowMenu} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <span className={local.rowMenu} onClick={(e) => e.stopPropagation()}>
       <IconButton ref={ref} icon={KebabHorizontalIcon} label={label} size="sm" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} />
       <Menu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} placement="bottom-end" aria-label={label} />
     </span>

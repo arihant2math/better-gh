@@ -55,7 +55,9 @@ const deliveryStatus = (d: HookDeliveryItem) =>
   ) : d.status.toLowerCase() === 'pending' ? (
     <StatusPill status="neutral">Pending</StatusPill>
   ) : (
-    <StatusPill status="error">Failed</StatusPill>
+    <span title={d.status}>
+      <StatusPill status="error">Failed</StatusPill>
+    </span>
   );
 
 export default function OrgHooksPage() {
