@@ -1,0 +1,438 @@
+/* Job log viewer. Give `.root` a bounded height (flex: 1; min-height: 0). */
+
+.root {
+  /* 16 basic ANSI colors (0–7 normal, 8–15 bright), light theme. */
+  --log-ansi-0: #24292f;
+  --log-ansi-1: #cf222e;
+  --log-ansi-2: #116329;
+  --log-ansi-3: #7d4e00;
+  --log-ansi-4: #0969da;
+  --log-ansi-5: #8250df;
+  --log-ansi-6: #1b7c83;
+  --log-ansi-7: #6e7781;
+  --log-ansi-8: #57606a;
+  --log-ansi-9: #a40e26;
+  --log-ansi-10: #1a7f37;
+  --log-ansi-11: #633c01;
+  --log-ansi-12: #218bff;
+  --log-ansi-13: #a475f9;
+  --log-ansi-14: #3192aa;
+  --log-ansi-15: #8c959f;
+  --log-line-h: 20px;
+  --log-step-h: 36px;
+  --log-gutter: 56px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .root {
+    --log-ansi-0: #6e7681;
+    --log-ansi-1: #ff7b72;
+    --log-ansi-2: #3fb950;
+    --log-ansi-3: #d29922;
+    --log-ansi-4: #58a6ff;
+    --log-ansi-5: #bc8cff;
+    --log-ansi-6: #39c5cf;
+    --log-ansi-7: #b1bac4;
+    --log-ansi-8: #8b949e;
+    --log-ansi-9: #ffa198;
+    --log-ansi-10: #56d364;
+    --log-ansi-11: #e3b341;
+    --log-ansi-12: #79c0ff;
+    --log-ansi-13: #d2a8ff;
+    --log-ansi-14: #56d4dd;
+    --log-ansi-15: #f0f6fc;
+  }
+}
+
+:global(:root[data-theme='dark']) .root {
+  --log-ansi-0: #6e7681;
+  --log-ansi-1: #ff7b72;
+  --log-ansi-2: #3fb950;
+  --log-ansi-3: #d29922;
+  --log-ansi-4: #58a6ff;
+  --log-ansi-5: #bc8cff;
+  --log-ansi-6: #39c5cf;
+  --log-ansi-7: #b1bac4;
+  --log-ansi-8: #8b949e;
+  --log-ansi-9: #ffa198;
+  --log-ansi-10: #56d364;
+  --log-ansi-11: #e3b341;
+  --log-ansi-12: #79c0ff;
+  --log-ansi-13: #d2a8ff;
+  --log-ansi-14: #56d4dd;
+  --log-ansi-15: #f0f6fc;
+}
+
+/* ------------------------------------------------------------------ toolbar */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-right: auto;
+}
+
+.jobName {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.search {
+  width: 240px;
+}
+
+.search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.matchCount {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pressed {
+  background: var(--bg-active);
+  color: var(--accent-fg);
+}
+
+.download {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.download:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.download:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------------ list */
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.scroller {
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: var(--log-line-h);
+}
+
+.inner {
+  position: relative;
+}
+
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.stickyWrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: var(--log-step-h);
+  box-shadow: 0 1px 0 var(--border-subtle);
+}
+
+.stepHeader {
+  /* Stays in view while the (wider) rows scroll horizontally. */
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100cqw;
+  max-width: 100%;
+  height: var(--log-step-h);
+  padding: 0 var(--sp-3) 0 var(--sp-2);
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.stepHeader:hover {
+  background: var(--bg-hover);
+}
+
+.stepHeader:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.stepOpen {
+  font-weight: var(--fw-medium);
+}
+
+.stepSticky {
+  width: 100%;
+  border-top: 0;
+  background: var(--bg-elevated);
+}
+
+.stepSticky:hover {
+  background: var(--bg-elevated);
+}
+
+.chevron {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.stepName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepCount {
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.waiting {
+  padding-left: calc(var(--log-gutter) + var(--sp-2));
+  color: var(--fg-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+}
+
+.message {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--fg-muted);
+}
+
+/* ------------------------------------------------------------------ lines */
+.line {
+  display: flex;
+  align-items: stretch;
+  white-space: pre;
+  color: var(--fg);
+}
+
+.line:hover {
+  background: var(--bg-hover);
+}
+
+.num {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  flex: none;
+  width: var(--log-gutter);
+  padding-right: var(--sp-3);
+  background: var(--bg);
+  color: var(--fg-faint);
+  text-align: right;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  cursor: pointer;
+}
+
+.num:hover {
+  color: var(--fg-muted);
+  text-decoration: underline;
+}
+
+.ts {
+  flex: none;
+  width: 96px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.text {
+  flex: 1;
+  padding-right: var(--sp-4);
+}
+
+.inGroup .text {
+  padding-left: 20px;
+}
+
+.groupToggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+  text-align: left;
+  cursor: pointer;
+}
+
+.groupToggle svg {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.groupToggle .text {
+  padding-left: 0;
+}
+
+.groupToggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.group {
+  font-weight: var(--fw-medium);
+}
+
+.error {
+  background: var(--danger-subtle);
+}
+
+/* The sticky gutter is opaque: layer the row tint over the page background. */
+.error .num {
+  background: linear-gradient(var(--danger-subtle), var(--danger-subtle)), var(--bg);
+}
+
+.warning .num {
+  background: linear-gradient(var(--warning-subtle), var(--warning-subtle)), var(--bg);
+}
+
+.error .prefix {
+  color: var(--danger);
+  font-weight: var(--fw-semibold);
+}
+
+.warning {
+  background: var(--warning-subtle);
+}
+
+.warning .prefix {
+  color: var(--warning);
+  font-weight: var(--fw-semibold);
+}
+
+.notice .prefix {
+  color: var(--accent-fg);
+  font-weight: var(--fw-semibold);
+}
+
+.command {
+  color: var(--accent-fg);
+}
+
+.debug {
+  color: var(--fg-subtle);
+}
+
+.selected,
+.selected:hover {
+  background: var(--bg-selected);
+}
+
+.selected .num {
+  background: linear-gradient(var(--bg-selected), var(--bg-selected)), var(--bg);
+  color: var(--accent-fg);
+}
+
+.current {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hit {
+  border-radius: 2px;
+  background: var(--warning-subtle);
+  box-shadow: 0 0 0 1px var(--warning);
+}
+
+.current .hit {
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.bold {
+  font-weight: var(--fw-semibold);
+}
+
+.dim {
+  opacity: 0.6;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.underline {
+  text-decoration: underline;
+}
