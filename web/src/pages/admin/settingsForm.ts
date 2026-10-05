@@ -5,7 +5,7 @@
  * per-section PATCH bodies.
  */
 import { fromLocalInput, toLocalInput } from '../../components/admin/format';
-import { REDACTED, type OidcProvider, type SiteSettings, type Visibility, type patchSettings } from './api';
+import { REDACTED, type LdapSettings, type OidcProvider, type SiteSettings, type Visibility, type patchSettings } from './api';
 
 /** Sections of the settings page (`git_maintenance` has its own page). */
 export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
@@ -13,6 +13,7 @@ export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
 export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'signup', title: 'Sign-up', anchor: 'signup' },
   { key: 'repositories', title: 'Repositories', anchor: 'repositories' },
+  { key: 'privacy', title: 'Privacy', anchor: 'privacy' },
   { key: 'git', title: 'Git pushes', anchor: 'git' },
   { key: 'organizations', title: 'Organizations', anchor: 'organizations' },
   { key: 'announcement', title: 'Announcement', anchor: 'announcement' },
@@ -22,6 +23,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'retention', title: 'Data retention', anchor: 'retention' },
   { key: 'maintenance', title: 'Maintenance mode', anchor: 'maintenance' },
   { key: 'actions', title: 'Actions', anchor: 'actions' },
+  { key: 'markdown', title: 'Markdown', anchor: 'markdown' },
 ];
 
 export const sectionTitle = (k: SectionKey) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -51,6 +53,39 @@ export interface OidcForm {
   login_claim: string;
   /** Space or comma separated. */
   allowed_domains: string;
+  groups_claim: string;
+}
+
+/** `auth_providers.ldap` as form values. */
+export interface LdapForm {
+  enabled: boolean;
+  host: string;
+  port: string;
+  encryption: LdapSettings['encryption'];
+  ca_cert: string;
+  verify_certificate: boolean;
+  bind_dn: string;
+  bind_password: SecretForm;
+  /** One base DN per line. */
+  user_search_bases: string;
+  uid_field: string;
+  user_filter: string;
+  admin_group: string;
+  restricted_group: string;
+  name_field: string;
+  email_field: string;
+  ssh_key_field: string;
+  gpg_key_field: string;
+  jit_provisioning: boolean;
+  sync_enabled: boolean;
+  sync_interval_hours: string;
+}
+
+export interface AuthForm {
+  password_login: boolean;
+  password_login_admin_exempt: boolean;
+  oidc: OidcForm[];
+  ldap: LdapForm;
 }
 
 export interface SettingsForm {
@@ -59,7 +94,7 @@ export interface SettingsForm {
   organizations: { creation: SiteSettings['organizations']['creation'] };
   announcement: { message: string; expires: string; user_dismissible: boolean };
   rate_limits: { enabled: boolean; authenticated: string; unauthenticated: string; search_authenticated: string; search_unauthenticated: string; graphql: string };
-  auth_providers: { password_login: boolean; oidc: OidcForm[] };
+  auth_providers: AuthForm;
   smtp: {
     enabled: boolean;
     host: string;
@@ -73,6 +108,8 @@ export interface SettingsForm {
   git: { fsck: boolean; max_object: Limit; warn_object: Limit; max_push: Limit };
   retention: { enabled: boolean } & Record<RetentionWindow, Limit>;
   actions: SiteSettings['actions'];
+  privacy: { private_mode: boolean; anonymous_directory: boolean; allowed: Visibility[] };
+  markdown: SiteSettings['markdown'];
 }
 
 /** Retention windows (days); off = keep forever (0 in the API). */
@@ -85,6 +122,9 @@ const RETENTION_DEFAULTS: Record<RetentionWindow, number> = {
   webhook_delivery_days: 90,
   activity_days: 90,
 };
+
+/** Repository visibilities in display order. */
+export const VISIBILITIES: Visibility[] = ['public', 'internal', 'private'];
 
 /** An optional megabyte limit: on/off plus the typed value. */
 export interface Limit {
@@ -113,8 +153,41 @@ export function oidcToForm(p: OidcProvider): OidcForm {
     auto_create_users: p.auto_create_users,
     login_claim: p.login_claim ?? '',
     allowed_domains: (p.allowed_domains ?? []).join(' '),
+    groups_claim: p.groups_claim ?? '',
   };
 }
+
+export function ldapToForm(l: LdapSettings): LdapForm {
+  return {
+    enabled: l.enabled,
+    host: l.host,
+    port: String(l.port),
+    encryption: l.encryption,
+    ca_cert: l.ca_cert ?? '',
+    verify_certificate: l.verify_certificate,
+    bind_dn: l.bind_dn ?? '',
+    bind_password: secretForm(l.bind_password),
+    user_search_bases: l.user_search_bases.join('\n'),
+    uid_field: l.uid_field,
+    user_filter: l.user_filter ?? '',
+    admin_group: l.admin_group ?? '',
+    restricted_group: l.restricted_group ?? '',
+    name_field: l.name_field,
+    email_field: l.email_field,
+    ssh_key_field: l.ssh_key_field ?? '',
+    gpg_key_field: l.gpg_key_field ?? '',
+    jit_provisioning: l.jit_provisioning,
+    sync_enabled: l.sync_enabled,
+    sync_interval_hours: String(l.sync_interval_hours),
+  };
+}
+
+/** Non-empty trimmed lines. */
+export const lines = (s: string) =>
+  s
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
 
 export function emptyOidc(): OidcForm {
   return {
@@ -129,6 +202,7 @@ export function emptyOidc(): OidcForm {
     auto_create_users: true,
     login_claim: '',
     allowed_domains: '',
+    groups_claim: '',
   };
 }
 
@@ -155,7 +229,12 @@ export function toForm(s: SiteSettings): SettingsForm {
       search_unauthenticated: String(s.rate_limits.search_unauthenticated_per_minute),
       graphql: String(s.rate_limits.graphql_per_hour),
     },
-    auth_providers: { password_login: s.auth_providers.password_login, oidc: s.auth_providers.oidc.map(oidcToForm) },
+    auth_providers: {
+      password_login: s.auth_providers.password_login,
+      password_login_admin_exempt: s.auth_providers.password_login_admin_exempt,
+      oidc: s.auth_providers.oidc.map(oidcToForm),
+      ldap: ldapToForm(s.auth_providers.ldap),
+    },
     smtp: {
       enabled: s.smtp.enabled,
       host: s.smtp.host,
@@ -184,6 +263,12 @@ export function toForm(s: SiteSettings): SettingsForm {
       >),
     },
     actions: { ...(s.actions ?? { default_workflow_permissions: 'read', can_approve_pull_request_reviews: false }) },
+    privacy: {
+      private_mode: s.privacy?.private_mode ?? false,
+      anonymous_directory: s.privacy?.allow_anonymous_directory ?? true,
+      allowed: VISIBILITIES.filter((v) => (s.privacy?.allowed_visibilities ?? VISIBILITIES).includes(v)),
+    },
+    markdown: { ...(s.markdown ?? { image_proxy: true }) },
   };
 }
 
@@ -229,6 +314,20 @@ export function oidcErrors(p: OidcForm, others: OidcForm[]): Errors {
   return e;
 }
 
+export function ldapErrors(l: LdapForm): Errors {
+  const e: Errors = {};
+  const port = Number(l.port);
+  if (!/^\d+$/.test(l.port.trim()) || port < 1 || port > 65535) e.port = 'Enter a port between 1 and 65535.';
+  if (!POSITIVE_INT.test(l.sync_interval_hours.trim())) e.sync_interval_hours = 'Enter a whole number of hours greater than 0.';
+  if (!l.enabled) return e;
+  if (!l.host.trim()) e.host = 'Required.';
+  else if (/\s|:\/\//.test(l.host.trim())) e.host = 'Host name or IP only, without a scheme.';
+  if (!lines(l.user_search_bases).length) e.user_search_bases = 'Enter at least one base DN.';
+  if (!l.uid_field.trim()) e.uid_field = 'Required.';
+  if (l.user_filter.trim() && !/^\(.*\)$/.test(l.user_filter.trim())) e.user_filter = 'Wrap the filter in parentheses, e.g. (objectClass=person).';
+  return e;
+}
+
 export function validate(f: SettingsForm): Errors {
   const e: Errors = {};
   const bad = f.signup.domains.map(domainError).find(Boolean);
@@ -237,8 +336,9 @@ export function validate(f: SettingsForm): Errors {
   if (f.announcement.expires && !fromLocalInput(f.announcement.expires)) e['announcement.expires'] = 'Enter a valid date and time.';
   for (const k of ['authenticated', 'unauthenticated', 'search_authenticated', 'search_unauthenticated', 'graphql'] as const)
     if (!POSITIVE_INT.test(f.rate_limits[k].trim())) e[`rate_limits.${k}`] = 'Enter a whole number greater than 0.';
-  if (!f.auth_providers.password_login && f.auth_providers.oidc.length === 0)
-    e['auth_providers.methods'] = 'At least one sign-in method must stay enabled: keep password sign-in or add an OIDC provider.';
+  if (!f.auth_providers.password_login && f.auth_providers.oidc.length === 0 && !f.auth_providers.ldap.enabled)
+    e['auth_providers.methods'] = 'At least one sign-in method must stay enabled: keep password sign-in, enable LDAP or add an OIDC provider.';
+  for (const [k, v] of Object.entries(ldapErrors(f.auth_providers.ldap))) e[`auth_providers.ldap.${k}`] = v;
   for (const p of f.auth_providers.oidc) {
     const pe = oidcErrors(p, f.auth_providers.oidc);
     const first = Object.entries(pe)[0];
@@ -261,6 +361,9 @@ export function validate(f: SettingsForm): Errors {
   const { max_object: max, warn_object: warn } = f.git;
   if (max.on && warn.on && !e['git.max_object'] && !e['git.warn_object'] && Number(warn.mb) >= Number(max.mb))
     e['git.warn_object'] = 'The warning size must be below the maximum file size.';
+  if (f.privacy.allowed.length === 0) e['privacy.allowed'] = 'Allow at least one visibility.';
+  else if (!f.privacy.allowed.includes(f.repositories.default_visibility))
+    e['privacy.allowed'] = `The default visibility (${f.repositories.default_visibility}, under Repositories) must be allowed. Allow it or change the default.`;
   return e;
 }
 
@@ -277,6 +380,32 @@ function secretValue(s: SecretForm): string | null {
 const orNull = (s: string) => (s.trim() ? s.trim() : null);
 
 type Patch = Parameters<typeof patchSettings>[0];
+
+/** API value of the LDAP form (also sent by "Test connection"). */
+export function ldapValue(l: LdapForm): LdapSettings {
+  return {
+    enabled: l.enabled,
+    host: l.host.trim(),
+    port: Number(l.port),
+    encryption: l.encryption,
+    ca_cert: orNull(l.ca_cert),
+    verify_certificate: l.verify_certificate,
+    bind_dn: orNull(l.bind_dn),
+    bind_password: secretValue(l.bind_password),
+    user_search_bases: lines(l.user_search_bases),
+    uid_field: l.uid_field.trim(),
+    user_filter: orNull(l.user_filter),
+    admin_group: orNull(l.admin_group),
+    restricted_group: orNull(l.restricted_group),
+    name_field: l.name_field.trim() || 'cn',
+    email_field: l.email_field.trim() || 'mail',
+    ssh_key_field: orNull(l.ssh_key_field),
+    gpg_key_field: orNull(l.gpg_key_field),
+    jit_provisioning: l.jit_provisioning,
+    sync_enabled: l.sync_enabled,
+    sync_interval_hours: Number(l.sync_interval_hours),
+  };
+}
 
 /** PATCH body with only the given sections (each sent whole). */
 export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
@@ -315,6 +444,8 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
       case 'auth_providers':
         out.auth_providers = {
           password_login: f.auth_providers.password_login,
+          password_login_admin_exempt: f.auth_providers.password_login_admin_exempt,
+          ldap: ldapValue(f.auth_providers.ldap),
           oidc: f.auth_providers.oidc.map((p) => ({
             name: p.name,
             display_name: orNull(p.display_name),
@@ -325,6 +456,7 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
             auto_create_users: p.auto_create_users,
             login_claim: orNull(p.login_claim),
             allowed_domains: splitList(p.allowed_domains).map((d) => d.toLowerCase()),
+            groups_claim: orNull(p.groups_claim),
           })),
         };
         break;
@@ -362,6 +494,16 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
         break;
       case 'actions':
         out.actions = { ...f.actions };
+        break;
+      case 'privacy':
+        out.privacy = {
+          private_mode: f.privacy.private_mode,
+          allow_anonymous_directory: f.privacy.anonymous_directory,
+          allowed_visibilities: f.privacy.allowed,
+        };
+        break;
+      case 'markdown':
+        out.markdown = { ...f.markdown };
         break;
     }
   }

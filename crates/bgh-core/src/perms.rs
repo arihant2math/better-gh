@@ -7,6 +7,9 @@
 //!   grants inherited from parent teams
 //! * direct collaborator permission
 //! * public visibility → Read (for everyone, including anonymous)
+//! * internal visibility → Read for every signed-in, non-suspended user
+//!   (GHES semantics; never for anonymous callers or Actions job tokens of
+//!   other repositories)
 //!
 //! Token scopes further restrict what a PAT can do (see [`effective`]).
 
@@ -91,17 +94,29 @@ impl std::fmt::Display for Permission {
 #[derive(sqlx::FromRow)]
 struct PermRow {
     repo_id: i64,
+    active: Option<bool>,
     collab: Option<String>,
     org_role: Option<String>,
     org_base: Option<String>,
     team_perms: Option<Vec<String>>,
 }
 
+/// What an anonymous caller gets: Read on public repositories.
 fn public_floor(repo: &db::Repository) -> Permission {
     if repo.is_private() {
         Permission::None
     } else {
         Permission::Read
+    }
+}
+
+/// What any caller gets from visibility alone: [`public_floor`], plus Read
+/// on internal repositories for active (signed-in, non-suspended) users.
+pub fn visibility_floor(repo: &db::Repository, active_user: bool) -> Permission {
+    if active_user && repo.is_internal() {
+        Permission::Read
+    } else {
+        public_floor(repo)
     }
 }
 
@@ -149,6 +164,7 @@ pub async fn repo_permissions(
               FROM teams p JOIN user_teams ut ON p.id = ut.parent_id
         )
         SELECT r.id AS repo_id,
+               (SELECT type = 'User' AND suspended_at IS NULL FROM users WHERE id = $1) AS active,
                CASE WHEN (SELECT site_admin FROM users WHERE id = $1) THEN 'admin'
                     ELSE (SELECT permission FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1)
                END AS collab,
@@ -164,6 +180,11 @@ pub async fn repo_permissions(
     .bind(&pending)
     .fetch_all(db)
     .await?;
+    let internal: std::collections::HashSet<i64> = repos
+        .iter()
+        .filter(|r| r.is_internal())
+        .map(|r| r.id)
+        .collect();
     for row in rows {
         let best = out.entry(row.repo_id).or_insert(Permission::None);
         let mut raise = |p: Option<Permission>| {
@@ -171,6 +192,9 @@ pub async fn repo_permissions(
                 *best = (*best).max(p);
             }
         };
+        if row.active == Some(true) && internal.contains(&row.repo_id) {
+            raise(Some(Permission::Read));
+        }
         raise(row.collab.as_deref().and_then(Permission::parse));
         match row.org_role.as_deref() {
             Some("admin") => raise(Some(Permission::Admin)),
@@ -196,6 +220,7 @@ pub async fn users_repo_permissions(
     struct Row {
         user_id: i64,
         site_admin: bool,
+        active: bool,
         collab: Option<String>,
         org_role: Option<String>,
         org_base: Option<String>,
@@ -217,6 +242,7 @@ pub async fn users_repo_permissions(
               FROM teams p JOIN ut ON p.id = ut.parent_id
         )
         SELECT u.id AS user_id, u.site_admin,
+               (u.type = 'User' AND u.suspended_at IS NULL) AS active,
                (SELECT permission FROM collaborators c
                  WHERE c.repo_id = $2 AND c.user_id = u.id) AS collab,
                (SELECT role FROM org_members m
@@ -245,6 +271,7 @@ pub async fn users_repo_permissions(
         if row.site_admin || row.user_id == repo.owner_id {
             raise(Some(Permission::Admin));
         }
+        raise(Some(visibility_floor(repo, row.active)));
         raise(row.collab.as_deref().and_then(Permission::parse));
         match row.org_role.as_deref() {
             Some("admin") => raise(Some(Permission::Admin)),
@@ -404,6 +431,12 @@ impl RepoAccess {
         repo: db::Repository,
         owner: db::User,
     ) -> ApiResult<Self> {
+        // Private mode: anonymous callers read nothing (the middleware
+        // refuses them first; this covers handlers it lets through, such
+        // as git transport).
+        if auth.is_none() && crate::privacy::private_mode(state).await? {
+            return Err(ApiError::NotFound);
+        }
         let raw = repo_permission(&state.db, auth.map(|a| a.user.id), &repo).await?;
         let permission = effective(auth, &repo, raw);
         if permission < Permission::Read {
@@ -488,19 +521,37 @@ pub async fn org_role(
 }
 
 /// The repositories a caller can read, for queries spanning many
-/// repositories (search, activity feeds): every public repository plus
-/// `private_ids`, or everything when `all` (site admins). Token scopes are
-/// applied: without `repo` the set is public repositories only.
+/// repositories (search, activity feeds): every public repository, every
+/// internal one when `internal` (signed-in users), plus `private_ids`, or
+/// everything when `all` (site admins). Token scopes are applied: without
+/// `repo` the set is public repositories only.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReadableRepos {
     pub all: bool,
-    /// Non-public repositories the caller can read.
+    /// Non-public repositories the caller can read through explicit grants.
     pub private_ids: Vec<i64>,
+    /// Every `internal` repository is readable (signed-in, `repo` scope).
+    pub internal: bool,
 }
 
 impl ReadableRepos {
     pub fn can_read(&self, repo: &db::Repository) -> bool {
-        self.all || !repo.is_private() || self.private_ids.contains(&repo.id)
+        self.all
+            || !repo.is_private()
+            || (self.internal && repo.is_internal())
+            || self.private_ids.contains(&repo.id)
+    }
+
+    /// SQL condition on the `visibility` column of repositories alias
+    /// `alias` matching the visibilities readable without a grant:
+    /// `{alias}.visibility = 'public'`, or `IN ('public', 'internal')`.
+    /// Combine with `OR {alias}.id = ANY(private_ids)` (unless `all`).
+    pub fn visibility_sql(&self, alias: &str) -> String {
+        if self.internal {
+            format!("{alias}.visibility IN ('public', 'internal')")
+        } else {
+            format!("{alias}.visibility = 'public'")
+        }
     }
 }
 
@@ -520,6 +571,7 @@ pub async fn readable_repos(
         return Ok(ReadableRepos {
             all: true,
             private_ids: vec![],
+            internal: true,
         });
     }
     let private_ids: Vec<i64> = sqlx::query_scalar(
@@ -553,6 +605,7 @@ pub async fn readable_repos(
     Ok(ReadableRepos {
         all: false,
         private_ids,
+        internal: !auth.user.is_suspended(),
     })
 }
 

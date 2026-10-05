@@ -60,6 +60,20 @@ try {
   await shot('actions-run');
   const runUrl = page.url();
 
+  // Reusable workflow: the called jobs render inside the caller's node, the
+  // caller's outputs reach the downstream job.
+  const callNode = page.locator('[data-call="package"]');
+  await callNode.waitFor({ timeout: 10_000 });
+  check(await callNode.locator('[title="Calls ./.github/workflows/package.yml"]').isVisible(), 'call node names the called workflow');
+  check(await callNode.locator('a >> text=assemble').isVisible(), 'call node lists called job assemble');
+  check(await callNode.locator('a >> text=bundle').isVisible(), 'call node lists called job bundle');
+  check(await page.isVisible('aside[aria-label="Run jobs"] a[title^="package / bundle"]'), 'sidebar groups called jobs under the caller');
+  const jobsBody = await rest(`/repos/${login}/${repo}/actions/runs/${runUrl.split('/').pop()}/jobs`);
+  const byName = Object.fromEntries(jobsBody.jobs.map((j) => [j.name, j.conclusion]));
+  check(byName['package / assemble'] === 'success' && byName['package / bundle'] === 'success', 'called jobs succeeded');
+  check(byName.publish === 'success', 'downstream job consumed the call outputs');
+  await callNode.screenshot({ path: `${shots}/actions-run-call.png` });
+
   // Artifact download goes through the signed redirect.
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('a[download="app-debug.zip"] >> nth=0')]);
   check((await download.path()) != null, 'artifact downloads');

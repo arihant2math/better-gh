@@ -17,6 +17,7 @@ Branch `bgh/actions`.
 | `runner/` | Job executor shared by the built-in runner and `bgh-runner` (see below). |
 | `web.rs` | `/_bgh/actions/runner/*` HTTP protocol, `/_bgh/actions/download/{token}` signed downloads, `/_bgh/actions/jobs/{id}/logs/stream` SSE live logs. |
 | `api/` | GitHub REST endpoints (list below). |
+| `reusable.rs` | Reusable workflows (P16): `uses:` parsing and resolution (local at the caller's commit, `owner/repo/path@ref` from this server with the `/actions/permissions/access` rule), typed `with:`, `secrets:` layers (mapping or `inherit`), `on.workflow_call.outputs`. The engine schedules each call as a nested scope (`call` rows). |
 | `services.rs` | Background services: maintenance loop (cron, reaper, artifact expiry) and the built-in runner. |
 
 ### Runner
@@ -27,6 +28,13 @@ Branch `bgh/actions`.
   `BGH_ACTIONS_MAX_JOBS` jobs at once through `server::LocalBackend`.
 * External runners: `bgh-runner register --url … --token <registration token>`
   then `bgh-runner run` (HTTP long-poll, `Authorization: RunnerToken`).
+  Registration reports the host OS/arch (`RUNNER_OS` Linux/Windows/macOS,
+  `RUNNER_ARCH` X86/X64/ARM/ARM64; system labels `self-hosted, <os>,
+  <arch>`, lower-cased) and an optional `--runner-group`. `bgh-runner run
+  --jitconfig <encoded_jit_config>` runs one job as a JIT runner. Ephemeral
+  runners take one job and are deleted when it completes. Runner groups
+  (org and site) restrict runners to repositories / organizations, public
+  repositories and a workflow allowlist (P29, `docs/packages/p29-runners.md`).
 * Executors: `docker` (job container = `container:` or
   `BGH_ACTIONS_DEFAULT_IMAGE`, services on a per-job network with aliases,
   job dir bind-mounted at `/__w`) and `shell` (host, explicit only); `auto`
@@ -81,18 +89,22 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   `{name}/repositories[/{repo_id}]`).
 * Variables: same three levels (`/actions/variables`, `…/organization-variables`,
   `/environments/{env}/variables`, `/orgs/{org}/actions/variables…`).
+* Reusable workflow access: `GET|PUT /repos/{o}/{r}/actions/permissions/access`
+  (`access_level` none/user/organization/enterprise).
 * Environments (minimal, no protection rules): `GET /repos/{o}/{r}/environments`,
   `GET|PUT|DELETE …/environments/{name}`.
 * Runners: repo and org — `GET …/actions/runners`, `GET …/runners/downloads`
   (`[]`), `POST …/registration-token`, `POST …/remove-token`, `GET|DELETE
   …/runners/{id}`, labels `GET|POST|PUT|DELETE …/{id}/labels`, `DELETE
-  …/{id}/labels/{name}`.
+  …/{id}/labels/{name}`, `POST …/runners/generate-jitconfig`; org runner
+  groups `/orgs/{org}/actions/runner-groups[/{id}[/repositories|/runners]]`.
+  Site: `/_bgh/admin/actions/{runners,queue,runner-groups}` (site admins).
 
 Web (`/_bgh/actions`): runner protocol (`register`, `self`, `acquire`,
 `jobs/{id}/logs|steps|complete|artifacts…`), `download/{token}`,
 `jobs/{id}/logs/stream` (SSE).
 
-## Tables (migration 1000)
+## Tables (migration 1000; 2800 adds `actions_jobs.kind`/`concurrency_group` and `actions_repo_access`)
 
 `actions_workflows`, `actions_runs`, `actions_jobs`, `actions_runners`,
 `actions_runner_tokens`, `actions_artifacts`, `actions_environments`,
@@ -155,8 +167,7 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 
 ## Known gaps / TODO
 
-* Reusable workflows (`jobs.<id>.uses`) are parsed but fail the job with a
-  clear error.
+* Reusable workflows: see `docs/packages/p16-reusable-workflows.md`.
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
 * `actions/cache` is a no-op; no cache API (`/actions/caches`).
@@ -164,7 +175,7 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).
-* Usage/billing, OIDC tokens, runner groups, JIT config not implemented.
+* Usage/billing, OIDC tokens not implemented.
 * Runner: upload-artifact ignores `overwrite`/`compression-level`/`pattern`;
   checkout ignores `submodules`/`lfs`; masking does not cover encoded forms
   of secrets; docker actions ignore `pre-entrypoint`; `docker login` for

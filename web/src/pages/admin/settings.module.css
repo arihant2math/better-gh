@@ -269,3 +269,49 @@
   color: var(--fg);
   font-weight: var(--fw-medium);
 }
+
+/* ------------------------------------------------------------------ LDAP */
+.ldap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ldapFields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ldapMore > summary {
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ldapMore[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ldapActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ldapActions > input {
+  flex: 1 1 200px;
+  max-width: 280px;
+}
+
+.ldapOk {
+  color: var(--success);
+  font-size: var(--fs-sm);
+}

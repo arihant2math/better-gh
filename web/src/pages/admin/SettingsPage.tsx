@@ -29,9 +29,11 @@ import {
   GitSection,
   MaintenanceSection,
   OrganizationsSection,
+  PrivacySection,
   RateLimitsSection,
   RepositoriesSection,
   RetentionSection,
+  MarkdownSection,
   SignupSection,
   SmtpSection,
 } from './settingsSections';
@@ -194,6 +196,8 @@ export default function SettingsPage() {
         return <SignupSection value={draft.signup} onChange={update('signup')} errors={errors} />;
       case 'repositories':
         return <RepositoriesSection value={draft.repositories} onChange={update('repositories')} errors={errors} />;
+      case 'privacy':
+        return <PrivacySection value={draft.privacy} onChange={update('privacy')} errors={errors} />;
       case 'organizations':
         return <OrganizationsSection value={draft.organizations} onChange={update('organizations')} errors={errors} />;
       case 'announcement':
@@ -212,6 +216,8 @@ export default function SettingsPage() {
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
       case 'actions':
         return <ActionsSection value={draft.actions} onChange={update('actions')} errors={errors} />;
+      case 'markdown':
+        return <MarkdownSection value={draft.markdown} onChange={update('markdown')} errors={errors} />;
     }
   };
 

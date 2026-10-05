@@ -1216,6 +1216,36 @@ pub struct RunListQuery {
     pub app_id: Option<i64>,
 }
 
+/// A wrapped list body (`{"total_count": n, ...}`) sent with the
+/// pagination `Link` header.
+#[derive(Debug)]
+pub struct Linked<T> {
+    pub body: T,
+    pub link: Option<String>,
+}
+
+impl<T> Linked<T> {
+    pub fn new(p: &Pagination, total: i64, page_len: usize, body: T) -> Self {
+        let has_next = p.offset() + (page_len as i64) < total;
+        Self {
+            body,
+            link: p.link_header(has_next, Some(total)),
+        }
+    }
+}
+
+impl<T: Serialize> axum::response::IntoResponse for Linked<T> {
+    fn into_response(self) -> axum::response::Response {
+        let mut resp = axum::Json(self.body).into_response();
+        if let Some(link) = self.link
+            && let Ok(v) = axum::http::HeaderValue::from_str(&link)
+        {
+            resp.headers_mut().insert(axum::http::header::LINK, v);
+        }
+        resp
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct RunList {
     pub total_count: i64,
@@ -1244,7 +1274,7 @@ async fn list_runs_where(
     q: &RunListQuery,
     sha: Option<&str>,
     suite_id: Option<i64>,
-) -> ApiResult<axum::Json<RunList>> {
+) -> ApiResult<Linked<RunList>> {
     let latest = match q.filter.as_deref().unwrap_or("latest") {
         "latest" => true,
         "all" => false,
@@ -1295,10 +1325,16 @@ async fn list_runs_where(
     .bind(p.offset())
     .fetch_all(&state.db)
     .await?;
-    Ok(axum::Json(RunList {
-        total_count: count,
-        check_runs: render_runs(state, access, &rows).await?,
-    }))
+    let len = rows.len();
+    Ok(Linked::new(
+        p,
+        count,
+        len,
+        RunList {
+            total_count: count,
+            check_runs: render_runs(state, access, &rows).await?,
+        },
+    ))
 }
 
 pub async fn list_for_ref(
@@ -1307,7 +1343,7 @@ pub async fn list_for_ref(
     p: Pagination,
     Path((owner, repo, rev)): Path<(String, String, String)>,
     Query(q): Query<RunListQuery>,
-) -> ApiResult<axum::Json<RunList>> {
+) -> ApiResult<Linked<RunList>> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     let sha = git::resolve_commit(&git::store(&state), access.repo.id, &rev)
         .await?
@@ -1321,7 +1357,7 @@ pub async fn list_for_suite(
     p: Pagination,
     Path((owner, repo, id)): Path<(String, String, i64)>,
     Query(q): Query<RunListQuery>,
-) -> ApiResult<axum::Json<RunList>> {
+) -> ApiResult<Linked<RunList>> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     find_suite(&state, access.repo.id, id).await?;
     list_runs_where(&state, &access, &p, &q, None, Some(id)).await
@@ -1345,7 +1381,7 @@ pub async fn suites_for_ref(
     p: Pagination,
     Path((owner, repo, rev)): Path<(String, String, String)>,
     Query(q): Query<SuiteListQuery>,
-) -> ApiResult<axum::Json<SuiteList>> {
+) -> ApiResult<Linked<SuiteList>> {
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
     let sha = git::resolve_commit(&git::store(&state), access.repo.id, &rev)
         .await?
@@ -1376,10 +1412,16 @@ pub async fn suites_for_ref(
     .bind(p.offset())
     .fetch_all(&state.db)
     .await?;
-    Ok(axum::Json(SuiteList {
-        total_count: total,
-        check_suites: render_suites(&state, &access, &rows).await?,
-    }))
+    let len = rows.len();
+    Ok(Linked::new(
+        &p,
+        total,
+        len,
+        SuiteList {
+            total_count: total,
+            check_suites: render_suites(&state, &access, &rows).await?,
+        },
+    ))
 }
 
 pub async fn get_suite(

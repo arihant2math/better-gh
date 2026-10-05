@@ -25,6 +25,7 @@ pub mod logs;
 pub mod models;
 pub mod protocol;
 pub mod rerequest;
+pub mod reusable;
 pub mod runner;
 pub mod scoped;
 pub mod server;
@@ -40,7 +41,7 @@ use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
 use api::{
-    artifacts, deployments as deploy_api, dispatches, environments, runners, runs, secrets,
+    access, artifacts, deployments as deploy_api, dispatches, environments, runners, runs, secrets,
     variables, workflows,
 };
 
@@ -75,6 +76,10 @@ pub fn router() -> Router<AppState> {
             get(runs::list_for_workflow),
         )
         // runs
+        .route(
+            &r("/actions/permissions/access"),
+            get(access::get).put(access::put),
+        )
         .route(&r("/actions/runs"), get(runs::list))
         .route(
             &r("/actions/runs/{run_id}"),
@@ -300,12 +305,22 @@ pub fn router() -> Router<AppState> {
             &o("/actions/runners/{runner_id}/labels/{name}"),
             axum::routing::delete(runners::org_item::remove_label),
         )
+        .route(
+            &r("/actions/runners/generate-jitconfig"),
+            post(runners::repo_jitconfig),
+        )
+        .route(
+            &o("/actions/runners/generate-jitconfig"),
+            post(runners::org_jitconfig),
+        )
+        .merge(api::runner_groups::routes())
 }
 
 /// Non-API routes (`/_bgh/actions/...`).
 pub fn web_router() -> Router<AppState> {
     web::routes()
         .merge(ui::routes())
+        .merge(api::site_runners::routes())
         .route(
             "/_bgh/repos/{owner}/{repo}/deployments",
             get(deploy_api::web_summary),

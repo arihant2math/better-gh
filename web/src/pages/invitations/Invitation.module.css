@@ -1,0 +1,124 @@
+.page {
+  display: flex;
+  justify-content: center;
+  padding: 48px 16px 32px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  width: min(520px, 100%);
+  padding: 32px 28px 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  text-align: center;
+}
+
+.avatars {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--fg-subtle);
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  width: 100%;
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  font-size: 13px;
+  text-align: left;
+}
+
+.facts dt {
+  color: var(--fg-muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.error {
+  width: 100%;
+}
+
+/* Dashboard banner */
+.banner {
+  margin: 0 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-subtle);
+}
+
+.bannerHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.bannerList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.bannerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.bannerRow + .bannerRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bannerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bannerRole {
+  color: var(--fg-muted);
+  font-size: 12px;
+}

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bgh_core::testing::{TestApp, TestUser};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDRfake-but-good-enough";
 const BOUNDARY: &str = "----bghtestboundary";
@@ -89,6 +89,25 @@ async fn upload_and_download_image() {
             .starts_with("inline")
     );
     assert!(res.header("cache-control").unwrap().starts_with("public"));
+
+    // Private mode: anonymous downloads are refused and signed-in ones are
+    // never cacheable by shared caches.
+    app.set_settings("privacy", json!({"private_mode": true}))
+        .await;
+    app.get(&path_of(&app, href))
+        .send()
+        .await
+        .assert_status(401);
+    let private = app.get(&path_of(&app, href)).auth(&alice).send().await;
+    private.assert_status(200);
+    assert!(
+        private
+            .header("cache-control")
+            .unwrap()
+            .starts_with("private")
+    );
+    app.set_settings("privacy", json!({"private_mode": false}))
+        .await;
 
     // Conditional request.
     let etag = res.header("etag").unwrap().to_string();

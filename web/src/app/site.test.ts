@@ -46,3 +46,19 @@ describe('parseLink', () => {
     expect(parseLink(null)).toEqual({});
   });
 });
+
+describe('visibilityPolicy', () => {
+  it('defaults to every visibility, internal for organizations only', async () => {
+    const { visibilityPolicy } = await import('./site');
+    expect(visibilityPolicy(null, false)).toEqual({ allowed: ['public', 'private'], preferred: 'public' });
+    expect(visibilityPolicy(null, true)).toEqual({ allowed: ['public', 'internal', 'private'], preferred: 'public' });
+  });
+
+  it('follows the site policy and its defaults', async () => {
+    const { visibilityPolicy } = await import('./site');
+    const policy = { ...info(null), repository_visibilities: { allowed: ['internal', 'private'] as const, default_user: 'private' as const, default_org: 'internal' as const } };
+    const p = { ...policy, repository_visibilities: { ...policy.repository_visibilities, allowed: [...policy.repository_visibilities.allowed] } };
+    expect(visibilityPolicy(p, false)).toEqual({ allowed: ['private'], preferred: 'private' });
+    expect(visibilityPolicy(p, true)).toEqual({ allowed: ['internal', 'private'], preferred: 'internal' });
+  });
+});

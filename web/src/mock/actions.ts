@@ -44,6 +44,8 @@ interface JobDef {
   main: string;
   runsOn: (mx: string | null) => string;
   environment?: string;
+  /** Set on jobs of a called reusable workflow (key `<caller>/<job>`). */
+  caller?: { key: string; name: string; uses: string; needs: string[] };
 }
 
 interface WorkflowDef {
@@ -88,15 +90,34 @@ const DEFS: WorkflowDef[] = [
     ],
     jobs: [
       { key: 'build', name: 'build', needs: [], steps: [...NODE, 'Build', 'Upload artifact'], main: 'Build', runsOn: ubuntu },
-      { key: 'deploy-staging', name: 'Deploy to staging', needs: ['build'], steps: ['Download artifact', 'Configure credentials', 'Deploy'], main: 'Deploy', runsOn: ubuntu, environment: 'staging' },
       {
-        key: 'deploy-production',
-        name: 'Deploy to production',
-        needs: ['deploy-staging'],
+        key: 'deploy-staging/deploy',
+        name: 'Deploy to staging / deploy',
+        needs: ['build'],
+        steps: ['Download artifact', 'Configure credentials', 'Deploy'],
+        main: 'Deploy',
+        runsOn: ubuntu,
+        environment: 'staging',
+        caller: { key: 'deploy-staging', name: 'Deploy to staging', uses: './.github/workflows/deploy-env.yml', needs: ['build'] },
+      },
+      {
+        key: 'deploy-production/deploy',
+        name: 'Deploy to production / deploy',
+        needs: ['deploy-staging/deploy'],
         steps: ['Download artifact', 'Configure credentials', 'Deploy'],
         main: 'Deploy',
         runsOn: ubuntu,
         environment: 'production',
+        caller: { key: 'deploy-production', name: 'Deploy to production', uses: './.github/workflows/deploy-env.yml', needs: ['deploy-staging'] },
+      },
+      {
+        key: 'deploy-production/verify',
+        name: 'Deploy to production / verify',
+        needs: ['deploy-production/deploy'],
+        steps: ['Smoke test'],
+        main: 'Smoke test',
+        runsOn: ubuntu,
+        caller: { key: 'deploy-production', name: 'Deploy to production', uses: './.github/workflows/deploy-env.yml', needs: ['deploy-staging'] },
       },
     ],
   },
@@ -272,16 +293,6 @@ interface SecretRow {
   updatedAt: string;
   visibility?: 'all' | 'private' | 'selected';
   selected?: ID[];
-}
-
-interface RunnerRow {
-  id: number;
-  name: string;
-  os: string;
-  status: 'online' | 'offline';
-  busy: boolean;
-  system: string[];
-  custom: string[];
 }
 
 interface Scope {
@@ -728,7 +739,7 @@ const GEN: Record<string, (c: LogCtx) => string[]> = {
     `Authenticated as assumedRoleId AROA${fakeSha(`${c.job.id}:role`).slice(0, 16).toUpperCase()}:GitHubActions`,
   ],
   Deploy: (c) => {
-    const env = c.job.key === 'deploy-production' ? 'production' : 'staging';
+    const env = c.job.key.startsWith('deploy-production') ? 'production' : 'staging';
     const out = [...runCmd(c, `./scripts/deploy.sh ${env}`, { DEPLOY_ENV: env, AWS_REGION: 'eu-west-1' })];
     out.push(`${A.blue}==>${A.reset} ${A.bold}Deploying ${c.run.headSha.slice(0, 7)} to ${env}${A.reset}`);
     out.push(`##[command]aws s3 sync dist/ s3://acme-web-${env}/ --delete`);
@@ -898,7 +909,6 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
   const logCache = new Map<ID, string[][]>();
   const secretStore = new Map<string, Map<string, SecretRow>>();
   const variableStore = new Map<string, Map<string, SecretRow>>();
-  const runnerStore = new Map<string, RunnerRow[]>();
   let silent = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -1071,7 +1081,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
   };
 
   const pickFail = (def: WorkflowDef, rng: Rng): { key: string; mx: string | null } => {
-    const weighted = def.jobs.map((j) => ({ j, w: j.key === 'test' || j.key === 'e2e' || j.key === 'deploy-production' ? 3 : 1 }));
+    const weighted = def.jobs.map((j) => ({ j, w: j.key === 'test' || j.key === 'e2e' || j.key === 'deploy-production/deploy' ? 3 : 1 }));
     let roll = rng.next() * weighted.reduce((n, x) => n + x.w, 0);
     let pick = weighted[0]!.j;
     for (const x of weighted) {
@@ -2061,6 +2071,39 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
 
   // ------------------------------------------------------------ private UI endpoints
 
+  /** Top-level graph jobs: called jobs fold into one node per caller. */
+  const graphJobs = (def: WorkflowDef) => {
+    const out: { key: string; name: string; needs: string[]; matrix: boolean; uses: string | null }[] = [];
+    for (const d of def.jobs) {
+      if (d.caller) {
+        if (!out.some((o) => o.key === d.caller!.key)) out.push({ key: d.caller.key, name: d.caller.name, needs: d.caller.needs, matrix: false, uses: d.caller.uses });
+      } else out.push({ key: d.key, name: d.name, needs: d.needs.map((n) => n.split('/')[0]!), matrix: !!d.matrix, uses: null });
+    }
+    return out;
+  };
+  const graphCalls = (run: Run) => {
+    const callers = new Map<string, JobDef[]>();
+    for (const d of run.wf.def.jobs) if (d.caller) callers.set(d.caller.key, [...(callers.get(d.caller.key) ?? []), d]);
+    const cur = current(run);
+    return [...callers].map(([key, defs], i) => {
+      const jobs = cur.filter((j) => j.key.startsWith(`${key}/`));
+      const done = jobs.length === defs.length && jobs.every((j) => j.status === 'completed');
+      const caller = defs[0]!.caller!;
+      return {
+        id: run.id * 100 + i,
+        key,
+        root: key,
+        prefix: `${key}/`,
+        name: caller.name,
+        uses: caller.uses,
+        workflow_ref: `${caller.uses.slice(2)}@refs/heads/${run.headBranch}`,
+        status: done ? 'completed' : 'in_progress',
+        conclusion: done ? (jobs.find((j) => j.conclusion !== 'success')?.conclusion ?? 'success') : null,
+        jobs: defs.map((d) => ({ key: d.key, name: d.key.slice(key.length + 1), needs: d.needs.filter((n) => n.startsWith(`${key}/`)), matrix: !!d.matrix, uses: null })),
+      };
+    }).filter((c) => cur.some((j) => j.key.startsWith(c.prefix)));
+  };
+
   R('GET', '/_bgh/actions/repos/:owner/:repo/runs/:id/graph', (ctx) => {
     const r = runOf(ctx);
     if (isResp(r)) return r;
@@ -2070,8 +2113,9 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
       body: {
         run_id: run.id,
         workflow_name: run.wf.def.name,
-        jobs: run.wf.def.jobs.map((d) => ({ key: d.key, name: d.name, needs: d.needs, matrix: !!d.matrix, uses: null })),
+        jobs: graphJobs(run.wf.def),
         job_keys: Object.fromEntries(run.jobs.map((j) => [String(j.id), j.key])),
+        calls: graphCalls(run),
       },
     };
   });
@@ -2380,79 +2424,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     return { status: 204 };
   });
 
-  // ------------------------------------------------------------ runners
-
-  const runnersFor = (sc: Scope): RunnerRow[] => {
-    let list = runnerStore.get(sc.key);
-    if (list) return list;
-    const idBase = (sc.repo?.id ?? sc.org!.id) * 10 + (sc.kind === 'org' ? 100_000 : 0);
-    list =
-      sc.kind === 'repo'
-        ? [
-            { id: idBase + 1, name: 'build-box-01', os: 'Linux', status: 'online', busy: false, system: ['self-hosted', 'Linux', 'X64'], custom: ['gpu'] },
-            { id: idBase + 2, name: 'mac-mini-m2', os: 'macOS', status: 'online', busy: true, system: ['self-hosted', 'macOS', 'ARM64'], custom: ['xcode-16'] },
-            { id: idBase + 3, name: 'old-runner', os: 'Linux', status: 'offline', busy: false, system: ['self-hosted', 'Linux', 'X64'], custom: [] },
-          ]
-        : [
-            { id: idBase + 1, name: `${sc.org!.login}-runner-1`, os: 'Linux', status: 'online', busy: true, system: ['self-hosted', 'Linux', 'X64'], custom: ['docker'] },
-            { id: idBase + 2, name: `${sc.org!.login}-runner-2`, os: 'Windows', status: 'offline', busy: false, system: ['self-hosted', 'Windows', 'X64'], custom: [] },
-          ];
-    runnerStore.set(sc.key, list);
-    return list;
-  };
-  const labelsJson = (r: RunnerRow) => {
-    const labels = [...r.system.map((name) => ({ name, type: 'read-only' })), ...r.custom.map((name) => ({ name, type: 'custom' }))].map((l, i) => ({ id: i + 1, ...l }));
-    return { total_count: labels.length, labels };
-  };
-  const runnerJson = (r: RunnerRow) => ({ id: r.id, name: r.name, os: r.os, status: r.status, busy: r.busy, ephemeral: false, runner_group_id: 1, labels: labelsJson(r).labels });
-  const token = (sc: Scope, salt: string) => ({ token: (fakeSha(`${sc.key}:${salt}:${Date.now()}`) + fakeSha(salt)).replace(/[^a-z0-9]/gi, '').slice(0, 29).toUpperCase(), expires_at: iso(Date.now() + 3600_000) });
-
-  const installRunnerRoutes = (prefix: string, resolve: (ctx: Ctx) => Scope | Resp) => {
-    const withScope = (fn: (ctx: Ctx, sc: Scope) => Resp) => (ctx: Ctx) => {
-      const sc = resolve(ctx);
-      return isResp(sc) ? sc : fn(ctx, sc);
-    };
-    const withRunner = (fn: (ctx: Ctx, sc: Scope, r: RunnerRow) => Resp) =>
-      withScope((ctx, sc) => {
-        const r = runnersFor(sc).find((x) => x.id === Number(ctx.m[sc.i]));
-        return r ? fn(ctx, sc, r) : notFound();
-      });
-    R('GET', `${prefix}/runners`, withScope((ctx, sc) => {
-      const list = runnersFor(sc);
-      const p = paginate(ctx, list);
-      return { status: 200, body: { total_count: list.length, runners: p.items.map(runnerJson) }, headers: p.headers };
-    }));
-    R('GET', `${prefix}/runners/downloads`, withScope(() => ({ status: 200, body: [] })));
-    R('POST', `${prefix}/runners/registration-token`, withScope((_ctx, sc) => ({ status: 201, body: token(sc, 'reg') })));
-    R('POST', `${prefix}/runners/remove-token`, withScope((_ctx, sc) => ({ status: 201, body: token(sc, 'remove') })));
-    R('GET', `${prefix}/runners/:id`, withRunner((_ctx, _sc, r) => ({ status: 200, body: runnerJson(r) })));
-    R('DELETE', `${prefix}/runners/:id`, withRunner((_ctx, sc, r) => {
-      if (r.busy) return err(422, `Bad request - Runner "${r.name}" is still running a job"`);
-      runnerStore.set(sc.key, runnersFor(sc).filter((x) => x !== r));
-      return { status: 204 };
-    }));
-    R('GET', `${prefix}/runners/:id/labels`, withRunner((_ctx, _sc, r) => ({ status: 200, body: labelsJson(r) })));
-    const setLabels = (replace: boolean) =>
-      withRunner((ctx, _sc, r) => {
-        const labels = ctx.body.labels;
-        if (!Array.isArray(labels) || (!replace && !labels.length) || labels.some((l) => typeof l !== 'string' || !l.trim()))
-          return err(422, 'Validation Failed', { errors: [{ resource: 'Runner', field: 'labels', code: 'invalid' }] });
-        const names = (labels as string[]).map((l) => l.trim()).filter((l) => !r.system.some((x) => x.toLowerCase() === l.toLowerCase()));
-        r.custom = replace ? [...new Set(names)] : [...new Set([...r.custom, ...names])];
-        return { status: 200, body: labelsJson(r) };
-      });
-    R('POST', `${prefix}/runners/:id/labels`, setLabels(false));
-    R('PUT', `${prefix}/runners/:id/labels`, setLabels(true));
-    R('DELETE', `${prefix}/runners/:id/labels/:name`, withRunner((ctx, sc, r) => {
-      const name = dec(ctx.m[sc.i + 1]);
-      if (r.system.some((x) => x.toLowerCase() === name.toLowerCase())) return err(422, `Cannot remove read-only label '${name}'`);
-      if (!r.custom.includes(name)) return notFound();
-      r.custom = r.custom.filter((x) => x !== name);
-      return { status: 200, body: labelsJson(r) };
-    }));
-  };
-  installRunnerRoutes(`${P}/actions`, repoScope);
-  installRunnerRoutes('/api/v3/orgs/:org/actions', orgScope);
+  // Runners and runner groups: mock/extra/runners.ts (one registry for every scope).
 
   // ------------------------------------------------------------ handle
 

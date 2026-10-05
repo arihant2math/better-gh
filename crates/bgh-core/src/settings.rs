@@ -9,7 +9,7 @@
 //!
 //! Storage: one `site_settings` row per section (`signup`, `repositories`,
 //! `organizations`, `announcement`, `rate_limits`, `auth_providers`, `smtp`,
-//! `maintenance`, `git`, `actions`), each a JSON object. Missing rows or fields take the
+//! `maintenance`, `git`, `actions`, `privacy`), each a JSON object. Missing rows or fields take the
 //! defaults below, so new fields never need a migration.
 //!
 //! Also here: the maintenance-mode middleware (503 for everyone but site
@@ -127,6 +127,60 @@ impl Default for GitSettings {
     }
 }
 
+/// Repository visibilities, in display order.
+pub const VISIBILITIES: &[&str] = &["public", "internal", "private"];
+
+/// Access policy (`privacy` section): private mode, the anonymous user
+/// directory and the repository visibilities owners may choose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PrivacySettings {
+    /// Require sign-in for everything (pages, API, git, raw files, avatars)
+    /// except the sign-in flows, static assets, `/healthz` and `/api/v3/meta`.
+    pub private_mode: bool,
+    /// Whether anonymous callers may list `GET /users` and
+    /// `GET /organizations` (always refused in private mode).
+    pub allow_anonymous_directory: bool,
+    /// Subset of [`VISIBILITIES`] new or changed repositories may use.
+    pub allowed_visibilities: Vec<String>,
+}
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        Self {
+            private_mode: false,
+            allow_anonymous_directory: true,
+            allowed_visibilities: VISIBILITIES.iter().map(|v| v.to_string()).collect(),
+        }
+    }
+}
+
+impl PrivacySettings {
+    /// Whether repositories may be given `visibility`.
+    pub fn visibility_allowed(&self, visibility: &str) -> bool {
+        self.allowed_visibilities.iter().any(|v| v == visibility)
+    }
+
+    /// 422 (GitHub validation error on `visibility`) unless `visibility` is
+    /// allowed by the site policy.
+    pub fn check_visibility(&self, visibility: &str) -> ApiResult<()> {
+        if self.visibility_allowed(visibility) {
+            Ok(())
+        } else {
+            Err(ApiError::invalid_field(crate::error::FieldError::custom(
+                "Repository",
+                "visibility",
+                format!("{visibility} repositories are not allowed on this instance"),
+            )))
+        }
+    }
+
+    /// Whether anonymous callers may enumerate users and organizations.
+    pub fn anonymous_directory(&self) -> bool {
+        !self.private_mode && self.allow_anonymous_directory
+    }
+}
+
 /// Who may create organizations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -219,6 +273,11 @@ pub struct OidcProvider {
     pub login_claim: Option<String>,
     /// Lower-case email domains allowed to sign in; empty = any.
     pub allowed_domains: Vec<String>,
+    /// Claim listing the user's groups (e.g. `groups`); when set and
+    /// present in the ID token / userinfo, team memberships mapped to these
+    /// groups (`external_group_mappings`, provider `oidc:{name}`) are
+    /// synced at every sign-in.
+    pub groups_claim: Option<String>,
 }
 
 impl Default for OidcProvider {
@@ -233,6 +292,74 @@ impl Default for OidcProvider {
             auto_create_users: true,
             login_claim: None,
             allowed_domains: Vec::new(),
+            groups_claim: None,
+        }
+    }
+}
+
+/// LDAP directory authentication and sync (`bgh_accounts::ldap`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LdapSettings {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    /// `none` | `ldaps` | `starttls`.
+    pub encryption: String,
+    /// PEM certificate(s) trusted for the server (in addition to the
+    /// system roots).
+    pub ca_cert: Option<String>,
+    /// Verify the server certificate (turn off for testing only).
+    pub verify_certificate: bool,
+    /// Service account used for searches; empty = anonymous.
+    pub bind_dn: Option<String>,
+    /// Secret; never returned by the admin API (write-only).
+    pub bind_password: Option<String>,
+    /// Base DNs searched for users (in order).
+    pub user_search_bases: Vec<String>,
+    /// Attribute holding the login (`uid`, AD: `sAMAccountName`).
+    pub uid_field: String,
+    /// Extra filter ANDed into user searches, e.g. `(objectClass=person)`.
+    pub user_filter: Option<String>,
+    /// Members of this group (DN) are site administrators.
+    pub admin_group: Option<String>,
+    /// When set, only members of this group (DN) may sign in.
+    pub restricted_group: Option<String>,
+    /// Attribute mapping.
+    pub name_field: String,
+    pub email_field: String,
+    pub ssh_key_field: Option<String>,
+    pub gpg_key_field: Option<String>,
+    /// Create accounts on first successful LDAP sign-in.
+    pub jit_provisioning: bool,
+    /// Periodic user and team sync.
+    pub sync_enabled: bool,
+    pub sync_interval_hours: u32,
+}
+
+impl Default for LdapSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: String::new(),
+            port: 389,
+            encryption: "none".into(),
+            ca_cert: None,
+            verify_certificate: true,
+            bind_dn: None,
+            bind_password: None,
+            user_search_bases: Vec::new(),
+            uid_field: "uid".into(),
+            user_filter: None,
+            admin_group: None,
+            restricted_group: None,
+            name_field: "cn".into(),
+            email_field: "mail".into(),
+            ssh_key_field: None,
+            gpg_key_field: None,
+            jit_provisioning: true,
+            sync_enabled: true,
+            sync_interval_hours: 1,
         }
     }
 }
@@ -240,16 +367,24 @@ impl Default for OidcProvider {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AuthProviderSettings {
-    /// Built-in username/password login.
+    /// Built-in username/password login (web sign-in and git/LFS basic
+    /// auth with a built-in password). Tokens and directory (LDAP)
+    /// passwords are unaffected. Enforced by `auth::check_password`.
     pub password_login: bool,
+    /// With `password_login` off, site administrators may still sign in
+    /// with their built-in password (break-glass accounts).
+    pub password_login_admin_exempt: bool,
     pub oidc: Vec<OidcProvider>,
+    pub ldap: LdapSettings,
 }
 
 impl Default for AuthProviderSettings {
     fn default() -> Self {
         Self {
             password_login: true,
+            password_login_admin_exempt: false,
             oidc: Vec::new(),
+            ldap: LdapSettings::default(),
         }
     }
 }
@@ -391,6 +526,20 @@ impl Default for RetentionSettings {
     }
 }
 
+/// Markdown rendering (P35).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MarkdownSettings {
+    /// Proxy external images in rendered Markdown through `/_bgh/camo`.
+    pub image_proxy: bool,
+}
+
+impl Default for MarkdownSettings {
+    fn default() -> Self {
+        Self { image_proxy: true }
+    }
+}
+
 /// All site settings, with defaults for anything not stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -407,6 +556,8 @@ pub struct SiteSettings {
     pub git: GitSettings,
     pub retention: RetentionSettings,
     pub actions: ActionsSettings,
+    pub privacy: PrivacySettings,
+    pub markdown: MarkdownSettings,
 }
 
 /// Section keys (`site_settings.key`), in display order.
@@ -423,6 +574,8 @@ pub const SECTIONS: &[&str] = &[
     "git",
     "retention",
     "actions",
+    "privacy",
+    "markdown",
 ];
 
 impl SiteSettings {
@@ -432,13 +585,50 @@ impl SiteSettings {
     }
 
     /// Default visibility for a new repository of a user / org owner.
+    /// Falls back to the most restrictive allowed visibility the owner can
+    /// use when the configured default isn't allowed (`privacy`).
     pub fn default_visibility(&self, owner_is_org: bool) -> &str {
-        match self.repositories.default_visibility.as_str() {
+        let configured = match self.repositories.default_visibility.as_str() {
             "private" => "private",
             "internal" if owner_is_org => "internal",
             "internal" => "private",
             _ => "public",
+        };
+        if self.privacy.visibility_allowed(configured) {
+            return configured;
         }
+        ["private", "internal", "public"]
+            .into_iter()
+            .filter(|v| owner_is_org || *v != "internal")
+            .find(|v| self.privacy.visibility_allowed(v))
+            .unwrap_or(configured)
+    }
+
+    /// Validate the access-policy fields across sections (admin settings
+    /// writes): known, non-empty `allowed_visibilities`, and a
+    /// `default_visibility` inside that set.
+    pub fn validate_policy(&self) -> Result<(), String> {
+        let allowed = &self.privacy.allowed_visibilities;
+        if allowed.is_empty() {
+            return Err("privacy.allowed_visibilities must not be empty".into());
+        }
+        if let Some(bad) = allowed.iter().find(|v| !VISIBILITIES.contains(&v.as_str())) {
+            return Err(format!(
+                "privacy.allowed_visibilities: unknown visibility {bad:?}"
+            ));
+        }
+        let default = self.repositories.default_visibility.as_str();
+        if !VISIBILITIES.contains(&default) {
+            return Err(format!(
+                "repositories.default_visibility: unknown visibility {default:?}"
+            ));
+        }
+        if !self.privacy.visibility_allowed(default) {
+            return Err(format!(
+                "repositories.default_visibility {default:?} is not in privacy.allowed_visibilities"
+            ));
+        }
+        Ok(())
     }
 
     /// Defaults before any stored row: the built-in defaults plus the
@@ -504,6 +694,7 @@ impl SiteSettings {
             "git_maintenance" => self.git_maintenance = serde_json::from_value(section)?,
             "git" => self.git = serde_json::from_value(section)?,
             "retention" => self.retention = serde_json::from_value(section)?,
+            "markdown" => self.markdown = serde_json::from_value(section)?,
             "actions" => {
                 let a: ActionsSettings = serde_json::from_value(section)?;
                 if !matches!(a.default_workflow_permissions.as_str(), "read" | "write") {
@@ -513,6 +704,7 @@ impl SiteSettings {
                 }
                 self.actions = a;
             }
+            "privacy" => self.privacy = serde_json::from_value(section)?,
             _ => {}
         }
         Ok(())
@@ -563,6 +755,7 @@ pub async fn load(state: &AppState) -> ApiResult<Arc<SiteSettings>> {
         return Ok(s.clone());
     }
     let s = Arc::new(load_uncached(&state.config, &state.db).await?);
+    crate::camo::set_enabled(s.markdown.image_proxy);
     cache()
         .lock()
         .expect("settings cache")
@@ -854,6 +1047,14 @@ pub fn public_info(state: &AppState, s: &SiteSettings) -> Value {
         },
         "signup_policy": s.signup.policy,
         "password_login": s.auth_providers.password_login,
+        "password_login_admin_exempt": s.auth_providers.password_login_admin_exempt,
+        "ldap": s.auth_providers.ldap.enabled,
+        "private_mode": s.privacy.private_mode,
+        "repository_visibilities": {
+            "allowed": s.privacy.allowed_visibilities,
+            "default_user": s.default_visibility(false),
+            "default_org": s.default_visibility(true),
+        },
         "oidc_providers": s.auth_providers.oidc.iter().map(|p| json!({
             "name": p.name,
             "display_name": p.display_name.clone().unwrap_or_else(|| p.name.clone()),

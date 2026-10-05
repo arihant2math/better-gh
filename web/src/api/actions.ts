@@ -124,12 +124,32 @@ export interface RunGraphJob {
   uses: string | null;
 }
 
+/** A reusable workflow call (one per matrix instance of the calling job). */
+export interface RunGraphCall {
+  id: number;
+  /** Job key of the call (`build`, `outer/inner` when nested). */
+  key: string;
+  /** Top-level job the call belongs to. */
+  root: string;
+  /** Key prefix of the called jobs (`build/`, `build.1/`). */
+  prefix: string;
+  name: string;
+  uses: string;
+  workflow_ref: string;
+  status: string;
+  conclusion: string | null;
+  /** The called workflow's jobs (keys prefixed). */
+  jobs: RunGraphJob[];
+}
+
 export interface RunGraph {
   run_id: number;
   workflow_name: string;
   jobs: RunGraphJob[];
-  /** REST job id → workflow job key. */
+  /** REST job id → workflow job key (`call/job` for called jobs). */
   job_keys: Record<string, string>;
+  /** Reusable workflow calls of the latest attempt. */
+  calls?: RunGraphCall[];
 }
 
 export interface DispatchInput {
@@ -180,6 +200,8 @@ export interface Runner {
   status: 'online' | 'offline';
   busy: boolean;
   ephemeral: boolean;
+  /** Runner group (organization / site runners); `null` for repository runners. */
+  runner_group_id?: number | null;
   labels: RunnerLabel[];
 }
 

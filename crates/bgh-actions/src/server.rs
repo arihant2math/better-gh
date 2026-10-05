@@ -61,11 +61,11 @@ pub async fn ensure_builtin_runner(state: &AppState) -> anyhow::Result<RunnerRow
     let labels = &state.config.actions.runner_labels;
     let row: RunnerRow = sqlx::query_as(&format!(
         "WITH existing AS (
-             UPDATE actions_runners SET system_labels = $2, last_seen_at = now()
+             UPDATE actions_runners SET system_labels = $2, os = $4, arch = $5, last_seen_at = now()
               WHERE builtin AND name = $1 RETURNING {cols}
          ), inserted AS (
-             INSERT INTO actions_runners (name, system_labels, token_hash, builtin, last_seen_at)
-             SELECT $1, $2, $3, true, now() WHERE NOT EXISTS (SELECT 1 FROM existing)
+             INSERT INTO actions_runners (name, system_labels, token_hash, builtin, last_seen_at, os, arch)
+             SELECT $1, $2, $3, true, now(), $4, $5 WHERE NOT EXISTS (SELECT 1 FROM existing)
              RETURNING {cols}
          )
          SELECT {cols} FROM existing UNION ALL SELECT {cols} FROM inserted",
@@ -74,6 +74,8 @@ pub async fn ensure_builtin_runner(state: &AppState) -> anyhow::Result<RunnerRow
     .bind(&name)
     .bind(labels)
     .bind(core_crypto::sha256_hex(&token))
+    .bind(crate::runner::host_os())
+    .bind(crate::runner::host_arch())
     .fetch_one(&state.db)
     .await?;
     Ok(row)
@@ -82,6 +84,32 @@ pub async fn ensure_builtin_runner(state: &AppState) -> anyhow::Result<RunnerRow
 // ---------------------------------------------------------------------------
 // Claiming jobs
 // ---------------------------------------------------------------------------
+
+/// SQL condition: the runner group `$6` (NULL: unrestricted) may run job
+/// `j` of repository `r` — repository / organization visibility, public
+/// repositories, and the workflow allowlist (`owner/repo/path[@ref]`).
+const GROUP_ALLOWS_JOB: &str = "($6::bigint IS NULL OR EXISTS (
+    SELECT 1 FROM actions_runner_groups g
+     WHERE g.id = $6
+       AND (g.allows_public_repositories OR r.visibility <> 'public')
+       AND (g.visibility = 'all'
+            OR (g.visibility = 'private' AND r.visibility <> 'public')
+            OR (g.visibility = 'selected' AND g.org_id IS NOT NULL AND EXISTS (
+                SELECT 1 FROM actions_runner_group_repos gr
+                 WHERE gr.group_id = g.id AND gr.repo_id = j.repo_id))
+            OR (g.visibility = 'selected' AND g.org_id IS NULL AND EXISTS (
+                SELECT 1 FROM actions_runner_group_orgs go
+                 WHERE go.group_id = g.id AND go.org_id = r.owner_id)))
+       AND (NOT g.restricted_to_workflows OR EXISTS (
+            SELECT 1 FROM actions_runs ru
+              JOIN actions_workflows wf ON wf.id = ru.workflow_id
+              JOIN users ow ON ow.id = r.owner_id
+              CROSS JOIN unnest(g.selected_workflows) sw
+             WHERE ru.id = j.run_id
+               AND lower(split_part(sw, '@', 1)) = lower(ow.login || '/' || r.name || '/' || wf.path)
+               AND (strpos(sw, '@') = 0
+                    OR split_part(sw, '@', 2) IN (ru.ref, ru.head_sha, coalesce(ru.head_branch, ''))))))
+)";
 
 /// Claim one queued job matching `runner`, or `None`.
 pub async fn try_acquire(state: &AppState, runner: &RunnerRow) -> anyhow::Result<Option<JobSpec>> {
@@ -99,17 +127,22 @@ pub async fn try_acquire(state: &AppState, runner: &RunnerRow) -> anyhow::Result
                WHERE j.status = 'queued' AND j.labels <@ $3
                  AND ($4::bigint IS NULL OR j.repo_id = $4)
                  AND ($5::bigint IS NULL OR r.owner_id = $5)
+                 AND {group}
+                 AND NOT ($7 AND EXISTS (SELECT 1 FROM actions_jobs x WHERE x.runner_id = $1))
                ORDER BY j.id
                FOR UPDATE OF j SKIP LOCKED
                LIMIT 1)
-          RETURNING {}",
-        JobRow::COLUMNS
+          RETURNING {cols}",
+        cols = JobRow::COLUMNS,
+        group = GROUP_ALLOWS_JOB,
     ))
     .bind(runner.id)
     .bind(&runner.name)
     .bind(&labels)
     .bind(runner.repo_id)
     .bind(runner.org_id)
+    .bind(runner.runner_group_id)
+    .bind(runner.ephemeral)
     .fetch_optional(&mut *tx)
     .await?;
     let Some(job) = job else {
@@ -234,10 +267,21 @@ async fn prepare_spec(
     let settings = bgh_core::settings::load(state)
         .await
         .map_err(|e| anyhow::anyhow!("loading settings: {e}"))?;
-    let mut permissions = match &stored.permissions {
+    let default = || TokenPermissions::default_for(&settings.actions.default_workflow_permissions);
+    let resolve = |p: &Option<crate::workflow::Permissions>| match p {
         Some(p) => token_permissions(p),
-        None => TokenPermissions::default_for(&settings.actions.default_workflow_permissions),
+        None => default(),
     };
+    // A called job (reusable workflow) without its own `permissions:`
+    // inherits its caller's; every caller on the way caps it.
+    let mut permissions = match (&stored.permissions, stored.permission_caps.last()) {
+        (Some(p), _) => token_permissions(p),
+        (None, Some(cap)) => resolve(cap),
+        (None, None) => default(),
+    };
+    for cap in &stored.permission_caps {
+        permissions = intersect(&permissions, &resolve(cap));
+    }
     if from_fork {
         permissions = permissions.read_only();
     }
@@ -273,14 +317,35 @@ async fn prepare_spec(
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))
         .collect();
 
-    let mut secrets = if from_fork {
-        IndexMap::new()
-    } else {
-        crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
-    };
-    secrets.insert("GITHUB_TOKEN".into(), token.clone());
     let vars = crate::scoped::vars_for(state, &repo, spec.environment.as_deref()).await?;
     spec.vars = Value::Object(vars);
+    let mut secrets = if from_fork {
+        IndexMap::new()
+    } else if stored.secret_layers.is_empty() {
+        crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
+    } else {
+        // A called job: the caller's secrets through each `secrets:` hop;
+        // its own environment's secrets are added on top (they can't be
+        // passed by a caller).
+        let base = crate::scoped::secrets_for(state, &repo, None).await?;
+        let mut layered = crate::reusable::apply_secret_layers(
+            base.clone(),
+            &stored.secret_layers,
+            &spec.github,
+            &spec.vars,
+        );
+        if spec.environment.is_some() {
+            for (k, v) in
+                crate::scoped::secrets_for(state, &repo, spec.environment.as_deref()).await?
+            {
+                if base.get(&k) != Some(&v) {
+                    layered.insert(k, v);
+                }
+            }
+        }
+        layered
+    };
+    secrets.insert("GITHUB_TOKEN".into(), token.clone());
     spec.token = token;
     let secrets_json: serde_json::Map<String, Value> = secrets
         .iter()
@@ -328,6 +393,11 @@ async fn prepare_spec(
         first.started_at = Some(Utc::now());
     }
     Ok((spec, token_row.id, steps))
+}
+
+/// Per category, the lower of the two levels.
+fn intersect(a: &TokenPermissions, b: &TokenPermissions) -> TokenPermissions {
+    TokenPermissions::from_pairs(a.iter().map(|(c, x)| (c, x.min(b.get(c)))))
 }
 
 /// The token permission map of a workflow `permissions:` value. Listed
@@ -486,6 +556,13 @@ pub async fn complete_job(
         completion.summary.as_deref(),
     )
     .await?;
+    if runner.ephemeral {
+        // Ephemeral (and JIT) runners run one job, then are removed.
+        sqlx::query("DELETE FROM actions_runners WHERE id = $1")
+            .bind(runner.id)
+            .execute(&mut *tx)
+            .await?;
+    }
     tx.commit().await?;
     crate::logs::publish(
         state,
@@ -506,7 +583,7 @@ pub async fn complete_job(
 pub async fn reap_stale_jobs(state: &AppState) -> anyhow::Result<usize> {
     let stale: Vec<JobRow> = sqlx::query_as(&format!(
         "SELECT {} FROM actions_jobs j
-          WHERE j.status = 'in_progress'
+          WHERE j.status = 'in_progress' AND j.kind = 'job'
             AND (j.started_at < now() - make_interval(mins => j.timeout_minutes + 10)
                  OR j.updated_at < now() - interval '10 minutes'
                  OR j.runner_id IS NULL)",

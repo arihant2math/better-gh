@@ -39,6 +39,7 @@ impl AppState {
     /// Assemble state from already-open connections.
     pub fn new(config: Config, db: PgPool, redis: ConnectionManager) -> Self {
         let config = Arc::new(config);
+        crate::camo::init(&config.data_dir);
         let events = EventBus::durable(db.clone());
         Self {
             db,

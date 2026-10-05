@@ -11,6 +11,7 @@ import {
   type RepoPatch,
 } from '../../../api/repoSettings';
 import { session } from '../../../app/session';
+import { site, visibilityPolicy, type RepoVisibility } from '../../../app/site';
 import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Section, Toggle, useDebounced } from '../../../components/settings/kit';
 import { navigate } from '../../../router';
 import { store } from '../../../sync';
@@ -537,6 +538,61 @@ function DangerRow({ title, children, action }: { title: string; children: React
 
 type DangerDialog = 'visibility' | 'archive' | 'transfer' | 'delete' | null;
 
+const currentVisibility = (repo: Repo): RepoVisibility => repo.visibility ?? (repo.private ? 'private' : 'public');
+
+const VISIBILITY_WARNING: Record<RepoVisibility, string> = {
+  public: 'The code will be visible to everyone who can see this site. Anyone can fork your repository.',
+  internal: 'Everyone signed in to this site will be able to see and fork this repository.',
+  private: 'Only people with access will see this repository. Stars and watchers from people without access are hidden.',
+};
+
+/** Change visibility to any other visibility the site policy allows (internal: organizations only). */
+const VisibilityDialog = observer(function VisibilityDialog({ repo, open, onClose }: { repo: Repo; open: boolean; onClose: () => void }) {
+  const full = `${repo.owner}/${repo.name}`;
+  const current = currentVisibility(repo);
+  const isOrg = !!store().get('org', repo.ownerId);
+  const targets = visibilityPolicy(site.info, isOrg).allowed.filter((v) => v !== current);
+  const [picked, setPicked] = useState<RepoVisibility | null>(null);
+  const target = picked && targets.includes(picked) ? picked : targets[0];
+  const id = useId();
+  if (!target) {
+    return (
+      <ConfirmDialog open={open} onClose={onClose} title={`Change the visibility of ${full}`} confirmLabel="Close" danger={false} onConfirm={() => undefined}>
+        <Banner tone="info" icon={AlertIcon}>
+          The site policy allows no other visibility for this repository.
+        </Banner>
+      </ConfirmDialog>
+    );
+  }
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={onClose}
+      title={`Make ${full} ${target}`}
+      confirmLabel={`I understand, make this repository ${target}`}
+      confirmText={full}
+      onConfirm={() => {
+        auto(updateRepo(repo, { visibility: target }, `Make ${full} ${target}`).done.then(() => toast({ kind: 'success', title: `${full} is now ${target}` })));
+      }}
+    >
+      {targets.length > 1 && (
+        <Field label="New visibility" htmlFor={id}>
+          <Select id={id} value={target} onChange={(e) => setPicked(e.target.value as RepoVisibility)}>
+            {targets.map((v) => (
+              <option key={v} value={v}>
+                {v[0]!.toUpperCase() + v.slice(1)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      <Banner tone="warning" icon={AlertIcon}>
+        {VISIBILITY_WARNING[target]}
+      </Banner>
+    </ConfirmDialog>
+  );
+});
+
 const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
   const [open, setOpen] = useState<DangerDialog>(null);
   const full = `${repo.owner}/${repo.name}`;
@@ -552,7 +608,7 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
             </Button>
           }
         >
-          This repository is currently {repo.private ? 'private' : 'public'}.
+          This repository is currently {currentVisibility(repo)}.
         </DangerRow>
         <DangerRow
           title="Transfer ownership"
@@ -586,23 +642,7 @@ const DangerZone = observer(function DangerZone({ repo }: { repo: Repo }) {
         </DangerRow>
       </div>
 
-      <ConfirmDialog
-        open={open === 'visibility'}
-        onClose={close}
-        title={`Make ${full} ${repo.private ? 'public' : 'private'}`}
-        confirmLabel={`I understand, make this repository ${repo.private ? 'public' : 'private'}`}
-        confirmText={full}
-        onConfirm={() => {
-          const vis = repo.private ? 'public' : 'private';
-          auto(updateRepo(repo, { visibility: vis }, `Make ${full} ${vis}`).done.then(() => toast({ kind: 'success', title: `${full} is now ${vis}` })));
-        }}
-      >
-        <Banner tone="warning" icon={AlertIcon}>
-          {repo.private
-            ? 'The code will be visible to everyone who can see this site. Anyone can fork your repository.'
-            : 'Only people with access will see this repository. Stars and watchers from people without access are hidden.'}
-        </Banner>
-      </ConfirmDialog>
+      <VisibilityDialog repo={repo} open={open === 'visibility'} onClose={close} />
 
       <ConfirmDialog
         open={open === 'archive'}

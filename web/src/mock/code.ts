@@ -8,6 +8,7 @@
 import type { Repo, User } from '../sync/models';
 import { blobSha, highlight, languageOf } from './content';
 import { installContentsRoutes } from './contents';
+import { repoLicense } from './extra/licenses';
 import { gitFor, splitLines, type MockCommit, type MockGit } from './git';
 import { installCommitCommentRoutes } from './commitComments';
 import { rulesetProtects } from './extra/rulesets';
@@ -295,6 +296,20 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
     }
     return { status: 200, body: { statuses } };
   });
+  // Fenced code blocks in Markdown (crates/bgh-repos/src/browse/render.rs `code`).
+  R('POST', '/_bgh/render/code', (ctx) => {
+    const blocks = Array.isArray(ctx.body.blocks) ? (ctx.body.blocks as { lang?: string; code?: string }[]) : [];
+    const out = blocks.map((b) => {
+      const language = languageOf(`x.${String(b.lang ?? '').toLowerCase()}`) ?? ({ rust: 'rust', typescript: 'typescript', javascript: 'typescript', python: 'python', bash: 'shell', shell: 'shell' } as Record<string, string>)[String(b.lang ?? '').toLowerCase()];
+      return language && language !== 'markdown' ? { language, lines: highlight(String(b.code ?? ''), language) } : null;
+    });
+    return { status: 200, body: { blocks: out } };
+  });
+  // Camo signing (crates/bgh-uploads/src/camo.rs): the mock serves images directly.
+  R('POST', '/_bgh/camo/sign', (ctx) => {
+    const urls = Array.isArray(ctx.body.urls) ? (ctx.body.urls as string[]) : [];
+    return { status: 200, body: { enabled: false, urls: Object.fromEntries(urls.map((u) => [u, u])) } };
+  });
   R('GET', '/_bgh/render/blob/:owner/:repo/:sha', (ctx) => {
     const r = repoOf(ctx);
     if (isResp(r)) return r;
@@ -346,7 +361,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
         subscribers_count: repo.watchers,
         forks_count: repo.forks,
         open_issues_count: repo.openIssues + repo.openPulls,
-        license: { key: 'mit', name: 'MIT License', spdx_id: 'MIT' },
+        license: repoLicense(s, repo),
         archived: repo.archived,
         fork: repo.fork,
         size: 412,

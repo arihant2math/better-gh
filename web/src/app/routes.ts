@@ -33,6 +33,7 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   blocked: { title: 'Blocked users', load: () => import('../pages/settings/sections/BlockedSettings') },
   applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
   developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
+  organizations: { title: 'Organizations', load: () => import('../pages/settings/sections/OrganizationSettings') },
   apps: { title: 'GitHub Apps', load: () => import('../pages/apps/UserAppsSection') },
   installations: { title: 'Installed GitHub Apps', load: () => import('../pages/apps/UserInstallationsSection') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
@@ -53,6 +54,7 @@ function settingsRoutes() {
 
 const AliasPage = () => import('../pages/repo/AliasPage');
 const RepoPeoplePage = () => import('../pages/repo/RepoPeoplePage');
+const InsightsPage = () => import('../pages/repo/insights/InsightsPage');
 const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 const AdminLayout = () => import('../pages/admin/AdminLayout');
 const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout');
@@ -95,6 +97,7 @@ const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
 const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
+const OrgRunnerGroupsPage = () => import('../pages/actions/settings/OrgRunnerGroupsPage');
 
 function prefetchActions(p: Params) {
   void import('../pages/actions/data').then((m) => m.prefetchActions(p));
@@ -192,6 +195,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/imports/:id', layout: AdminLayout, load: () => import('../pages/admin/ImportDetailPage'), title: (p) => `Import #${p.id} · Site admin` },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
+    { path: '/site-admin/actions/runners', layout: AdminLayout, load: () => import('../pages/admin/RunnersPage'), title: () => 'Runners · Site admin' },
     // Organization settings.
     { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
     { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
@@ -222,6 +226,9 @@ export function registerRoutes(): void {
       const q = new URLSearchParams(window.location.search).get('q');
       return q ? `${q} · Search` : 'Search';
     } },
+    // Invitations (no repo layout: a private repo isn't visible before accepting).
+    { path: '/orgs/:org/invitation', load: () => import('../pages/invitations/OrgInvitationPage'), title: (p) => `Invitation · ${p.org}` },
+    { path: '/:owner/:repo/invitations', load: () => import('../pages/invitations/RepoInvitationPage'), title: (p) => `Invitation · ${p.owner}/${p.repo}` },
     // Projects (owner level). Before `/:owner/...` patterns.
     { path: '/orgs/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
     { path: '/users/:owner/projects', load: ProjectsListPage, title: (p) => `Projects · ${p.owner}` },
@@ -243,6 +250,8 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
     { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
     { path: '/organizations/:org/settings/actions/runners', load: ActionsSettingsPage, title: (p) => `Runners · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups', load: OrgRunnerGroupsPage, title: (p) => `Runner groups · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups/:id', load: OrgRunnerGroupsPage, title: (p) => `Runner group · ${p.org}` },
     {
       path: '/:owner/:repo',
       layout: RepoLayout,
@@ -360,6 +369,13 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/runs/:id', layout: RepoLayout, load: () => import('../pages/repo/CheckRunPage'), title: (p) => `Check run ${p.id} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/labels/:name', layout: RepoLayout, load: AliasPage, title: (p) => `${p.name} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/search', layout: RepoLayout, load: AliasPage, title: (p) => `Search · ${p.owner}/${p.repo}` },
+    // Insights (package P31).
+    { path: '/:owner/:repo/pulse', layout: RepoLayout, load: InsightsPage, title: (p) => `Pulse · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/pulse/:period', layout: RepoLayout, load: InsightsPage, title: (p) => `Pulse · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/graphs/:graph', layout: RepoLayout, load: InsightsPage, title: (p) => `${p.graph!.replace(/-/g, ' ')} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/community', layout: RepoLayout, load: InsightsPage, title: (p) => `Community standards · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/network', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/network/members', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);

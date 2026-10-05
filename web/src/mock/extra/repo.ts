@@ -8,6 +8,7 @@
  */
 import type { ID, Permission, Repo, Team } from '../../sync/models';
 import { fakeSha } from '../rng';
+import { repoLicense } from './licenses';
 import type { Ctx, MockServer, Resp } from '../server';
 import { rulesetProtects } from './rulesets';
 import { invalid, noContent, notFound, ok, param, simpleUser, state } from './util';
@@ -345,7 +346,7 @@ export function fullRepo(server: MockServer, repo: Repo): Record<string, unknown
     merge_commit_message: x.merge_commit_message,
     allow_forking: x.allow_forking,
     web_commit_signoff_required: x.web_commit_signoff_required,
-    license: null,
+    license: repoLicense(server, repo),
     temp_clone_token: null,
     template_repository: null,
   };
@@ -1255,6 +1256,15 @@ export function installRepoSettingsMocks(server: MockServer): void {
     const repo = access(ctx);
     if (isResp(repo)) return repo;
     return ok(S(server).autolinks.get(repo.id)!);
+  });
+
+  // Rules for the web Markdown renderer (crates/bgh-repos/src/autolinks.rs `rules`).
+  server.route('GET', '/_bgh/repos/:owner/:repo/autolinks', (ctx) => {
+    const repo = server.repo(param(ctx, 1), param(ctx, 2));
+    if (!repo || (repo.private && !t.viewerRepo.get(repo.id))) return notFound();
+    ensureSeed(server, repo);
+    const rules = (S(server).autolinks.get(repo.id) ?? []).map(({ key_prefix, url_template, is_alphanumeric }) => ({ key_prefix, url_template, is_alphanumeric }));
+    return ok(rules.sort((a, b) => b.key_prefix.length - a.key_prefix.length));
   });
 
   server.route('POST', '/api/v3/repos/:owner/:repo/autolinks', (ctx) => {

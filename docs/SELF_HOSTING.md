@@ -150,7 +150,7 @@ start-up with an error naming the variable.
 | `BGH_ACTIONS_EXECUTOR` | `auto` | Where the built-in Actions runner runs jobs: `docker` (per-job containers), `shell` (directly on the server host, **trusted single-tenant installs only**), or `auto` (docker when `docker info` works, otherwise the built-in runner takes no jobs). See [Actions](#actions-ci). |
 | `BGH_ACTIONS_BUILTIN_RUNNER` | `true` | Run Actions jobs inside the `bgh` process (with `BGH_ACTIONS_EXECUTOR`). Set `false` when only external runners should take jobs. |
 | `BGH_ACTIONS_WORK_DIR` | `{tmp}/bgh-actions-work` | Job directories of the built-in runner. Must not be inside `BGH_DATA_DIR` (such a value is ignored with an error). |
-| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. |
+| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS`, `BGH_OIDC_GROUPS_CLAIM` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. LDAP is configured in Site admin → Settings → Authentication (`auth_providers.ldap`, `bgh_accounts::ldap`). |
 
 Site admins can change rate limits, SMTP and sign-in providers at runtime
 (`/_bgh/admin/settings`); a field stored there overrides the variable,

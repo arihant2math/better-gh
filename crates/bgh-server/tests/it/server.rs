@@ -28,8 +28,10 @@ async fn unknown_api_routes_are_github_json_404s() {
         assert_eq!(v["message"], "Not Found");
         assert_eq!(v["status"], "404");
     }
+    // A known path with the wrong method is a JSON 404 too (not an empty 405).
     let res = app.post("/api/v3/user").send().await;
-    assert_eq!(res.status(), 405);
+    res.assert_status(404);
+    assert_eq!(res.json()["message"], "Not Found");
 }
 
 #[tokio::test]

@@ -103,13 +103,17 @@ pub struct JobRow {
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// `job` (runs steps) or `call` (a reusable workflow call, see
+    /// [`crate::reusable`]).
+    pub kind: String,
+    pub concurrency_group: Option<String>,
 }
 
 impl JobRow {
     pub const COLUMNS: &'static str = "id, run_id, repo_id, run_attempt, job_key, name, matrix, \
         status, conclusion, head_sha, head_branch, labels, runner_id, runner_name, check_run_id, \
         spec, steps, outputs, continue_on_error, timeout_minutes, cancel_requested, token_id, \
-        logs_job_id, started_at, completed_at, created_at, updated_at";
+        logs_job_id, started_at, completed_at, created_at, updated_at, kind, concurrency_group";
 
     pub async fn find(db: impl sqlx::PgExecutor<'_>, id: i64) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as(&format!(
@@ -119,6 +123,11 @@ impl JobRow {
         .bind(id)
         .fetch_optional(db)
         .await
+    }
+
+    /// True for a reusable workflow call row.
+    pub fn is_call(&self) -> bool {
+        self.kind == "call"
     }
 
     /// Job whose log files hold this job's logs (itself unless copied).
@@ -152,11 +161,13 @@ pub struct RunnerRow {
     pub busy: bool,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub arch: String,
+    pub runner_group_id: Option<i64>,
 }
 
 impl RunnerRow {
     pub const COLUMNS: &'static str = "id, repo_id, org_id, name, os, system_labels, labels, \
-        ephemeral, builtin, busy, last_seen_at, created_at";
+        ephemeral, builtin, busy, last_seen_at, created_at, arch, runner_group_id";
 
     /// Online when seen within the last two minutes (runners poll every ~30 s).
     pub fn online(&self) -> bool {
