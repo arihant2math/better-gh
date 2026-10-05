@@ -147,14 +147,8 @@ pub async fn create(
     .fetch_one(&mut *tx)
     .await
     .map_err(map_unique)?;
-    tx.sync(
-        &access.scope(),
-        "label",
-        label.id,
-        SyncAction::Insert,
-        &json::label_sync_json(&label),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Label, label.id, SyncAction::Insert)
+        .await?;
     tx.emit(Event::LabelCreated {
         repo_id: access.repo.id,
         label_id: label.id,
@@ -209,14 +203,8 @@ pub async fn update(
     .fetch_one(&mut *tx)
     .await
     .map_err(map_unique)?;
-    tx.sync(
-        &access.scope(),
-        "label",
-        label.id,
-        SyncAction::Update,
-        &json::label_sync_json(&label),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Label, label.id, SyncAction::Update)
+        .await?;
     let mut changes = serde_json::Map::new();
     if label.name != old.name {
         changes.insert("name".into(), json!({ "from": old.name }));
@@ -257,19 +245,11 @@ pub async fn delete(
         .bind(label.id)
         .execute(&mut *tx)
         .await?;
-    tx.sync(
-        &access.scope(),
-        "label",
-        label.id,
-        SyncAction::Delete,
-        &json!({ "id": label.id }),
-    )
-    .await?;
     // Issues that carried the label change their label set.
-    for id in issue_ids {
-        let issue = service::issue_by_id(&mut *tx, id).await?;
-        service::sync_issue_row(&mut tx, &issue, SyncAction::Update).await?;
-    }
+    tx.sync_models(SyncModel::Issue, &issue_ids, SyncAction::Update)
+        .await?;
+    tx.sync_delete(&access.scope(), SyncModel::Label, label.id)
+        .await?;
     tx.emit(Event::LabelDeleted {
         repo_id: access.repo.id,
         label_id: label.id,

@@ -228,7 +228,7 @@ pub async fn remove(
     .await?
     .unwrap_or_else(|| auth.user.clone());
     if user.email.is_none() && auth.user.email.is_some() {
-        util::sync_profile(&mut tx, &state.urls, &user).await?;
+        util::sync_profile(&mut tx, &user).await?;
     }
     audit::log(
         &mut *tx,
@@ -290,7 +290,7 @@ pub async fn set_visibility(
     .bind(&public)
     .fetch_one(&mut *tx)
     .await?;
-    util::sync_profile(&mut tx, &state.urls, &user).await?;
+    util::sync_profile(&mut tx, &user).await?;
     tx.commit().await?;
     let rows = user_emails(&state, auth.user.id).await?;
     Ok(Json(rows.iter().map(Email::from).collect()))

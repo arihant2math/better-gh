@@ -12,7 +12,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::issues::{double, parse_since};
-use crate::{json, service};
 
 async fn find(
     db: impl sqlx::PgExecutor<'_>,
@@ -217,14 +216,8 @@ pub async fn create(
     .fetch_one(&mut *tx)
     .await
     .map_err(map_unique)?;
-    tx.sync(
-        &access.scope(),
-        "milestone",
-        m.id,
-        SyncAction::Insert,
-        &json::milestone_sync_json(&m),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Milestone, m.id, SyncAction::Insert)
+        .await?;
     tx.emit(Event::MilestoneCreated {
         repo_id: access.repo.id,
         milestone_id: m.id,
@@ -281,14 +274,8 @@ pub async fn update(
     .fetch_one(&mut *tx)
     .await
     .map_err(map_unique)?;
-    tx.sync(
-        &access.scope(),
-        "milestone",
-        m.id,
-        SyncAction::Update,
-        &json::milestone_sync_json(&m),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Milestone, m.id, SyncAction::Update)
+        .await?;
     let mut changes = serde_json::Map::new();
     if m.title != old.title {
         changes.insert("title".into(), json!({ "from": old.title }));
@@ -353,18 +340,10 @@ pub async fn delete(
         .bind(m.id)
         .execute(&mut *tx)
         .await?;
-    tx.sync(
-        &access.scope(),
-        "milestone",
-        m.id,
-        SyncAction::Delete,
-        &json!({ "id": m.id }),
-    )
-    .await?;
-    for id in issue_ids {
-        let issue = service::issue_by_id(&mut *tx, id).await?;
-        service::sync_issue_row(&mut tx, &issue, SyncAction::Update).await?;
-    }
+    tx.sync_models(SyncModel::Issue, &issue_ids, SyncAction::Update)
+        .await?;
+    tx.sync_delete(&access.scope(), SyncModel::Milestone, m.id)
+        .await?;
     tx.emit(Event::MilestoneDeleted {
         repo_id: access.repo.id,
         milestone_id: m.id,

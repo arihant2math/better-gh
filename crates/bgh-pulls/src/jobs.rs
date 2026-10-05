@@ -81,6 +81,14 @@ pub async fn checks_changed(state: AppState, job: ChecksChanged) -> anyhow::Resu
     .bind(&job.sha)
     .fetch_all(&state.db)
     .await?;
+    // The PRs' `checks` (and possibly `mergeableState`) changed.
+    let mut tx = Tx::begin(&state)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    tx.sync_models(SyncModel::Issue, &ids, SyncAction::Update)
+        .await
+        .map_err(|e| anyhow::anyhow!("sync pulls: {e:?}"))?;
+    tx.commit().await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
     for id in ids {
         crate::mergeability::refresh(&state, id, false)
             .await
