@@ -8,4 +8,5 @@ mod e2e;
 mod runs;
 mod settings;
 mod smoke;
+mod triggers;
 mod ui;
