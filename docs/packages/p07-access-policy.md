@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Internal visibility, private mode and allowed visibilities (backend, web, tests); gate green on the merged tree.
 
 # P7 access-policy — status

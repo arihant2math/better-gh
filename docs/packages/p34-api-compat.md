@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P34 API compatibility headers, conditional requests, wrong-method 404s and root endpoints (`/markdown`, `/emojis`, `/zen`, `/octocat`, `/versions`, `/meta` SSH keys).
 
 # P34 — API compatibility headers and root endpoints

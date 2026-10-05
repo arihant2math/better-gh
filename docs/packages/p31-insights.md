@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P31 Insights: /stats/*, traffic, community profile, activity log and Insights UI; full gate green after merging the integration branch.
 
 # P31 — Repository Insights: stats, traffic, community profile, Insights UI — status

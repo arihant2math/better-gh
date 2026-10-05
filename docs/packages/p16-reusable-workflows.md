@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Reusable workflows (local/cross-repo calls, inputs, secrets, outputs, matrix, limits, permissions caps) + run graph UI.
 
 # P16 — Reusable workflows (`jobs.<id>.uses` / `on.workflow_call`): status
