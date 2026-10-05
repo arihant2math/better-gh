@@ -206,7 +206,7 @@ convert_to_draft endpoints (the mock backend implements them too).
 
 ## Known gaps / TODO
 
-* `require_last_push_approval` is parsed but not enforced.
+* `require_last_push_approval` is enforced since P3 (see `p03-merge-governance.md`).
 * HTML `diff_url`/`patch_url` (`/{o}/{r}/pull/{n}.diff`) are not served
   (the API media types are).
 * `body_html`/`body_text` media types for reviews/comments not rendered.

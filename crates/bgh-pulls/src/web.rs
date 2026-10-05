@@ -286,6 +286,8 @@ pub struct Requirements {
     pub mergeable_state: String,
     pub protected: bool,
     pub blockers: Vec<String>,
+    /// Every unmet requirement with its source (classic rule or ruleset).
+    pub requirements: Vec<protection::Blocker>,
     pub approvals: i64,
     pub required_approvals: i64,
     pub changes_requested: bool,
@@ -305,6 +307,20 @@ pub async fn requirements(
     let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
     let rules = protection::rules_for(&state.db, access.repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(&state, &access.repo, &pull, &rules).await?;
+    // Whether the viewer may merge without meeting the requirements.
+    let can_bypass = match auth.as_ref() {
+        Some(a) if access.permission >= Permission::Write => {
+            let actor = bgh_repos::protection::Actor::for_user(
+                &state,
+                &access.owner,
+                a.user.id,
+                access.permission,
+            )
+            .await?;
+            !rules.restricts(&actor) && ev.blockers.iter().all(|b| rules.bypassed_by(b, &actor))
+        }
+        _ => false,
+    };
     let mut methods = Vec::new();
     if access.repo.allow_merge_commit && !rules.linear_history {
         methods.push("merge");
@@ -320,7 +336,8 @@ pub async fn requirements(
         rebaseable: pull.pr.rebaseable,
         mergeable_state: pull.pr.mergeable_state.clone(),
         protected: rules.protected,
-        blockers: ev.blockers.clone(),
+        blockers: ev.messages(),
+        requirements: ev.blockers.clone(),
         approvals: ev.approvals,
         required_approvals: rules
             .reviews
@@ -333,11 +350,11 @@ pub async fn requirements(
         required_checks: rules
             .checks
             .as_ref()
-            .map(|c| c.contexts.clone())
+            .map(protection::CheckRules::contexts)
             .unwrap_or_default(),
         linear_history: rules.linear_history,
         allowed_merge_methods: methods,
-        can_bypass: access.permission >= Permission::Admin && !rules.enforce_admins,
+        can_bypass,
     }))
 }
 

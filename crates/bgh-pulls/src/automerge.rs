@@ -138,10 +138,9 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
     let rules = protection::rules_for(&state.db, repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(state, &repo, &pull, &rules).await?;
     // Auto-merge waits for every requirement and for pending checks.
-    let pending = protection::check_outcomes(&state.db, &[repo.id], &pull.pr.head_sha)
+    let pending = protection::check_outcomes(&state.db, repo.id, &pull.pr.head_sha)
         .await?
-        .values()
-        .any(|o| *o == protection::CheckOutcome::Pending);
+        .any_pending();
     if !ev.blockers.is_empty() || pending {
         return Ok(());
     }
