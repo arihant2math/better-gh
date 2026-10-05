@@ -109,7 +109,12 @@ logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`,
 `_SEARCH_ANONYMOUS` (`30` / `10` per minute), `BGH_RATE_LIMIT_GRAPHQL`
 (`5000`/h), `BGH_TRUST_PROXY` (`false`; take client IPs from
 `X-Forwarded-For`), and `BGH_OIDC_*` for a single SSO provider (see
-`bgh_accounts::sso`). CI settings `BGH_ACTIONS_*` (see
+`bgh_accounts::sso`). Observability: `BGH_METRICS_TOKEN` /
+`BGH_METRICS_LISTEN` (Prometheus `/metrics`, off by default),
+`BGH_LOG_FORMAT` (`pretty`|`json`), `BGH_OTLP_ENDPOINT` (`--features
+otlp`); instrumentation helpers in `bgh_core::observability` (bounded
+labels only), recorder and `/metrics` in `bgh_server::telemetry`, metric
+names in `docs/SELF_HOSTING.md` "Monitoring". CI settings `BGH_ACTIONS_*` (see
 `bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
 
 Runtime site settings (edited by site admins, `site_settings` table) are
@@ -156,6 +161,7 @@ reverse proxies, backups): `docs/SELF_HOSTING.md`.
 | `/_bgh/...`      | Private web-client endpoints (bootstrap, sync WS, rendered views, login) |
 | `/{owner}/{repo}.git/...` and `/{owner}/{repo}/info/refs` etc. | git smart HTTP |
 | `/{owner}/{repo}/raw/...`, `/{owner}/{repo}/archive/...` | raw files, archives |
+| `/metrics`       | Prometheus metrics (only with `BGH_METRICS_TOKEN`, bearer auth) |
 | `/v2/...`        | OCI container registry (Docker token auth at `/v2/token`; see `docs/packages/p15-container-registry.md`) |
 | everything else  | SPA `index.html` (client-side routing)               |
 

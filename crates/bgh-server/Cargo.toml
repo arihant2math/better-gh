@@ -13,6 +13,13 @@ testing = ["bgh-core/testing"]
 # single file serves everything. A directory at BGH_WEB_DIR containing an
 # index.html still takes precedence (handy for hot-swapping a client build).
 embed-web = ["dep:rust-embed"]
+# Export tracing spans over OTLP/HTTP when `BGH_OTLP_ENDPOINT` is set.
+otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]
 
 [lib]
 name = "bgh_server"
@@ -58,11 +65,17 @@ clap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
 sha2.workspace = true
 base64.workspace = true
 chrono.workspace = true
 mime_guess.workspace = true
 rust-embed = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }

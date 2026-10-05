@@ -85,6 +85,14 @@ pub struct Config {
     /// `BGH_SHUTDOWN_TIMEOUT_SECS` (default 30): on SIGTERM, how long to wait
     /// for in-flight HTTP requests before stopping background work.
     pub shutdown_timeout_secs: u64,
+    /// `BGH_METRICS_TOKEN`: when set, `GET /metrics` on the main listener
+    /// serves Prometheus metrics to `Authorization: Bearer <token>` (401
+    /// otherwise). Unset (default): `/metrics` is not served there.
+    pub metrics_token: Option<String>,
+    /// `BGH_METRICS_LISTEN` (e.g. `127.0.0.1:9090`): a separate listener
+    /// serving only `/metrics`, without a token unless `BGH_METRICS_TOKEN`
+    /// is also set. Unset (default): no metrics listener.
+    pub metrics_listen: Option<SocketAddr>,
 }
 
 impl Default for Config {
@@ -116,6 +124,8 @@ impl Default for Config {
             actions: ActionsConfig::default(),
             event_retention_days: 7,
             shutdown_timeout_secs: 30,
+            metrics_token: None,
+            metrics_listen: None,
         }
     }
 }
@@ -274,6 +284,14 @@ impl Config {
                 parse("BGH_SHUTDOWN_TIMEOUT_SECS")?,
                 d.shutdown_timeout_secs,
             )?,
+            metrics_token: parse("BGH_METRICS_TOKEN")?.map(|t| t.trim().to_string()),
+            metrics_listen: parse("BGH_METRICS_LISTEN")?
+                .map(|v| {
+                    v.trim()
+                        .parse()
+                        .with_context(|| format!("invalid value for BGH_METRICS_LISTEN: {v:?}"))
+                })
+                .transpose()?,
         })
     }
 

@@ -277,7 +277,10 @@ async fn limit(state: AppState, mut req: Request, next: Next) -> Response {
         )
         .await
         .map(|q| (q, s.rate_limits.enabled))
-        .map_err(|e| tracing::warn!(err = ?e, "rate limiter unavailable; allowing request")),
+        .map_err(|e| {
+            crate::observability::redis_error("ratelimit");
+            tracing::warn!(err = ?e, "rate limiter unavailable; allowing request")
+        }),
         Err(err) => {
             tracing::warn!(?err, "loading rate limit settings");
             Err(())
@@ -287,6 +290,7 @@ async fn limit(state: AppState, mut req: Request, next: Next) -> Response {
         return next.run(req).await;
     };
     if enforce && !not_counted && q.exceeded() {
+        crate::observability::ratelimit_rejected(resource.name());
         return exceeded_response(&q, ctx.as_ref(), &ip);
     }
     let mut resp = next.run(req).await;
@@ -325,7 +329,7 @@ pub async fn root_middleware(State(state): State<AppState>, req: Request, next: 
 pub async fn hit(state: &AppState, key: &str, window_secs: u64) -> redis::RedisResult<u64> {
     let key = state.redis_key(&format!("throttle:{key}"));
     let mut redis = state.redis.clone();
-    let (n,): (u64,) = redis::pipe()
+    let r = redis::pipe()
         .atomic()
         .incr(&key, 1)
         .cmd("EXPIRE")
@@ -334,7 +338,8 @@ pub async fn hit(state: &AppState, key: &str, window_secs: u64) -> redis::RedisR
         .arg("NX")
         .ignore()
         .query_async(&mut redis)
-        .await?;
+        .await;
+    let (n,): (u64,) = crate::observability::redis_result("throttle", r)?;
     Ok(n)
 }
 

@@ -155,12 +155,7 @@ enum ImportCommand {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,sqlx=warn,tower_http=info".into()),
-        )
-        .init();
+    let _log_guard = bgh_server::telemetry::init_logging();
     let cli = Cli::parse();
     let config = Config::from_env()?;
     match cli.command.unwrap_or(Command::Serve) {
@@ -440,7 +435,26 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {listen}"))?;
     tracing::info!(addr = %listen, base_url = %state.config.base_url, "listening");
-    bgh_server::serve(state, registry, app, listener, wait_for_signal()).await?;
+    let metrics_server = match state.config.metrics_listen {
+        Some(addr) => {
+            let metrics_listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("binding BGH_METRICS_LISTEN {addr}"))?;
+            tracing::info!(%addr, "serving /metrics");
+            let router = bgh_server::telemetry::metrics_router(state.clone());
+            Some(tokio::spawn(async move {
+                if let Err(err) = axum::serve(metrics_listener, router).await {
+                    tracing::error!(?err, "metrics listener");
+                }
+            }))
+        }
+        None => None,
+    };
+    let result = bgh_server::serve(state, registry, app, listener, wait_for_signal()).await;
+    if let Some(m) = metrics_server {
+        m.abort();
+    }
+    result?;
     tracing::info!("bye");
     Ok(())
 }

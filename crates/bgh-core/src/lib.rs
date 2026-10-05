@@ -23,6 +23,7 @@ pub mod markdown;
 pub mod models;
 pub mod moderation;
 pub mod node_id;
+pub mod observability;
 pub mod outbox;
 pub mod pagination;
 pub mod pat;
