@@ -15,6 +15,7 @@ import { Menu, SelectPanel, type MenuEntry, type SelectItem } from '../../ui/Men
 import { toast } from '../../ui/Toast';
 import { VirtualList } from '../../ui/VirtualList';
 import { loadRuns, loadWorkflows, runsKey, workflowsKey } from './data';
+import { BadgeDialog } from './BadgeDialog';
 import { DispatchButton } from './DispatchPanel';
 import { runs as liveRuns, useOnNewRun, usePolling } from './live';
 import { RunRow } from './RunRow';
@@ -139,7 +140,7 @@ export default observer(function RunsPage() {
           </div>
           <div className={styles.headActions}>
             {workflow && canWrite && <DispatchButton owner={owner} repo={name} workflow={workflow} defaultBranch={repo.defaultBranch} />}
-            {workflow && canAdmin && <WorkflowMenu owner={owner} repo={name} workflow={workflow} />}
+            {workflow && <WorkflowMenu owner={owner} repo={name} workflow={workflow} defaultBranch={repo.defaultBranch} canAdmin={canAdmin} />}
           </div>
         </header>
         {workflow && workflow.state !== 'active' && (
@@ -252,12 +253,14 @@ function ActorFilter({ runs }: { runs: WorkflowRun[] }) {
   return <FilterButton name="actor" label="Actor" items={[...logins].sort().map((l) => ({ id: l, text: l }))} />;
 }
 
-function WorkflowMenu({ owner, repo, workflow }: { owner: string; repo: string; workflow: Workflow }) {
+function WorkflowMenu({ owner, repo, workflow, defaultBranch, canAdmin }: { owner: string; repo: string; workflow: Workflow; defaultBranch: string; canAdmin: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [badge, setBadge] = useState(false);
   const enabled = workflow.state === 'active';
-  const items: MenuEntry[] = [
-    {
+  const items: MenuEntry[] = [{ id: 'badge', label: 'Create status badge', onSelect: () => setBadge(true) }];
+  if (canAdmin) {
+    items.push({
       id: 'toggle',
       label: enabled ? 'Disable workflow' : 'Enable workflow',
       danger: enabled,
@@ -270,12 +273,13 @@ function WorkflowMenu({ owner, repo, workflow }: { owner: string; repo: string; 
           (e: Error) => toast({ kind: 'error', title: e.message }),
         );
       },
-    },
-  ];
+    });
+  }
   return (
     <>
       <IconButton ref={ref} icon={KebabHorizontalIcon} label="Workflow options" aria-expanded={open} onClick={() => setOpen(true)} />
       <Menu open={open} onClose={() => setOpen(false)} anchor={ref} items={items} />
+      <BadgeDialog owner={owner} repo={repo} workflow={workflow} defaultBranch={defaultBranch} open={badge} onClose={() => setBadge(false)} />
     </>
   );
 }
