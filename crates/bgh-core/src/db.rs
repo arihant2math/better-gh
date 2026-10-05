@@ -80,6 +80,11 @@ impl Tx {
         Ok(())
     }
 
+    /// The application state this transaction was started with.
+    pub fn state(&self) -> &AppState {
+        &self.state
+    }
+
     /// Queue a domain event, emitted after commit.
     pub fn emit(&mut self, event: Event) {
         self.events.push(event);

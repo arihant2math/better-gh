@@ -457,6 +457,50 @@ async fn org_repository_payloads_carry_organization() {
     assert_eq!(ping["sender"]["login"], "alice");
 }
 
+#[tokio::test]
+async fn workflow_job_payloads() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let repo = app.create_repo(&alice, "hello").await;
+    let repo_id = repo["id"].as_i64().unwrap();
+    let job = json!({"id": 9, "run_id": 3, "status": "queued", "name": "build"});
+    for action in ["queued", "in_progress", "completed", "waiting"] {
+        let out = build(
+            &app,
+            Event::WorkflowJobUpdated {
+                repo_id,
+                run_id: 3,
+                job_id: 9,
+                action: action.into(),
+                workflow_job: job.clone(),
+            },
+        )
+        .await;
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].event, "workflow_job");
+        assert_eq!(out[0].action.as_deref(), Some(action));
+        assert_eq!(out[0].repo_id, Some(repo_id));
+        let p = &out[0].payload;
+        assert_eq!(p["action"], action);
+        assert_eq!(p["workflow_job"], job);
+        assert_eq!(p["repository"]["full_name"], "alice/hello");
+        assert!(p["sender"].is_object());
+    }
+    // Events from producers that don't render the job deliver nothing.
+    let out = build(
+        &app,
+        Event::WorkflowJobUpdated {
+            repo_id,
+            run_id: 3,
+            job_id: 9,
+            action: "queued".into(),
+            workflow_job: Value::Null,
+        },
+    )
+    .await;
+    assert!(out.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // Push
 // ---------------------------------------------------------------------------

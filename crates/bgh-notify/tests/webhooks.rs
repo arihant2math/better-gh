@@ -656,3 +656,60 @@ async fn global_hooks_receive_site_events_and_pings() {
             .all(|r| !matches!(header(r, "x-github-event"), "user" | "organization"))
     );
 }
+
+#[tokio::test]
+async fn workflow_job_events_are_delivered() {
+    let app = app_allowing_loopback().await;
+    let rx = Receiver::start().await;
+    let alice = app.create_user("alice").await;
+    app.create_repo(&alice, "hello").await;
+    let rid = repo_id(&app, "alice", "hello").await;
+    create_hook(
+        &app,
+        &alice,
+        "/api/v3/repos/alice/hello/hooks",
+        json!({"events": ["workflow_job"], "config": {"url": rx.url, "content_type": "json"}}),
+    )
+    .await;
+    app.drain_jobs().await;
+    rx.take();
+
+    for action in ["queued", "in_progress", "completed"] {
+        app.state.events.emit(Event::WorkflowJobUpdated {
+            repo_id: rid,
+            run_id: 1,
+            job_id: 2,
+            action: action.into(),
+            workflow_job: json!({"id": 2, "run_id": 1, "status": action}),
+        });
+    }
+    // Not subscribed: no delivery.
+    app.state.events.emit(Event::StarCreated {
+        repo_id: rid,
+        actor_id: alice.id,
+    });
+    wait_for("deliveries", || async {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM webhook_deliveries WHERE event = 'workflow_job'",
+        )
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+        n >= 3
+    })
+    .await;
+    app.drain_jobs().await;
+    let got = rx.take();
+    let mut actions: Vec<String> = got
+        .iter()
+        .map(|r| {
+            assert_eq!(header(r, "x-github-event"), "workflow_job");
+            let p: Value = serde_json::from_slice(&r.body).unwrap();
+            assert_eq!(p["workflow_job"]["id"], 2);
+            assert_eq!(p["repository"]["full_name"], "alice/hello");
+            p["action"].as_str().unwrap().to_string()
+        })
+        .collect();
+    actions.sort();
+    assert_eq!(actions, ["completed", "in_progress", "queued"]);
+}

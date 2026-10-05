@@ -19,6 +19,7 @@ import { installInboxSearchRoutes } from './inboxSearch';
 import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
 import { installWikiRoutes } from './wiki';
+import { installActionsRoutes } from './actions';
 import { marked } from 'marked';
 
 /** Mock seed content is trusted; the real server sanitizes. */
@@ -59,6 +60,8 @@ export interface Resp {
   status: number;
   body?: unknown;
   text?: string;
+  /** Streaming (or binary) body, passed through as is (e.g. SSE, zip downloads). */
+  stream?: ReadableStream<Uint8Array>;
   headers?: Record<string, string>;
 }
 
@@ -164,6 +167,7 @@ export class MockServer implements Transport {
     };
     const resp = isMutation ? await this.mutation(ctx, run) : await run();
     const h = new Headers(resp.headers);
+    if (resp.stream) return new Response(resp.stream, { status: resp.status, headers: h });
     if (resp.text !== undefined) {
       if (!h.has('content-type')) h.set('content-type', 'text/plain; charset=utf-8');
       return new Response(resp.text, { status: resp.status, headers: h });
@@ -230,6 +234,11 @@ export class MockServer implements Transport {
     if (!row) return;
     this.db.tables[model].delete(id);
     this.record(model, id, 'D', null, this.scopeOf(model, row)!);
+  }
+
+  /** Append a sync action for a model outside the client SCHEMA (e.g. `workflow_run`), with an explicit scope. */
+  recordRaw(model: string, mid: ID, a: Delta['a'], d: Record<string, unknown> | null, scope: string): void {
+    this.record(model as ModelName, mid, a, d, scope);
   }
 
   private record(model: ModelName, mid: ID, a: Delta['a'], d: Record<string, unknown> | null, scope: string): void {
@@ -1109,6 +1118,7 @@ export class MockServer implements Transport {
     installProjectRoutes(R, this);
     installWikiRoutes(R, this);
     installInboxSearchRoutes(R, this);
+    installActionsRoutes(R, this);
     registerPullRoutes(this.pullHost(R));
   }
 

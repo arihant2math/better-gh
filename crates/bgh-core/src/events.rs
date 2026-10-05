@@ -665,6 +665,10 @@ pub enum Event {
         run_id: i64,
         job_id: i64,
         action: String,
+        /// GitHub REST JSON of the job (`GET /actions/jobs/{id}`), built by
+        /// bgh-actions; `null` from older producers.
+        #[serde(default)]
+        workflow_job: serde_json::Value,
     },
     /// A browser session ended (logout or revocation): sync sockets of
     /// that session (or of every session of the user when `session_id` is

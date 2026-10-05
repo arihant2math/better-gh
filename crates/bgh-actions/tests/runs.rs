@@ -1107,8 +1107,25 @@ async fn events_carry_webhook_payloads() {
     let mut run_actions = vec![];
     let mut check_runs = vec![];
     let mut suites = vec![];
+    let mut job_actions = vec![];
     while let Ok(ev) = rx.try_recv() {
         match &*ev {
+            bgh_core::events::Event::WorkflowJobUpdated {
+                action,
+                job_id,
+                workflow_job,
+                ..
+            } => {
+                // Same shape as GET /actions/jobs/{id}.
+                assert_eq!(workflow_job["id"], *job_id);
+                assert_eq!(workflow_job["run_id"], spec["run_id"]);
+                assert_eq!(workflow_job["workflow_name"], "W");
+                assert_eq!(workflow_job["name"], "a");
+                assert!(workflow_job["html_url"].as_str().unwrap().contains("/job/"));
+                assert!(workflow_job["steps"].is_array());
+                assert!(workflow_job["labels"].is_array());
+                job_actions.push((action.clone(), workflow_job["status"].clone()));
+            }
             bgh_core::events::Event::WorkflowRunUpdated {
                 action,
                 workflow_run,
@@ -1143,4 +1160,21 @@ async fn events_carry_webhook_payloads() {
     );
     assert_eq!(check_runs, ["created", "completed"]);
     assert_eq!(suites, ["completed"]);
+    assert_eq!(
+        job_actions,
+        [
+            ("queued".to_string(), json!("queued")),
+            ("in_progress".to_string(), json!("in_progress")),
+            ("completed".to_string(), json!("completed")),
+        ]
+    );
+    // The REST endpoint renders the same object.
+    let job_id = spec["job_id"].as_i64().unwrap();
+    let rest = app
+        .get(&format!("/api/v3/repos/alice/demo/actions/jobs/{job_id}"))
+        .auth(&alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(rest["conclusion"], "success");
 }

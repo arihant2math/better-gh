@@ -299,9 +299,21 @@ export class SyncClient {
     }
   }
 
+  private deltaListeners = new Set<(items: readonly Delta[]) => void>();
+
+  /**
+   * Observe every delta from the socket, including models the store doesn't
+   * keep (e.g. `workflow_run` / `workflow_job` for the Actions pages).
+   */
+  onDeltas(fn: (items: readonly Delta[]) => void): () => void {
+    this.deltaListeners.add(fn);
+    return () => this.deltaListeners.delete(fn);
+  }
+
   /** Apply deltas from the socket (public for tests and the mock). */
   applyDeltas(items: readonly Delta[]): void {
     if (items.length === 0) return;
+    for (const l of this.deltaListeners) l(items);
     // No `id > lastSyncId` filter: a `sub` for a scope added later replays
     // from that scope's own cursor, which may be below the global one.
     const maxId = items.reduce((m, d) => Math.max(m, d.id), 0);

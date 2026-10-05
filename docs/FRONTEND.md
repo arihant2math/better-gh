@@ -57,8 +57,10 @@ local-store model (our pages read synchronously from MobX, not loaders).
 },
 ```
 
-Order matters (first match wins): put specific paths before
-`/:owner/:repo/:tab`. Use `<Link to=…>` for every internal link: it prefetches
+The most specific route wins (static segments beat `:params`, which beat
+`*`; ties keep table order), so `/site-admin` beats `/:owner` and
+`/:owner/:repo/settings/secrets/actions` beats `/:owner/:repo/settings/*`
+wherever they sit in the table. Use `<Link to=…>` for every internal link: it prefetches
 the chunk and calls the route's `prefetch` on hover/focus/touch.
 `useParams()`, `useQuery()`, `setQuery({ q: … })` (replace, keeps scroll) and
 `navigate(path)` cover the rest.

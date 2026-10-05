@@ -19,6 +19,7 @@ TS_KEEP="${TS_KEEP:-0}"
 TS_STARTED=0
 TS_PIDS=()
 TS_SERVER_ENV=()
+TS_EXTRA_ENV=("${TS_EXTRA_ENV[@]+"${TS_EXTRA_ENV[@]}"}")
 TS_DB_NAME=""
 TS_ADMIN_DB_URL=""
 WORK=""
@@ -197,6 +198,8 @@ EOF
     "BGH_SSH_ENABLED=false"
     "RUST_LOG=${BGH_COMPAT_LOG:-info,sqlx=warn}"
   )
+  # Callers may override / add settings (later entries win with `env`).
+  TS_SERVER_ENV+=("${TS_EXTRA_ENV[@]+"${TS_EXTRA_ENV[@]}"}")
   env "${TS_SERVER_ENV[@]}" "$BGH_BIN" migrate >"$WORK/server.log" 2>&1 ||
     { tail -n 20 "$WORK/server.log" >&2; ts_die "bgh migrate failed"; }
   env "${TS_SERVER_ENV[@]}" "$BGH_BIN" serve >>"$WORK/server.log" 2>&1 &

@@ -200,6 +200,20 @@ async fn workflow_runs_end_to_end_with_shell_executor() {
     assert_eq!(output["annotations"][0]["annotation_level"], "warning");
     assert_eq!(output["annotations"][0]["path"], "README.md");
     assert!(output["summary"].as_str().unwrap().contains("## Done"));
+    // ... and the checks API serves it.
+    let check_run_url = build["check_run_url"].as_str().unwrap();
+    let anns = app
+        .get(&format!(
+            "{}/annotations",
+            &check_run_url[check_run_url.find("/api/v3").unwrap()..]
+        ))
+        .auth(&alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(anns.as_array().unwrap().len(), 1, "{anns}");
+    assert_eq!(anns[0]["annotation_level"], "warning");
+    assert_eq!(anns[0]["path"], "README.md");
     let (suite_status, suite_conclusion): (String, Option<String>) =
         sqlx::query_as("SELECT status, conclusion FROM check_suites WHERE head_sha = $1")
             .bind(&sha)

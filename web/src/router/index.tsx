@@ -74,8 +74,30 @@ function compile(def: RouteDef): CompiledRoute {
   return { ...def, re: new RegExp(`^${src || '/'}/?$`, 'i'), keys };
 }
 
+/** Segment ranks: static > `:param` > `*` (splat). */
+function rank(path: string): number[] {
+  return path
+    .split('/')
+    .filter(Boolean)
+    .map((seg) => (seg === '*' ? 1 : seg.startsWith(':') ? 2 : 3));
+}
+
+/** Negative when `a` is more specific than `b` (segment by segment; a splat-free prefix first). */
+function bySpecificity(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return b[i]! - a[i]!;
+  return a.length - b.length;
+}
+
+/**
+ * Register the route table. The most specific route wins (static segments
+ * beat `:params`, which beat `*`), so feature areas can append routes in any
+ * order; equally specific routes keep their table order.
+ */
 export function defineRoutes(defs: RouteDef[]): void {
-  routes = defs.map(compile);
+  routes = defs
+    .map((d, i) => ({ d, i, r: rank(d.path) }))
+    .sort((x, y) => bySpecificity(x.r, y.r) || x.i - y.i)
+    .map((x) => compile(x.d));
 }
 
 export function matchPath(pathname: string): Match | null {
