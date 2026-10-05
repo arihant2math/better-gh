@@ -59,6 +59,10 @@ string_scalar!(
     /// A string containing a Git timestamp.
     GitTimestamp
 );
+string_scalar!(
+    /// An ISO-8601 encoded date string (`2024-01-31`).
+    Date
+);
 
 /// An ISO-8601 encoded UTC date string (`2024-01-01T00:00:00Z`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -11,9 +11,7 @@ use sqlx::{Postgres, QueryBuilder};
 
 use super::actor::{self, User, UserConnection};
 use super::enums::*;
-use super::misc::{
-    ProjectCardConnection, ProjectV2ItemConnection, ReactionGroup, load_reaction_groups,
-};
+use super::misc::{ProjectCardConnection, ReactionGroup, load_reaction_groups};
 use super::pull::{PullRequest, PullRequestConnection};
 use super::repo::{self, Repository};
 use super::{Actor, nid};
@@ -264,12 +262,40 @@ impl Conversation {
     }
     pub async fn project_items(
         &self,
+        ctx: &Context<'_>,
         first: Option<i32>,
+        last: Option<i32>,
         after: Option<String>,
-        include_archived: Option<bool>,
-    ) -> ProjectV2ItemConnection {
-        let _ = (first, after, include_archived);
-        ProjectV2ItemConnection
+        before: Option<String>,
+        #[graphql(default = true)] include_archived: bool,
+    ) -> GResult<super::project::ProjectV2ItemConnection> {
+        super::project::issue_items(
+            ctx,
+            self.i.id,
+            ConnArgs::new(first, last, after, before),
+            include_archived,
+        )
+        .await
+    }
+    #[graphql(name = "projectsV2")]
+    pub async fn projects_v2(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+        query: Option<String>,
+        order_by: Option<super::enums::ProjectV2Order>,
+    ) -> GResult<super::project::ProjectV2Connection> {
+        super::project::issue_projects(
+            ctx,
+            self.i.id,
+            ConnArgs::new(first, last, after, before),
+            query,
+            order_by,
+        )
+        .await
     }
     pub async fn assigned_actors(
         &self,
