@@ -82,6 +82,49 @@ pub fn job_sync_json(j: &JobRow) -> Value {
     })
 }
 
+/// `Event::WorkflowRunUpdated` carrying the run and its workflow as GitHub
+/// REST JSON (the `workflow_run` webhook payload), rendered on `conn` so
+/// changes of the surrounding transaction are visible.
+pub async fn run_event(
+    state: &AppState,
+    conn: &mut PgConnection,
+    run: &RunRow,
+    action: &str,
+) -> anyhow::Result<Event> {
+    let mut workflow_run = Value::Null;
+    let mut workflow = None;
+    if let Some(repo) = db::Repository::find(&mut *conn, run.repo_id).await?
+        && let Some(owner) = db::User::find(&mut *conn, repo.owner_id).await?
+    {
+        let access = bgh_core::perms::RepoAccess {
+            repo,
+            owner,
+            permission: bgh_core::perms::Permission::Read,
+            authenticated: false,
+        };
+        let rendered = crate::json::runs_json_conn(state, conn, &access, std::slice::from_ref(run))
+            .await
+            .map_err(|e| anyhow::anyhow!("rendering workflow run: {e}"))?;
+        workflow_run = rendered.into_iter().next().unwrap_or(Value::Null);
+        let wf: Option<crate::models::WorkflowRow> = sqlx::query_as(&format!(
+            "SELECT {} FROM actions_workflows WHERE id = $1",
+            crate::models::WorkflowRow::COLUMNS
+        ))
+        .bind(run.workflow_id)
+        .fetch_optional(&mut *conn)
+        .await?;
+        workflow = wf.map(|w| crate::json::workflow_json(state, &access, &w));
+    }
+    Ok(Event::WorkflowRunUpdated {
+        repo_id: run.repo_id,
+        run_id: run.id,
+        action: action.to_string(),
+        actor_id: run.triggering_actor_id.or(run.actor_id),
+        workflow_run,
+        workflow,
+    })
+}
+
 async fn sync_run(tx: &mut Tx, run: &RunRow) -> anyhow::Result<()> {
     tx.sync(
         &sync::repo_scope(run.repo_id),
@@ -254,17 +297,14 @@ pub async fn create_run(state: &AppState, new: NewRun) -> anyhow::Result<i64> {
             Some("startup_failure"),
         )
         .await?;
+        if let Some(ev) =
+            checks::check_suite_event(run.repo_id, Some(suite_id), "completed", run.actor_id)
+        {
+            tx.emit(ev);
+        }
         sync_run(&mut tx, &run).await?;
-        tx.emit(Event::WorkflowRunUpdated {
-            repo_id: run.repo_id,
-            run_id: run.id,
-            action: "completed".into(),
-            actor_id: run.actor_id,
-            // TODO(actions): GitHub REST JSON of the run/workflow for the
-            // `workflow_run` webhook (bgh-notify skips the delivery while null).
-            workflow_run: serde_json::Value::Null,
-            workflow: None,
-        });
+        let ev = run_event(state, &mut tx, &run, "completed").await?;
+        tx.emit(ev);
         tx.commit().await?;
         return Ok(run.id);
     }
@@ -335,16 +375,8 @@ pub async fn create_run(state: &AppState, new: NewRun) -> anyhow::Result<i64> {
         }
     }
     sync_run(&mut tx, &run).await?;
-    tx.emit(Event::WorkflowRunUpdated {
-        repo_id: run.repo_id,
-        run_id: run.id,
-        action: "requested".into(),
-        actor_id: run.actor_id,
-        // TODO(actions): GitHub REST JSON of the run/workflow for the
-        // `workflow_run` webhook (bgh-notify skips the delivery while null).
-        workflow_run: serde_json::Value::Null,
-        workflow: None,
-    });
+    let ev = run_event(state, &mut tx, &run, "requested").await?;
+    tx.emit(ev);
     tx.commit().await?;
     if !pending {
         advance_run(state, run.id).await?;
@@ -538,7 +570,7 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
         Ok(d) => d,
         Err(err) => {
             tracing::error!(run_id, ?err, "stored workflow definition unreadable");
-            return finish_run(&mut tx, &mut run, "startup_failure")
+            return finish_run(state, &mut tx, &mut run, "startup_failure")
                 .await
                 .and(Ok(tx.commit().await?));
         }
@@ -643,7 +675,7 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
                 _ => "success",
             }
         };
-        finish_run(&mut tx, &mut run, conclusion).await?;
+        finish_run(state, &mut tx, &mut run, conclusion).await?;
     } else {
         let started = rows.iter().any(|r| {
             r.status == "in_progress"
@@ -664,16 +696,8 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
             checks::set_suite_status(&mut tx, run.check_suite_id, status, None).await?;
             sync_run(&mut tx, &run).await?;
             if status == "in_progress" {
-                tx.emit(Event::WorkflowRunUpdated {
-                    repo_id: run.repo_id,
-                    run_id: run.id,
-                    action: "in_progress".into(),
-                    actor_id: run.actor_id,
-                    // TODO(actions): GitHub REST JSON of the run/workflow for the
-                    // `workflow_run` webhook (bgh-notify skips the delivery while null).
-                    workflow_run: serde_json::Value::Null,
-                    workflow: None,
-                });
+                let ev = run_event(state, &mut tx, &run, "in_progress").await?;
+                tx.emit(ev);
             }
         }
     }
@@ -681,7 +705,12 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn finish_run(tx: &mut Tx, run: &mut RunRow, conclusion: &str) -> anyhow::Result<()> {
+async fn finish_run(
+    state: &AppState,
+    tx: &mut Tx,
+    run: &mut RunRow,
+    conclusion: &str,
+) -> anyhow::Result<()> {
     *run = sqlx::query_as(&format!(
         "UPDATE actions_runs SET status = 'completed', conclusion = $2, updated_at = now()
           WHERE id = $1 RETURNING {}",
@@ -697,17 +726,17 @@ async fn finish_run(tx: &mut Tx, run: &mut RunRow, conclusion: &str) -> anyhow::
         conclusion
     };
     checks::set_suite_status(tx, run.check_suite_id, "completed", Some(suite_conclusion)).await?;
+    if let Some(ev) = checks::check_suite_event(
+        run.repo_id,
+        run.check_suite_id,
+        "completed",
+        run.triggering_actor_id.or(run.actor_id),
+    ) {
+        tx.emit(ev);
+    }
     sync_run(tx, run).await?;
-    tx.emit(Event::WorkflowRunUpdated {
-        repo_id: run.repo_id,
-        run_id: run.id,
-        action: "completed".into(),
-        actor_id: run.actor_id,
-        // TODO(actions): GitHub REST JSON of the run/workflow for the
-        // `workflow_run` webhook (bgh-notify skips the delivery while null).
-        workflow_run: serde_json::Value::Null,
-        workflow: None,
-    });
+    let ev = run_event(state, tx, run, "completed").await?;
+    tx.emit(ev);
     // Release the concurrency group: start the next pending run.
     if let Some(group) = &run.concurrency_group {
         let next: Option<i64> = sqlx::query_scalar(
@@ -750,6 +779,10 @@ async fn cancel_job_row(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Re
     .await?;
     if row.status == "completed" && row.conclusion.as_deref() == Some("cancelled") {
         checks::complete_run(tx, row.check_run_id, "cancelled", None, &[]).await?;
+        if let Some(ev) = checks::check_run_event(row.repo_id, row.check_run_id, "completed", None)
+        {
+            tx.emit(ev);
+        }
         tx.emit(Event::WorkflowJobUpdated {
             repo_id: row.repo_id,
             run_id: row.run_id,
@@ -1146,6 +1179,19 @@ async fn insert_job(
         conclusion,
     )
     .await?;
+    if let Some(ev) = checks::check_run_event(
+        run.repo_id,
+        check_run_id,
+        "created",
+        run.triggering_actor_id.or(run.actor_id),
+    ) {
+        tx.emit(ev);
+    }
+    if status == "completed"
+        && let Some(ev) = checks::check_run_event(run.repo_id, check_run_id, "completed", None)
+    {
+        tx.emit(ev);
+    }
     let completed = status == "completed";
     let row: JobRow = sqlx::query_as(&format!(
         "INSERT INTO actions_jobs (run_id, repo_id, run_attempt, job_key, name, matrix, status,
@@ -1222,7 +1268,7 @@ pub async fn cancel_run(state: &AppState, run_id: i64, force: bool) -> anyhow::R
         }
     }
     if run.status == "pending" {
-        finish_run(&mut tx, &mut run, "cancelled").await?;
+        finish_run(state, &mut tx, &mut run, "cancelled").await?;
     }
     tx.commit().await?;
     advance_run(state, run_id).await
@@ -1314,16 +1360,8 @@ pub async fn rerun(
         }
     }
     sync_run(&mut tx, &run).await?;
-    tx.emit(Event::WorkflowRunUpdated {
-        repo_id: run.repo_id,
-        run_id: run.id,
-        action: "requested".into(),
-        actor_id: Some(actor_id),
-        // TODO(actions): GitHub REST JSON of the run/workflow for the
-        // `workflow_run` webhook (bgh-notify skips the delivery while null).
-        workflow_run: serde_json::Value::Null,
-        workflow: None,
-    });
+    let ev = run_event(state, &mut tx, &run, "requested").await?;
+    tx.emit(ev);
     tx.commit().await?;
     advance_run(state, run_id).await
 }
