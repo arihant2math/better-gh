@@ -10,6 +10,8 @@
 //!
 //! Token scopes further restrict what a PAT can do (see [`effective`]).
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
@@ -88,11 +90,19 @@ impl std::fmt::Display for Permission {
 
 #[derive(sqlx::FromRow)]
 struct PermRow {
-    site_admin: bool,
+    repo_id: i64,
     collab: Option<String>,
     org_role: Option<String>,
     org_base: Option<String>,
     team_perms: Option<Vec<String>>,
+}
+
+fn public_floor(repo: &db::Repository) -> Permission {
+    if repo.is_private() {
+        Permission::None
+    } else {
+        Permission::Read
+    }
 }
 
 /// Compute `user_id`'s permission on `repo`, ignoring token scopes.
@@ -101,63 +111,77 @@ pub async fn repo_permission(
     user_id: Option<i64>,
     repo: &db::Repository,
 ) -> Result<Permission, sqlx::Error> {
-    let public_floor = if repo.is_private() {
-        Permission::None
-    } else {
-        Permission::Read
-    };
+    let map = repo_permissions(db, user_id, std::slice::from_ref(repo)).await?;
+    Ok(map.get(&repo.id).copied().unwrap_or(Permission::None))
+}
+
+/// Batch variant of [`repo_permission`] for lists: one query for all
+/// `repos`. Returns a map keyed by repository id.
+pub async fn repo_permissions(
+    db: impl PgExecutor<'_>,
+    user_id: Option<i64>,
+    repos: &[db::Repository],
+) -> Result<HashMap<i64, Permission>, sqlx::Error> {
+    let mut out: HashMap<i64, Permission> = repos.iter().map(|r| (r.id, public_floor(r))).collect();
     let Some(uid) = user_id else {
-        return Ok(public_floor);
+        return Ok(out);
     };
-    if uid == repo.owner_id {
-        return Ok(Permission::Admin);
+    let mut pending = Vec::new();
+    for r in repos {
+        if r.owner_id == uid {
+            out.insert(r.id, Permission::Admin);
+        } else {
+            pending.push(r.id);
+        }
     }
-    let row: Option<PermRow> = sqlx::query_as(
+    if pending.is_empty() {
+        return Ok(out);
+    }
+    // One round trip: site_admin flag + per-repo grants.
+    let rows: Vec<PermRow> = sqlx::query_as(
         r#"
         WITH RECURSIVE user_teams AS (
             SELECT t.id, t.parent_id
               FROM team_members tm JOIN teams t ON t.id = tm.team_id
-             WHERE tm.user_id = $2 AND t.org_id = $3
+             WHERE tm.user_id = $1
             UNION
             SELECT p.id, p.parent_id
               FROM teams p JOIN user_teams ut ON p.id = ut.parent_id
         )
-        SELECT u.site_admin,
-               (SELECT permission FROM collaborators WHERE repo_id = $1 AND user_id = $2) AS collab,
-               (SELECT role FROM org_members WHERE org_id = $3 AND user_id = $2) AS org_role,
-               (SELECT default_repository_permission FROM org_settings WHERE org_id = $3) AS org_base,
+        SELECT r.id AS repo_id,
+               CASE WHEN (SELECT site_admin FROM users WHERE id = $1) THEN 'admin'
+                    ELSE (SELECT permission FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1)
+               END AS collab,
+               (SELECT role FROM org_members m WHERE m.org_id = r.owner_id AND m.user_id = $1) AS org_role,
+               (SELECT default_repository_permission FROM org_settings s WHERE s.org_id = r.owner_id) AS org_base,
                (SELECT array_agg(tr.permission) FROM team_repos tr
-                 WHERE tr.repo_id = $1 AND tr.team_id IN (SELECT id FROM user_teams)) AS team_perms
-          FROM users u WHERE u.id = $2
+                 WHERE tr.repo_id = r.id AND tr.team_id IN (SELECT id FROM user_teams)) AS team_perms
+          FROM repositories r
+         WHERE r.id = ANY($2)
         "#,
     )
-    .bind(repo.id)
     .bind(uid)
-    .bind(repo.owner_id)
-    .fetch_optional(db)
+    .bind(&pending)
+    .fetch_all(db)
     .await?;
-    let Some(row) = row else {
-        return Ok(public_floor);
-    };
-    let mut best = public_floor;
-    let mut raise = |p: Option<Permission>| {
-        if let Some(p) = p {
-            best = best.max(p);
+    for row in rows {
+        let best = out.entry(row.repo_id).or_insert(Permission::None);
+        let mut raise = |p: Option<Permission>| {
+            if let Some(p) = p {
+                *best = (*best).max(p);
+            }
+        };
+        raise(row.collab.as_deref().and_then(Permission::parse));
+        match row.org_role.as_deref() {
+            Some("admin") => raise(Some(Permission::Admin)),
+            Some(_) => raise(row.org_base.as_deref().and_then(Permission::parse)),
+            None => {}
         }
-    };
-    if row.site_admin {
-        raise(Some(Permission::Admin));
+        for p in row.team_perms.unwrap_or_default() {
+            raise(Permission::parse(&p));
+        }
     }
-    raise(row.collab.as_deref().and_then(Permission::parse));
-    match row.org_role.as_deref() {
-        Some("admin") => raise(Some(Permission::Admin)),
-        Some(_) => raise(row.org_base.as_deref().and_then(Permission::parse)),
-        None => {}
-    }
-    for p in row.team_perms.unwrap_or_default() {
-        raise(Permission::parse(&p));
-    }
-    Ok(best)
+    Ok(out)
 }
 
 /// Apply token scopes to a raw permission:

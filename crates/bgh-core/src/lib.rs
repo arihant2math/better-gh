@@ -21,6 +21,7 @@ pub mod state;
 pub mod sync;
 pub mod time;
 pub mod urls;
+pub mod views;
 
 #[cfg(feature = "testing")]
 pub mod testing;
