@@ -1,5 +1,5 @@
-Integration: in progress
-Backend + GraphQL done and tested; web UI in progress.
+Integration: ready
+Hide/minimize comments (issue, PR review, review and commit comments), edit history with revision deletion, and issue deletion (REST `/_bgh`, GraphQL, web UI). Full gate green after merging `claude/sleepy-cray-9jj0t3` (e82e659).
 
 # P42 comment-moderation — status
 
@@ -102,6 +102,14 @@ Search and lists read the `issues` table, so the issue disappears there.
 * `crates/bgh-graphql/tests/it/moderation.rs`: minimize/unminimize seen by
   another viewer, three edits → `userContentEdits` totalCount 3 with
   editors, comment history, `deleteIssue`, schema names.
+
+## Gate
+
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
+warnings`, `cargo test --workspace` (59 binaries ok), web typecheck / lint /
+test (462) / build (initial JS 144.4 KB gzip, unchanged by P42), Playwright
+`scripts/moderation-smoke.mjs` all pass. The bgh-sync shape tests
+(`tests/it/bootstrap.rs`) now expect the new fields.
 
 ## Known gaps
 
