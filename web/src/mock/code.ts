@@ -7,7 +7,9 @@
  */
 import type { Repo, User } from '../sync/models';
 import { blobSha, highlight, languageOf } from './content';
+import { installContentsRoutes } from './contents';
 import { gitFor, splitLines, type MockCommit, type MockGit } from './git';
+import { installReleaseRoutes } from './releases';
 import { fakeSha } from './rng';
 import type { Ctx, MockServer, Resp, RouteFn } from './server';
 import { marked } from 'marked';
@@ -107,6 +109,8 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
     return p === 'admin' || p === 'maintain' || p === 'write';
   };
   shared = { repoOf, target, brief, rest, user: restUser, canWrite };
+  installReleaseRoutes(R, s);
+  installContentsRoutes(R, s);
 
   // ---------------------------------------------------------- browse helpers
 

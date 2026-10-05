@@ -4,7 +4,8 @@
  * (docs/FRONTEND.md "Add a route").
  */
 import { prefetch as prefetchResource } from '../api/cache';
-import { browseKeys, getBlob, getPullDiff, getTree, isSha, listPullCommits } from '../api/endpoints';
+import { browseKeys, getBlob, getPullDiff, getRefs, getTree, isSha, listPullCommits } from '../api/endpoints';
+import { fetchRef, resolveTarget, type CodeTarget } from '../pages/code/util';
 import { defineRoutes, type Params } from '../router';
 import { hasSync, sync } from '../sync';
 import { issueByNumber, repoByName } from '../sync/selectors';
@@ -51,21 +52,24 @@ function prefetchPull(p: Params) {
   }
 }
 
-function codeTarget(p: Params): { owner: string; repo: string; ref: string; path: string } | null {
+function codeTarget(p: Params): CodeTarget | null {
   const ref = p.ref ?? (hasSync() ? repoByName(p.owner!, p.repo!)?.defaultBranch : undefined);
-  return ref ? { owner: p.owner!, repo: p.repo!, ref, path: (p['*'] ?? '').replace(/\/$/, '') } : null;
+  return ref ? resolveTarget(p.owner!, p.repo!, ref, p['*'] ?? '') : null;
 }
 
 function prefetchCode(p: Params) {
+  prefetchResource(browseKeys.refs(p.owner!, p.repo!), () => getRefs(p.owner!, p.repo!));
   const t = codeTarget(p);
   if (!t) return;
-  prefetchResource(browseKeys.tree(t.owner, t.repo, t.ref, t.path), () => getTree(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
+  const ref = fetchRef(t);
+  prefetchResource(browseKeys.tree(t.owner, t.repo, ref, t.path), () => getTree(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
 }
 
 function prefetchBlobView(p: Params) {
   const t = codeTarget(p);
   if (!t) return;
-  prefetchResource(browseKeys.blob(t.owner, t.repo, t.ref, t.path), () => getBlob(t.owner, t.repo, t.ref, t.path), { immutable: isSha(t.ref) });
+  const ref = fetchRef(t);
+  prefetchResource(browseKeys.blob(t.owner, t.repo, ref, t.path), () => getBlob(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
 }
 
 export function registerRoutes(): void {

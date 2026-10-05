@@ -120,7 +120,9 @@ export class MockGit {
       const to = Math.min(lines.length, from + rng.int(3, 12));
       shown.set(p, to);
       const files = new Map(this.commits.get(head)!.files);
-      files.set(p, lines.slice(0, to).join('\n') + (to < lines.length ? '\n' : ''));
+      const next = lines.slice(0, to).join('\n') + (to < lines.length ? '\n' : '');
+      if (next === files.get(p)) continue;
+      files.set(p, next);
       t += rng.int(2, 30) * 3600_000;
       head = this.addCommit([head], rng.pick(msgs).replace('{f}', p.split('/').pop()!), pick(), iso(Math.min(t, Date.now() - 3600_000)), files);
       history.push(head);
@@ -194,7 +196,8 @@ export class MockGit {
   }
 
   addCommit(parents: string[], message: string, authorId: ID, date: string, files: Map<string, string>): string {
-    const sha = fakeSha(`${this.repo.id}:${parents.join(',')}:${message}:${date}:${this.seq++}`);
+    // Date-independent so seeded SHAs are stable across reloads.
+    const sha = fakeSha(`${this.repo.id}:${parents.join(',')}:${message}:${this.seq++}`);
     this.commits.set(sha, { sha, parents, message, authorId, date, files });
     return sha;
   }

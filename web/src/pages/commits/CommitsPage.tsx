@@ -1,6 +1,346 @@
 import { observer } from 'mobx-react-lite';
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { load, peek, useResource } from '../../api/cache';
+import { ApiError } from '../../api/client';
+import { codeKeys, getCommitStatuses, type CommitStatusRollup, type CommitStatuses } from '../../api/code';
+import { getHistory, isSha } from '../../api/endpoints';
+import type { BrowseCommit, History } from '../../api/types';
+import { RefPicker } from '../../components/code/RefPicker';
+import { Link, navigate, useParams } from '../../router';
+import { useShortcuts } from '../../shortcuts/useShortcuts';
+import type { Repo } from '../../sync/models';
+import { repoByName } from '../../sync/selectors';
+import { Button, IconButton, cx } from '../../ui/Button';
+import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizontalIcon } from '../../ui/icons';
+import { RelativeTime } from '../../ui/RelativeTime';
+import { Spinner } from '../../ui/Spinner';
+import { VirtualList } from '../../ui/VirtualList';
+import { COMMITS_PER_PAGE } from '../code/prefetch';
+import { commitDate, groupByDay, splitMessage, type CommitListRow } from './group';
+import { CiIcon, Person, copyText, samePerson } from './parts';
+import styles from './Commits.module.css';
 
-/** TODO(F2): placeholder until implemented. */
+const enc = encodeURIComponent;
+
+/** `/commits/{ref}/{path}` URL. */
+export function commitsUrl(owner: string, repo: string, ref: string, path = ''): string {
+  return `/${owner}/${repo}/commits/${enc(ref)}${path ? `/${path.split('/').map(enc).join('/')}` : ''}`;
+}
+
+/** Commits list / file history: `/:owner/:repo/commits[/:ref/*path]`. */
 export default observer(function CommitsPage() {
-  return <div style={{ padding: 24 }}>CommitsPage</div>;
+  const params = useParams<{ owner: string; repo: string; ref?: string; '*'?: string }>();
+  const repo = repoByName(params.owner, params.repo);
+  if (!repo) return null;
+  const ref = params.ref || repo.defaultBranch;
+  const path = (params['*'] ?? '').replace(/\/+$/, '');
+  return (
+    <div className={styles.page}>
+      <Header repo={repo} refName={ref} path={path} />
+      {/* Remount per ref/path: page state (loaded pages, cursor) starts fresh. */}
+      <CommitList key={`${ref}:${path}`} repo={repo} refName={ref} path={path} />
+    </div>
+  );
 });
+
+function Header({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
+  const parts = path ? path.split('/') : [];
+  return (
+    <div className={styles.header}>
+      <RefPicker owner={repo.owner} repo={repo.name} value={refName} onSelect={(r) => navigate(commitsUrl(repo.owner, repo.name, r, path))} />
+      {path ? (
+        <h1 className={styles.title}>
+          <HistoryIcon size={16} className={styles.muted} />
+          <span>History for</span>
+          <nav className={styles.crumbs} aria-label="Path">
+            <Link to={commitsUrl(repo.owner, repo.name, refName)}>{repo.name}</Link>
+            {parts.map((p, i) => (
+              <span key={i}>
+                <span className={styles.sep}>/</span>
+                {i === parts.length - 1 ? <strong>{p}</strong> : <Link to={commitsUrl(repo.owner, repo.name, refName, parts.slice(0, i + 1).join('/'))}>{p}</Link>}
+              </span>
+            ))}
+          </nav>
+        </h1>
+      ) : (
+        <h1 className={styles.title}>
+          <GitCommitIcon size={16} className={styles.muted} />
+          Commits
+        </h1>
+      )}
+    </div>
+  );
+}
+
+function historyLoader(repo: Repo, ref: string, path: string, page: number) {
+  return () => getHistory(repo.owner, repo.name, ref, path, { page, perPage: COMMITS_PER_PAGE });
+}
+
+/**
+ * Page 1 through `useResource` (renders synchronously when the route
+ * prefetch warmed it); later pages appended on demand. Pages still in the
+ * cache (e.g. back navigation) are restored on mount.
+ */
+function useHistoryPages(repo: Repo, ref: string, path: string) {
+  const opts = { immutable: isSha(ref) };
+  const key = (page: number) => codeKeys.history(repo.owner, repo.name, ref, path, page);
+  const first = useResource<History>(key(1), historyLoader(repo, ref, path, 1), opts);
+  const [more, setMore] = useState<History[]>(() => {
+    const out: History[] = [];
+    let prev = peek<History>(key(1));
+    for (let p = 2; prev?.has_more; p++) {
+      const h = peek<History>(key(p));
+      if (!h) break;
+      out.push(h);
+      prev = h;
+    }
+    return out;
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
+  const last = more[more.length - 1] ?? first.data;
+  const hasMore = !!last?.has_more;
+
+  const loadMore = () => {
+    if (loadingMore || !hasMore) return;
+    const page = 2 + more.length;
+    setLoadingMore(true);
+    setMoreError(false);
+    load(key(page), historyLoader(repo, ref, path, page), opts).then(
+      (h) => {
+        setMore((m) => (m.length === page - 2 ? [...m, h] : m));
+        setLoadingMore(false);
+      },
+      () => {
+        setMoreError(true);
+        setLoadingMore(false);
+      },
+    );
+  };
+
+  const pages = useMemo(() => (first.data ? [first.data, ...more] : []), [first.data, more]);
+  return { first, pages, hasMore, loadMore, loadingMore, moreError };
+}
+
+/** One batched commit-status request per loaded page, merged. */
+function useCiStatuses(repo: Repo, pages: History[]): Record<string, CommitStatusRollup> {
+  const [, bump] = useReducer((x: number) => x + 1, 0);
+  const shaLists = pages.map((p) => p.commits.map((c) => c.sha)).filter((l) => l.length > 0);
+  const keys = shaLists.map((l) => codeKeys.statuses(repo.owner, repo.name, l));
+  const joined = keys.join('|');
+  useEffect(() => {
+    let alive = true;
+    shaLists.forEach((shas, i) => {
+      load(keys[i]!, () => getCommitStatuses(repo.owner, repo.name, shas)).then(
+        () => alive && bump(),
+        () => undefined,
+      );
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the joined cache keys
+  }, [joined]);
+  const merged: Record<string, CommitStatusRollup> = {};
+  for (const k of keys) Object.assign(merged, peek<CommitStatuses>(k)?.statuses);
+  return merged;
+}
+
+type Row = CommitListRow | { kind: 'more' };
+
+function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
+  const { first, pages, hasMore, loadMore, loadingMore, moreError } = useHistoryPages(repo, refName, path);
+  const ci = useCiStatuses(repo, pages);
+  const [cursor, setCursor] = useState(-1);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const commits = useMemo(() => pages.flatMap((p) => p.commits), [pages]);
+  const grouped = useMemo(() => groupByDay(commits), [commits]);
+  const rows = useMemo<Row[]>(() => (hasMore ? [...grouped, { kind: 'more' }] : grouped), [grouped, hasMore]);
+  const commitRows = useMemo(() => {
+    const idx: number[] = [];
+    rows.forEach((r, i) => r.kind === 'commit' && idx.push(i));
+    return idx;
+  }, [rows]);
+  const count = commitRows.length;
+  const current = cursor >= 0 && cursor < count ? (rows[commitRows[cursor]!] as Extract<Row, { kind: 'commit' }>).commit : undefined;
+  const base = `/${repo.owner}/${repo.name}`;
+
+  const move = (d: number) => {
+    if (!count) return;
+    const next = Math.min(count - 1, Math.max(0, cursor + d));
+    setCursor(next);
+    if (next >= count - 3 && hasMore) loadMore();
+  };
+  useShortcuts('Commits', {
+    j: { handler: () => move(1), description: 'Next commit', group: 'Commits' },
+    k: { handler: () => move(-1), description: 'Previous commit', group: 'Commits' },
+    enter: { handler: () => (current ? navigate(`${base}/commit/${current.sha}`) : false), description: 'Open commit', group: 'Commits' },
+    o: { handler: () => (current ? navigate(`${base}/commit/${current.sha}`) : false), description: 'Open commit', group: 'Commits' },
+    y: { handler: () => (current ? copyText(current.sha, `Copied ${current.sha.slice(0, 7)}`) : false), description: 'Copy commit SHA', group: 'Commits' },
+  });
+
+  if (first.error && !first.data) {
+    const missing = first.error instanceof ApiError && (first.error.status === 404 || first.error.status === 422);
+    return (
+      <EmptyState icon={AlertIcon} title={missing ? 'Nothing to show' : 'Couldn’t load the commit history'}>
+        {missing ? `${refName}${path ? `:${path}` : ''} doesn’t exist in this repository.` : 'Try again in a moment.'}
+      </EmptyState>
+    );
+  }
+  if (!first.data) return <SkeletonRows />;
+  if (!rows.length) return <EmptyState icon={GitCommitIcon} title="No commits found" />;
+
+  const toggle = (sha: string) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(sha)) n.delete(sha);
+      else n.add(sha);
+      return n;
+    });
+
+  return (
+    <VirtualList
+      className={styles.list}
+      items={rows}
+      estimateSize={56}
+      activeIndex={cursor >= 0 ? commitRows[cursor] : undefined}
+      aria-label="Commits"
+      getKey={(r) => (r.kind === 'commit' ? r.commit.sha : r.kind === 'day' ? `day:${r.key}` : 'more')}
+      renderItem={(r, i) => {
+        if (r.kind === 'day') {
+          return (
+            <div className={styles.day}>
+              <GitCommitIcon size={16} className={styles.dayIcon} />
+              {r.label}
+            </div>
+          );
+        }
+        if (r.kind === 'more') return <MoreRow onVisible={loadMore} loading={loadingMore} error={moreError} />;
+        return (
+          <CommitRow
+            repo={repo}
+            commit={r.commit}
+            ci={ci[r.commit.sha]}
+            active={r.index === cursor}
+            first={rows[i - 1]?.kind !== 'commit'}
+            last={rows[i + 1]?.kind !== 'commit'}
+            expanded={expanded.has(r.commit.sha)}
+            onToggle={() => toggle(r.commit.sha)}
+            onPointer={() => setCursor(r.index)}
+          />
+        );
+      }}
+    />
+  );
+}
+
+function CommitRow({
+  repo,
+  commit: c,
+  ci,
+  active,
+  first,
+  last,
+  expanded,
+  onToggle,
+  onPointer,
+}: {
+  repo: Repo;
+  commit: BrowseCommit;
+  ci: CommitStatusRollup | undefined;
+  active: boolean;
+  first: boolean;
+  last: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onPointer: () => void;
+}) {
+  const base = `/${repo.owner}/${repo.name}`;
+  const { body } = splitMessage(c.message);
+  const summary = c.summary || splitMessage(c.message).summary;
+  return (
+    <div className={cx(styles.row, first && styles.first, last && styles.last, active && styles.active)} role="listitem" aria-current={active || undefined} onPointerDown={onPointer}>
+      <div className={styles.main}>
+        <div className={styles.summaryLine}>
+          <Link to={`${base}/commit/${c.sha}`} className={styles.summary} title={summary}>
+            {summary}
+          </Link>
+          {body && (
+            <button type="button" className={styles.expand} aria-expanded={expanded} aria-label={expanded ? 'Hide commit message' : 'Show commit message'} onClick={onToggle}>
+              <KebabHorizontalIcon size={12} />
+            </button>
+          )}
+        </div>
+        {expanded && body && <pre className={styles.body}>{body}</pre>}
+        <div className={styles.meta}>
+          <Person person={c.author} size={16} />
+          {samePerson(c.author, c.committer) ? (
+            <span>
+              committed <RelativeTime date={commitDate(c)} />
+            </span>
+          ) : (
+            <span>
+              authored <RelativeTime date={c.author.date} /> · <Person person={c.committer} avatar={false} /> committed <RelativeTime date={commitDate(c)} />
+            </span>
+          )}
+          <CiIcon status={ci} size={14} />
+        </div>
+      </div>
+      <div className={styles.actions}>
+        {/* Signature info isn't in the compact history shape; reserved slot keeps rows aligned. */}
+        <span className={styles.verifySlot} aria-hidden />
+        <span className={styles.shaGroup}>
+          <Link to={`${base}/commit/${c.sha}`} className={styles.sha} title={c.sha}>
+            {c.sha.slice(0, 7)}
+          </Link>
+          <IconButton icon={CopyIcon} label="Copy full SHA" size="sm" onClick={() => copyText(c.sha, `Copied ${c.sha.slice(0, 7)}`)} />
+        </span>
+        <Link to={`${base}/tree/${c.sha}`} className={styles.browse} aria-label="Browse repository at this point in the history" title="Browse repository at this point in the history">
+          <CodeIcon size={16} />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function MoreRow({ onVisible, loading, error }: { onVisible: () => void; loading: boolean; error: boolean }) {
+  // Mounted only while the virtualizer renders it (near the bottom): infinite
+  // scroll. Re-fires after each page while it stays in view.
+  useEffect(() => {
+    if (!loading && !error) onVisible();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on mount and when a load settles
+  }, [loading, error]);
+  return (
+    <div className={styles.more}>
+      {loading ? (
+        <>
+          <Spinner size={14} /> Loading more commits…
+        </>
+      ) : (
+        <Button size="sm" onClick={onVisible}>
+          {error ? 'Retry loading more' : 'Load more'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function SkeletonRows() {
+  return (
+    <div className={styles.list} aria-busy="true">
+      <div className={styles.day}>
+        <Skeleton width={180} />
+      </div>
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className={cx(styles.row, i === 0 && styles.first, i === 7 && styles.last)}>
+          <div className={styles.main}>
+            <Skeleton width={`${40 + ((i * 17) % 40)}%`} />
+            <Skeleton width={160} height={12} style={{ marginTop: 8 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

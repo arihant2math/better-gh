@@ -7,7 +7,7 @@
  * Pair with `api/cache` (`useResource(codeKeys.x(...), () => getX(...))`);
  * keys that embed a full commit SHA are immutable.
  */
-import { api, encodePath, v3 } from './client';
+import { ApiError, api, encodePath, v3 } from './client';
 import { browserTransport, transport } from './transport';
 import type { BrowseCommit, RestUser } from './types';
 
@@ -314,6 +314,47 @@ export function deleteContents(owner: string, repo: string, path: string, body: 
   return api.request<ContentsWriteResult>(`${v3('repos', owner, repo, 'contents')}/${encodePath(path)}`, { method: 'DELETE', body }).then((r) => r.data);
 }
 
+// ------------------------------------------------------------------ git data (multi-file commits)
+
+export interface GitCommitObject {
+  sha: string;
+  html_url?: string;
+  message: string;
+  tree: { sha: string };
+  parents: { sha: string }[];
+}
+
+export interface GitTreeEntryInput {
+  path: string;
+  mode: '100644' | '100755' | '040000' | '160000' | '120000';
+  type: 'blob' | 'tree' | 'commit';
+  /** Existing blob sha, or `null` to delete the path. */
+  sha?: string | null;
+  /** Inline UTF-8 content (instead of `sha`). */
+  content?: string;
+}
+
+export function createGitBlob(owner: string, repo: string, content: string, encoding: 'utf-8' | 'base64'): Promise<{ sha: string }> {
+  return api.post<{ sha: string }>(v3('repos', owner, repo, 'git', 'blobs'), { content, encoding });
+}
+
+export function createGitTree(owner: string, repo: string, baseTree: string | undefined, tree: GitTreeEntryInput[]): Promise<{ sha: string }> {
+  return api.post<{ sha: string }>(v3('repos', owner, repo, 'git', 'trees'), baseTree ? { base_tree: baseTree, tree } : { tree });
+}
+
+export function getGitCommit(owner: string, repo: string, sha: string): Promise<GitCommitObject> {
+  return api.get<GitCommitObject>(v3('repos', owner, repo, 'git', 'commits', sha));
+}
+
+export function createGitCommit(owner: string, repo: string, body: { message: string; tree: string; parents: string[] }): Promise<GitCommitObject> {
+  return api.post<GitCommitObject>(v3('repos', owner, repo, 'git', 'commits'), body);
+}
+
+/** `PATCH git/refs/heads/{branch}` (fast-forward only unless `force`). */
+export function updateBranchRef(owner: string, repo: string, branch: string, sha: string, force = false): Promise<unknown> {
+  return api.patch(`${v3('repos', owner, repo, 'git', 'refs')}/heads/${encodePath(branch)}`, { sha, force });
+}
+
 /** UTF-8 string → base64. */
 export function encodeBase64(text: string): string {
   return bytesToBase64(new TextEncoder().encode(text));
@@ -342,7 +383,7 @@ export function listReleases(owner: string, repo: string, page = 1, perPage = 20
 }
 
 export function getLatestRelease(owner: string, repo: string): Promise<RestRelease | null> {
-  return api.get<RestRelease>(v3('repos', owner, repo, 'releases', 'latest')).catch(() => null);
+  return api.get<RestRelease>(v3('repos', owner, repo, 'releases', 'latest'), { accept: 'application/vnd.github.html+json' }).catch(() => null);
 }
 
 export function getReleaseByTag(owner: string, repo: string, tag: string): Promise<RestRelease> {
@@ -351,6 +392,25 @@ export function getReleaseByTag(owner: string, repo: string, tag: string): Promi
 
 export function getRelease(owner: string, repo: string, id: number): Promise<RestRelease> {
   return api.get<RestRelease>(v3('repos', owner, repo, 'releases', id), { accept: 'application/vnd.github.html+json' });
+}
+
+/**
+ * Release by tag, including drafts for writers: `releases/tags/{tag}` serves
+ * published releases only, so on 404 scan the (writer-visible) list.
+ */
+export async function findReleaseByTag(owner: string, repo: string, tag: string): Promise<RestRelease> {
+  try {
+    return await getReleaseByTag(owner, repo, tag);
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 404) throw e;
+    for (let page = 1; page <= 10; page++) {
+      const list = await listReleases(owner, repo, page, 100);
+      const hit = list.find((r) => r.tag_name === tag);
+      if (hit) return hit;
+      if (list.length < 100) break;
+    }
+    throw e;
+  }
 }
 
 export function createRelease(owner: string, repo: string, body: ReleaseInput): Promise<RestRelease> {
@@ -452,4 +512,8 @@ export const codeKeys = {
   releases: (o: string, r: string, page: number) => `releases:${o}/${r}#${page}`,
   release: (o: string, r: string, tag: string) => `release:${o}/${r}@${tag}`,
   statuses: (o: string, r: string, shas: string[]) => `ci:${o}/${r}:${shas.join(',')}`,
+  /** Tag name → release lookup for the tags page (`listReleases(o, r, 1, 100)`). */
+  releaseTags: (o: string, r: string) => `release-tags:${o}/${r}`,
+  /** Single compact commit (`getHistory(o, r, sha, '', { perPage: 1 })`), immutable. */
+  commitBrief: (o: string, r: string, sha: string) => `commit-brief:${o}/${r}@${sha}`,
 };

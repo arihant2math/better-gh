@@ -6,12 +6,12 @@
 import { prefetch } from '../../api/cache';
 import {
   codeKeys,
+  findReleaseByTag,
   getBlame,
   getBranchList,
   getCommit,
   getCommitDiff,
   getLatestRelease,
-  getReleaseByTag,
   listReleases,
   listTags,
 } from '../../api/code';
@@ -38,7 +38,8 @@ export function prefetchCodeRoute(kind: string, p: Params): void {
     }
     case 'commits': {
       const ref = defaultRef(p);
-      const path = p['*'] ?? '';
+      // Same normalisation as CommitsPage (keys must match).
+      const path = (p['*'] ?? '').replace(/\/+$/, '');
       if (ref) prefetch(codeKeys.history(o, r, ref, path, 1), () => getHistory(o, r, ref, path, { page: 1, perPage: COMMITS_PER_PAGE }), { immutable: isSha(ref) });
       break;
     }
@@ -54,6 +55,7 @@ export function prefetchCodeRoute(kind: string, p: Params): void {
       break;
     case 'tags':
       prefetch(codeKeys.tags(o, r), () => listTags(o, r));
+      prefetch(codeKeys.releaseTags(o, r), () => listReleases(o, r, 1, 100));
       break;
     case 'releases':
       prefetch(codeKeys.releases(o, r, 1), () => listReleases(o, r, 1));
@@ -61,7 +63,7 @@ export function prefetchCodeRoute(kind: string, p: Params): void {
     case 'release':
       if (p.tag) {
         const tag = p.tag;
-        prefetch(codeKeys.release(o, r, tag), () => getReleaseByTag(o, r, tag));
+        prefetch(codeKeys.release(o, r, tag), () => findReleaseByTag(o, r, tag));
       } else prefetch(codeKeys.latestRelease(o, r), () => getLatestRelease(o, r));
       break;
   }

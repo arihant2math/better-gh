@@ -1,0 +1,96 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.desc {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-subtle);
+  color: var(--fg);
+  white-space: pre-line;
+}
+
+.error > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--sp-2);
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  cursor: pointer;
+  line-height: 20px;
+}
+
+.choice[data-disabled] {
+  cursor: not-allowed;
+  color: var(--fg-muted);
+}
+
+.choice input {
+  margin: 4px 0 0;
+  accent-color: var(--accent);
+}
+
+.choiceIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg-muted);
+}
+
+.choiceHint {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.branch {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.newBranch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-left: 44px;
+  max-width: 340px;
+}
+
+.fieldError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
