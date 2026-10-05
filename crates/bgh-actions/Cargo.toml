@@ -13,6 +13,7 @@ path = "src/bin/bgh-runner.rs"
 [dependencies]
 bgh-core.workspace = true
 bgh-git.workspace = true
+bgh-repos.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

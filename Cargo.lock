@@ -505,6 +505,7 @@ dependencies = [
  "base64 0.22.1",
  "bgh-core",
  "bgh-git",
+ "bgh-repos",
  "bgh-server",
  "bytes",
  "chacha20poly1305",
