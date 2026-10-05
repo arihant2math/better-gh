@@ -141,7 +141,7 @@ export function registerRoutes(): void {
     { path: '/pulls', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'Reviews' },
     ...settingsRoutes(),
     { path: '/new', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
-    { path: '/new/import', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
+    { path: '/new/import', load: () => import('../pages/new/ImportRepoPage'), title: () => 'Import repository' },
     { path: '/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
     { path: '/account/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
     {
@@ -162,6 +162,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/settings', layout: AdminLayout, load: () => import('../pages/admin/SettingsPage'), title: () => 'Site settings · Site admin' },
     { path: '/site-admin/audit-log', layout: AdminLayout, load: () => import('../pages/admin/AuditLogPage'), title: () => 'Audit log · Site admin' },
     { path: '/site-admin/jobs', layout: AdminLayout, load: () => import('../pages/admin/JobsPage'), title: () => 'Background jobs · Site admin' },
+    { path: '/site-admin/mirrors', layout: AdminLayout, load: () => import('../pages/admin/MirrorsPage'), title: () => 'Mirrors · Site admin' },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
     // Organization settings.
@@ -279,6 +280,7 @@ export function registerRoutes(): void {
       prefetch: prefetchPull,
       title: (p) => `PR #${p.number} · ${p.owner}/${p.repo}`,
     },
+    { path: '/:owner/:repo/import', layout: RepoLayout, load: () => import('../pages/repo/ImportProgressPage'), title: (p) => `Import · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/*', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
     {

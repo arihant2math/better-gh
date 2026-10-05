@@ -75,6 +75,17 @@ pub async fn create_for_org(
         .await?
         .filter(db::User::is_org)
         .ok_or(ApiError::NotFound)?;
+    authorize_org(&state, &auth, &org, &body).await?;
+    create(&state, &auth, org, body).await
+}
+
+/// Whether `auth` may create the repository described by `body` in `org`.
+pub(crate) async fn authorize_org(
+    state: &AppState,
+    auth: &AuthContext,
+    org: &db::User,
+    body: &CreateRepoBody,
+) -> ApiResult<()> {
     let role = perms::org_role(&state.db, org.id, auth.user.id).await?;
     let allowed = match role.as_deref() {
         Some("admin") => true,
@@ -82,7 +93,7 @@ pub async fn create_for_org(
             let s = db::OrgSettings::find(&state.db, org.id)
                 .await?
                 .ok_or(ApiError::NotFound)?;
-            let private = wants_private(&body);
+            let private = wants_private(body);
             s.members_can_create_repositories
                 && if private {
                     s.members_can_create_private_repositories
@@ -98,7 +109,7 @@ pub async fn create_for_org(
             "You need admin access to the organization before adding a repository to it.",
         ));
     }
-    create(&state, &auth, org, body).await
+    Ok(())
 }
 
 fn wants_private(body: &CreateRepoBody) -> bool {
@@ -112,8 +123,22 @@ async fn create(
     state: &AppState,
     auth: &AuthContext,
     owner: db::User,
-    mut body: CreateRepoBody,
+    body: CreateRepoBody,
 ) -> ApiResult<(StatusCode, Json<Repository>)> {
+    let access = create_with(state, auth, owner, body, None).await?;
+    let json = full_repo(state, Some(auth), &access).await?;
+    Ok((StatusCode::CREATED, Json(json)))
+}
+
+/// Create a repository (row, storage, defaults). `import` additionally
+/// records an import (and pull mirror) in the same transaction.
+pub(crate) async fn create_with(
+    state: &AppState,
+    auth: &AuthContext,
+    owner: db::User,
+    mut body: CreateRepoBody,
+    import: Option<crate::import::NewImport>,
+) -> ApiResult<RepoAccess> {
     if body.visibility.is_none() && body.private.is_none() {
         let settings = bgh_core::settings::load(state).await?;
         body.visibility = Some(settings.default_visibility(owner.is_org()).to_string());
@@ -235,7 +260,8 @@ async fn create(
         &store,
         tx,
         repo,
-        body.auto_init.unwrap_or(false),
+        body.auto_init.unwrap_or(false) && import.is_none(),
+        import,
     )
     .await;
     let repo = match finished {
@@ -246,14 +272,12 @@ async fn create(
         }
     };
 
-    let access = RepoAccess {
+    Ok(RepoAccess {
         repo,
         owner,
         permission: Permission::Admin,
         authenticated: true,
-    };
-    let json = full_repo(state, Some(auth), &access).await?;
-    Ok((StatusCode::CREATED, Json(json)))
+    })
 }
 
 /// Steps after the git repository exists on disk; any error makes the
@@ -265,6 +289,7 @@ async fn finish_create(
     mut tx: Tx,
     mut repo: db::Repository,
     auto_init: bool,
+    import: Option<crate::import::NewImport>,
 ) -> ApiResult<db::Repository> {
     if auto_init {
         let author = crate::identity::default_identity(state, &auth.user).await?;
@@ -294,6 +319,9 @@ async fn finish_create(
         .await?;
     }
     bgh_core::labels::create_defaults(&mut tx, repo.id).await?;
+    if let Some(import) = import {
+        repo = crate::import::record(&mut tx, auth, repo, import).await?;
+    }
     tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Insert)
         .await?;
     tx.sync_viewer_repo(auth.user.id, repo.id).await?;

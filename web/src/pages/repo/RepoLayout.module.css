@@ -81,3 +81,15 @@
   height: 240px;
   color: var(--fg-subtle);
 }
+
+.mirrored {
+  margin: 2px 0 0 24px;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.mirrored a {
+  color: var(--fg-muted);
+  text-decoration: underline;
+}
