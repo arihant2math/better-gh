@@ -977,13 +977,16 @@ async fn commit_pusher(state: &AppState, repo_id: i64, sha: &str) -> ApiResult<O
     .flatten())
 }
 
-/// Propagate a new issue/PR title to existing notification threads.
+/// Propagate a new issue/PR title to existing notification threads whose
+/// holders can still read the repository (a removed collaborator keeps the
+/// old title until access-loss pruning deletes the row).
 async fn retitle(state: &AppState, issue: &db::Issue) -> ApiResult<()> {
     let subject = issue_subject(issue);
     let mut tx = Tx::begin(state).await?;
     let rows: Vec<NotificationRow> = sqlx::query_as(&format!(
         "UPDATE notifications SET subject_title = $3
           WHERE subject_type = $1 AND subject_id = $2 AND subject_title <> $3
+            AND bgh_can_read_repo(user_id, repo_id)
         RETURNING {}",
         NotificationRow::COLUMNS
     ))

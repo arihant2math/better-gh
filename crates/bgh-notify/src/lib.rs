@@ -18,7 +18,9 @@
 pub mod email;
 pub mod fanout;
 pub mod payloads;
+pub mod privacy;
 pub mod reasons;
+pub mod retention;
 pub mod settings;
 pub mod subscriptions;
 pub mod threads;
@@ -147,6 +149,7 @@ pub fn web_router() -> Router<AppState> {
             "/_bgh/notifications/settings",
             get(settings::get_settings).put(settings::put_settings),
         )
+        .route("/_bgh/admin/retention/run", post(retention::run_now))
         .route(
             "/_bgh/notifications/threads/{thread_id}/read",
             axum::routing::delete(threads::mark_thread_unread),
@@ -174,4 +177,6 @@ pub fn register(reg: &mut Registry) {
     reg.job(webhooks::deliver::deliver_meta);
     reg.on_event("notify.notifications", fanout::on_event);
     reg.on_event("notify.webhooks", webhooks::dispatch::on_event);
+    reg.on_event("notify.access", privacy::on_event);
+    reg.service("notify.retention", retention::service);
 }
