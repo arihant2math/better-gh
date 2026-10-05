@@ -153,6 +153,7 @@ async fn bootstrap_shapes_of_every_model() {
             "fork",
             "archived",
             "defaultBranch",
+            "mirrorUrl",
             "language",
             "topics",
             "stars",

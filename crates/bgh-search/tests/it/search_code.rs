@@ -253,6 +253,7 @@ async fn code_search_and_incremental_index() {
             new: new_head,
             refname: "refs/heads/main".into(),
         }],
+        origin: None,
     }));
     eventually(|| async {
         sqlx::query_scalar::<_, bool>(

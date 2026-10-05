@@ -7,6 +7,7 @@
 import type { MockServer } from '../server';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
+import { installImportMocks } from './imports';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
 import { installRepoNavMocks } from './repoNav';
@@ -19,4 +20,5 @@ export function installExtraMocks(server: MockServer): void {
   installProfileMocks(server);
   installRepoSettingsMocks(server);
   installRepoNavMocks(server);
+  installImportMocks(server);
 }

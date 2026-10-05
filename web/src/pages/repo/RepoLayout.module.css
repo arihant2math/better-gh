@@ -129,3 +129,13 @@
   color: var(--fg);
 }
 
+.mirrored {
+  margin: 0;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.mirrored a {
+  color: var(--fg-muted);
+  text-decoration: underline;
+}

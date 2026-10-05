@@ -167,6 +167,7 @@ const RepoHeader = observer(function RepoHeader({ repo, base }: { repo: Repo; ba
         </h1>
         <Tag>{repo.private ? (rest?.is_template ? 'Private template' : 'Private') : rest?.is_template ? 'Public template' : 'Public'}</Tag>
         {repo.archived && <Tag>Archived</Tag>}
+        {repo.mirrorUrl && <Tag>Mirror</Tag>}
         <div className={styles.actions}>
           {rest?.is_template && signedIn && (
             <Button size="sm" variant="success" leadingIcon={RepoTemplateIcon} onClick={() => navigate(`/new?template_owner=${encodeURIComponent(repo.owner)}&template_name=${encodeURIComponent(repo.name)}`)}>
@@ -206,8 +207,16 @@ const RepoHeader = observer(function RepoHeader({ repo, base }: { repo: Repo; ba
           </span>
         </div>
       </div>
-      {(parent || template) && (
+      {(parent || template || repo.mirrorUrl) && (
         <div className={styles.subline}>
+          {repo.mirrorUrl && (
+            <span className={styles.mirrored}>
+              mirrored from{' '}
+              <a href={repo.mirrorUrl} rel="noreferrer noopener" target="_blank">
+                {repo.mirrorUrl}
+              </a>
+            </span>
+          )}
           {parent && (
             <span>
               forked from <Link to={`/${parent.full_name}`}>{parent.full_name}</Link>

@@ -154,6 +154,7 @@ export const TopBar = observer(function TopBar() {
             onSelect: () => repo && ui.openNewIssue(repo.id),
           },
           { id: 'repo', label: 'New repository', onSelect: () => navigate('/new') },
+          { id: 'import', label: 'Import repository', onSelect: () => navigate('/new/import') },
           { id: 'org', label: 'New organization', onSelect: () => navigate('/organizations/new') },
         ]}
       />

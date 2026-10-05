@@ -546,6 +546,7 @@ async fn commit_references_and_closing_keywords() {
             new: sha.clone(),
             refname: "refs/heads/main".into(),
         }],
+        origin: None,
     }));
 
     eventually(|| async {
