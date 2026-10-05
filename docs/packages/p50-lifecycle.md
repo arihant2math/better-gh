@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 P50 account and repo lifecycle: self-service rename with redirects, account/org deletion, repo soft delete + restore, transfers to users with acceptance.
 
 # P50 lifecycle — status

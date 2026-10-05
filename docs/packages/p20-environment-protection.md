@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Environment protection rules, deployment approvals, job deployments, deployment triggers, required_deployments.
 
 # P20 — Environment protection rules and deployment approvals — status
