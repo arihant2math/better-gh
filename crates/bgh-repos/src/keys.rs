@@ -237,8 +237,15 @@ async fn create(
                 "read_only": row.read_only, "deploy_key": true }),
     )
     .await?;
+    let key = render(&state, &access, row);
+    tx.emit(Event::DeployKeyCreated {
+        repo_id: access.repo.id,
+        key_id: id,
+        actor_id: auth.user.id,
+        key: serde_json::to_value(&key)?,
+    });
     tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(render(&state, &access, row))))
+    Ok((StatusCode::CREATED, Json(key)))
 }
 
 /// `GET /repos/{owner}/{repo}/keys/{id}`
@@ -265,6 +272,16 @@ async fn delete(
 ) -> ApiResult<StatusCode> {
     let access = admin_access(&state, &auth, &owner, &repo).await?;
     let mut tx = Tx::begin(&state).await?;
+    // Webhook `deleted` payloads carry the full key: render it first.
+    let row: KeyRow = sqlx::query_as(&format!(
+        "{SELECT} WHERE k.repo_id = $1 AND k.id = $2 FOR UPDATE OF k"
+    ))
+    .bind(access.repo.id)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let key = serde_json::to_value(render(&state, &access, row))?;
     let fingerprint: String = sqlx::query_scalar(
         "DELETE FROM deploy_keys WHERE repo_id = $1 AND id = $2 RETURNING fingerprint",
     )
@@ -273,6 +290,12 @@ async fn delete(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ApiError::NotFound)?;
+    tx.emit(Event::DeployKeyDeleted {
+        repo_id: access.repo.id,
+        key_id: id,
+        actor_id: auth.user.id,
+        key,
+    });
     audit::log(
         &mut *tx,
         Some(&auth.user),
