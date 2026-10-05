@@ -305,12 +305,22 @@ pub fn router() -> Router<AppState> {
             &o("/actions/runners/{runner_id}/labels/{name}"),
             axum::routing::delete(runners::org_item::remove_label),
         )
+        .route(
+            &r("/actions/runners/generate-jitconfig"),
+            post(runners::repo_jitconfig),
+        )
+        .route(
+            &o("/actions/runners/generate-jitconfig"),
+            post(runners::org_jitconfig),
+        )
+        .merge(api::runner_groups::routes())
 }
 
 /// Non-API routes (`/_bgh/actions/...`).
 pub fn web_router() -> Router<AppState> {
     web::routes()
         .merge(ui::routes())
+        .merge(api::site_runners::routes())
         .route(
             "/_bgh/repos/{owner}/{repo}/deployments",
             get(deploy_api::web_summary),

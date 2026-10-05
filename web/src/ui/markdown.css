@@ -164,3 +164,95 @@
   max-height: 640px;
   border-radius: var(--radius);
 }
+
+/* Heading anchors (hover link, GitHub-style). */
+.markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  position: relative;
+}
+
+.markdown-body a.anchor {
+  margin-left: 6px;
+  opacity: 0;
+  text-decoration: none;
+  color: var(--fg-subtle);
+}
+
+.markdown-body a.anchor::before {
+  content: '#';
+}
+
+.markdown-body :is(h1, h2, h3, h4, h5, h6):hover a.anchor,
+.markdown-body a.anchor:focus-visible {
+  opacity: 1;
+}
+
+/* GFM alerts: > [!NOTE] … */
+.markdown-body .markdown-alert {
+  margin-bottom: 12px;
+  padding: 6px 14px;
+  border-left: 3px solid var(--alert, var(--border-strong));
+}
+
+.markdown-body .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body .markdown-alert-title {
+  margin-bottom: 4px;
+  font-weight: var(--fw-semibold);
+  color: var(--alert);
+}
+
+.markdown-body .markdown-alert-note { --alert: var(--accent-fg); }
+.markdown-body .markdown-alert-tip { --alert: var(--success); }
+.markdown-body .markdown-alert-important { --alert: var(--merged); }
+.markdown-body .markdown-alert-warning { --alert: var(--warning); }
+.markdown-body .markdown-alert-caution { --alert: var(--danger); }
+
+/* Footnotes */
+.markdown-body .footnotes {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+.markdown-body sup.footnote-ref a,
+.markdown-body a.footnote-backref {
+  text-decoration: none;
+}
+
+/* Task lists the viewer can edit */
+.markdown-body input.task-list-item-checkbox:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Math (typeset lazily with temml → MathML) and Mermaid diagrams */
+.markdown-body [data-math-style='display'],
+.markdown-body .math-display {
+  display: block;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.markdown-body .mermaid-diagram {
+  margin-bottom: 12px;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.markdown-body .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-body .render-error {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.markdown-body math {
+  font-family: 'STIX Two Math', 'Cambria Math', 'Latin Modern Math', math;
+}

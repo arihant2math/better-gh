@@ -33,6 +33,7 @@ import {
   RateLimitsSection,
   RepositoriesSection,
   RetentionSection,
+  MarkdownSection,
   SignupSection,
   SmtpSection,
 } from './settingsSections';
@@ -215,6 +216,8 @@ export default function SettingsPage() {
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
       case 'actions':
         return <ActionsSection value={draft.actions} onChange={update('actions')} errors={errors} />;
+      case 'markdown':
+        return <MarkdownSection value={draft.markdown} onChange={update('markdown')} errors={errors} />;
     }
   };
 

@@ -22,6 +22,7 @@ uuid.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }

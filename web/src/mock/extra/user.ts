@@ -124,7 +124,8 @@ function publicUser(server: MockServer, u: User): Record<string, unknown> {
 
 function privateUser(server: MockServer): Record<string, unknown> {
   const s = st(server);
-  return { ...publicUser(server, server.viewer), two_factor_authentication: !!s.twoFactor.enabledAt, private_gists: 0, total_private_repos: 0, owned_private_repos: 0, disk_usage: 0, collaborators: 0 };
+  // The mock viewer is a site administrator (site admin pages with a mock backend, e.g. runners).
+  return { ...publicUser(server, server.viewer), site_admin: true, two_factor_authentication: !!s.twoFactor.enabledAt, private_gists: 0, total_private_repos: 0, owned_private_repos: 0, disk_usage: 0, collaborators: 0 };
 }
 
 /** GitHub validation error with several fields. */
