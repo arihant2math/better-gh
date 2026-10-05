@@ -486,3 +486,53 @@ pub async fn force_ref(store: &RepoStore, repo_id: i64, refname: &str, new: &str
     .await?;
     Ok(())
 }
+
+/// Delete an internal ref (`refs/pull/*`); missing refs are fine.
+pub async fn remove_ref(store: &RepoStore, repo_id: i64, refname: &str) -> GitResult<()> {
+    if !refname.starts_with("refs/") || !is_valid_ref_name(refname) {
+        return Err(GitError::InvalidInput(format!("invalid ref {refname:?}")));
+    }
+    let dir = store.git_dir(repo_id)?;
+    cmd::run_status(
+        &store.git_bin,
+        Some(&dir),
+        &["update-ref", "-d", refname],
+        &[],
+    )
+    .await?;
+    Ok(())
+}
+
+/// The test merge commit of a pull request: `head` merged into `base`
+/// (parents base, head), committed by `committer` dated like the head commit
+/// so the same inputs always give the same sha. Points `refname`
+/// (`refs/pull/{n}/merge`) at it, or deletes `refname` and returns `None`
+/// when the merge conflicts.
+pub async fn test_merge(
+    store: &RepoStore,
+    repo_id: i64,
+    refname: &str,
+    base: &str,
+    head: &str,
+    committer: &Identity,
+) -> GitResult<Option<String>> {
+    match merge_tree(store, repo_id, base, head, None).await? {
+        MergeTree::Clean { tree } => {
+            let head_owned = head.to_string();
+            let when = store
+                .read(repo_id, move |r| Ok(r.commit(&head_owned)?.committer.when))
+                .await?;
+            let mut person = Person::from(committer);
+            person.when = when;
+            let msg = format!("Merge {head} into {base}");
+            let sha =
+                commit_tree(store, repo_id, &tree, &[base, head], &msg, &person, &person).await?;
+            force_ref(store, repo_id, refname, &sha).await?;
+            Ok(Some(sha))
+        }
+        MergeTree::Conflict { .. } => {
+            remove_ref(store, repo_id, refname).await?;
+            Ok(None)
+        }
+    }
+}

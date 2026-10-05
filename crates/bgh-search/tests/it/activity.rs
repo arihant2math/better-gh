@@ -650,3 +650,46 @@ async fn review_public_and_edit_events() {
     assert_eq!(rv["review"]["user"]["login"], "bob");
     assert_eq!(rv["pull_request"]["number"], 1);
 }
+
+#[tokio::test]
+async fn timelines_support_polling() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    create_repo(&app, &alice, json!({"name": "demo"})).await;
+    wait_events(&app, 1).await;
+
+    for path in [
+        "/api/v3/events",
+        "/api/v3/repos/alice/demo/events",
+        "/api/v3/users/alice/events/public",
+    ] {
+        let res = app.get(path).send().await;
+        res.assert_status(200);
+        assert_eq!(res.header("x-poll-interval"), Some("60"), "{path}");
+        let lm = res.header("last-modified").expect(path).to_string();
+        assert!(lm.ends_with(" GMT"), "{lm}");
+
+        let res = app.get(path).header("if-modified-since", &lm).send().await;
+        res.assert_status(304);
+        assert_eq!(res.header("x-poll-interval"), Some("60"));
+        assert_eq!(res.header("last-modified"), Some(lm.as_str()));
+        assert_eq!(res.text(), "");
+
+        let res = app
+            .get(path)
+            .header("if-modified-since", "Mon, 01 Jan 2001 00:00:00 GMT")
+            .send()
+            .await;
+        res.assert_status(200);
+        assert_eq!(res.json().as_array().unwrap().len(), 1);
+    }
+
+    // An empty timeline: the interval, no Last-Modified.
+    let res = app.get("/api/v3/orgs/nobody/events").send().await;
+    res.assert_status(404);
+    let bob = app.create_user("bob").await;
+    let res = app.get("/api/v3/users/bob/events").auth(&bob).send().await;
+    res.assert_status(200);
+    assert_eq!(res.header("x-poll-interval"), Some("60"));
+    assert_eq!(res.header("last-modified"), None);
+}

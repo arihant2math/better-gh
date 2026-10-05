@@ -193,6 +193,18 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     if g.loose_objects_threshold <= 0 || g.pack_count_threshold <= 1 || g.max_repos_per_pass <= 0 {
         return Err(bad("git_maintenance"));
     }
+    let r = &s.retention;
+    if [
+        r.notifications_days,
+        r.webhook_payload_days,
+        r.webhook_delivery_days,
+        r.activity_days,
+    ]
+    .iter()
+    .any(|d| *d > 36_500)
+    {
+        return Err(bad("retention"));
+    }
     for d in &s.signup.allowed_email_domains {
         if d.is_empty() || d.contains('@') || d.contains(char::is_whitespace) {
             return Err(bad("signup.allowed_email_domains"));
