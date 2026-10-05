@@ -16,6 +16,9 @@ use crate::perms::Permission;
 use crate::time::{Timestamp, ts};
 use crate::urls::Urls;
 
+/// `integration` (GitHub App) and `installation`.
+pub use crate::apps::{Installation, Integration};
+
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------

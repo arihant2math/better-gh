@@ -2,12 +2,14 @@
 //!
 //! See `docs/BACKEND_PATTERNS.md` for how the pieces fit together.
 
+pub mod apps;
 pub mod audit;
 pub mod auth;
 pub mod bots;
 pub mod config;
 pub mod crypto;
 pub mod db;
+pub mod deployments;
 pub mod error;
 pub mod events;
 pub mod extract;

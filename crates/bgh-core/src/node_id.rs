@@ -45,11 +45,15 @@ pub enum NodeType {
     WorkflowRun,
     Artifact,
     Environment,
+    Deployment,
+    DeploymentStatus,
     ProjectV2,
     ProjectV2Item,
     ProjectV2Field,
     ProjectV2View,
     DraftIssue,
+    /// GitHub App (`Integration`).
+    Integration,
 }
 
 impl NodeType {
@@ -88,11 +92,14 @@ impl NodeType {
         Self::WorkflowRun,
         Self::Artifact,
         Self::Environment,
+        Self::Deployment,
+        Self::DeploymentStatus,
         Self::ProjectV2,
         Self::ProjectV2Item,
         Self::ProjectV2Field,
         Self::ProjectV2View,
         Self::DraftIssue,
+        Self::Integration,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -131,11 +138,14 @@ impl NodeType {
             Self::WorkflowRun => "WorkflowRun",
             Self::Artifact => "Artifact",
             Self::Environment => "Environment",
+            Self::Deployment => "Deployment",
+            Self::DeploymentStatus => "DeploymentStatus",
             Self::ProjectV2 => "ProjectV2",
             Self::ProjectV2Item => "ProjectV2Item",
             Self::ProjectV2Field => "ProjectV2Field",
             Self::ProjectV2View => "ProjectV2View",
             Self::DraftIssue => "DraftIssue",
+            Self::Integration => "Integration",
         }
     }
 

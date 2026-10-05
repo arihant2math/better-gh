@@ -55,7 +55,8 @@ crates/
   bgh-admin/               site administration, audit log
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
   bgh-graphql/             GitHub GraphQL v4 subset (for `gh` CLI, etc.)
-  bgh-actions/             CI: workflow parsing, runner orchestration
+  bgh-actions/             CI: workflow parsing, runner orchestration,
+                           deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
   bgh-server/              binary `bgh`: composes routers, serves web/dist
@@ -253,6 +254,17 @@ and octokit-style raw requests.
   OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
   Basic auth with a password is accepted for git transport only, and never
   for accounts with two-factor authentication.
+* GitHub Apps (`bgh_core::apps`, `bgh_accounts::apps`, P17): an app
+  authenticates with an RS256 JWT (`Bearer`, `iss` = app id or client id,
+  ≤ 10 min) signed by one of its registered keys (only public keys are
+  stored) and acts as its `{slug}[bot]` user (`AuthMethod::App`), limited
+  to the app endpoints by `apps::middleware`. Installation tokens are
+  `bghs_…` `access_tokens` rows (`kind = 'app'`, `installation_id`, 1 h)
+  of the bot user; their scopes carry the installation, the covered
+  repositories and the permission map, so `perms::effective` caps them
+  without a query (`apps::effective_cap`) and `token_permissions` checks
+  categories. They work for git (`x-access-token:<token>`, `contents`
+  required) and get a rate-limit bucket per installation.
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations
