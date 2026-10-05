@@ -364,3 +364,138 @@ pub fn deleted_comment_json(urls: &Urls, ctx: &RepoCtx, issue: &db::Issue, id: i
         "issue_url": urls.issue(ctx.owner_login(), ctx.name(), issue.number),
     })
 }
+
+/// A repository-scoped delivery built with the standard envelope.
+fn delivery(
+    state: &AppState,
+    ctx: &RepoCtx,
+    event: &'static str,
+    action: &str,
+    entries: Vec<(&str, Value)>,
+    sender: Value,
+) -> super::HookEvent {
+    super::HookEvent {
+        event,
+        action: Some(action.to_string()),
+        repo_id: Some(ctx.repo.id),
+        org_id: ctx.org_id(),
+        payload: common::envelope(&state.urls, ctx, Some(action), entries, sender),
+    }
+}
+
+/// `issues` `transferred`, delivered to the old repository: `issue` is the
+/// issue as it was there, `changes` has `new_issue` and `new_repository`.
+pub(super) async fn transferred(
+    state: &AppState,
+    repo_id: i64,
+    issue_id: i64,
+    old_repo_id: i64,
+    old_number: i64,
+    actor_id: i64,
+) -> anyhow::Result<Vec<super::HookEvent>> {
+    let (Some(new_ctx), Some(old_ctx)) = (
+        RepoCtx::load(state, repo_id).await?,
+        RepoCtx::load(state, old_repo_id).await?,
+    ) else {
+        return Ok(Vec::new());
+    };
+    let Some(row) = issue_row(state, &new_ctx, issue_id).await? else {
+        return Ok(Vec::new());
+    };
+    let new_issue = issue_json(state, &new_ctx, &row).await?;
+    let old_row = db::Issue {
+        repo_id: old_repo_id,
+        number: old_number,
+        ..row
+    };
+    let old_issue = issue_json(state, &old_ctx, &old_row).await?;
+    let sender = common::sender(state, Some(actor_id)).await?;
+    Ok(vec![delivery(
+        state,
+        &old_ctx,
+        "issues",
+        "transferred",
+        vec![
+            ("issue", old_issue),
+            (
+                "changes",
+                json!({
+                    "new_issue": new_issue,
+                    "new_repository": new_ctx.repository(&state.urls),
+                }),
+            ),
+        ],
+        sender,
+    )])
+}
+
+/// `sub_issues`: `sub_issue_added`/`removed` to the parent's repository
+/// and `parent_issue_added`/`removed` to the sub-issue's repository.
+pub(super) async fn sub_issues(
+    state: &AppState,
+    parent_id: i64,
+    sub_issue_id: i64,
+    added: bool,
+    actor_id: i64,
+) -> anyhow::Result<Vec<super::HookEvent>> {
+    let repos: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT id, repo_id FROM issues WHERE id = ANY($1)")
+            .bind([parent_id, sub_issue_id])
+            .fetch_all(&state.db)
+            .await?;
+    let repo_of = |id: i64| repos.iter().find(|r| r.0 == id).map(|r| r.1);
+    let (Some(parent_repo), Some(sub_repo)) = (repo_of(parent_id), repo_of(sub_issue_id)) else {
+        return Ok(Vec::new());
+    };
+    let Some(parent_ctx) = RepoCtx::load(state, parent_repo).await? else {
+        return Ok(Vec::new());
+    };
+    let sub_ctx = if sub_repo == parent_repo {
+        parent_ctx.clone()
+    } else {
+        match RepoCtx::load(state, sub_repo).await? {
+            Some(c) => c,
+            None => return Ok(Vec::new()),
+        }
+    };
+    let (Some(parent), Some(sub)) = (
+        issue_row(state, &parent_ctx, parent_id).await?,
+        issue_row(state, &sub_ctx, sub_issue_id).await?,
+    ) else {
+        return Ok(Vec::new());
+    };
+    let parent_json = issue_json(state, &parent_ctx, &parent).await?;
+    let sub_json = issue_json(state, &sub_ctx, &sub).await?;
+    let sender = common::sender(state, Some(actor_id)).await?;
+    let suffix = if added { "added" } else { "removed" };
+    let urls = &state.urls;
+    let to_parent = delivery(
+        state,
+        &parent_ctx,
+        "sub_issues",
+        &format!("sub_issue_{suffix}"),
+        vec![
+            ("sub_issue_id", json!(sub_issue_id)),
+            ("sub_issue", sub_json.clone()),
+            ("sub_issue_repo", sub_ctx.repository(urls)),
+            ("parent_issue_id", json!(parent_id)),
+            ("parent_issue", parent_json.clone()),
+        ],
+        sender.clone(),
+    );
+    let to_sub = delivery(
+        state,
+        &sub_ctx,
+        "sub_issues",
+        &format!("parent_issue_{suffix}"),
+        vec![
+            ("parent_issue_id", json!(parent_id)),
+            ("parent_issue", parent_json),
+            ("parent_issue_repo", parent_ctx.repository(urls)),
+            ("sub_issue_id", json!(sub_issue_id)),
+            ("sub_issue", sub_json),
+        ],
+        sender,
+    );
+    Ok(vec![to_parent, to_sub])
+}
