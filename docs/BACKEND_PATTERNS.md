@@ -215,6 +215,12 @@ Handlers must be idempotent and tolerate deleted rows (return `Ok(())`).
 Errors retry with backoff; panics and timeouts (10 min) count as failures.
 Example: `bgh_repos::jobs::post_receive`.
 
+Long-running services (listeners on other ports, e.g. the SSH server)
+register with `reg.service("name", |state, shutdown| async move { ... })`;
+`bgh serve` starts them (`registry::spawn_services`) and cancels
+`shutdown` on exit. The test harness does **not** start services; tests
+start what they need (e.g. `bgh_repos::ssh::spawn(state, "127.0.0.1:0", token)`).
+
 ## 10. Events
 
 Add variants to `bgh_core::events::Event` (carry ids, not objects; update

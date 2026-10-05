@@ -17,6 +17,7 @@ pub mod git_http;
 pub mod jobs;
 pub mod json;
 pub mod lfs;
+pub mod maintenance;
 pub mod protection;
 pub mod repos;
 pub mod ssh;
@@ -73,5 +74,7 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::delete_storage);
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
+    reg.job(maintenance::pack_refs);
+    reg.on_event("repos.pack_refs", maintenance::on_event);
     reg.service("ssh", ssh::service);
 }

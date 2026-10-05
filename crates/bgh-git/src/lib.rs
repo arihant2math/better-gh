@@ -18,6 +18,7 @@ mod cmd;
 pub mod highlight;
 pub mod lastcommit;
 pub mod lfs;
+pub mod maintenance;
 pub mod objects;
 pub mod pktline;
 pub mod read;

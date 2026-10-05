@@ -100,7 +100,11 @@ pub fn app(state: AppState) -> Router {
     // Don't spend CPU compressing git packs (already compressed) or tiny bodies.
     let compress_when = DefaultPredicate::new()
         .and(SizeAbove::new(256))
-        .and(NotForContentType::const_new("application/x-git"));
+        .and(NotForContentType::const_new("application/x-git"))
+        // Already compressed or binary downloads (archives, LFS objects).
+        .and(NotForContentType::const_new("application/zip"))
+        .and(NotForContentType::const_new("application/x-gzip"))
+        .and(NotForContentType::const_new("application/octet-stream"));
 
     Router::new()
         .route("/healthz", get(healthz))

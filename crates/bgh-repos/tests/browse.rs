@@ -108,6 +108,25 @@ async fn refs_tree_readme_and_last_commits() {
     assert_eq!(r["tags"][0]["name"], "v1.0");
     assert_eq!(r["tags"][0]["sha"], f.c1.as_str(), "tags are peeled");
 
+    // Pushing the default branch warms the root last-commit cache.
+    let id = repo_id(app, &f.alice, "demo").await;
+    let key = app.state.redis_key(&format!("lc:v1:{id}:{}:", f.c2));
+    let mut redis = app.state.redis.clone();
+    let mut warmed = false;
+    for _ in 0..100 {
+        let exists: bool = redis::cmd("EXISTS")
+            .arg(&key)
+            .query_async(&mut redis)
+            .await
+            .unwrap();
+        if exists {
+            warmed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(warmed, "last commits warmed after push");
+
     // Default branch root.
     let res = app.get("/_bgh/repos/alice/demo/tree").send().await;
     res.assert_status(200);
@@ -124,7 +143,7 @@ async fn refs_tree_readme_and_last_commits() {
     assert_eq!(logo["path"], "logo.png");
     assert_eq!(v["entries"][0]["type"], "tree");
     assert!(v["entries"][0]["size"].is_null());
-    assert!(v["last_commits"].is_null(), "not computed yet");
+    assert_eq!(v["last_commits"]["README.md"]["sha"], f.c1.as_str());
     let html = v["readme"]["html"].as_str().unwrap();
     assert_eq!(v["readme"]["name"], "README.md");
     assert!(
@@ -195,6 +214,13 @@ async fn refs_tree_readme_and_last_commits() {
     assert_eq!(v["path"], "docs");
     assert_eq!(names(&v), ["guide.md"]);
     assert!(v["readme"].is_null());
+    // Now inlined in the listing (cached).
+    let v = app
+        .get("/_bgh/repos/alice/demo/tree/feature/x/docs")
+        .send()
+        .await
+        .json();
+    assert_eq!(v["last_commits"]["guide.md"]["sha"], f.c3.as_str());
 
     // Tag and annotated tag resolution.
     let v = app
@@ -576,4 +602,38 @@ async fn empty_repository() {
         .assert_status(404);
     let v = app.get("/_bgh/repos/alice/empty/refs").send().await.json();
     assert_eq!(v["branches"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn loose_refs_are_packed_after_push() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    app.create_repo(&alice, "tags").await;
+    let tmp = tempfile::tempdir().unwrap();
+    let w = tmp.path();
+    init_work(w).await;
+    commit_files(w, &[("a", b"a")], "a", ("A", "a@example.com")).await;
+    for i in 0..70 {
+        ok(git(w, &["tag", "-a", &format!("v0.{i}"), "-m", "t"]).await);
+    }
+    let mut events = app.state.events.subscribe();
+    push(&app, &alice, w, "alice", "tags", &["main", "--tags"]).await;
+    // The listener sees the push event and enqueues `repos.pack_refs`.
+    events.recv().await.unwrap();
+    let id = repo_id(&app, &alice, "tags").await;
+    let path = bgh_repos::store(&app.state).path(id);
+    for _ in 0..50 {
+        if app.drain_jobs().await > 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(path.join("packed-refs").exists());
+    assert!(bgh_git::maintenance::loose_ref_count(&path, 100) < 5);
+    let v = app.get("/_bgh/repos/alice/tags/refs").send().await.json();
+    assert_eq!(v["tags"].as_array().unwrap().len(), 70);
+    assert_eq!(
+        v["tags"][0]["name"], "v0.69",
+        "version-sorted, newest first"
+    );
 }

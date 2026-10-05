@@ -1,6 +1,6 @@
 //! Directory listings and last-commit-per-entry.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -39,7 +39,7 @@ pub struct TreeView {
     pub entries: Vec<Entry>,
     /// Last commit per entry name when already computed (otherwise fetch
     /// `tree-commits/{commit}/{path}`).
-    pub last_commits: Option<HashMap<String, CommitSummary>>,
+    pub last_commits: Option<BTreeMap<String, CommitSummary>>,
     pub readme: Option<Readme>,
 }
 
@@ -168,7 +168,7 @@ pub struct LastCommits {
     pub path: String,
     /// Entry name → last commit. Entries whose commit could not be found
     /// within the walk limit are absent.
-    pub entries: HashMap<String, CommitSummary>,
+    pub entries: BTreeMap<String, CommitSummary>,
 }
 
 /// Compute (or fetch from cache) the last-commit map of a directory.
