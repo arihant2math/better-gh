@@ -215,6 +215,23 @@ async fn label_and_topic_search() {
     let bob = app.create_user("bob").await;
     let demo = create_repo(&app, &alice, json!({"name": "demo"})).await;
     let secret = create_repo(&app, &alice, json!({"name": "secret", "private": true})).await;
+    // Start from no labels (bgh-issues adds GitHub's defaults asynchronously).
+    for _ in 0..200 {
+        let n: i64 = sqlx::query_scalar("SELECT count(*) FROM labels WHERE repo_id = ANY($1)")
+            .bind(vec![demo, secret])
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+        if n >= 18 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    sqlx::query("DELETE FROM labels WHERE repo_id = ANY($1)")
+        .bind(vec![demo, secret])
+        .execute(&app.state.db)
+        .await
+        .unwrap();
     for (name, desc) in [
         ("bug", "Something is broken"),
         ("good first issue", "Easy"),

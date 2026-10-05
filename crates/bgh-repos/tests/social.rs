@@ -62,8 +62,8 @@ async fn star_unstar_and_counts() {
     let ev = events.recv().await.unwrap();
     assert_eq!(ev.name(), "repository_starred");
     let synced: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM sync_actions WHERE scope = $1 AND model = 'repository'
-            AND (data->>'stargazers_count')::bigint = 2",
+        "SELECT count(*) FROM sync_actions WHERE scope = $1 AND model = 'repo'
+            AND (data->>'stars')::bigint = 2",
     )
     .bind(format!("repo:{repo_id}"))
     .fetch_one(&app.state.db)

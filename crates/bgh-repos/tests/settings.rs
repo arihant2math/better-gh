@@ -115,7 +115,7 @@ async fn update_settings() {
 
     // Sync + audit trail.
     let n: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM sync_actions WHERE scope = $1 AND model = 'repository' AND action = 'U'",
+        "SELECT count(*) FROM sync_actions WHERE scope = $1 AND model = 'repo' AND action = 'U'",
     )
     .bind(format!("repo:{}", v["id"]))
     .fetch_one(&app.state.db)

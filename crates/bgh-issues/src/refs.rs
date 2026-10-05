@@ -334,9 +334,13 @@ async fn commit_refs(
         let Some(issue) = resolve_ref(&mut tx, state, info, r, pusher.as_ref()).await? else {
             continue;
         };
+        // A pull request's own merge commit ("Merge pull request #n ...")
+        // is shown as `merged`, not as a reference (like GitHub).
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM issue_events WHERE issue_id = $1
-                AND event = 'referenced' AND commit_id = $2)",
+                AND event = 'referenced' AND commit_id = $2)
+             OR EXISTS (SELECT 1 FROM pull_requests WHERE issue_id = $1
+                AND merge_commit_sha = $2)",
         )
         .bind(issue.id)
         .bind(sha)
