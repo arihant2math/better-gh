@@ -298,7 +298,7 @@ not part of the bootstrap. A client loads them per PR with
 `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (same envelope as partial sync:
 `{lastSyncId, models}` with `reviewComment`, `review` (incl. the viewer's
 pending one), `reaction`, `checkSuite`, `checkRun`, `commitStatus` of the
-head commit, `user`). Clients that don't know a model ignore its deltas.
+head commit, the viewer's `viewedFile` rows, `user`). Clients that don't know a model ignore its deltas.
 Pending reviews and their comments are never broadcast: writes to them
 return the rows in the response (see `TxApply` in `web/src/sync/transactions.ts`).
 The `issue` row of a PR additionally carries `mergeCommitSha`, `rebaseable`,
@@ -363,6 +363,11 @@ are built by the same shape loader as everything else
   `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
   conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
   state, context, description, targetUrl, creatorId, createdAt`).
+* `viewedFile` (P38; delta-only, in the owner's `user:{userId}` scope): `id,
+  repoId, issueId, userId, path, blobSha, updatedAt` — a PR file the user
+  marked "Viewed"; it counts as viewed only while the PR diff entry's `sha`
+  equals `blobSha`. Unmarking records a `D`. The PR page loads the viewer's
+  rows from `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (`models.viewedFile`).
 * `repoImport` (delta-only, `repo:{repoId}`): `id, repoId, status, phase,
   error` when a repository import changes status (queued, importing,
   complete, failed, cancelled). Progress counters are polled from

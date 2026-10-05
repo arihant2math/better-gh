@@ -37,6 +37,7 @@ export interface RestCommit {
     committer: { name: string; date: string };
   };
   author: RestUser | null;
+  parents?: { sha: string }[];
 }
 
 /** `GET /_bgh/repos/{o}/{r}/pulls/{n}/requirements` (merge box data). */

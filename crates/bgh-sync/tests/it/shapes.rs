@@ -256,6 +256,14 @@ async fn deltas_equal_bootstrap_shapes() {
         201,
     )
     .await;
+    // pulls (P38): bob marks a file viewed (private `viewedFile` row).
+    ok(
+        app.put(&format!("/_bgh/repos/acme/app/pulls/{pr_number}/viewed"))
+            .auth(&bob)
+            .json(&json!({"path": "hello.txt"})),
+        200,
+    )
+    .await;
     ok(
         app.post(&format!("/api/v3/repos/acme/app/statuses/{head_sha}"))
             .auth(&ada)

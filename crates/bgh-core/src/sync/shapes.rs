@@ -50,10 +50,12 @@ pub enum Model {
     CheckRun,
     CheckSuite,
     CommitStatus,
+    /// The viewer's "Viewed" PR files (`user:{id}` scope, P38).
+    ViewedFile,
 }
 
 impl Model {
-    pub const ALL: [Model; 17] = [
+    pub const ALL: [Model; 18] = [
         Model::User,
         Model::Org,
         Model::Membership,
@@ -71,6 +73,7 @@ impl Model {
         Model::CheckRun,
         Model::CheckSuite,
         Model::CommitStatus,
+        Model::ViewedFile,
     ];
 
     /// Wire name (`"issueEvent"`), also stored in `sync_actions.model`.
@@ -93,6 +96,7 @@ impl Model {
             Self::CheckRun => "checkRun",
             Self::CheckSuite => "checkSuite",
             Self::CommitStatus => "commitStatus",
+            Self::ViewedFile => "viewedFile",
         }
     }
 
@@ -109,7 +113,11 @@ impl Model {
     pub fn is_extension(self) -> bool {
         matches!(
             self,
-            Self::ReviewComment | Self::CheckRun | Self::CheckSuite | Self::CommitStatus
+            Self::ReviewComment
+                | Self::CheckRun
+                | Self::CheckSuite
+                | Self::CommitStatus
+                | Self::ViewedFile
         )
     }
 }
@@ -538,6 +546,21 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'createdAt', bgh_ts(cs.created_at))::text AS j
                FROM commit_statuses cs WHERE {}",
             col("cs", filter, &[("ids", "id"), ("repos", "repo_id")])?
+        ),
+        // Private to its user: with a viewer only their rows (the PR page's
+        // `/sync`), without one (recording a delta) any row.
+        Model::ViewedFile => format!(
+            "SELECT 'user:' || vf.user_id AS scope, vf.id, json_build_object(
+                 'id', vf.id, 'repoId', vf.repo_id, 'issueId', vf.pull_id,
+                 'userId', vf.user_id, 'path', vf.path, 'blobSha', vf.blob_sha,
+                 'updatedAt', bgh_ts(vf.updated_at))::text AS j
+               FROM pull_viewed_files vf
+              WHERE {} AND ($2::bigint IS NULL OR vf.user_id = $2)",
+            col(
+                "vf",
+                filter,
+                &[("ids", "id"), ("issues", "pull_id"), ("users", "user_id")]
+            )?
         ),
         Model::ViewerRepo => return None,
     })

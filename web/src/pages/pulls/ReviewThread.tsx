@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { createContext, useContext, useRef, useState } from 'react';
 import { store } from '../../sync';
 import type { Issue, ReactionContent, ReviewComment } from '../../sync/models';
-import { commitSuggestion, deleteReviewComment, editReviewComment, replyToThread, setThreadResolved, toggleReviewCommentReaction } from '../../sync/pullMutations';
+import { deleteReviewComment, editReviewComment, replyToThread, setThreadResolved, toggleReviewCommentReaction } from '../../sync/pullMutations';
 import { isPendingComment, type ReviewThread as Thread } from '../../sync/pullSelectors';
 import { viewerReactions } from '../../sync/viewerReactions';
 import { canWrite } from '../../sync/selectors';
@@ -13,9 +13,10 @@ import { Markdown } from '../../ui/Markdown';
 import { Menu } from '../../ui/Menu';
 import { Popover } from '../../ui/Popover';
 import { RelativeTime } from '../../ui/RelativeTime';
-import { toast } from '../../ui/Toast';
 import { MarkdownEditor } from '../issues/Timeline';
+import { CommitSuggestionsDialog } from './CommitSuggestionsDialog';
 import styles from './Review.module.css';
+import { addToBatch, batchOf, inBatch, removeFromBatch } from './suggestionBatch';
 
 /**
  * Lookup of the current text of `path` lines `start..end` (RIGHT side) for
@@ -252,34 +253,30 @@ const CommentBody = observer(function CommentBody({ comment: c, pr, repo, pendin
 });
 
 const Suggestion = observer(function Suggestion({ text, original, comment, pr, pending }: { text: string; original: string[] | null; comment: ReviewComment; pr: Issue; pending: boolean }) {
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [dialog, setDialog] = useState(false);
   const added = text.replace(/\n$/, '').split('\n');
   const writable = canWrite(pr.repoId) || pr.authorId === store().viewerId;
-  const applicable = writable && pr.state === 'open' && !pr.merged && !comment.outdated && !pending && comment.line != null && comment.side !== 'LEFT';
+  const root = comment.inReplyToId != null ? store().get('reviewComment', comment.inReplyToId) : comment;
+  const applicable = writable && pr.state === 'open' && !pr.merged && !comment.outdated && !pending && comment.id > 0 && comment.line != null && comment.side !== 'LEFT' && !root?.resolvedAt;
+  const batched = inBatch(pr.id, comment.id);
+  const batchSize = batchOf(pr.id).length;
   return (
     <div className={styles.suggestion}>
       <div className={styles.suggestionHeader}>
         <span>Suggested change</span>
         <span className={styles.spacer} />
         {applicable && (
-          <Button
-            size="sm"
-            loading={busy}
-            disabled={done}
-            onClick={() => {
-              setBusy(true);
-              commitSuggestion(pr, comment, text).then(
-                () => {
-                  setDone(true);
-                  toast({ kind: 'success', title: 'Suggestion committed' });
-                },
-                (e: unknown) => toast({ kind: 'error', title: 'Couldn’t commit the suggestion', description: e instanceof Error ? e.message : undefined }),
-              ).finally(() => setBusy(false));
-            }}
-          >
-            {done ? 'Committed' : 'Commit suggestion'}
-          </Button>
+          <>
+            {batchSize === 0 && (
+              <Button size="sm" onClick={() => setDialog(true)}>
+                Commit suggestion
+              </Button>
+            )}
+            <Button size="sm" variant={batched ? 'secondary' : 'ghost'} onClick={() => (batched ? removeFromBatch(pr.id, comment.id) : addToBatch(pr.id, comment.id))}>
+              {batched ? 'Remove from batch' : 'Add suggestion to batch'}
+            </Button>
+            <CommitSuggestionsDialog pr={pr} commentIds={[comment.id]} open={dialog} onClose={() => setDialog(false)} />
+          </>
         )}
       </div>
       <div className={styles.suggestionBody}>
