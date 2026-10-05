@@ -1,12 +1,13 @@
+Integration: ready
+Rulesets UI (repo + org list/editor/insights, import/export, branch badges, mock); gate green after merging the integration branch; org pages need P23's endpoints and show "not available" until P23 lands.
+
 # P24 — Rulesets UI (repo and org)
 
-Status: **UI complete and verified** (branch `bgh/p24-rulesets-ui`). Built
-against GitHub's REST contract; verified end to end against P23's backend
-(`bgh/p23-rulesets`) in a local, unpushed merge. Self-integration waits for
-P23 to land on `claude/sleepy-cray-9jj0t3` (WORKER_GUIDE rule 14); until
-then the org rulesets and Rule insights pages show "not available on this
-server" against the integrated backend (repository rulesets CRUD already
-works there).
+Branch `bgh/p24-rulesets-ui`. Built against GitHub's REST contract and
+verified end to end against P23's backend (`bgh/p23-rulesets`) in a local,
+unpushed merge. Against an integration branch without P23, repository
+rulesets CRUD works and the org rulesets / Rule insights pages show "not
+available on this server".
 
 No backend changes, no migrations (3600–3699 unused).
 
