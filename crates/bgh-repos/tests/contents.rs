@@ -223,8 +223,10 @@ async fn media_types() {
     res.assert_status(200);
     assert_eq!(res.body.as_ref(), &[0, 1, 2, 3, 255]);
     assert_eq!(res.header("content-type"), Some("application/octet-stream"));
-    // TODO: `x-github-media-type: github.v3; param=raw` once bgh-server's
-    // api_headers middleware stops overwriting it.
+    assert_eq!(
+        res.header("x-github-media-type"),
+        Some("github.v3; param=raw")
+    );
 
     let res = app
         .get("/api/v3/repos/alice/r/contents/docs/notes.txt")

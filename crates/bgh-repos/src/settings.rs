@@ -337,14 +337,7 @@ pub async fn update_repo(
         } else {
             "repo.unarchived"
         };
-        audit::log(
-            &mut *tx,
-            Some(&auth.user),
-            action,
-            target,
-            json!({}),
-        )
-        .await?;
+        audit::log(&mut *tx, Some(&auth.user), action, target, json!({})).await?;
     }
     audit::log(
         &mut *tx,

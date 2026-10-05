@@ -73,6 +73,7 @@ Deploy keys & autolinks (`keys.rs`, `autolinks.rs`)
 * `bgh_git::ops` (new): `GitCli` (`RepoStore::cli`), `LogFilter`, `DiffFile`, `LsTreeEntry`, `TreeEdit`/`build_tree` (mktree), `MergeOutcome`/`merge_trees`, `commit_tree`, `write_tag`, `cat_objects`, `fetch_objects`, `dissociate`, `with_objects_of`.
 * `bgh_git::languages` (new), `bgh_git::smart_http::{PushPolicy, receive_pack_with_policy, ensure_hooks, PRE_RECEIVE_HOOK}` (`receive_pack` unchanged, delegates).
 * `bgh_git::objects`: `Deserialize` derives (for caching).
+* `bgh-server` `api_headers`: `X-GitHub-Media-Type` is only defaulted (no longer overwrites `param=raw|html|diff|...` set by handlers).
 * Public helpers other crates may use: `bgh_repos::protection::{RepoRules, Actor, check_update, missing_status_checks}` (B4: merge checks), `bgh_repos::refs::write_ref`, `bgh_repos::keys::parse_public_key`.
 
 ## Caching
@@ -90,4 +91,7 @@ SHA-addressed responses (commits/blobs/trees by full SHA) send
 * Branch rename updates `pull_requests.base_ref/head_ref` of open PRs directly (B4 may want to emit timeline events).
 * List endpoints filtered by readability after paging (`/user/starred`, `/users/{u}/starred`, subscriptions) can return short pages.
 * Ruleset `bypass_mode: pull_request`, `required_signatures` and `update_allows_fetch_and_merge` are stored but not enforced; classic `required_signatures` likewise.
+* Contents: submodules in directory arrays are `type: "file"` (GitHub's documented compat behavior); symlinks to files resolve to the target file; `download_url` carries no token for private repos.
+* Short SHAs are not accepted by `git/blobs|commits|tags/{sha}`.
+* Restriction / bypass users aren't checked for push access on PUT; `apps` are always empty.
 * Raw file route `/{owner}/{repo}/raw/...` lives here (contents `download_url`); B2b (git-transport) must not register it again.
