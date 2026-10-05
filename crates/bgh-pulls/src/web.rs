@@ -477,6 +477,11 @@ pub async fn pull_sync(
     let runs = load_rows(&mut tx, opts, Model::CheckRun, Filter::Ids(&run_ids)).await?;
     let status_rows =
         load_rows(&mut tx, opts, Model::CommitStatus, Filter::Ids(&status_ids)).await?;
+    // The viewer's "Viewed" files (private rows: only with a viewer).
+    let viewed_rows = match viewer {
+        Some(_) => load_rows(&mut tx, opts, Model::ViewedFile, Filter::Issues(&pull_ids)).await?,
+        None => Vec::new(),
+    };
 
     let mut user_ids = BTreeSet::new();
     for (model, rows) in [
@@ -506,6 +511,7 @@ pub async fn pull_sync(
             "checkSuite": suites,
             "checkRun": runs,
             "commitStatus": status_rows,
+            "viewedFile": viewed_rows,
             "user": users,
         }
     })))
