@@ -8,7 +8,17 @@ module areas in `bgh-repos` (`ssh/`, `lfs/`, `browse/`, `download/`,
 ## Status
 
 Complete: all six scope items implemented with integration tests (real
-`git`, `ssh` and `git-lfs` clients); benchmarks recorded below.
+`git`, `ssh` and `git-lfs` clients); benchmarks recorded below. Merged
+with the integration branch (`818812f`); `cargo fmt --check`, `cargo
+clippy --workspace --all-targets --locked -D warnings` and `cargo test
+--workspace --locked` pass.
+
+Tests (`crates/bgh-repos/tests/`): `browse.rs` (8), `download.rs` (4),
+`lfs.rs` (5, incl. git-lfs push/clone/pull/lock), `ssh.rs` (5: clone/push
+v0+v2, permissions, deploy keys, branch protection, git-lfs over SSH, host
+key), `bench.rs` (ignored, env-driven); unit tests in `bgh-git`
+(highlight, blame parser, LFS store, archive names, command parsing...).
+SSH/git-lfs tests skip themselves when `ssh`/`git-lfs` are not installed.
 
 ## Implemented
 
