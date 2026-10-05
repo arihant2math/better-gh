@@ -152,6 +152,169 @@ pub enum Event {
         release_id: i64,
         actor_id: i64,
     },
+    IssueLabeled {
+        repo_id: i64,
+        issue_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    IssueUnlabeled {
+        repo_id: i64,
+        issue_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    IssueAssigned {
+        repo_id: i64,
+        issue_id: i64,
+        assignee_id: i64,
+        actor_id: i64,
+    },
+    IssueUnassigned {
+        repo_id: i64,
+        issue_id: i64,
+        assignee_id: i64,
+        actor_id: i64,
+    },
+    IssueMilestoned {
+        repo_id: i64,
+        issue_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    IssueDemilestoned {
+        repo_id: i64,
+        issue_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    IssueLocked {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    IssueUnlocked {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    IssuePinned {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    IssueUnpinned {
+        repo_id: i64,
+        issue_id: i64,
+        actor_id: i64,
+    },
+    IssueTransferred {
+        /// New repository.
+        repo_id: i64,
+        issue_id: i64,
+        old_repo_id: i64,
+        old_number: i64,
+        actor_id: i64,
+    },
+    IssueMentioned {
+        repo_id: i64,
+        issue_id: i64,
+        /// Set when the mention is in a comment (else the issue body).
+        comment_id: Option<i64>,
+        /// The mentioned user.
+        user_id: i64,
+        actor_id: i64,
+    },
+    IssueCrossReferenced {
+        /// Repository of the referenced issue.
+        repo_id: i64,
+        /// The referenced issue.
+        issue_id: i64,
+        /// Issue (or PR) whose body/comment mentions it.
+        source_issue_id: i64,
+        source_comment_id: Option<i64>,
+        actor_id: i64,
+    },
+    IssueReferenced {
+        repo_id: i64,
+        issue_id: i64,
+        commit_id: String,
+        actor_id: Option<i64>,
+    },
+    SubIssueAdded {
+        /// Repository of the parent issue.
+        repo_id: i64,
+        parent_id: i64,
+        sub_issue_id: i64,
+        actor_id: i64,
+    },
+    SubIssueRemoved {
+        repo_id: i64,
+        parent_id: i64,
+        sub_issue_id: i64,
+        actor_id: i64,
+    },
+    LabelCreated {
+        repo_id: i64,
+        label_id: i64,
+        actor_id: i64,
+    },
+    LabelEdited {
+        repo_id: i64,
+        label_id: i64,
+        actor_id: i64,
+        /// GitHub-style `changes` object.
+        changes: serde_json::Value,
+    },
+    LabelDeleted {
+        repo_id: i64,
+        label_id: i64,
+        name: String,
+        actor_id: i64,
+    },
+    MilestoneCreated {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneEdited {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+        changes: serde_json::Value,
+    },
+    MilestoneClosed {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneOpened {
+        repo_id: i64,
+        milestone_id: i64,
+        actor_id: i64,
+    },
+    MilestoneDeleted {
+        repo_id: i64,
+        milestone_id: i64,
+        number: i64,
+        title: String,
+        actor_id: i64,
+    },
+    ReactionCreated {
+        repo_id: i64,
+        /// `issue` | `issue_comment` | ...
+        subject_type: String,
+        subject_id: i64,
+        reaction_id: i64,
+        actor_id: i64,
+    },
+    ReactionDeleted {
+        repo_id: i64,
+        subject_type: String,
+        subject_id: i64,
+        reaction_id: i64,
+        actor_id: i64,
+    },
     OrgMemberAdded {
         org_id: i64,
         user_id: i64,
@@ -190,6 +353,32 @@ impl Event {
             Self::PullRequestMerged { .. } => "pull_request_merged",
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
+            Self::IssueLabeled { .. } => "issue_labeled",
+            Self::IssueUnlabeled { .. } => "issue_unlabeled",
+            Self::IssueAssigned { .. } => "issue_assigned",
+            Self::IssueUnassigned { .. } => "issue_unassigned",
+            Self::IssueMilestoned { .. } => "issue_milestoned",
+            Self::IssueDemilestoned { .. } => "issue_demilestoned",
+            Self::IssueLocked { .. } => "issue_locked",
+            Self::IssueUnlocked { .. } => "issue_unlocked",
+            Self::IssuePinned { .. } => "issue_pinned",
+            Self::IssueUnpinned { .. } => "issue_unpinned",
+            Self::IssueTransferred { .. } => "issue_transferred",
+            Self::IssueMentioned { .. } => "issue_mentioned",
+            Self::IssueCrossReferenced { .. } => "issue_cross_referenced",
+            Self::IssueReferenced { .. } => "issue_referenced",
+            Self::SubIssueAdded { .. } => "sub_issue_added",
+            Self::SubIssueRemoved { .. } => "sub_issue_removed",
+            Self::LabelCreated { .. } => "label_created",
+            Self::LabelEdited { .. } => "label_edited",
+            Self::LabelDeleted { .. } => "label_deleted",
+            Self::MilestoneCreated { .. } => "milestone_created",
+            Self::MilestoneEdited { .. } => "milestone_edited",
+            Self::MilestoneClosed { .. } => "milestone_closed",
+            Self::MilestoneOpened { .. } => "milestone_opened",
+            Self::MilestoneDeleted { .. } => "milestone_deleted",
+            Self::ReactionCreated { .. } => "reaction_created",
+            Self::ReactionDeleted { .. } => "reaction_deleted",
             Self::OrgMemberAdded { .. } => "org_member_added",
             Self::AccessChanged { .. } => "access_changed",
         }
@@ -215,6 +404,32 @@ impl Event {
             | Self::PullRequestReopened { repo_id, .. }
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
+            | Self::IssueLabeled { repo_id, .. }
+            | Self::IssueUnlabeled { repo_id, .. }
+            | Self::IssueAssigned { repo_id, .. }
+            | Self::IssueUnassigned { repo_id, .. }
+            | Self::IssueMilestoned { repo_id, .. }
+            | Self::IssueDemilestoned { repo_id, .. }
+            | Self::IssueLocked { repo_id, .. }
+            | Self::IssueUnlocked { repo_id, .. }
+            | Self::IssuePinned { repo_id, .. }
+            | Self::IssueUnpinned { repo_id, .. }
+            | Self::IssueTransferred { repo_id, .. }
+            | Self::IssueMentioned { repo_id, .. }
+            | Self::IssueCrossReferenced { repo_id, .. }
+            | Self::IssueReferenced { repo_id, .. }
+            | Self::SubIssueAdded { repo_id, .. }
+            | Self::SubIssueRemoved { repo_id, .. }
+            | Self::LabelCreated { repo_id, .. }
+            | Self::LabelEdited { repo_id, .. }
+            | Self::LabelDeleted { repo_id, .. }
+            | Self::MilestoneCreated { repo_id, .. }
+            | Self::MilestoneEdited { repo_id, .. }
+            | Self::MilestoneClosed { repo_id, .. }
+            | Self::MilestoneOpened { repo_id, .. }
+            | Self::MilestoneDeleted { repo_id, .. }
+            | Self::ReactionCreated { repo_id, .. }
+            | Self::ReactionDeleted { repo_id, .. }
             | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. } => None,
             Self::AccessChanged { repo_id, .. } => *repo_id,
@@ -226,6 +441,7 @@ impl Event {
         match self {
             Self::Push(p) => p.pusher_id,
             Self::PullRequestSynchronized { actor_id, .. } => *actor_id,
+            Self::IssueReferenced { actor_id, .. } => *actor_id,
             Self::RepositoryCreated { actor_id, .. }
             | Self::RepositoryDeleted { actor_id, .. }
             | Self::RepositoryUpdated { actor_id, .. }
@@ -242,6 +458,31 @@ impl Event {
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
+            | Self::IssueLabeled { actor_id, .. }
+            | Self::IssueUnlabeled { actor_id, .. }
+            | Self::IssueAssigned { actor_id, .. }
+            | Self::IssueUnassigned { actor_id, .. }
+            | Self::IssueMilestoned { actor_id, .. }
+            | Self::IssueDemilestoned { actor_id, .. }
+            | Self::IssueLocked { actor_id, .. }
+            | Self::IssueUnlocked { actor_id, .. }
+            | Self::IssuePinned { actor_id, .. }
+            | Self::IssueUnpinned { actor_id, .. }
+            | Self::IssueTransferred { actor_id, .. }
+            | Self::IssueMentioned { actor_id, .. }
+            | Self::IssueCrossReferenced { actor_id, .. }
+            | Self::SubIssueAdded { actor_id, .. }
+            | Self::SubIssueRemoved { actor_id, .. }
+            | Self::LabelCreated { actor_id, .. }
+            | Self::LabelEdited { actor_id, .. }
+            | Self::LabelDeleted { actor_id, .. }
+            | Self::MilestoneCreated { actor_id, .. }
+            | Self::MilestoneEdited { actor_id, .. }
+            | Self::MilestoneClosed { actor_id, .. }
+            | Self::MilestoneOpened { actor_id, .. }
+            | Self::MilestoneDeleted { actor_id, .. }
+            | Self::ReactionCreated { actor_id, .. }
+            | Self::ReactionDeleted { actor_id, .. }
             | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
             Self::AccessChanged { .. } => None,
         }
