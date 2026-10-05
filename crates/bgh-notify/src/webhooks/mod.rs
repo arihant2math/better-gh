@@ -601,6 +601,31 @@ async fn delete(
 ) -> ApiResult<StatusCode> {
     let h = load_hook(state, &owner, id).await?;
     let mut tx = Tx::begin(state).await?;
+    if h.active && h.wants("meta") {
+        let hook_value = serde_json::to_value(hook_json(state, &owner, &h))?;
+        let payload = crate::payloads::meta_deleted(
+            state,
+            h.id,
+            hook_value,
+            owner.repo_id(),
+            owner.org_id(),
+            Some(auth.id()),
+        )
+        .await
+        .map_err(ApiError::internal)?;
+        tx.enqueue(&deliver::DeliverMeta {
+            hook_id: h.id,
+            guid: uuid::Uuid::new_v4(),
+            hook_repo_id: h.repo_id,
+            hook_org_id: h.org_id,
+            url: h.url.clone(),
+            content_type: h.content_type.clone(),
+            secret: h.secret.clone(),
+            insecure_ssl: h.insecure_ssl,
+            payload_raw: serde_json::to_string(&payload)?,
+        })
+        .await?;
+    }
     sqlx::query("DELETE FROM webhooks WHERE id = $1")
         .bind(h.id)
         .execute(&mut *tx)

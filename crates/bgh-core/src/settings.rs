@@ -631,13 +631,7 @@ pub async fn quota_headroom(
         });
     }
     if let Some(limit) = total {
-        let used: i64 = sqlx::query_scalar(
-            "SELECT coalesce(sum(size + lfs_size / 1024), 0)::bigint
-               FROM repositories WHERE owner_id = $1",
-        )
-        .bind(repo.owner_id)
-        .fetch_one(&state.db)
-        .await?;
+        let used = owner_storage_used_kb(state, repo.owner_id).await?;
         let h = QuotaHeadroom {
             remaining_kb: limit - used,
             limit_kb: limit,
@@ -653,6 +647,34 @@ pub async fn quota_headroom(
     Ok(best)
 }
 
+/// Storage an owner uses, in KB: git objects and LFS objects of its
+/// repositories plus its container packages (`packages.size`, bytes).
+pub async fn owner_storage_used_kb(state: &AppState, owner_id: i64) -> ApiResult<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT (coalesce((SELECT sum(size + lfs_size / 1024) FROM repositories WHERE owner_id = $1), 0)
+               + coalesce((SELECT sum(size) FROM packages WHERE owner_id = $1), 0) / 1024)::bigint",
+    )
+    .bind(owner_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
+/// Remaining storage under an owner's total quota (packages have no
+/// per-repository limit), or `None` when no total quota applies.
+pub async fn owner_quota_headroom(
+    state: &AppState,
+    owner_id: i64,
+) -> ApiResult<Option<QuotaHeadroom>> {
+    let (_, total) = storage_limits_kb(state, owner_id).await?;
+    let Some(limit) = total else { return Ok(None) };
+    let used = owner_storage_used_kb(state, owner_id).await?;
+    Ok(Some(QuotaHeadroom {
+        remaining_kb: limit - used,
+        limit_kb: limit,
+        per_repo: false,
+    }))
+}
+
 /// 403 when a push into `repo` must be refused because the repository or
 /// its owner is already over quota (git and LFS storage). Pushes that would
 /// cross the limit are caught later, in the pre-receive hook, by comparing
@@ -662,6 +684,28 @@ pub async fn check_push_quota(state: &AppState, repo: &db::Repository) -> ApiRes
         Some(h) if h.remaining_kb < 0 => Err(ApiError::forbidden(h.message())),
         _ => Ok(()),
     }
+}
+
+/// 403 when storing `add_bytes` more for `owner_id` (user attachments)
+/// would exceed the owner's total storage quota. Repositories (as recorded
+/// after their last push) and existing attachments count towards it.
+pub async fn check_upload_quota(state: &AppState, owner_id: i64, add_bytes: u64) -> ApiResult<()> {
+    let (_, total) = storage_limits_kb(state, owner_id).await?;
+    let Some(limit) = total else { return Ok(()) };
+    let used: i64 = sqlx::query_scalar(
+        "SELECT (SELECT coalesce(sum(size + lfs_size / 1024), 0) FROM repositories WHERE owner_id = $1)::bigint
+              + ((SELECT coalesce(sum(size), 0) FROM attachments WHERE owner_id = $1) / 1024)::bigint",
+    )
+    .bind(owner_id)
+    .fetch_one(&state.db)
+    .await?;
+    if used + (add_bytes / 1024) as i64 > limit {
+        return Err(ApiError::forbidden(format!(
+            "The owner is over its storage quota ({} MB).",
+            limit / 1024
+        )));
+    }
+    Ok(())
 }
 
 /// Paths that stay reachable in maintenance mode (status, banner, login).
