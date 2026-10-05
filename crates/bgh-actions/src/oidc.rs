@@ -297,10 +297,10 @@ pub async fn rotate(state: &AppState, force: bool) -> anyhow::Result<Option<Stri
     let set = keys(state).await?;
     let keep_from = set.len().saturating_sub(2);
     for (i, k) in set.iter().enumerate().take(keep_from) {
-        if set[i + 1].created < now - 3600 {
-            if let Err(err) = std::fs::remove_file(&k.file) {
-                tracing::warn!(?err, kid = %k.kid, "removing old OIDC key failed");
-            }
+        if set[i + 1].created < now - 3600
+            && let Err(err) = std::fs::remove_file(&k.file)
+        {
+            tracing::warn!(?err, kid = %k.kid, "removing old OIDC key failed");
         }
     }
     tracing::info!(%kid, "rotated Actions OIDC signing key");
