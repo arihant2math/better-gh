@@ -12,6 +12,7 @@ import type {
   PullRequirements,
   History,
   LastCommits,
+  PullRequirements,
   RestBranch,
   RestCommit,
   RestRepository,

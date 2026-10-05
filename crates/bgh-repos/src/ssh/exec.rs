@@ -39,7 +39,11 @@ async fn authorize(
         Principal::User { ctx, .. } => {
             let access = RepoAccess::load(state, Some(ctx), owner, repo)
                 .await
-                .map_err(|_| not_found())?;
+                .map_err(|e| match e {
+                    // e.g. "Repository access blocked." for disabled repos
+                    ApiError::Forbidden(m) => format!("ERROR: {m}\n"),
+                    _ => not_found(),
+                })?;
             if write && access.permission < Permission::Write {
                 return Err(denied(&ctx.user.login));
             }
@@ -175,6 +179,13 @@ where
         .await
         .map_err(|e| internal(&e)),
         Command::ReceivePack { .. } => {
+            // Same storage quota as git over HTTP (bgh_core::settings).
+            if let Err(e) = bgh_core::settings::check_push_quota(state, &authz.access.repo).await {
+                return Err(match e {
+                    ApiError::Forbidden(m) => format!("ERROR: {m}\n"),
+                    other => internal(&other),
+                });
+            }
             let adv = smart_http::advertise_refs(
                 &store,
                 repo_id,

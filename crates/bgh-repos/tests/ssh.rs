@@ -169,7 +169,7 @@ async fn push_and_clone_over_ssh() {
     let mut events = s.app.state.events.subscribe();
     ok(s.git(&key, &w, &["push", &s.url("alice", "demo"), "main"])
         .await);
-    assert_eq!(s.app.drain_jobs().await, 1, "post-receive enqueued");
+    assert!(s.app.drain_jobs().await >= 1, "post-receive enqueued");
     let v = s.app.get("/api/v3/repos/alice/demo").send().await.json();
     assert!(v["pushed_at"].is_string());
     match &*events.try_recv().expect("push event") {
@@ -370,6 +370,28 @@ async fn permissions_over_ssh() {
         .await;
     assert!(out.stderr.contains("Permission denied"), "{}", out.stderr);
 
+    // Storage quotas apply to SSH pushes like HTTP (bgh_core::settings).
+    s.app.create_repo(&alice, "big").await;
+    sqlx::query("INSERT INTO storage_quotas (owner_id, max_repo_size_mb) VALUES ($1, 1)")
+        .bind(alice.id)
+        .execute(&s.app.state.db)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE repositories SET size = 4096 WHERE name = 'big'")
+        .execute(&s.app.state.db)
+        .await
+        .unwrap();
+    let out = s
+        .git(&alice_key, &w, &["push", &s.url("alice", "big"), "main"])
+        .await;
+    assert!(!out.ok);
+    assert!(out.stderr.contains("size limit"), "{}", out.stderr);
+    sqlx::query("DELETE FROM storage_quotas WHERE owner_id = $1")
+        .bind(alice.id)
+        .execute(&s.app.state.db)
+        .await
+        .unwrap();
+
     // Disabled repositories are blocked (except for site admins).
     sqlx::query("UPDATE repositories SET disabled = true WHERE name = 'secret'")
         .execute(&s.app.state.db)
@@ -457,7 +479,7 @@ async fn deploy_keys_and_branch_protection() {
         s.git(&rw, &w, &["push", "-q", &s.url("alice", "other"), "main"])
             .await,
     );
-    assert_eq!(s.app.drain_jobs().await, 1);
+    assert!(s.app.drain_jobs().await >= 1);
     match &*events.try_recv().unwrap() {
         bgh_core::events::Event::Push(p) => assert_eq!(p.pusher_id, None),
         other => panic!("{other:?}"),

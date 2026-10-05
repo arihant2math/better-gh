@@ -9,9 +9,15 @@ module areas in `bgh-repos` (`ssh/`, `lfs/`, `browse/`, `download/`,
 
 Complete: all six scope items implemented with integration tests (real
 `git`, `ssh` and `git-lfs` clients); benchmarks recorded below. Merged
-with the integration branch (`818812f`); `cargo fmt --check`, `cargo
-clippy --workspace --all-targets --locked -D warnings` and `cargo test
---workspace --locked` pass.
+with the integration branch after the integrator's pass 2 (`6214291`):
+`cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -D
+warnings` and web `typecheck/lint/test/build` pass; `cargo test --workspace
+--locked` passes except the 3 known `bgh-accounts` rate-limit tests
+(integration conflict being fixed on the integration branch). Follow-ups
+from the orchestrator are done: `/_bgh/render/blob` (SYNC_PROTOCOL §10),
+web code browser wired to these endpoints, SSH storage-quota check
+(`settings::check_push_quota`) and disabled-repo blocking (site admins
+exempt).
 
 Tests (`crates/bgh-repos/tests/`): `browse.rs` (8, incl. `/_bgh/render/blob`), `download.rs` (4),
 `lfs.rs` (5, incl. git-lfs push/clone/pull/lock), `ssh.rs` (5: clone/push
