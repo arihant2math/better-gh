@@ -77,20 +77,17 @@ fn parse_languages(v: &Value) -> Vec<(String, u64)> {
 }
 
 /// Enqueue a languages computation unless one is already pending.
-pub async fn enqueue_languages(
-    db: impl sqlx::PgExecutor<'_> + Copy,
-    repo_id: i64,
-) -> ApiResult<()> {
+pub async fn enqueue_languages(conn: &mut sqlx::PgConnection, repo_id: i64) -> ApiResult<()> {
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM jobs WHERE kind = $1 AND failed_at IS NULL
                           AND (payload->>'repo_id')::bigint = $2)",
     )
     .bind(ComputeLanguages::KIND)
     .bind(repo_id)
-    .fetch_one(db)
+    .fetch_one(&mut *conn)
     .await?;
     if !pending {
-        bgh_core::jobs::enqueue_job(db, &ComputeLanguages { repo_id }).await?;
+        bgh_core::jobs::enqueue_job(&mut *conn, &ComputeLanguages { repo_id }).await?;
     }
     Ok(())
 }
@@ -118,7 +115,8 @@ async fn languages(
         (None, Some(_)) => false,
     };
     if !fresh {
-        enqueue_languages(&state.db, access.repo.id).await?;
+        let mut conn = state.db.acquire().await?;
+        enqueue_languages(&mut conn, access.repo.id).await?;
     }
     let langs = match (row, head) {
         (Some(r), Some(_)) => parse_languages(&r.languages),
@@ -283,7 +281,7 @@ async fn contributors(
             ));
         }
     }
-    items.sort_by(|a, b| b.0.cmp(&a.0));
+    items.sort_by_key(|i| std::cmp::Reverse(i.0));
     let total = items.len() as i64;
     let page: Vec<Value> = items
         .into_iter()

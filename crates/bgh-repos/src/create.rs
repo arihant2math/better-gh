@@ -190,6 +190,15 @@ async fn create(
         _ => e.into(),
     })?;
 
+    // A new repository takes over a redirect left by a rename/transfer.
+    sqlx::query(
+        "DELETE FROM repo_redirects WHERE lower(owner_login) = lower($1) AND lower(name) = lower($2)",
+    )
+    .bind(&owner.login)
+    .bind(&repo.name)
+    .execute(&mut *tx)
+    .await?;
+
     // The creator watches the new repository (like GitHub).
     sqlx::query("INSERT INTO watches (user_id, repo_id) VALUES ($1, $2)")
         .bind(auth.user.id)

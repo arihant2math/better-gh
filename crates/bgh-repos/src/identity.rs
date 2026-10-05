@@ -92,7 +92,7 @@ pub fn parse_date(s: &str) -> Option<DateTime<Utc>> {
 
 #[derive(sqlx::FromRow)]
 struct EmailUser {
-    email: String,
+    matched_email: String,
     #[sqlx(flatten)]
     user: db::User,
 }
@@ -112,7 +112,7 @@ pub async fn users_by_email<'a>(
         return Ok(out);
     }
     let rows: Vec<EmailUser> = sqlx::query_as(&format!(
-        "SELECT e.email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
+        "SELECT e.email AS matched_email, {} FROM user_emails e JOIN users u ON u.id = e.user_id
           WHERE lower(e.email) = ANY($1) AND e.verified",
         db::prefixed("u", db::User::COLUMNS)
     ))
@@ -120,7 +120,7 @@ pub async fn users_by_email<'a>(
     .fetch_all(&state.db)
     .await?;
     for r in rows {
-        out.insert(r.email.to_ascii_lowercase(), r.user);
+        out.insert(r.matched_email.to_ascii_lowercase(), r.user);
     }
     // noreply addresses: `{id}+{login}@users.noreply.{host}`
     let suffix = format!("@users.noreply.{}", state.config.hostname()).to_ascii_lowercase();

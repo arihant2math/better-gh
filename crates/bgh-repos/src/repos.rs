@@ -37,6 +37,10 @@ pub async fn delete_repo(
     let repo = &access.repo;
 
     let mut tx = Tx::begin(&state).await?;
+    let forks: Vec<i64> = sqlx::query_scalar("SELECT id FROM repositories WHERE parent_id = $1")
+        .bind(repo.id)
+        .fetch_all(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM repositories WHERE id = $1")
         .bind(repo.id)
         .execute(&mut *tx)
@@ -68,7 +72,11 @@ pub async fn delete_repo(
         &json!({ "id": repo.id }),
     )
     .await?;
-    tx.enqueue(&DeleteStorage { repo_id: repo.id }).await?;
+    tx.enqueue(&DeleteStorage {
+        repo_id: repo.id,
+        forks,
+    })
+    .await?;
     tx.emit(Event::RepositoryDeleted {
         repo_id: repo.id,
         owner_id: repo.owner_id,
@@ -92,30 +100,55 @@ pub struct ListParams {
     /// `all` | `public` | `private` | `owner` | `member` | `forks` | `sources`
     #[serde(rename = "type")]
     pub kind: Option<String>,
+    /// `/user/repos`: only repositories updated after / before.
+    pub since: Option<String>,
+    pub before: Option<String>,
 }
 
 impl ListParams {
     /// Whitelisted ORDER BY clause (alias `r` = repositories, `o` = owner).
-    fn order_by(&self) -> String {
-        let sort = self.sort.as_deref().unwrap_or("full_name");
+    fn order_by(&self, default_sort: &str) -> ApiResult<String> {
+        let sort = self.sort.as_deref().unwrap_or(default_sort);
         let (expr, default_dir) = match sort {
             "created" => ("r.created_at", "desc"),
             "updated" => ("r.updated_at", "desc"),
             "pushed" => ("r.pushed_at", "desc"),
-            _ => ("lower(o.login), lower(r.name)", "asc"),
+            "full_name" => ("", "asc"),
+            _ => {
+                return Err(ApiError::invalid_field(FieldError::invalid(
+                    "Repository",
+                    "sort",
+                )));
+            }
         };
         let dir = match self.direction.as_deref() {
             Some("asc") => "ASC",
             Some("desc") => "DESC",
-            _ if default_dir == "asc" => "ASC",
-            _ => "DESC",
+            None if default_dir == "asc" => "ASC",
+            None => "DESC",
+            Some(_) => {
+                return Err(ApiError::invalid_field(FieldError::invalid(
+                    "Repository",
+                    "direction",
+                )));
+            }
         };
-        if expr.contains(',') {
-            format!("lower(o.login) {dir}, lower(r.name) {dir}, r.id")
+        Ok(if expr.is_empty() {
+            format!("lower(o.login) {dir}, lower(r.name) {dir}, r.id {dir}")
         } else {
             format!("{expr} {dir} NULLS LAST, r.id {dir}")
-        }
+        })
     }
+}
+
+/// Bound values of the generated list queries: `$1` user, `$2` owner,
+/// `$3` since, `$4` before (then limit/offset).
+#[derive(Default)]
+struct Binds {
+    user: i64,
+    owner: i64,
+    since: Option<chrono::DateTime<chrono::Utc>>,
+    before: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 async fn page_of(
@@ -124,17 +157,21 @@ async fn page_of(
     p: &Pagination,
     sql_where: &str,
     order: &str,
-    bind_user: i64,
-    bind_owner: Option<i64>,
+    binds: Binds,
 ) -> ApiResult<Page<MinimalRepository>> {
     let cols = db::prefixed("r", db::Repository::COLUMNS);
     let sql = format!(
         "SELECT {cols} FROM repositories r JOIN users o ON o.id = r.owner_id
-          WHERE {sql_where} ORDER BY {order} LIMIT $3 OFFSET $4"
+          WHERE ({sql_where})
+            AND ($3::timestamptz IS NULL OR r.updated_at > $3)
+            AND ($4::timestamptz IS NULL OR r.updated_at < $4)
+          ORDER BY {order} LIMIT $5 OFFSET $6"
     );
     let rows: Vec<db::Repository> = sqlx::query_as(&sql)
-        .bind(bind_user)
-        .bind(bind_owner.unwrap_or(0))
+        .bind(binds.user)
+        .bind(binds.owner)
+        .bind(binds.since)
+        .bind(binds.before)
         .bind(p.limit_plus_one())
         .bind(p.offset())
         .fetch_all(&state.db)
@@ -147,7 +184,28 @@ async fn page_of(
     })
 }
 
-/// `GET /users/{username}/repos`: public repositories of a user.
+fn bad(field: &str) -> ApiError {
+    ApiError::invalid_field(FieldError::invalid("Repository", field))
+}
+
+fn parse_time(field: &str, v: &Option<String>) -> ApiResult<Option<chrono::DateTime<chrono::Utc>>> {
+    match v {
+        None => Ok(None),
+        Some(s) => crate::identity::parse_date(s)
+            .map(Some)
+            .ok_or_else(|| bad(field)),
+    }
+}
+
+/// Repositories where `$1` has a direct collaborator grant.
+const COLLABORATOR: &str =
+    "EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1)";
+/// Repositories of organizations `$1` belongs to.
+const ORG_MEMBER: &str =
+    "EXISTS (SELECT 1 FROM org_members m WHERE m.org_id = r.owner_id AND m.user_id = $1)";
+
+/// `GET /users/{username}/repos` (`type=owner|member|all`, default owner):
+/// public repositories only, like GitHub.
 pub async fn list_for_user(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -158,25 +216,31 @@ pub async fn list_for_user(
     let owner = db::User::find_by_login(&state.db, &username)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let kind_filter = match params.kind.as_deref() {
-        Some("member") => "false",
-        _ => "true",
+    let member = "EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $2)";
+    let who = match params.kind.as_deref() {
+        None | Some("owner") => "r.owner_id = $2".to_string(),
+        Some("member") => member.to_string(),
+        Some("all") => format!("r.owner_id = $2 OR {member}"),
+        Some(_) => return Err(bad("type")),
     };
-    let where_ = format!("r.owner_id = $2 AND r.visibility = 'public' AND {kind_filter}");
+    let where_ = format!("r.visibility = 'public' AND ({who})");
+    let order = params.order_by("full_name")?;
     page_of(
         &state,
         auth.as_ref(),
         &p,
         &where_,
-        &params.order_by(),
-        0,
-        Some(owner.id),
+        &order,
+        Binds {
+            owner: owner.id,
+            ..Default::default()
+        },
     )
     .await
 }
 
-/// `GET /orgs/{org}/repos`: repositories of an organization visible to the
-/// caller.
+/// `GET /orgs/{org}/repos` (`type=all|public|private|forks|sources|member`,
+/// default sort `created`): repositories visible to the caller.
 pub async fn list_for_org(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -188,80 +252,115 @@ pub async fn list_for_org(
         .await?
         .filter(db::User::is_org)
         .ok_or(ApiError::NotFound)?;
-    let vis = match params.kind.as_deref() {
+    let kind = match params.kind.as_deref() {
+        None | Some("all") => "true",
         Some("public") => "r.visibility = 'public'",
         Some("private") => "r.visibility <> 'public'",
         Some("forks") => "r.fork",
         Some("sources") => "NOT r.fork",
-        _ => "true",
+        Some("member") => COLLABORATOR,
+        Some(_) => return Err(bad("type")),
     };
     let member = match auth.user_id() {
         Some(uid) => perms::org_role(&state.db, org.id, uid).await?.is_some(),
         None => false,
     };
-    // Non-members only see public repositories; members' private visibility
-    // is filtered per repo by `views::minimal_repos`.
-    let base = if member {
+    // Outsiders only see public repositories (plus private ones they were
+    // granted access to); per-repo permissions are applied by
+    // `views::minimal_repos`.
+    let base = if member || auth.as_ref().is_some_and(|a| a.user.site_admin) {
         "true"
     } else {
-        "r.visibility = 'public'"
+        "(r.visibility = 'public' OR EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1))"
     };
-    let where_ = format!("r.owner_id = $2 AND {base} AND {vis}");
+    let where_ = format!("r.owner_id = $2 AND {base} AND {kind}");
+    let order = params.order_by("created")?;
     page_of(
         &state,
         auth.as_ref(),
         &p,
         &where_,
-        &params.order_by(),
-        0,
-        Some(org.id),
+        &order,
+        Binds {
+            user: auth.user_id().unwrap_or(0),
+            owner: org.id,
+            ..Default::default()
+        },
     )
     .await
 }
 
 /// `GET /user/repos`: repositories the caller owns, collaborates on, or can
-/// access through organization membership.
+/// access through organization membership (`visibility`, `affiliation`,
+/// `type`, `sort`, `direction`, `since`, `before`).
 pub async fn list_for_authenticated_user(
     State(state): State<AppState>,
     auth: RequireUser,
     p: Pagination,
     Query(params): Query<ListParams>,
 ) -> ApiResult<Page<MinimalRepository>> {
-    let aff = params
-        .affiliation
-        .clone()
-        .unwrap_or_else(|| "owner,collaborator,organization_member".into());
+    if params.kind.is_some() && (params.visibility.is_some() || params.affiliation.is_some()) {
+        return Err(ApiError::unprocessable(
+            "If you specify visibility or affiliation, you cannot specify type.",
+        ));
+    }
     let mut affiliations = Vec::new();
-    for a in aff.split(',').map(str::trim) {
-        match a {
-            "owner" => affiliations.push("r.owner_id = $1"),
-            "collaborator" => affiliations
-                .push("EXISTS (SELECT 1 FROM collaborators c WHERE c.repo_id = r.id AND c.user_id = $1)"),
-            "organization_member" => affiliations.push(
-                "EXISTS (SELECT 1 FROM org_members m WHERE m.org_id = r.owner_id AND m.user_id = $1)",
-            ),
-            _ => {
-                return Err(ApiError::invalid_field(FieldError::invalid("Repository", "affiliation")));
-            }
-        }
-    }
-    if params.kind.as_deref() == Some("owner") {
-        affiliations = vec!["r.owner_id = $1"];
-    }
-    let vis = match params.visibility.as_deref() {
+    let mut vis = match params.visibility.as_deref() {
+        None | Some("all") => "true",
         Some("public") => "r.visibility = 'public'",
         Some("private") => "r.visibility <> 'public'",
-        _ => "true",
+        Some(_) => return Err(bad("visibility")),
     };
+    match params.kind.as_deref() {
+        None => {
+            let aff = params
+                .affiliation
+                .as_deref()
+                .unwrap_or("owner,collaborator,organization_member");
+            for a in aff.split(',').map(str::trim).filter(|a| !a.is_empty()) {
+                affiliations.push(match a {
+                    "owner" => "r.owner_id = $1",
+                    "collaborator" => COLLABORATOR,
+                    "organization_member" => ORG_MEMBER,
+                    _ => return Err(bad("affiliation")),
+                });
+            }
+        }
+        Some("all") => affiliations = vec!["r.owner_id = $1", COLLABORATOR, ORG_MEMBER],
+        Some("owner") => affiliations = vec!["r.owner_id = $1"],
+        Some("public") => {
+            affiliations = vec!["r.owner_id = $1", COLLABORATOR, ORG_MEMBER];
+            vis = "r.visibility = 'public'";
+        }
+        Some("private") => {
+            affiliations = vec!["r.owner_id = $1", COLLABORATOR, ORG_MEMBER];
+            vis = "r.visibility <> 'public'";
+        }
+        Some("member") => affiliations = vec![COLLABORATOR, ORG_MEMBER],
+        Some(_) => return Err(bad("type")),
+    }
+    if affiliations.is_empty() {
+        return Err(bad("affiliation"));
+    }
     let where_ = format!("({}) AND {vis}", affiliations.join(" OR "));
+    let where_ = if params.kind.as_deref() == Some("member") {
+        format!("{where_} AND r.owner_id <> $1")
+    } else {
+        where_
+    };
+    let order = params.order_by("full_name")?;
     page_of(
         &state,
         Some(&auth),
         &p,
         &where_,
-        &params.order_by(),
-        auth.user.id,
-        None,
+        &order,
+        Binds {
+            user: auth.user.id,
+            since: parse_time("since", &params.since)?,
+            before: parse_time("before", &params.before)?,
+            ..Default::default()
+        },
     )
     .await
 }

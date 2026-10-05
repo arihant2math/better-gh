@@ -53,9 +53,10 @@ pub struct LogFilter {
     /// Commits reachable from `rev` but not from these.
     pub exclude: Vec<String>,
     pub path: Option<String>,
-    /// Author name/email regex (`--author`).
-    pub author: Option<String>,
-    pub committer: Option<String>,
+    /// Author names/emails (literal, any of them matches).
+    pub authors: Vec<String>,
+    /// Committer names/emails (literal, any of them matches).
+    pub committers: Vec<String>,
     pub since: Option<DateTime<Utc>>,
     pub until: Option<DateTime<Utc>>,
     pub skip: usize,
@@ -335,10 +336,10 @@ impl GitCli {
         if f.first_parent {
             args.push("--first-parent".into());
         }
-        if let Some(a) = &f.author {
+        for a in &f.authors {
             args.push(format!("--author={}", regex_escape(a)));
         }
-        if let Some(c) = &f.committer {
+        for c in &f.committers {
             args.push(format!("--committer={}", regex_escape(c)));
         }
         if let Some(s) = f.since {
