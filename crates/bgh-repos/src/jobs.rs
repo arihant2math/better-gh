@@ -111,6 +111,7 @@ pub(crate) async fn process_ref_updates(
     if default_moved {
         crate::stats::enqueue_languages(&mut tx, repo.id).await?;
         crate::insights::refresh_if_cached(&mut tx, repo.id).await?;
+        crate::licenses::enqueue_detect(&mut tx, repo.id).await?;
     }
     if origin != Some(PushEvent::ORIGIN_IMPORT) {
         let git = store.cli(repo.id).ok();

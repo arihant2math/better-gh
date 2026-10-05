@@ -11,6 +11,7 @@ import { installAppsMocks } from './apps';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
+import { installLicenseMocks } from './licenses';
 import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
@@ -25,6 +26,7 @@ export function installExtraMocks(server: MockServer): void {
   installUserMocks(server);
   installDeveloperMocks(server);
   installProfileMocks(server);
+  installLicenseMocks(server);
   installRepoSettingsMocks(server);
   installRulesetMocks(server);
   installRepoNavMocks(server);

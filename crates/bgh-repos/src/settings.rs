@@ -367,6 +367,7 @@ pub async fn update_repo(
         // window so a failure rolls the row back.
         bgh_git::write::set_head(&store, updated.id, branch).await?;
         crate::stats::enqueue_languages(&mut tx, updated.id).await?;
+        crate::licenses::enqueue_detect(&mut tx, updated.id).await?;
     }
     tx.commit().await?;
 
