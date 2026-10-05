@@ -21,3 +21,21 @@ batch landed on `claude/sleepy-cray-9jj0t3` (see `docs/WORKER_GUIDE.md`,
 | 2026-10-05 19:05 | P20 environment-protection (e45130e), P50 lifecycle | green. Fixes: P20 vs P42/P65 additive (node_id, events arms, notify coverage samples, actions tests mod); P50: mail.rs templates re-spliced (repo_transfer re-inserted whole), twofa confirm_password kept pub, mock index | `3a674e0` | rust 1214 passed / 16 ignored; web 532 passed |
 | 2026-10-05 19:05 | P49 saml-scim | bounced: 13 conflict hunks with P36 (LoginPage passkey/2FA vs SAML SSO, settings auth_providers, accounts lib/Cargo.toml) | — | — |
 | 2026-10-05 19:15 | P25 signatures (f21ecec gated, then 2dd3b35 docs-only merge), P46 github-apps-2 (25c6793) | green. P25 vs P20 in bgh-pulls protection.rs resolved keeping both facts/checks (required_deployments + required_signatures); bgh-repos web_router both; ARCHITECTURE both; Cargo.lock regenerated | `98abd45` | rust 1236 passed / 16 ignored; web 537 passed |
+| 2026-10-05 20:05 | P49 saml-scim (3b12ace) | green after 3 integration fixes: Cargo.lock regenerated; scripts/gh-compat.sh P23+P33 both created the org fixture (2nd → 422, FX_ORG reset) → P33 block reuses it (FX_ORG_TEAM); bgh-pulls tests settle() now waits for event listeners (merge::synchronize_on_push_force_push_and_outdated_comments raced the pulls.push listener under load); web mock/extra split into extra/more.ts (extra chunk 61.6 KB > 60 KB lazy budget) | `8a02881` | rust 1264 passed / 16 ignored; web 545 passed |
+
+## Final gate (queue drained)
+
+Head `8a02881` on `claude/sleepy-cray-9jj0t3`; every `origin/bgh/p*` branch is an ancestor.
+
+| Check | Result |
+|---|---|
+| `cargo fmt --all --check` | ok |
+| `cargo clippy --workspace --all-targets -- -D warnings` | ok |
+| `cargo test --workspace --no-fail-fast` | 1264 passed, 0 failed, 16 ignored (67 test targets) |
+| web `typecheck`, `lint` | ok |
+| web `npm test` | 545 passed (94 files) |
+| web `build` + budget | ok: initial JS 145.7 KB gzip (≤150), CSS 9.2 KB, largest lazy chunk under 60 KB, 94 diagram chunks |
+| `scripts/api-smoke.sh` | 45 passed, 0 failed, 0 skipped |
+| `scripts/gh-compat.sh` | 73 passed, 0 failed, 0 skipped |
+
+Landed in phase 4 via the queue: P05 P07 P14 P16 P18 P20 P22 P23 P24 P25 P27 P28 P29 P31 P33 P34 P35 P36 P37 P38 P41 P42 P46 P47 P49 P50 P51 P61 P65. Dropped: none. Open FYI (not blocking): P37's DiffSource ignores P38's commit-range selection (told P38).
