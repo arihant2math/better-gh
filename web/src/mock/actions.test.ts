@@ -136,6 +136,9 @@ describe('mock actions', () => {
     let streamed: Promise<{ event: string; data: unknown }[]> | null = null;
     for (let i = 0; i < 400 && mock.activeRuns().includes(runId); i++) {
       mock.tick((t += 1000));
+      // Production requires a review (environment protection rules).
+      const pending = await get<{ environment: { id: number } }[]>(s, `${BASE}/actions/runs/${runId}/pending_deployments`);
+      if (pending.body.length) await post(s, `${BASE}/actions/runs/${runId}/pending_deployments`, { environment_ids: pending.body.map((p) => p.environment.id), state: 'approved' });
       if (!streamed) {
         const jobs = await get<{ jobs: WorkflowJob[] }>(s, `${BASE}/actions/runs/${runId}/jobs`);
         const first = jobs.body.jobs[0];

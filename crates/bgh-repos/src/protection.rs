@@ -46,13 +46,16 @@ pub struct ProtectionRow {
     pub allow_fork_syncing: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// "Require deployments to succeed before merging" (P20).
+    pub required_deployment_environments: Vec<String>,
 }
 
 impl ProtectionRow {
     pub const COLUMNS: &'static str = "id, repo_id, pattern, required_status_checks, \
         required_pull_request_reviews, restrictions, enforce_admins, required_linear_history, \
         allow_force_pushes, allow_deletions, block_creations, required_conversation_resolution, \
-        required_signatures, lock_branch, allow_fork_syncing, created_at, updated_at";
+        required_signatures, lock_branch, allow_fork_syncing, created_at, updated_at, \
+        required_deployment_environments";
 
     /// Required status check contexts (`contexts` plus `checks[].context`).
     pub fn required_contexts(&self) -> Vec<String> {

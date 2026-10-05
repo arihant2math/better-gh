@@ -650,13 +650,192 @@ pub async fn build_run_logs_zip(
     .await?
 }
 
-/// Not supported: deployment approvals.
+/// `GET /repos/{o}/{r}/actions/runs/{run_id}/pending_deployments`: the
+/// environments the run's waiting jobs wait for (one entry per environment).
 pub async fn pending_deployments(
     State(state): State<AppState>,
     auth: MaybeUser,
     Path((owner, repo, run_id)): Path<(String, String, i64)>,
 ) -> ApiResult<Response> {
+    use crate::gates::{Protection, can_approve, pending_gates, reviewers_json};
     let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
-    load_run(&state, &access, run_id).await?;
-    Ok(Json(json!([])).into_response())
+    let run = load_run(&state, &access, run_id).await?;
+    let mut conn = state.db.acquire().await?;
+    let gates = pending_gates(&mut conn, run.id).await?;
+    let mut out: Vec<Value> = Vec::new();
+    let mut seen: Vec<i64> = Vec::new();
+    for g in &gates {
+        if seen.contains(&g.environment_id) {
+            continue;
+        }
+        seen.push(g.environment_id);
+        let Some(p) = Protection::load(&mut conn, g.environment_id).await? else {
+            continue;
+        };
+        let pending_review = gates.iter().any(|x| {
+            x.environment_id == g.environment_id && x.needs_review && x.review_state.is_none()
+        });
+        let can = match auth.as_ref() {
+            Some(u) if pending_review => {
+                can_approve(
+                    &mut conn,
+                    &p,
+                    &run,
+                    u.user.id,
+                    access.permission >= Permission::Admin,
+                )
+                .await?
+            }
+            _ => false,
+        };
+        out.push(json!({
+            "environment": crate::json::environment_ref_json(&state, &access, &p.env),
+            "wait_timer": g.wait_timer,
+            "wait_timer_started_at": Timestamp(g.created_at),
+            "current_user_can_approve": can,
+            "reviewers": reviewers_json(&state, &mut conn, &p.reviewers).await?,
+        }));
+    }
+    Ok(Json(Value::Array(out)).into_response())
+}
+
+/// `POST /repos/{o}/{r}/actions/runs/{run_id}/pending_deployments`
+/// (`environment_ids`, `state` approved | rejected, `comment`): returns the
+/// reviewed jobs' deployments.
+pub async fn review_pending_deployments(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((owner, repo, run_id)): Path<(String, String, i64)>,
+    Json(body): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
+    let run = load_run(&state, &access, run_id).await?;
+    let missing =
+        |f: &str| ApiError::invalid_field(FieldError::missing_field("PendingDeployment", f));
+    let env_ids: Vec<i64> = match &body["environment_ids"] {
+        Value::Array(a) if !a.is_empty() => a
+            .iter()
+            .map(|v| v.as_i64())
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                ApiError::invalid_field(FieldError::invalid("PendingDeployment", "environment_ids"))
+            })?,
+        Value::Null => return Err(missing("environment_ids")),
+        _ => {
+            return Err(ApiError::invalid_field(FieldError::invalid(
+                "PendingDeployment",
+                "environment_ids",
+            )));
+        }
+    };
+    let approve = match body["state"].as_str() {
+        Some("approved") => true,
+        Some("rejected") => false,
+        None => return Err(missing("state")),
+        Some(_) => {
+            return Err(ApiError::invalid_field(FieldError::invalid(
+                "PendingDeployment",
+                "state",
+            )));
+        }
+    };
+    let comment = match &body["comment"] {
+        Value::Null => String::new(),
+        Value::String(c) => c.clone(),
+        _ => {
+            return Err(ApiError::invalid_field(FieldError::invalid(
+                "PendingDeployment",
+                "comment",
+            )));
+        }
+    };
+    if access.permission < Permission::Read {
+        return Err(ApiError::NotFound);
+    }
+    let deployments = crate::gates::review(
+        &state,
+        &run,
+        &auth.user,
+        access.permission >= Permission::Admin,
+        &env_ids,
+        approve,
+        &comment,
+    )
+    .await?;
+    let creators =
+        bgh_core::views::users_by_id(&state, deployments.iter().map(|d| d.creator_id)).await?;
+    Ok(Json(Value::Array(
+        deployments
+            .iter()
+            .map(|d| {
+                bgh_core::deployments::deployment_json(
+                    &state.urls,
+                    &access.owner.login,
+                    &access.repo.name,
+                    d,
+                    d.creator_id.and_then(|i| creators.get(&i)),
+                )
+            })
+            .collect(),
+    )))
+}
+
+/// `GET /repos/{o}/{r}/actions/runs/{run_id}/approvals`: the reviews of the
+/// run's pending deployments, oldest first.
+pub async fn approvals(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo, run_id)): Path<(String, String, i64)>,
+) -> ApiResult<Json<Value>> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        user_id: Option<i64>,
+        state: String,
+        comment: String,
+        environment_ids: Vec<i64>,
+    }
+    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
+    let run = load_run(&state, &access, run_id).await?;
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT user_id, state, comment, environment_ids FROM actions_deployment_reviews
+          WHERE run_id = $1 ORDER BY id",
+    )
+    .bind(run.id)
+    .fetch_all(&state.db)
+    .await?;
+    let env_ids: Vec<i64> = rows
+        .iter()
+        .flat_map(|r| r.environment_ids.clone())
+        .collect();
+    let envs: Vec<crate::models::EnvironmentRow> = sqlx::query_as(&format!(
+        "SELECT {} FROM actions_environments WHERE id = ANY($1)",
+        crate::models::EnvironmentRow::COLUMNS
+    ))
+    .bind(&env_ids)
+    .fetch_all(&state.db)
+    .await?;
+    let users = bgh_core::views::users_by_id(&state, rows.iter().map(|r| r.user_id)).await?;
+    let out: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            let environments: Vec<Value> = r
+                .environment_ids
+                .iter()
+                .filter_map(|id| envs.iter().find(|e| e.id == *id))
+                .map(|e| {
+                    let mut v = crate::json::environment_ref_json(&state, &access, e);
+                    v["created_at"] = json!(Timestamp(e.created_at));
+                    v["updated_at"] = json!(Timestamp(e.updated_at));
+                    v
+                })
+                .collect();
+            json!({
+                "environments": environments,
+                "state": r.state,
+                "user": r.user_id.and_then(|u| users.get(&u)).map(|u| api::SimpleUser::new(&state.urls, u)),
+                "comment": r.comment,
+            })
+        })
+        .collect();
+    Ok(Json(Value::Array(out)))
 }

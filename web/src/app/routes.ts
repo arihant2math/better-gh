@@ -372,6 +372,7 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/environments', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Environments · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/environments/:env/edit', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `${p.env} · Environments · ${p.owner}/${p.repo}` },
     // Header counters, check-run and label/search `html_url`s (package P12).
     { path: '/:owner/:repo/stargazers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Stargazers · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/watchers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Watchers · ${p.owner}/${p.repo}` },

@@ -19,7 +19,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "custom_property_values",
     "dependabot_alert",
     "deployment_protection_rule",
-    "deployment_review",
     "discussion",
     "discussion_comment",
     "github_app_authorization",
@@ -365,6 +364,14 @@ fn samples() -> Vec<Event> {
             repo_id: 1,
             alert_id: 1,
             location_id: 1,
+        },
+        Event::DeploymentReview {
+            repo_id: 1,
+            run_id: 1,
+            action: "requested".into(),
+            actor_id: Some(1),
+            reviewer_ids: vec![1],
+            payload: v.clone(),
         },
         Event::CommitCommentCreated {
             repo_id: 1,

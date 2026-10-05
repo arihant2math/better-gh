@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
+    /// A deployment waits for your review (environment required reviewer).
+    ApprovalRequested,
     Assign,
     Author,
     Comment,
@@ -21,7 +23,8 @@ pub enum Reason {
 }
 
 impl Reason {
-    pub const ALL: [Reason; 12] = [
+    pub const ALL: [Reason; 13] = [
+        Self::ApprovalRequested,
         Self::Assign,
         Self::Author,
         Self::Comment,
@@ -38,6 +41,7 @@ impl Reason {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::ApprovalRequested => "approval_requested",
             Self::Assign => "assign",
             Self::Author => "author",
             Self::Comment => "comment",
@@ -60,7 +64,7 @@ impl Reason {
     /// Precedence when several reasons apply to one recipient (higher wins).
     pub fn rank(self) -> u8 {
         match self {
-            Self::ReviewRequested => 10,
+            Self::ReviewRequested | Self::ApprovalRequested => 10,
             Self::Assign => 9,
             Self::Mention => 8,
             Self::TeamMention => 7,
@@ -83,6 +87,7 @@ impl Reason {
     /// Human sentence for email footers: "You are receiving this because ...".
     pub fn explanation(self) -> &'static str {
         match self {
+            Self::ApprovalRequested => "your approval was requested for a deployment",
             Self::Assign => "you were assigned",
             Self::Author => "you authored the thread",
             Self::Comment => "you commented",

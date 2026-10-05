@@ -7,6 +7,7 @@ import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, DownloadIcon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, PackageIcon, PlayIcon, XCircleFillIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { artifactsKey, loadArtifacts } from './data';
+import { PendingDeployments } from './PendingDeployments';
 import { RunGraph } from './RunGraph';
 import { RunShell, useRunData } from './RunShell';
 import { Duration, shortSha, statusText } from './shared';
@@ -21,6 +22,8 @@ const EVENT_TEXT: Record<string, string> = {
   release: 'release',
   issues: 'issues',
   issue_comment: 'issue comment',
+  deployment: 'deployment',
+  deployment_status: 'deployment status',
 };
 
 export default observer(function RunPage() {
@@ -41,6 +44,7 @@ export default observer(function RunPage() {
   return (
     <RunShell data={data}>
       <div className={styles.summary}>
+        {run?.status === 'waiting' && !attemptParam && <PendingDeployments owner={owner} repo={repo} runId={runId} />}
         {run ? <SummaryCard run={run} base={data.base} /> : <Skeleton width="100%" height={72} />}
         <section className={styles.card}>
           <div className={styles.cardHead}>

@@ -399,7 +399,56 @@ pub fn variable_json(s: &VariableRow, selected_url: Option<String>) -> Value {
     v
 }
 
-pub fn environment_json(state: &AppState, a: &RepoAccess, e: &EnvironmentRow) -> Value {
+/// GitHub `environment` JSON. `reviewers`: the rendered required reviewers
+/// (`[{type, reviewer}]`, see `environments::reviewers_json`).
+pub fn environment_json(
+    state: &AppState,
+    a: &RepoAccess,
+    e: &EnvironmentRow,
+    reviewers: &[Value],
+) -> Value {
+    let mut v = environment_ref_json(state, a, e);
+    v["created_at"] = json!(Timestamp(e.created_at));
+    v["updated_at"] = json!(Timestamp(e.updated_at));
+    v["can_admins_bypass"] = json!(e.can_admins_bypass);
+    // Rule ids are derived from the environment id (one rule per type).
+    let rule = |n: i64, kind: &str| {
+        let id = e.id * 10 + n;
+        json!({
+            "id": id,
+            "node_id": node_id::encode(NodeType::EnvironmentProtectionRule, id),
+            "type": kind,
+        })
+    };
+    let mut rules = Vec::new();
+    if e.wait_timer > 0 {
+        let mut r = rule(1, "wait_timer");
+        r["wait_timer"] = json!(e.wait_timer);
+        rules.push(r);
+    }
+    if !reviewers.is_empty() {
+        let mut r = rule(2, "required_reviewers");
+        r["prevent_self_review"] = json!(e.prevent_self_review);
+        r["reviewers"] = json!(reviewers);
+        rules.push(r);
+    }
+    if e.branch_policy.is_some() {
+        rules.push(rule(3, "branch_policy"));
+    }
+    v["protection_rules"] = json!(rules);
+    v["deployment_branch_policy"] = match e.branch_policy.as_deref() {
+        Some(p) => json!({
+            "protected_branches": p == "protected",
+            "custom_branch_policies": p == "custom",
+        }),
+        None => Value::Null,
+    };
+    v
+}
+
+/// The short environment object of `pending_deployments` and approvals:
+/// `{id, node_id, name, url, html_url}`.
+pub fn environment_ref_json(state: &AppState, a: &RepoAccess, e: &EnvironmentRow) -> Value {
     let api = repo_api(state, a);
     let html = repo_html(state, a);
     json!({
@@ -408,9 +457,5 @@ pub fn environment_json(state: &AppState, a: &RepoAccess, e: &EnvironmentRow) ->
         "name": e.name,
         "url": format!("{api}/environments/{}", bgh_core::urls::encode_segment(&e.name)),
         "html_url": format!("{html}/deployments/activity_log?environments_filter={}", bgh_core::urls::encode_segment(&e.name)),
-        "created_at": Timestamp(e.created_at),
-        "updated_at": Timestamp(e.updated_at),
-        "protection_rules": [],
-        "deployment_branch_policy": null,
     })
 }

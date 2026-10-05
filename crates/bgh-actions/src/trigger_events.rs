@@ -677,6 +677,35 @@ pub fn map_event(event: &Event) -> Option<(i64, TriggerKind)> {
                 json!({"client_payload": client_payload}),
             ),
         ),
+        // ----- deployments (evaluated at the deployed commit) -----
+        E::DeploymentCreated {
+            repo_id,
+            deployment_id,
+            actor_id,
+        } => (
+            *repo_id,
+            repo_event(
+                "deployment",
+                Some("created"),
+                *actor_id,
+                json!({"deployment_id": deployment_id}),
+            ),
+        ),
+        E::DeploymentStatusCreated {
+            repo_id,
+            deployment_id,
+            status_id,
+            actor_id,
+            ..
+        } => (
+            *repo_id,
+            repo_event(
+                "deployment_status",
+                Some("created"),
+                *actor_id,
+                json!({"deployment_id": deployment_id, "status_id": status_id}),
+            ),
+        ),
         // ----- workflow_run -----
         E::WorkflowRunUpdated {
             repo_id,
@@ -1035,6 +1064,10 @@ pub async fn on_repo_event(
         "workflow_run" => {
             return on_workflow_run(state, repo, owner, action, actor_id, extra, payload).await;
         }
+        "deployment" | "deployment_status" => {
+            return on_deployment(state, repo, owner, event, action, actor_id, extra, payload)
+                .await;
+        }
         _ => return Ok(()),
     }
     let Some((git_ref, sha)) = default_head(state, repo).await else {
@@ -1186,4 +1219,79 @@ async fn on_workflow_run(
     )
     .await
     .map(drop)
+}
+
+/// `deployment` / `deployment_status`: workflows at the deployed commit,
+/// with `GITHUB_REF` the deployment's ref (branch or tag when one exists by
+/// that name) and `GITHUB_SHA` its commit.
+#[allow(clippy::too_many_arguments)]
+async fn on_deployment(
+    state: &AppState,
+    repo: &db::Repository,
+    owner: &db::User,
+    event: &str,
+    action: &str,
+    actor_id: Option<i64>,
+    extra: &Value,
+    mut payload: Value,
+) -> anyhow::Result<()> {
+    use bgh_core::deployments::{DeploymentRow, DeploymentStatusRow, deployment_json, status_json};
+    let Some(id) = hint_id(extra, "deployment_id") else {
+        return Ok(());
+    };
+    let Some(d) = DeploymentRow::find(&state.db, repo.id, id).await? else {
+        return Ok(());
+    };
+    let status = match hint_id(extra, "status_id") {
+        Some(sid) => DeploymentStatusRow::find(&state.db, d.id, sid).await?,
+        None => None,
+    };
+    if event == "deployment_status" && status.is_none() {
+        return Ok(());
+    }
+    let users = db::User::find_many(
+        &state.db,
+        &[d.creator_id, status.as_ref().and_then(|s| s.creator_id)]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+    let find = |id: Option<i64>| id.and_then(|id| users.iter().find(|u| u.id == id));
+    payload["deployment"] = deployment_json(
+        &state.urls,
+        &owner.login,
+        &repo.name,
+        &d,
+        find(d.creator_id),
+    );
+    payload["workflow"] = Value::Null;
+    payload["workflow_run"] = Value::Null;
+    if let Some(s) = &status {
+        payload["deployment_status"] =
+            status_json(&state.urls, &owner.login, &repo.name, s, find(s.creator_id));
+        payload["check_run"] = Value::Null;
+    }
+    // GITHUB_REF: the branch or tag named like the deployment's ref.
+    let mut git_ref = d.git_ref.clone();
+    for candidate in [
+        format!("refs/heads/{}", d.git_ref),
+        format!("refs/tags/{}", d.git_ref),
+    ] {
+        let c = candidate.clone();
+        let exists = trigger::store(state)
+            .read(repo.id, move |g| g.resolve(&c))
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if exists {
+            git_ref = candidate;
+            break;
+        }
+    }
+    trigger::run_default_branch_event(
+        state, repo, owner, event, action, &git_ref, &d.sha, actor_id, payload,
+    )
+    .await
 }

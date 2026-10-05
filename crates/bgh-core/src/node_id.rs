@@ -58,6 +58,9 @@ pub enum NodeType {
     IssueType,
     /// An edit-history entry (P42).
     UserContentEdit,
+    DeploymentBranchPolicy,
+    /// An environment protection rule (GitHub's `Gate`).
+    EnvironmentProtectionRule,
 }
 
 impl NodeType {
@@ -107,6 +110,8 @@ impl NodeType {
         Self::Integration,
         Self::IssueType,
         Self::UserContentEdit,
+        Self::DeploymentBranchPolicy,
+        Self::EnvironmentProtectionRule,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -156,6 +161,8 @@ impl NodeType {
             Self::Integration => "Integration",
             Self::IssueType => "IssueType",
             Self::UserContentEdit => "UserContentEdit",
+            Self::DeploymentBranchPolicy => "DeploymentBranchPolicy",
+            Self::EnvironmentProtectionRule => "Gate",
         }
     }
 

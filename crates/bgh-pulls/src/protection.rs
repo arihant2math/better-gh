@@ -122,10 +122,13 @@ pub struct SourceRules {
     pub checks: Option<CheckRules>,
     pub conversation_resolution: bool,
     pub linear_history: bool,
-    /// Stored, not enforced yet (P25). `merge_queue` (P39) and
-    /// `required_deployments` (P20) plug in next to it in
-    /// [`evaluate_source`].
+    /// Stored, not enforced yet (P25). `merge_queue` (P39) plugs in next
+    /// to it in [`evaluate_source`].
     pub required_signatures: bool,
+    /// Environments whose latest deployment of the head commit must have
+    /// succeeded (`required_deployments` rule, classic
+    /// `required_deployment_environments`).
+    pub required_deployments: Vec<String>,
 }
 
 impl SourceRules {
@@ -183,6 +186,7 @@ impl SourceRules {
             conversation_resolution: p.required_conversation_resolution,
             linear_history: p.required_linear_history,
             required_signatures: p.required_signatures,
+            required_deployments: p.required_deployment_environments.clone(),
         }
     }
 
@@ -223,6 +227,15 @@ impl SourceRules {
             conversation_resolution,
             linear_history: r.find_rule("required_linear_history").is_some(),
             required_signatures: r.find_rule("required_signatures").is_some(),
+            required_deployments: r
+                .find_rule("required_deployments")
+                .and_then(|rule| rule["parameters"]["required_deployment_environments"].as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| e.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -625,6 +638,9 @@ struct Facts {
     outcomes: CheckOutcomes,
     behind: bool,
     unresolved: i64,
+    /// Latest deployment state of the head commit per environment
+    /// (lowercased name), when a source requires deployments.
+    deployments: HashMap<String, Option<String>>,
 }
 
 pub async fn evaluate(
@@ -716,7 +732,20 @@ pub async fn evaluate(
         0
     };
 
+    // Deployments (required_deployments).
+    let deployments: HashMap<String, Option<String>> =
+        if any(&|s| !s.required_deployments.is_empty()) {
+            bgh_core::deployments::latest_for_sha(db, pull.pr.repo_id, &pull.pr.head_sha)
+                .await?
+                .into_iter()
+                .map(|d| (d.environment.to_lowercase(), d.state))
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
     let facts = Facts {
+        deployments,
         approvers,
         changes_requested,
         last_push_approved,
@@ -828,8 +857,25 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
             false,
         );
     }
-    // P25 (required_signatures), P39 (merge_queue) and P20
-    // (required_deployments) add their checks here.
+    for env in &s.required_deployments {
+        match f.deployments.get(&env.to_lowercase()) {
+            // `inactive`: succeeded, then superseded by a later deployment.
+            Some(Some(state)) if matches!(state.as_str(), "success" | "inactive") => {}
+            Some(Some(state)) if matches!(state.as_str(), "failure" | "error") => push(
+                format!("Required deployment to \"{env}\" has failed."),
+                false,
+            ),
+            Some(_) => push(
+                format!("Required deployment to \"{env}\" is in progress."),
+                false,
+            ),
+            None => push(
+                format!("Required deployment to \"{env}\" is expected."),
+                false,
+            ),
+        }
+    }
+    // P25 (required_signatures) and P39 (merge_queue) add their checks here.
 }
 
 /// `mergeable_state` from the pieces (GitHub precedence).

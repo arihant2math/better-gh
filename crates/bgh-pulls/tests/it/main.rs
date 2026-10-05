@@ -9,6 +9,7 @@ mod diffview;
 mod governance;
 mod merge;
 mod pulls;
+mod required_deployments;
 mod rest_compat;
 mod review_flow;
 mod reviews;

@@ -20,6 +20,7 @@ export const REASON_LABELS: Record<Reason, string> = {
   team_mention: 'Team mention',
   manual: 'Subscribed',
   ci_activity: 'CI activity',
+  approval_requested: 'Approval requested',
   security_alert: 'Security alert',
 };
 

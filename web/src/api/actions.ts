@@ -210,12 +210,49 @@ export interface RegistrationToken {
   expires_at: string;
 }
 
+export interface EnvironmentReviewer {
+  type: 'User' | 'Team';
+  reviewer: { id: number; login?: string; avatar_url?: string; name?: string; slug?: string; html_url?: string };
+}
+
+export type ProtectionRule =
+  | { id: number; node_id: string; type: 'wait_timer'; wait_timer: number }
+  | { id: number; node_id: string; type: 'required_reviewers'; prevent_self_review: boolean; reviewers: EnvironmentReviewer[] }
+  | { id: number; node_id: string; type: 'branch_policy' };
+
 export interface Environment {
   id: number;
   name: string;
   html_url: string;
   created_at: string;
   updated_at: string;
+  can_admins_bypass?: boolean;
+  protection_rules?: ProtectionRule[];
+  deployment_branch_policy?: { protected_branches: boolean; custom_branch_policies: boolean } | null;
+}
+
+/** Body of `PUT /environments/{name}` (omitted fields are kept). */
+export interface EnvironmentSettings {
+  wait_timer?: number;
+  prevent_self_review?: boolean;
+  can_admins_bypass?: boolean;
+  reviewers?: { type: 'User' | 'Team'; id: number }[];
+  deployment_branch_policy?: { protected_branches: boolean; custom_branch_policies: boolean } | null;
+}
+
+export interface BranchPolicy {
+  id: number;
+  node_id: string;
+  name: string;
+  type: 'branch' | 'tag';
+}
+
+export interface PendingDeployment {
+  environment: { id: number; node_id: string; name: string; url: string; html_url: string };
+  wait_timer: number;
+  wait_timer_started_at: string;
+  current_user_can_approve: boolean;
+  reviewers: EnvironmentReviewer[];
 }
 
 export interface RunFilters {
@@ -420,3 +457,20 @@ export function listEnvironments(owner: string, repo: string): Promise<{ total_c
 
 export const putEnvironment = (owner: string, repo: string, name: string) => api.put<Environment>(r(owner, repo, 'environments', name), {});
 export const deleteEnvironment = (owner: string, repo: string, name: string) => api.delete<null>(r(owner, repo, 'environments', name));
+
+export const getEnvironment = (owner: string, repo: string, name: string) => api.get<Environment>(r(owner, repo, 'environments', name));
+export const updateEnvironment = (owner: string, repo: string, name: string, body: EnvironmentSettings) =>
+  api.put<Environment>(r(owner, repo, 'environments', name), body);
+
+export function listBranchPolicies(owner: string, repo: string, env: string): Promise<{ total_count: number; branch_policies: BranchPolicy[] }> {
+  return api.get(`${r(owner, repo, 'environments', env)}/deployment-branch-policies?per_page=100`);
+}
+export const createBranchPolicy = (owner: string, repo: string, env: string, name: string, type: 'branch' | 'tag') =>
+  api.post<BranchPolicy>(`${r(owner, repo, 'environments', env)}/deployment-branch-policies`, { name, type });
+export const deleteBranchPolicy = (owner: string, repo: string, env: string, id: number) =>
+  api.delete<null>(`${r(owner, repo, 'environments', env)}/deployment-branch-policies/${id}`);
+
+export const listPendingDeployments = (owner: string, repo: string, runId: number) =>
+  api.get<PendingDeployment[]>(`${r(owner, repo, 'actions', 'runs', String(runId))}/pending_deployments`);
+export const reviewPendingDeployments = (owner: string, repo: string, runId: number, environmentIds: number[], state: 'approved' | 'rejected', comment: string) =>
+  api.post<unknown[]>(`${r(owner, repo, 'actions', 'runs', String(runId))}/pending_deployments`, { environment_ids: environmentIds, state, comment });
