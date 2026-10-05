@@ -168,7 +168,12 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     if !may_have_workflows(&state, repo_id, &kind).await? {
         return Ok(());
     }
-    bgh_core::jobs::enqueue_job(&state.db, &Trigger { repo_id, kind }).await?;
+    // At-least-once delivery: a redelivered event must not start runs twice.
+    let mut tx = state.db.begin().await?;
+    if bgh_core::events::claim_effect(&mut tx).await? {
+        bgh_core::jobs::enqueue_job(&mut *tx, &Trigger { repo_id, kind }).await?;
+        tx.commit().await?;
+    }
     Ok(())
 }
 

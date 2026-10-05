@@ -14,6 +14,12 @@
 //! 4. notification rows are upserted with one `INSERT … SELECT unnest(…)`,
 //!    each row is recorded as a `notification` sync action in `user:{id}`,
 //! 5. one `notify.email` job renders and queues emails for the recipients.
+//!
+//! Events are delivered at least once: each activity built from an outbox
+//! event first claims an `event_receipts` row (listener, event, n) in its
+//! transaction ([`bgh_core::events::claim_effect`]); a redelivered event
+//! finds it taken and writes nothing (no repeated unread flag, sync action
+//! or email).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -121,7 +127,23 @@ async fn active_users(conn: &mut sqlx::PgConnection, ids: &[i64]) -> ApiResult<H
 
 /// Write the activity's notifications. See the module docs.
 pub async fn deliver(state: &AppState, act: &Activity) -> ApiResult<Delivered> {
+    deliver_inner(state, act, false).await
+}
+
+/// [`deliver`] from an event listener: at most once per (event, activity)
+/// (see [`bgh_core::events::claim_effect`]); a redelivery writes nothing.
+pub async fn deliver_once(state: &AppState, act: &Activity) -> ApiResult<Delivered> {
+    deliver_inner(state, act, true).await
+}
+
+async fn deliver_inner(state: &AppState, act: &Activity, claim: bool) -> ApiResult<Delivered> {
     let mut tx = Tx::begin(state).await?;
+    if claim && !bgh_core::events::claim_effect(&mut tx).await? {
+        return Ok(Delivered {
+            recipients: Vec::new(),
+            rows: Vec::new(),
+        });
+    }
     let subject = &act.subject;
 
     // Thread subscribers (all rows: ignored ones are needed to exclude).
@@ -925,7 +947,7 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
         .await
         .map_err(|e| anyhow::anyhow!("building notifications for {}: {e:?}", event.name()))?;
     for act in acts {
-        deliver(&state, &act)
+        deliver_once(&state, &act)
             .await
             .map_err(|e| anyhow::anyhow!("delivering notifications for {}: {e:?}", event.name()))?;
     }

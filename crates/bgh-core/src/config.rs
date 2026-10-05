@@ -79,6 +79,12 @@ pub struct Config {
     pub webhook_timeout_secs: u64,
     /// `BGH_ACTIONS_*` settings (CI, see [`ActionsConfig`]).
     pub actions: ActionsConfig,
+    /// `BGH_EVENT_RETENTION_DAYS` (default 7): processed event outbox rows
+    /// are kept this long (redelivery window, debugging).
+    pub event_retention_days: i64,
+    /// `BGH_SHUTDOWN_TIMEOUT_SECS` (default 30): on SIGTERM, how long to wait
+    /// for in-flight HTTP requests before stopping background work.
+    pub shutdown_timeout_secs: u64,
 }
 
 impl Default for Config {
@@ -108,6 +114,8 @@ impl Default for Config {
             webhook_allowed_hosts: Vec::new(),
             webhook_timeout_secs: 10,
             actions: ActionsConfig::default(),
+            event_retention_days: 7,
+            shutdown_timeout_secs: 30,
         }
     }
 }
@@ -255,6 +263,16 @@ impl Config {
                 d.webhook_timeout_secs,
             )?,
             actions: ActionsConfig::from_lookup(&get)?,
+            event_retention_days: typed(
+                "BGH_EVENT_RETENTION_DAYS",
+                parse("BGH_EVENT_RETENTION_DAYS")?,
+                d.event_retention_days,
+            )?,
+            shutdown_timeout_secs: typed(
+                "BGH_SHUTDOWN_TIMEOUT_SECS",
+                parse("BGH_SHUTDOWN_TIMEOUT_SECS")?,
+                d.shutdown_timeout_secs,
+            )?,
         })
     }
 

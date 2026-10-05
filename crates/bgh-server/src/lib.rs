@@ -10,6 +10,7 @@
 //! * everything else: the web client from `BGH_WEB_DIR` with SPA fallback
 
 pub mod embedded;
+mod serve;
 mod web;
 
 use std::time::Duration;
@@ -32,6 +33,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultOnResponse, TraceLayer};
 
+pub use serve::serve;
 pub use web::WebFiles;
 
 /// Register job handlers and event listeners of every domain crate.
