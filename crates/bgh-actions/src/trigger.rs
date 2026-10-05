@@ -24,7 +24,7 @@ use crate::models::WorkflowRow;
 use crate::workflow::{self, CronSchedule, Workflow};
 
 pub const WORKFLOWS_DIR: &str = ".github/workflows";
-const MAX_WORKFLOW_SIZE: u64 = 1024 * 1024;
+pub(crate) const MAX_WORKFLOW_SIZE: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

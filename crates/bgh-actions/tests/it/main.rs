@@ -5,6 +5,7 @@
 mod common;
 
 mod e2e;
+mod reusable;
 mod runs;
 mod settings;
 mod smoke;

@@ -757,7 +757,7 @@ fn parse_job(id: &str, v: &Yaml) -> Result<Job> {
             }
             "steps" => steps = Some(val),
             "uses" => job.uses = Some(string(val, &kctx)?),
-            "with" => job.with = string_map(val, &kctx)?,
+            "with" => job.with = json_map(val, &kctx)?,
             "secrets" => job.secrets = opt(val, |v| Ok(to_json(v)))?,
             other => {
                 return invalid(format!(
@@ -777,6 +777,11 @@ fn parse_job(id: &str, v: &Yaml) -> Result<Job> {
             return invalid(format!(
                 "{ctx}: '{bad}' cannot be used in a job that calls a reusable workflow with 'uses'"
             ));
+        }
+        if let Some(uses) = &job.uses
+            && let Err(e) = crate::reusable::parse_ref(uses)
+        {
+            return invalid(format!("{ctx}: {e}"));
         }
         return Ok(job);
     }

@@ -22,6 +22,7 @@ pub mod json;
 pub mod logs;
 pub mod models;
 pub mod protocol;
+pub mod reusable;
 pub mod runner;
 pub mod scoped;
 pub mod server;
@@ -35,7 +36,7 @@ use axum::Router;
 use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
-use api::{artifacts, environments, runners, runs, secrets, variables, workflows};
+use api::{access, artifacts, environments, runners, runs, secrets, variables, workflows};
 
 /// REST API routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
@@ -67,6 +68,10 @@ pub fn router() -> Router<AppState> {
             get(runs::list_for_workflow),
         )
         // runs
+        .route(
+            &r("/actions/permissions/access"),
+            get(access::get).put(access::put),
+        )
         .route(&r("/actions/runs"), get(runs::list))
         .route(
             &r("/actions/runs/{run_id}"),
@@ -287,6 +292,7 @@ pub fn register(reg: &mut Registry) {
     reg.job(trigger::trigger_job);
     reg.job(engine::advance_run_job);
     reg.job(engine::cancel_run_job);
+    reg.job(engine::cancel_job_job);
     reg.on_event("actions.trigger", trigger::on_event);
     reg.service("actions.maintenance", |s, c| async move {
         services::maintenance(s, c).await;
