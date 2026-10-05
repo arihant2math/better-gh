@@ -267,6 +267,37 @@ user was deleted (GitHub's "ghost"). `stateReason` `duplicate` is sent as
 `blocked`. `reactions` is always present (`{}` when empty) so a removed
 last reaction reaches the client.
 
+### 3.0 Pull-request extension models (lazy)
+
+Recorded by bgh-pulls in `repo:{id}` scopes and streamed as ordinary deltas;
+not part of the bootstrap. A client loads them per PR with
+`GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (same envelope as partial sync:
+`{lastSyncId, models}` with `reviewComment`, `review` (incl. the viewer's
+pending one), `reaction`, `checkSuite`, `checkRun`, `commitStatus` of the
+head commit, `user`). Clients that don't know a model ignore its deltas.
+Pending reviews and their comments are never broadcast: writes to them
+return the rows in the response (see `TxApply` in `web/src/sync/transactions.ts`).
+The `issue` row of a PR additionally carries `mergeCommitSha`, `rebaseable`,
+`maintainerCanModify`, `autoMerge {mergeMethod, enabledById, ...} | null` and
+`reviewComments`.
+
+```ts
+interface ReviewComment {     // thread = root (inReplyToId null) + replies
+  id: ID; repoId: ID; issueId: ID; reviewId: ID | null; inReplyToId: ID | null;
+  authorId: ID; body: string; path: string; commitId: string; originalCommitId: string;
+  subjectType: 'line' | 'file'; side: 'LEFT' | 'RIGHT' | null; startSide: 'LEFT' | 'RIGHT' | null;
+  line: number | null;        // null when outdated
+  originalLine: number | null; startLine: number | null; originalStartLine: number | null;
+  position: number | null; originalPosition: number | null; outdated: boolean;
+  resolvedAt: Timestamp | null; resolvedById: ID | null;   // on the root
+  diffHunk: string; createdAt: Timestamp; updatedAt: Timestamp;
+}
+interface Reaction { id: ID; subjectType: 'pull_request_review_comment'; subjectId: ID; userId: ID; content: ReactionContent; issueId: ID }
+interface CheckSuite { id: ID; repoId: ID; headSha: string; headBranch: string | null; appSlug: string; status: string; conclusion: string | null; latestCheckRunsCount: number }
+interface CheckRun { id: ID; repoId: ID; checkSuiteId: ID | null; headSha: string; name: string; status: string; conclusion: string | null; detailsUrl: string | null; title: string | null; startedAt: Timestamp | null; completedAt: Timestamp | null }
+interface CommitStatus { id: ID; repoId: ID; sha: string; state: 'error' | 'failure' | 'pending' | 'success'; context: string; description: string | null; targetUrl: string | null; creatorId: ID | null; createdAt: Timestamp }
+```
+
 ### 3.1 Users
 
 `user` rows are not owned by a scope. The server includes every user
