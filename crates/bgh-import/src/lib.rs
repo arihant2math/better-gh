@@ -9,6 +9,7 @@
 //! `docs/packages/p18-metadata-import.md`.
 
 pub mod api;
+pub mod cli;
 pub mod client;
 pub mod pipeline;
 pub mod row;
