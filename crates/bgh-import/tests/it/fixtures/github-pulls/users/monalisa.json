@@ -1,0 +1,23 @@
+{
+  "login": "monalisa",
+  "id": 2,
+  "node_id": "MDQ6VXNlcj2",
+  "avatar_url": "https://avatars.githubusercontent.com/u/2?v=4",
+  "gravatar_id": "",
+  "url": "https://api.github.com/users/monalisa",
+  "html_url": "https://github.com/monalisa",
+  "followers_url": "https://api.github.com/users/monalisa/followers",
+  "following_url": "https://api.github.com/users/monalisa/following{/other_user}",
+  "gists_url": "https://api.github.com/users/monalisa/gists{/gist_id}",
+  "starred_url": "https://api.github.com/users/monalisa/starred{/owner}{/repo}",
+  "subscriptions_url": "https://api.github.com/users/monalisa/subscriptions",
+  "organizations_url": "https://api.github.com/users/monalisa/orgs",
+  "repos_url": "https://api.github.com/users/monalisa/repos",
+  "events_url": "https://api.github.com/users/monalisa/events{/privacy}",
+  "received_events_url": "https://api.github.com/users/monalisa/received_events",
+  "type": "User",
+  "user_view_type": "public",
+  "site_admin": false,
+  "name": "Mona Lisa Octocat",
+  "email": null
+}

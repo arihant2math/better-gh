@@ -1,0 +1,18 @@
+[
+  {
+    "id": 77,
+    "name": "release tags",
+    "target": "tag",
+    "source_type": "Repository",
+    "source": "octo-org/pulls-demo",
+    "enforcement": "active",
+    "node_id": "RRS_77",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/octo-org/pulls-demo/rulesets/77"
+      }
+    },
+    "created_at": "2024-01-03T00:00:00Z",
+    "updated_at": "2024-01-03T00:00:00Z"
+  }
+]

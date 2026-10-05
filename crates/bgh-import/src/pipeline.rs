@@ -114,12 +114,14 @@ pub async fn run(state: &AppState, id: i64, limit: Option<u64>) -> anyhow::Resul
         Some(sealed) => Some(bgh_core::secretbox::open(state, sealed)?),
         None => None,
     };
-    let gh = GitHub::new(state, &row.api_url, token, Some(row.id)).await?;
+    let mut gh = GitHub::new(state, &row.api_url, token.clone(), Some(row.id)).await?;
+    gh.gitlab = row.is_gitlab();
     let mut ctx = Ctx {
         state: state.clone(),
         users: Users::new(&row),
         row,
         gh,
+        token,
         imported: 0,
         limit,
         last_beat: Instant::now(),
@@ -232,7 +234,7 @@ pub async fn sweep_stale(state: &AppState) -> anyhow::Result<u64> {
 }
 
 /// What a paged step imports.
-enum Item {
+pub(crate) enum Item {
     Label,
     Milestone,
     Issue,
@@ -244,34 +246,57 @@ enum Item {
         repo_id: i64,
         source_org: String,
     },
+    // P51 (GitHub): pull requests, reviews, review comments, repo config.
+    Pull,
+    Review {
+        pull_id: i64,
+    },
+    ReviewComment,
+    Hook,
+    ProtectedBranch,
+    Ruleset,
+    // P51 (GitLab).
+    GlLabel,
+    GlMilestone,
+    GlIssue,
+    GlMergeRequest,
+    GlNote {
+        issue_id: i64,
+    },
+    GlDiscussion {
+        pull_id: i64,
+        number: i64,
+    },
 }
 
-struct Ctx {
-    state: AppState,
-    row: ImportRow,
-    gh: GitHub,
-    users: Users,
+pub(crate) struct Ctx {
+    pub(crate) state: AppState,
+    pub(crate) row: ImportRow,
+    pub(crate) gh: GitHub,
+    /// The source token (git fetches of PR heads and the wiki).
+    pub(crate) token: Option<String>,
+    pub(crate) users: Users,
     imported: u64,
     limit: Option<u64>,
     last_beat: Instant,
 }
 
-fn time(v: &Value) -> Option<DateTime<Utc>> {
+pub(crate) fn time(v: &Value) -> Option<DateTime<Utc>> {
     v.as_str()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&Utc))
 }
 
-fn text(v: &Value) -> Option<&str> {
+pub(crate) fn text(v: &Value) -> Option<&str> {
     v.as_str()
 }
 
 impl Ctx {
-    fn src(&self) -> &str {
+    pub(crate) fn src(&self) -> &str {
         &self.row.source_repo
     }
 
-    fn scope(&self) -> String {
+    pub(crate) fn scope(&self) -> String {
         self.row.scope()
     }
 
@@ -287,15 +312,26 @@ impl Ctx {
                 continue;
             }
             row::log(&self.state.db, self.row.id, "info", &format!("step {step}")).await;
+            if self.row.is_gitlab() {
+                self.gitlab_step(step).await?;
+                continue;
+            }
             match *step {
                 "git" => self.git().await?,
                 "settings" => self.settings().await?,
                 "labels" => self.labels().await?,
                 "milestones" => self.milestones().await?,
                 "issues" => self.issues().await?,
+                "pulls" => self.pulls().await?,
+                "reviews" => self.reviews().await?,
+                "review_comments" => self.review_comments().await?,
                 "comments" => self.comments().await?,
                 "events" => self.events().await?,
                 "releases" => self.releases().await?,
+                "wiki" => self.wiki().await?,
+                "hooks" => self.hooks().await?,
+                "branch_protection" => self.branch_protection().await?,
+                "rulesets" => self.rulesets().await?,
                 "teams" => self.teams().await?,
                 "finish" => self.finish().await?,
                 _ => {}
@@ -304,7 +340,7 @@ impl Ctx {
         Ok(())
     }
 
-    async fn set_step(&mut self, step: &str) -> anyhow::Result<()> {
+    pub(crate) async fn set_step(&mut self, step: &str) -> anyhow::Result<()> {
         sqlx::query(
             "UPDATE imports SET step = $2, cursor = '{}', updated_at = now() WHERE id = $1",
         )
@@ -319,7 +355,7 @@ impl Ctx {
 
     /// Heartbeat (at most every [`HEARTBEAT_EVERY`] unless `force`); fails
     /// with [`Cancelled`] when the row left `running`.
-    async fn beat(&mut self, force: bool) -> anyhow::Result<()> {
+    pub(crate) async fn beat(&mut self, force: bool) -> anyhow::Result<()> {
         if !force && self.last_beat.elapsed() < HEARTBEAT_EVERY {
             return Ok(());
         }
@@ -339,7 +375,7 @@ impl Ctx {
     }
 
     /// One object imported: count it against the test limit, heartbeat.
-    async fn tick(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn tick(&mut self) -> anyhow::Result<()> {
         self.imported += 1;
         if self.limit.is_some_and(|l| self.imported >= l) {
             return Err(Stop.into());
@@ -347,7 +383,7 @@ impl Ctx {
         self.beat(false).await
     }
 
-    async fn mapped(&self, kind: &str, source_id: &str) -> anyhow::Result<Option<i64>> {
+    pub(crate) async fn mapped(&self, kind: &str, source_id: &str) -> anyhow::Result<Option<i64>> {
         Ok(sqlx::query_scalar(
             "SELECT local_id FROM import_mappings WHERE scope = $1 AND source_type = $2 AND source_id = $3",
         )
@@ -358,7 +394,7 @@ impl Ctx {
         .await?)
     }
 
-    async fn map(
+    pub(crate) async fn map(
         &self,
         tx: &mut Tx,
         kind: &str,
@@ -383,7 +419,7 @@ impl Ctx {
     /// `{"done": true}`), handling every item. The cursor moves after a
     /// whole page, so a resume replays the page in flight; its finished
     /// items are skipped by their mappings.
-    async fn paged(&mut self, first: String, kind: Item) -> anyhow::Result<()> {
+    pub(crate) async fn paged(&mut self, first: String, kind: Item) -> anyhow::Result<()> {
         loop {
             if self.row.cursor["done"].as_bool() == Some(true) {
                 return Ok(());
@@ -394,33 +430,124 @@ impl Ctx {
                 .unwrap_or_else(|| first.clone());
             let page = self.gh.page(&url).await?;
             for item in page.items {
-                match &kind {
-                    Item::Label => self.label(item).await?,
-                    Item::Milestone => self.milestone(item).await?,
-                    Item::Issue => self.issue(item).await?,
-                    Item::Comment => self.comment(item).await?,
-                    Item::Event => self.event(item).await?,
-                    Item::Release => self.release(item).await?,
-                    Item::Team {
-                        org_id,
-                        repo_id,
-                        source_org,
-                    } => self.team(*org_id, *repo_id, source_org, item).await?,
-                }
+                self.dispatch(&kind, item).await?;
             }
-            self.row.cursor = match page.next {
+            let next = match page.next {
                 Some(next) => json!({ "page": next }),
                 None => json!({ "done": true }),
             };
-            sqlx::query("UPDATE imports SET cursor = $2 WHERE id = $1")
-                .bind(self.row.id)
-                .bind(&self.row.cursor)
-                .execute(&self.state.db)
-                .await?;
+            self.save_cursor(next).await?;
         }
     }
 
-    fn repo_id(&self) -> anyhow::Result<i64> {
+    /// Replace the step cursor (keeping the `prefetched` flag of the
+    /// pulls step).
+    pub(crate) async fn save_cursor(&mut self, mut cursor: Value) -> anyhow::Result<()> {
+        if let Some(flag) = self.row.cursor.get("prefetched").cloned() {
+            cursor["prefetched"] = flag;
+        }
+        self.row.cursor = cursor;
+        sqlx::query("UPDATE imports SET cursor = $2 WHERE id = $1")
+            .bind(self.row.id)
+            .bind(&self.row.cursor)
+            .execute(&self.state.db)
+            .await?;
+        Ok(())
+    }
+
+    /// Walk a list endpoint **per imported parent** (`source_type`
+    /// mappings in source-id order, e.g. the reviews of every pull
+    /// request). Cursor: `{"after": last finished parent, "current": n,
+    /// "page": url}`. A parent the source no longer has (404) is skipped.
+    pub(crate) async fn per_mapped(
+        &mut self,
+        source_type: &str,
+        url: impl Fn(&str, i64) -> String,
+        item: impl Fn(i64, i64) -> Item,
+    ) -> anyhow::Result<()> {
+        loop {
+            if self.row.cursor["done"].as_bool() == Some(true) {
+                return Ok(());
+            }
+            let after = self.row.cursor["after"].as_i64().unwrap_or(i64::MIN);
+            let next: Option<(String, i64)> = sqlx::query_as(
+                "SELECT source_id, local_id FROM import_mappings
+                  WHERE scope = $1 AND source_type = $2 AND source_id ~ '^[0-9]+$'
+                    AND source_id::bigint > $3
+                  ORDER BY source_id::bigint LIMIT 1",
+            )
+            .bind(self.scope())
+            .bind(source_type)
+            .bind(after)
+            .fetch_optional(&self.state.db)
+            .await?;
+            let Some((source_id, local_id)) = next else {
+                return self.save_cursor(json!({"done": true})).await;
+            };
+            let n: i64 = source_id.parse().unwrap_or(after + 1);
+            let kind = item(n, local_id);
+            let mut page_url = match self.row.cursor["page"].as_str() {
+                Some(p) if self.row.cursor["current"].as_i64() == Some(n) => p.to_string(),
+                _ => url(self.src(), n),
+            };
+            loop {
+                let page = match self.gh.page(&page_url).await {
+                    Ok(page) => page,
+                    Err(e)
+                        if e.downcast_ref::<HttpError>()
+                            .is_some_and(|h| h.status == 404) =>
+                    {
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                };
+                for it in page.items {
+                    self.dispatch(&kind, it).await?;
+                }
+                match page.next {
+                    Some(next) => {
+                        self.save_cursor(json!({"after": after, "current": n, "page": next}))
+                            .await?;
+                        page_url = self.row.cursor["page"].as_str().unwrap_or("").to_string();
+                    }
+                    None => break,
+                }
+            }
+            self.save_cursor(json!({"after": n})).await?;
+        }
+    }
+
+    async fn dispatch(&mut self, kind: &Item, item: Value) -> anyhow::Result<()> {
+        match kind {
+            Item::Label => self.label(item).await,
+            Item::Milestone => self.milestone(item).await,
+            Item::Issue => self.issue(item).await,
+            Item::Comment => self.comment(item).await,
+            Item::Event => self.event(item).await,
+            Item::Release => self.release(item).await,
+            Item::Team {
+                org_id,
+                repo_id,
+                source_org,
+            } => self.team(*org_id, *repo_id, source_org, item).await,
+            Item::Pull => self.pull(item).await,
+            Item::Review { pull_id } => self.review(*pull_id, item).await,
+            Item::ReviewComment => self.review_comment(item).await,
+            Item::Hook => self.hook(item).await,
+            Item::ProtectedBranch => self.protected_branch(item).await,
+            Item::Ruleset => self.ruleset(item).await,
+            Item::GlLabel => self.gl_label(item).await,
+            Item::GlMilestone => self.gl_milestone(item).await,
+            Item::GlIssue => self.gl_issue(item).await,
+            Item::GlMergeRequest => self.gl_merge_request(item).await,
+            Item::GlNote { issue_id } => self.gl_note(*issue_id, item).await,
+            Item::GlDiscussion { pull_id, number } => {
+                self.gl_discussion(*pull_id, *number, item).await
+            }
+        }
+    }
+
+    pub(crate) fn repo_id(&self) -> anyhow::Result<i64> {
         self.row
             .repo_id
             .context("the target repository was deleted")
@@ -429,7 +556,7 @@ impl Ctx {
     // -- steps ---------------------------------------------------------
 
     /// Wait for the P11 git import of the target repository.
-    async fn git(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn git(&mut self) -> anyhow::Result<()> {
         let repo_id = self.repo_id()?;
         loop {
             let status: Option<(String, Option<String>)> =
@@ -451,9 +578,15 @@ impl Ctx {
         }
     }
 
-    async fn settings(&mut self) -> anyhow::Result<()> {
-        let repo_id = self.repo_id()?;
+    pub(crate) async fn settings(&mut self) -> anyhow::Result<()> {
         let (src, _) = self.gh.get(&format!("/repos/{}", self.src())).await?;
+        self.apply_settings(&src).await
+    }
+
+    /// Description, homepage, topics and features from a GitHub-shaped
+    /// repository object.
+    pub(crate) async fn apply_settings(&mut self, src: &Value) -> anyhow::Result<()> {
+        let repo_id = self.repo_id()?;
         let mut topics: Vec<String> = src["topics"]
             .as_array()
             .into_iter()
@@ -497,7 +630,7 @@ impl Ctx {
         self.paged(first, Item::Label).await
     }
 
-    async fn label(&mut self, label: Value) -> anyhow::Result<()> {
+    pub(crate) async fn label(&mut self, label: Value) -> anyhow::Result<()> {
         let Some(name) = label["name"].as_str() else {
             return Ok(());
         };
@@ -530,7 +663,7 @@ impl Ctx {
         self.paged(first, Item::Milestone).await
     }
 
-    async fn milestone(&mut self, m: Value) -> anyhow::Result<()> {
+    pub(crate) async fn milestone(&mut self, m: Value) -> anyhow::Result<()> {
         let (Some(number), Some(title)) = (m["number"].as_i64(), m["title"].as_str()) else {
             return Ok(());
         };
@@ -573,13 +706,16 @@ impl Ctx {
 
     /// Reactions of a subject (`issues/{n}` or `issues/comments/{id}`),
     /// fetched only when the payload's rollup counts any.
-    async fn reactions(
+    pub(crate) async fn reactions(
         &mut self,
         item: &Value,
         path: &str,
     ) -> anyhow::Result<Vec<(i64, String, DateTime<Utc>)>> {
         if item["reactions"]["total_count"].as_i64().unwrap_or(0) == 0 {
             return Ok(vec![]);
+        }
+        if self.row.is_gitlab() {
+            return self.gl_awards(path).await;
         }
         let mut out = Vec::new();
         let mut next = Some(format!(
@@ -611,7 +747,7 @@ impl Ctx {
 
     /// Local label ids for a source issue's labels (creating labels the
     /// labels step didn't see, e.g. deleted since).
-    async fn label_ids(&mut self, labels: &Value) -> anyhow::Result<Vec<i64>> {
+    pub(crate) async fn label_ids(&mut self, labels: &Value) -> anyhow::Result<Vec<i64>> {
         let mut ids = Vec::new();
         for l in labels.as_array().into_iter().flatten() {
             let Some(name) = l["name"].as_str().or(l.as_str()) else {
@@ -651,7 +787,7 @@ impl Ctx {
         self.paged(first, Item::Issue).await
     }
 
-    async fn issue(&mut self, issue: Value) -> anyhow::Result<()> {
+    pub(crate) async fn issue(&mut self, issue: Value) -> anyhow::Result<()> {
         let Some(number) = issue["number"].as_i64() else {
             return Ok(());
         };
@@ -666,7 +802,23 @@ impl Ctx {
         .execute(&self.state.db)
         .await?;
         if issue.get("pull_request").is_some_and(|p| !p.is_null()) {
-            // Pull requests are imported by P51 with their numbers.
+            // Pull requests are imported by the `pulls` step with their
+            // numbers; the PR list carries no reactions rollup, so keep
+            // this one's count for it.
+            let reactions = issue["reactions"]["total_count"].as_i64().unwrap_or(0);
+            if reactions > 0 {
+                sqlx::query(
+                    "INSERT INTO import_mappings (scope, source_type, source_id, local_id, import_id)
+                     VALUES ($1, 'pull_reactions', $2, $3, $4)
+                     ON CONFLICT (scope, source_type, source_id) DO UPDATE SET local_id = EXCLUDED.local_id",
+                )
+                .bind(self.scope())
+                .bind(number.to_string())
+                .bind(reactions)
+                .bind(self.row.id)
+                .execute(&self.state.db)
+                .await?;
+            }
             return Ok(());
         }
         if self.mapped("issue", &number.to_string()).await?.is_some() {
@@ -733,6 +885,14 @@ impl Ctx {
         self.paged(first, Item::Comment).await
     }
 
+    /// Local issue id of a source issue or pull request number.
+    pub(crate) async fn conversation(&self, number: i64) -> anyhow::Result<Option<i64>> {
+        Ok(match self.mapped("issue", &number.to_string()).await? {
+            Some(id) => Some(id),
+            None => self.mapped("pull", &number.to_string()).await?,
+        })
+    }
+
     async fn comment(&mut self, c: Value) -> anyhow::Result<()> {
         let Some(source_id) = c["id"].as_i64() else {
             return Ok(());
@@ -744,8 +904,8 @@ impl Ctx {
         else {
             return Ok(());
         };
-        // Comments of pull requests (not mapped as issues) wait for P51.
-        let Some(issue_id) = self.mapped("issue", &number.to_string()).await? else {
+        // Issue or pull request conversation (skipped when not imported).
+        let Some(issue_id) = self.conversation(number).await? else {
             return Ok(());
         };
         if self
@@ -804,6 +964,15 @@ impl Ctx {
             "locked",
             "unlocked",
             "renamed",
+            // Pull requests (P51).
+            "merged",
+            "head_ref_deleted",
+            "head_ref_restored",
+            "ready_for_review",
+            "convert_to_draft",
+            "review_requested",
+            "review_request_removed",
+            "review_dismissed",
         ];
         let (Some(source_id), Some(kind)) = (e["id"].as_i64(), e["event"].as_str()) else {
             return Ok(());
@@ -812,13 +981,12 @@ impl Ctx {
             return Ok(());
         }
         let issue = &e["issue"];
-        if issue.get("pull_request").is_some_and(|p| !p.is_null()) {
-            return Ok(());
-        }
         let Some(number) = issue["number"].as_i64() else {
             return Ok(());
         };
-        let Some(issue_id) = self.mapped("issue", &number.to_string()).await? else {
+        let is_pull = issue.get("pull_request").is_some_and(|p| !p.is_null());
+        let kind_of = if is_pull { "pull" } else { "issue" };
+        let Some(issue_id) = self.mapped(kind_of, &number.to_string()).await? else {
             return Ok(());
         };
         if self
@@ -859,6 +1027,41 @@ impl Ctx {
             "closed" => json!({"state_reason": e["state_reason"]}),
             "reopened" => json!({"state_reason": "reopened"}),
             "locked" => json!({"lock_reason": e["lock_reason"]}),
+            "review_requested" | "review_request_removed" => {
+                match e.get("requested_team").filter(|t| !t.is_null()) {
+                    Some(team) => {
+                        let team_id = self.local_team(team["slug"].as_str().unwrap_or("")).await?;
+                        json!({"requested_team_id": team_id})
+                    }
+                    None => {
+                        let reviewer = self
+                            .users
+                            .resolve(&self.state, &self.gh, &e["requested_reviewer"])
+                            .await?;
+                        json!({"requested_reviewer_id": reviewer})
+                    }
+                }
+            }
+            "review_dismissed" => {
+                let d = &e["dismissed_review"];
+                let review_id = match d["review_id"].as_i64() {
+                    Some(r) => self.mapped("review", &r.to_string()).await?,
+                    None => None,
+                };
+                json!({"dismissed_review": {
+                    "review_id": review_id,
+                    "state": d["state"].as_str().map(str::to_ascii_lowercase),
+                    "dismissal_message": d["dismissal_message"],
+                }})
+            }
+            "head_ref_deleted" | "head_ref_restored" => {
+                let head_ref: Option<String> =
+                    sqlx::query_scalar("SELECT head_ref FROM pull_requests WHERE issue_id = $1")
+                        .bind(issue_id)
+                        .fetch_optional(&self.state.db)
+                        .await?;
+                json!({"ref": head_ref})
+            }
             _ => json!({}),
         };
         let mut tx = Tx::begin(&self.state).await?;
@@ -1145,7 +1348,7 @@ impl Ctx {
         self.tick().await
     }
 
-    async fn finish(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn finish(&mut self) -> anyhow::Result<()> {
         let repo_id = self.repo_id()?;
         let max: i64 = sqlx::query_scalar(
             "SELECT COALESCE((stats->>'max_number')::bigint, 0) FROM imports WHERE id = $1",
