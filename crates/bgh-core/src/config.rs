@@ -345,6 +345,13 @@ pub struct ActionsConfig {
     pub secret_key: Option<String>,
     /// `BGH_ACTIONS_ARTIFACT_RETENTION_DAYS` (default 90).
     pub artifact_retention_days: i64,
+    /// `BGH_ACTIONS_CACHE_SIZE_LIMIT_GB` (default 10): default per-repository
+    /// Actions cache size (bytes here); least recently used entries are
+    /// evicted beyond it. Repositories may lower it (`cache/usage-policy`).
+    pub cache_size_limit: u64,
+    /// `BGH_ACTIONS_CACHE_RETENTION_DAYS` (default 7): cache entries not
+    /// accessed for this long are deleted.
+    pub cache_retention_days: i64,
     /// `BGH_ACTIONS_REMOTE_ACTIONS` (default true): fetch `owner/repo@ref`
     /// actions missing on this server from `BGH_ACTIONS_GITHUB_URL`
     /// (default `https://github.com`).
@@ -375,6 +382,8 @@ impl Default for ActionsConfig {
             work_dir: None,
             secret_key: None,
             artifact_retention_days: 90,
+            cache_size_limit: 10 << 30,
+            cache_retention_days: 7,
             remote_actions: true,
             github_url: "https://github.com".into(),
             docker_bin: "docker".into(),
@@ -426,6 +435,22 @@ impl ActionsConfig {
                 None => d.artifact_retention_days,
                 Some(s) => s.trim().parse().with_context(|| {
                     format!("invalid value for BGH_ACTIONS_ARTIFACT_RETENTION_DAYS: {s:?}")
+                })?,
+            },
+            cache_size_limit: match val("BGH_ACTIONS_CACHE_SIZE_LIMIT_GB") {
+                None => d.cache_size_limit,
+                Some(s) => {
+                    let gb: f64 = s.trim().parse().with_context(|| {
+                        format!("invalid value for BGH_ACTIONS_CACHE_SIZE_LIMIT_GB: {s:?}")
+                    })?;
+                    anyhow::ensure!(gb > 0.0, "BGH_ACTIONS_CACHE_SIZE_LIMIT_GB must be positive");
+                    (gb * (1u64 << 30) as f64) as u64
+                }
+            },
+            cache_retention_days: match val("BGH_ACTIONS_CACHE_RETENTION_DAYS") {
+                None => d.cache_retention_days,
+                Some(s) => s.trim().parse().with_context(|| {
+                    format!("invalid value for BGH_ACTIONS_CACHE_RETENTION_DAYS: {s:?}")
                 })?,
             },
             remote_actions: boolean("BGH_ACTIONS_REMOTE_ACTIONS", d.remote_actions)?,

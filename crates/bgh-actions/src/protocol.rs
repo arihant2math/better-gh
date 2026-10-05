@@ -78,6 +78,10 @@ pub struct JobSpec {
     /// when the job is acquired; shown in the "Set up job" log.
     #[serde(default)]
     pub token_permissions: IndexMap<String, String>,
+    /// `ACTIONS_RUNTIME_TOKEN` for the cache and results services (filled
+    /// in when the job is acquired; see [`crate::runtime`]).
+    #[serde(default)]
+    pub runtime_token: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

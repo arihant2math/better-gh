@@ -268,6 +268,8 @@ async fn prepare_spec(
     .bind(triggering_actor)
     .execute(&mut **tx)
     .await?;
+    spec.runtime_token = crate::runtime::mint(state, job, expires.timestamp())
+        .map_err(|e| anyhow::anyhow!("minting runtime token: {e}"))?;
     spec.token_permissions = permissions
         .iter()
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))

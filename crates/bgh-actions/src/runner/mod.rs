@@ -18,6 +18,7 @@
 
 mod actions;
 mod artifacts;
+mod cache;
 mod checkout;
 mod commands;
 mod context;

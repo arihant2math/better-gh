@@ -514,6 +514,7 @@ dependencies = [
  "crypto_box",
  "futures",
  "hex",
+ "hmac 0.12.1",
  "http",
  "indexmap",
  "rand 0.9.5",

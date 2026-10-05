@@ -371,6 +371,28 @@ dispatch_run() { # the dispatch starts a repository_dispatch run (async trigger)
 run_case "gh api actions/runs?event=repository_dispatch" --needs FX_DISPATCH --expect "^repository_dispatch\$" -- \
   dispatch_run
 
+# Cache entries are written by running jobs; the throwaway server has no
+# runner, so seed two committed entries directly (only with our own DB).
+FX_CACHE=""
+# shellcheck disable=SC2016 # expanded by the inner bash
+if [[ -n $FX_REPO && -n $TS_DB_NAME ]] && run_case "seed actions caches (SQL)" --kind fixture -- bash -c '
+    psql -qAt "$(python3 -c "import sys,urllib.parse as u;p=u.urlsplit(sys.argv[1]);print(u.urlunsplit(p._replace(path=\"/\"+sys.argv[2])))" "$1" "$2")" -c "
+      INSERT INTO actions_caches (repo_id, key, version, ref, size_in_bytes, committed)
+      SELECT r.id, k, '"'"'v1'"'"', '"'"'refs/heads/main'"'"', 1024, true
+        FROM repositories r JOIN users u ON u.id = r.owner_id,
+             unnest(ARRAY['"'"'gh-compat-npm-1'"'"', '"'"'gh-compat-npm-2'"'"']) k
+       WHERE lower(u.login) = lower('"'"'$3'"'"') AND lower(r.name) = lower('"'"'$4'"'"')"
+  ' _ "${DATABASE_URL:-postgres://postgres:postgres@localhost/bgh}" "$TS_DB_NAME" "$OWNER" "$REPO"; then
+  FX_CACHE=1
+fi
+run_case "gh cache list" --needs FX_CACHE --expect "gh-compat-npm-2" -- "$GH" cache list -R "$NWO"
+run_case "gh cache list --json" --needs FX_CACHE --expect "^refs/heads/main\$" -- \
+  "$GH" cache list -R "$NWO" --key gh-compat-npm-1 --json ref --jq '.[].ref'
+run_case "gh cache delete <key>" --needs FX_CACHE -- "$GH" cache delete gh-compat-npm-1 -R "$NWO"
+run_case "gh cache delete --all" --needs FX_CACHE -- "$GH" cache delete --all -R "$NWO"
+run_case "gh api actions/cache/usage" --needs FX_REPO --expect "^0\$" -- \
+  "$GH" api "repos/$NWO/actions/cache/usage" --jq .active_caches_count
+
 echo "-- releases"
 run_case "gh release create" --needs FX_REPO --expect "/releases/tag/v1\\.0\\.0" -- \
   "$GH" release create v1.0.0 -R "$NWO" --title "v1.0.0" --notes "notes from gh"

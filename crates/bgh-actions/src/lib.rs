@@ -14,6 +14,7 @@
 
 pub mod api;
 pub mod badge;
+pub mod cache;
 pub mod checks;
 pub mod context;
 pub mod crypto;
@@ -25,7 +26,9 @@ pub mod logs;
 pub mod models;
 pub mod protocol;
 pub mod rerequest;
+pub mod results;
 pub mod runner;
+pub mod runtime;
 pub mod scoped;
 pub mod server;
 pub mod services;
@@ -40,7 +43,7 @@ use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
 use api::{
-    artifacts, deployments as deploy_api, dispatches, environments, runners, runs, secrets,
+    artifacts, caches, deployments as deploy_api, dispatches, environments, runners, runs, secrets,
     variables, workflows,
 };
 
@@ -120,6 +123,25 @@ pub fn router() -> Router<AppState> {
         .route(&r("/actions/jobs/{job_id}/logs"), get(runs::job_logs))
         .route(&r("/actions/jobs/{job_id}/rerun"), post(runs::rerun_job))
         // artifacts
+        // caches
+        .route(
+            &r("/actions/caches"),
+            get(caches::list).delete(caches::delete_by_key),
+        )
+        .route(
+            &r("/actions/caches/{cache_id}"),
+            axum::routing::delete(caches::delete),
+        )
+        .route(&r("/actions/cache/usage"), get(caches::usage))
+        .route(
+            &r("/actions/cache/usage-policy"),
+            get(caches::get_policy).patch(caches::set_policy),
+        )
+        .route(&o("/actions/cache/usage"), get(caches::org_usage))
+        .route(
+            &o("/actions/cache/usage-by-repository"),
+            get(caches::org_usage_by_repo),
+        )
         .route(&r("/actions/artifacts"), get(artifacts::list))
         .route(
             &r("/actions/artifacts/{artifact_id}"),
@@ -306,6 +328,8 @@ pub fn router() -> Router<AppState> {
 pub fn web_router() -> Router<AppState> {
     web::routes()
         .merge(ui::routes())
+        .merge(cache::v1::routes())
+        .merge(results::routes())
         .route(
             "/_bgh/repos/{owner}/{repo}/deployments",
             get(deploy_api::web_summary),

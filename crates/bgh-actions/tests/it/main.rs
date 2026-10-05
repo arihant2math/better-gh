@@ -4,6 +4,7 @@
 
 mod common;
 
+mod cache;
 mod deployments;
 mod e2e;
 mod runs;

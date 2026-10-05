@@ -2,6 +2,7 @@
 //! `/orgs/{org}/actions/*` and `/repos/{owner}/{repo}/environments/*`.
 
 pub mod artifacts;
+pub mod caches;
 pub mod deployments;
 pub mod dispatches;
 pub mod environments;
