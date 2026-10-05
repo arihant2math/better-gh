@@ -41,3 +41,20 @@ integration branch `claude/sleepy-cray-9jj0t3`.
     `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 12. Do not open pull requests. Finish when your package's scope is
     complete, tested, merged with the latest integration branch and pushed.
+
+## Phase 4 additions (self-integration)
+
+13. Disk: containers have ~30 GB. Build with `CARGO_INCREMENTAL=0`, don't
+    create extra worktrees with their own `target/`, and
+    `rm -rf target/debug/incremental` when `df -h /` shows < 8 GB free.
+14. **Self-integrate when done** (phase 4 only): `git fetch origin`,
+    merge `origin/claude/sleepy-cray-9jj0t3` into your branch, run the full
+    gate (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+    -- -D warnings`, `cargo test --workspace`, and in web/ `npm run typecheck
+    && npm run lint && npm test && npm run build`), then
+    `git push origin HEAD:claude/sleepy-cray-9jj0t3` (fast-forward only —
+    never force). If the push is rejected because the integration branch
+    moved, fetch, merge again, re-run the gate, and retry. Also push your
+    own branch. Never leave the integration branch red.
+15. Read `docs/PHASE4_PLAN.md` §0 conventions and your package section;
+    `docs/AUDIT.md` has the evidence behind each gap.
