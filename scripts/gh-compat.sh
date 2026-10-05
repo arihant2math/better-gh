@@ -220,7 +220,7 @@ if [[ -n $FX_REPO ]] && run_case "create issue (REST)" --kind fixture -- \
   FX_ISSUE="$(jfield number <"$LAST_OUT")"
 fi
 if [[ -n $FX_BRANCHES ]] && run_case "create pull request (REST)" --kind fixture -- \
-  api POST "/repos/$NWO/pulls" '{"title":"Fixture PR","head":"feature-pr","base":"main","body":"Created by gh-compat.sh"}'; then
+  api POST "/repos/$NWO/pulls" "{\"title\":\"Fixture PR\",\"head\":\"feature-pr\",\"base\":\"main\",\"body\":\"Created by gh-compat.sh${FX_ISSUE:+. Fixes #$FX_ISSUE}\"}"; then
   FX_PR="$(jfield number <"$LAST_OUT")"
 fi
 if [[ -n $FX_REPO ]] && run_case "create release v0.0.1 (REST)" --kind fixture -- \
@@ -282,6 +282,8 @@ run_case "gh pr list" --needs FX_PR --expect "Fixture PR" -- "$GH" pr list -R "$
 run_case "gh pr view" --needs FX_PR --expect "Fixture PR" -- "$GH" pr view "$FX_PR" -R "$NWO"
 run_case "gh pr view --json" --needs FX_PR --expect "^feature-pr\$" -- \
   "$GH" pr view "$FX_PR" -R "$NWO" --json number,state,headRefName --jq .headRefName
+run_case "gh pr view --json closingIssuesReferences" --needs FX_PR --needs FX_ISSUE --expect "^${FX_ISSUE:-x}\$" -- \
+  "$GH" pr view "$FX_PR" -R "$NWO" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'
 run_case "gh pr diff" --needs FX_PR --expect "pr.txt" -- "$GH" pr diff "$FX_PR" -R "$NWO"
 run_case "gh pr checkout" --needs FX_PR --needs FX_CLONE --in "${FX_CLONE:-$WORK}" -- \
   "$GH" pr checkout "$FX_PR"

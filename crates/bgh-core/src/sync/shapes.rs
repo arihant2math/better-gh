@@ -188,7 +188,7 @@ const ISSUE_COLS: &str = r#"
     i.comments_count AS "comments", i.locked AS "locked",
     i.active_lock_reason AS "activeLockReason", coalesce(ra.r, '{}') AS "reactions",
     si.parent_id AS "parentId", coalesce(sc.ids, '{}') AS "subIssueIds",
-    (pin.issue_id IS NOT NULL) AS "pinned",
+    (pin.issue_id IS NOT NULL) AS "pinned", coalesce(lp.ids, '{}') AS "linkedPullIds",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
     bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
 
@@ -213,7 +213,8 @@ const PR_COLS: &str = r#"
     CASE WHEN p.auto_merge IS NOT NULL THEN json_build_object(
         'enabledById', p.auto_merge->'enabled_by_id',
         'mergeMethod', p.auto_merge->'merge_method') END AS "autoMerge",
-    p.review_comments_count AS "reviewComments""#;
+    p.review_comments_count AS "reviewComments",
+    coalesce(ci.ids, '{}') AS "closingIssueIds""#;
 
 /// Issue/PR select. `fi` / `fx` are the filter predicate on the issue
 /// aliases `i` / `x`. Child rows are aggregated once per set (hash joins),
@@ -242,6 +243,12 @@ fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
                FROM sub_issues s JOIN issues x ON x.id = s.parent_id
               WHERE {fx} GROUP BY s.parent_id) sc ON sc.parent_id = i.id
   LEFT JOIN pinned_issues pin ON pin.issue_id = i.id
+  LEFT JOIN (SELECT k.issue_id, array_agg(k.pull_id ORDER BY k.created_at, k.pull_id) AS ids
+               FROM issue_pr_links k JOIN issues x ON x.id = k.issue_id
+              WHERE {fx} GROUP BY k.issue_id) lp ON lp.issue_id = i.id
+  LEFT JOIN (SELECT k.pull_id, array_agg(k.issue_id ORDER BY k.created_at, k.issue_id) AS ids
+               FROM issue_pr_links k JOIN issues x ON x.id = k.pull_id
+              WHERE {fx} GROUP BY k.pull_id) ci ON ci.pull_id = i.id
   LEFT JOIN pull_requests p ON p.issue_id = i.id
   LEFT JOIN (SELECT q.pull_id,
                     array_agg(q.user_id ORDER BY q.id) FILTER (WHERE q.user_id IS NOT NULL) AS users,
@@ -344,6 +351,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'id', r.id, 'ownerId', r.owner_id, 'owner', o.login, 'name', r.name,
                  'description', r.description, 'private', r.visibility <> 'public',
                  'fork', r.fork, 'archived', r.archived, 'defaultBranch', r.default_branch,
+                 'mirrorUrl', r.mirror_url,
                  'language', r.language, 'topics', r.topics, 'stars', r.stargazers_count,
                  'forks', r.forks_count, 'watchers', r.watchers_count,
                  'openIssues', (SELECT count(*) FROM issues x WHERE x.repo_id = r.id
@@ -507,7 +515,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'headSha', r.head_sha, 'name', r.name, 'status', r.status,
                  'conclusion', r.conclusion, 'detailsUrl', r.details_url,
                  'title', r.output->'title', 'startedAt', bgh_ts(r.started_at),
-                 'completedAt', bgh_ts(r.completed_at))::text AS j
+                 'completedAt', bgh_ts(r.completed_at), 'actions', r.actions)::text AS j
                FROM check_runs r WHERE {}",
             col("r", filter, &[("ids", "id"), ("repos", "repo_id")])?
         ),

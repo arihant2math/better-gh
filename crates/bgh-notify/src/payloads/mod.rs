@@ -13,6 +13,7 @@
 mod checks;
 mod common;
 mod issues;
+mod org;
 mod pulls;
 mod push;
 mod releases;
@@ -99,7 +100,11 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         | E::IssueEdited { .. }
         | E::IssueClosed { .. }
         | E::IssueReopened { .. }
-        | E::IssueDeleted { .. } => vec!["issues"],
+        | E::IssueDeleted { .. }
+        | E::IssuePinned { .. }
+        | E::IssueUnpinned { .. }
+        | E::IssueTransferred { .. } => vec!["issues"],
+        E::SubIssueAdded { .. } | E::SubIssueRemoved { .. } => vec!["sub_issues"],
         // These apply to pull requests too (delivered as `pull_request`).
         E::IssueAssigned { .. }
         | E::IssueUnassigned { .. }
@@ -121,9 +126,14 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         | E::PullRequestReadyForReview { .. }
         | E::PullRequestConvertedToDraft { .. }
         | E::PullRequestReviewRequested { .. }
-        | E::PullRequestReviewRequestRemoved { .. } => vec!["pull_request"],
-        E::PullRequestReviewSubmitted { .. } | E::PullRequestReviewDismissed { .. } => {
-            vec!["pull_request_review"]
+        | E::PullRequestReviewRequestRemoved { .. }
+        | E::PullRequestAutoMergeEnabled { .. }
+        | E::PullRequestAutoMergeDisabled { .. } => vec!["pull_request"],
+        E::PullRequestReviewSubmitted { .. }
+        | E::PullRequestReviewDismissed { .. }
+        | E::PullRequestReviewEdited { .. } => vec!["pull_request_review"],
+        E::PullRequestReviewThreadResolved { .. } | E::PullRequestReviewThreadUnresolved { .. } => {
+            vec!["pull_request_review_thread"]
         }
         E::PullRequestReviewCommentCreated { .. }
         | E::PullRequestReviewCommentEdited { .. }
@@ -131,9 +141,10 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::ReleaseCreated { .. }
         | E::ReleasePublished { .. }
         | E::ReleaseEdited { .. }
+        | E::ReleaseStateChanged { .. }
         | E::ReleaseDeleted { .. } => vec!["release"],
-        E::StarCreated { .. } => vec!["star", "watch"],
-        E::StarDeleted { .. } => vec!["star"],
+        E::StarCreated { .. } | E::RepositoryStarred { starred: true, .. } => vec!["star", "watch"],
+        E::StarDeleted { .. } | E::RepositoryStarred { starred: false, .. } => vec!["star"],
         E::RepositoryForked { .. } => vec!["fork"],
         E::CollaboratorAdded { .. }
         | E::CollaboratorEdited { .. }
@@ -142,12 +153,13 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         }
         E::RepositoryCreated { .. }
         | E::RepositoryDeleted { .. }
-        | E::RepositoryUpdated { .. }
+        | E::RepositoryEdited { .. }
         | E::RepositoryRenamed { .. }
+        | E::RepositoryTransferred { .. }
         | E::RepositoryArchived { .. }
         | E::RepositoryUnarchived { .. }
-        | E::RepositoryPublicized { .. }
         | E::RepositoryPrivatized { .. } => vec!["repository"],
+        E::RepositoryPublicized { .. } => vec!["repository", "public"],
         E::LabelCreated { .. } | E::LabelEdited { .. } | E::LabelDeleted { .. } => vec!["label"],
         E::MilestoneCreated { .. }
         | E::MilestoneEdited { .. }
@@ -155,8 +167,26 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         | E::MilestoneOpened { .. }
         | E::MilestoneDeleted { .. } => vec!["milestone"],
         E::CommitStatusCreated { .. } => vec!["status"],
-        E::CheckRunUpdated { .. } => vec!["check_run"],
-        E::CheckSuiteUpdated { .. } => vec!["check_suite"],
+        E::CheckRunUpdated { .. }
+        | E::CheckRunCreated { .. }
+        | E::CheckRunCompleted { .. }
+        | E::CheckRunRerequested { .. }
+        | E::CheckRunActionRequested { .. } => vec!["check_run"],
+        E::CheckSuiteUpdated { .. }
+        | E::CheckSuiteRequested { .. }
+        | E::CheckSuiteRerequested { .. }
+        | E::CheckSuiteCompleted { .. } => vec!["check_suite"],
+        E::DeployKeyCreated { .. } | E::DeployKeyDeleted { .. } => vec!["deploy_key"],
+        E::BranchProtectionRuleChanged { .. } => vec!["branch_protection_rule"],
+        E::RepositoryRulesetChanged { .. } => vec!["repository_ruleset"],
+        E::WikiPagesUpdated { .. } => vec!["gollum"],
+        // Organization-level events (org and global hooks; `team_add` and
+        // team repository grants also reach the repository's hooks).
+        E::TeamCreated { .. } | E::TeamEdited { .. } | E::TeamDeleted { .. } => vec!["team"],
+        E::TeamRepoAdded { .. } => vec!["team", "team_add"],
+        E::TeamRepoRemoved { .. } => vec!["team"],
+        E::TeamMemberAdded { .. } | E::TeamMemberRemoved { .. } => vec!["membership"],
+        E::OrgMemberRemoved { .. } | E::OrgMemberInvited { .. } => vec!["organization"],
         E::WorkflowRunUpdated { .. } => vec!["workflow_run"],
         E::WorkflowJobUpdated { .. } => vec!["workflow_job"],
         E::OrgMemberAdded { .. } => vec!["organization"],
@@ -303,6 +333,111 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             actor_id,
             data,
         } => return organization_changed(state, *org_id, login, action, *actor_id, data).await,
+        E::TeamCreated {
+            org_id,
+            team_id,
+            actor_id,
+        } => return org::team(state, *org_id, *team_id, "created", None, None, *actor_id).await,
+        E::TeamEdited {
+            org_id,
+            team_id,
+            actor_id,
+            changes,
+        } => {
+            return org::team(
+                state,
+                *org_id,
+                *team_id,
+                "edited",
+                Some(changes),
+                None,
+                *actor_id,
+            )
+            .await;
+        }
+        E::TeamDeleted {
+            org_id,
+            team_id,
+            actor_id,
+            team,
+            ..
+        } => {
+            return org::team(
+                state,
+                *org_id,
+                *team_id,
+                "deleted",
+                None,
+                Some(team),
+                *actor_id,
+            )
+            .await;
+        }
+        E::TeamRepoAdded {
+            org_id,
+            team_id,
+            repo_id,
+            actor_id,
+        } => return org::team_repo(state, *org_id, *team_id, *repo_id, true, *actor_id).await,
+        E::TeamRepoRemoved {
+            org_id,
+            team_id,
+            repo_id,
+            actor_id,
+        } => return org::team_repo(state, *org_id, *team_id, *repo_id, false, *actor_id).await,
+        E::TeamMemberAdded {
+            org_id,
+            team_id,
+            user_id,
+            actor_id,
+        } => return org::membership(state, *org_id, *team_id, *user_id, true, *actor_id).await,
+        E::TeamMemberRemoved {
+            org_id,
+            team_id,
+            user_id,
+            actor_id,
+        } => return org::membership(state, *org_id, *team_id, *user_id, false, *actor_id).await,
+        E::OrgMemberRemoved {
+            org_id,
+            user_id,
+            actor_id,
+        } => return org::member_removed(state, *org_id, *user_id, *actor_id).await,
+        E::OrgMemberInvited {
+            org_id,
+            invitation_id,
+            actor_id,
+        } => return org::member_invited(state, *org_id, *invitation_id, *actor_id).await,
+        // Delivered to the old repository (the issue already moved).
+        E::IssueTransferred {
+            repo_id,
+            issue_id,
+            old_repo_id,
+            old_number,
+            actor_id,
+        } => {
+            return issues::transferred(
+                state,
+                *repo_id,
+                *issue_id,
+                *old_repo_id,
+                *old_number,
+                *actor_id,
+            )
+            .await;
+        }
+        // Parent and sub-issue may live in different repositories.
+        E::SubIssueAdded {
+            parent_id,
+            sub_issue_id,
+            actor_id,
+            ..
+        } => return issues::sub_issues(state, *parent_id, *sub_issue_id, true, *actor_id).await,
+        E::SubIssueRemoved {
+            parent_id,
+            sub_issue_id,
+            actor_id,
+            ..
+        } => return issues::sub_issues(state, *parent_id, *sub_issue_id, false, *actor_id).await,
         _ => {}
     }
     let Some(repo_id) = event.repo_id() else {
@@ -394,6 +529,8 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 .unwrap_or_default();
             b.issue(*issue_id, "demilestoned", extra, true).await
         }
+        E::IssuePinned { issue_id, .. } => b.issue(*issue_id, "pinned", vec![], false).await,
+        E::IssueUnpinned { issue_id, .. } => b.issue(*issue_id, "unpinned", vec![], false).await,
         E::IssueLocked { issue_id, .. } => b.issue(*issue_id, "locked", vec![], true).await,
         E::IssueUnlocked { issue_id, .. } => b.issue(*issue_id, "unlocked", vec![], true).await,
         E::IssueDeleted { issue, .. } => Ok(vec![b.emit(
@@ -407,17 +544,28 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             issue_id,
             comment_id,
             ..
-        } => b.issue_comment(*issue_id, *comment_id, "created").await,
+        } => {
+            b.issue_comment(*issue_id, *comment_id, "created", &Value::Null)
+                .await
+        }
         E::IssueCommentEdited {
             issue_id,
             comment_id,
+            changes,
             ..
-        } => b.issue_comment(*issue_id, *comment_id, "edited").await,
+        } => {
+            b.issue_comment(*issue_id, *comment_id, "edited", changes)
+                .await
+        }
         E::IssueCommentDeleted {
             issue_id,
             comment_id,
+            comment,
             ..
-        } => b.issue_comment(*issue_id, *comment_id, "deleted").await,
+        } => {
+            b.issue_comment(*issue_id, *comment_id, "deleted", comment)
+                .await
+        }
 
         // ----- pull requests ------------------------------------------------
         E::PullRequestOpened { pull_id, .. } => b.pull(*pull_id, "opened", vec![], false).await,
@@ -475,28 +623,70 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 .await
         }
 
+        E::PullRequestAutoMergeEnabled { pull_id, .. } => {
+            b.pull(*pull_id, "auto_merge_enabled", vec![], false).await
+        }
+        E::PullRequestAutoMergeDisabled { pull_id, .. } => {
+            b.pull(*pull_id, "auto_merge_disabled", vec![], false).await
+        }
+
         // ----- reviews and review comments ------------------------------------
         E::PullRequestReviewSubmitted {
             pull_id, review_id, ..
-        } => b.review(*pull_id, *review_id, "submitted").await,
+        } => b.review(*pull_id, *review_id, "submitted", None).await,
         E::PullRequestReviewDismissed {
             pull_id, review_id, ..
-        } => b.review(*pull_id, *review_id, "dismissed").await,
+        } => b.review(*pull_id, *review_id, "dismissed", None).await,
+        E::PullRequestReviewEdited {
+            pull_id,
+            review_id,
+            changes,
+            ..
+        } => {
+            let changes = if changes.is_null() {
+                json!({})
+            } else {
+                changes.clone()
+            };
+            b.review(*pull_id, *review_id, "edited", Some(changes))
+                .await
+        }
+        E::PullRequestReviewThreadResolved {
+            pull_id,
+            comment_id,
+            ..
+        } => b.review_thread(*pull_id, *comment_id, "resolved").await,
+        E::PullRequestReviewThreadUnresolved {
+            pull_id,
+            comment_id,
+            ..
+        } => b.review_thread(*pull_id, *comment_id, "unresolved").await,
         E::PullRequestReviewCommentCreated {
             pull_id,
             comment_id,
             ..
-        } => b.review_comment(*pull_id, *comment_id, "created").await,
+        } => {
+            b.review_comment(*pull_id, *comment_id, "created", &Value::Null)
+                .await
+        }
         E::PullRequestReviewCommentEdited {
             pull_id,
             comment_id,
+            changes,
             ..
-        } => b.review_comment(*pull_id, *comment_id, "edited").await,
+        } => {
+            b.review_comment(*pull_id, *comment_id, "edited", changes)
+                .await
+        }
         E::PullRequestReviewCommentDeleted {
             pull_id,
             comment_id,
+            comment,
             ..
-        } => b.review_comment(*pull_id, *comment_id, "deleted").await,
+        } => {
+            b.review_comment(*pull_id, *comment_id, "deleted", comment)
+                .await
+        }
 
         // ----- releases -------------------------------------------------------
         E::ReleaseCreated { release_id, .. } => b.release(*release_id, &["created"], vec![]).await,
@@ -512,6 +702,17 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             b.release(*release_id, &["edited"], vec![("changes", changes.clone())])
                 .await
         }
+        E::ReleaseStateChanged {
+            release_id, action, ..
+        } => {
+            let action: &'static str = match action.as_str() {
+                "released" => "released",
+                "prereleased" => "prereleased",
+                "unpublished" => "unpublished",
+                _ => return Ok(Vec::new()),
+            };
+            b.release(*release_id, &[action], vec![]).await
+        }
         E::ReleaseDeleted { release, .. } => Ok(vec![b.emit(
             "release",
             Some("deleted"),
@@ -519,7 +720,12 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
         )]),
 
         // ----- stars, forks, collaborators --------------------------------------
-        E::StarCreated { actor_id, .. } => {
+        E::StarCreated { actor_id, .. }
+        | E::RepositoryStarred {
+            actor_id,
+            starred: true,
+            ..
+        } => {
             let starred_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
                 "SELECT created_at FROM stars WHERE user_id = $1 AND repo_id = $2",
             )
@@ -539,7 +745,7 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 b.emit("watch", Some("started"), vec![]),
             ])
         }
-        E::StarDeleted { .. } => Ok(vec![b.emit(
+        E::StarDeleted { .. } | E::RepositoryStarred { starred: false, .. } => Ok(vec![b.emit(
             "star",
             Some("deleted"),
             vec![("starred_at", Value::Null)],
@@ -599,11 +805,38 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
 
         // ----- repository lifecycle ----------------------------------------------
         E::RepositoryCreated { .. } => Ok(vec![b.emit("repository", Some("created"), vec![])]),
-        E::RepositoryUpdated { .. } => Ok(vec![b.emit(
+        E::RepositoryEdited { changes, .. } => Ok(vec![b.emit(
             "repository",
             Some("edited"),
-            vec![("changes", json!({}))],
+            vec![(
+                "changes",
+                if changes.is_null() {
+                    json!({})
+                } else {
+                    changes.clone()
+                },
+            )],
         )]),
+        E::RepositoryTransferred { old_owner_id, .. } => {
+            let Some(old_owner) = db::User::find(&state.db, *old_owner_id).await? else {
+                return Ok(Vec::new());
+            };
+            let key = if old_owner.is_org() {
+                "organization"
+            } else {
+                "user"
+            };
+            // The previous organization's hooks get it too (see
+            // `webhooks::dispatch`).
+            Ok(vec![b.emit(
+                "repository",
+                Some("transferred"),
+                vec![(
+                    "changes",
+                    json!({ "owner": { "from": { key: user_json(&state.urls, &old_owner) } } }),
+                )],
+            )])
+        }
         E::RepositoryRenamed { old_name, .. } => Ok(vec![b.emit(
             "repository",
             Some("renamed"),
@@ -616,9 +849,10 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
         E::RepositoryUnarchived { .. } => {
             Ok(vec![b.emit("repository", Some("unarchived"), vec![])])
         }
-        E::RepositoryPublicized { .. } => {
-            Ok(vec![b.emit("repository", Some("publicized"), vec![])])
-        }
+        E::RepositoryPublicized { .. } => Ok(vec![
+            b.emit("repository", Some("publicized"), vec![]),
+            b.emit("public", None, vec![]),
+        ]),
         E::RepositoryPrivatized { .. } => {
             Ok(vec![b.emit("repository", Some("privatized"), vec![])])
         }
@@ -682,6 +916,92 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             .await?
             .map(|s| vec![b.emit("check_suite", Some(action), vec![("check_suite", s)])])
             .unwrap_or_default()),
+        E::CheckRunCreated { check_run_id, .. } => {
+            b.check_run(*check_run_id, "created", vec![]).await
+        }
+        E::CheckRunCompleted { check_run_id, .. } => {
+            b.check_run(*check_run_id, "completed", vec![]).await
+        }
+        E::CheckRunRerequested { check_run_id, .. } => {
+            b.check_run(*check_run_id, "rerequested", vec![]).await
+        }
+        E::CheckRunActionRequested {
+            check_run_id,
+            identifier,
+            ..
+        } => {
+            b.check_run(
+                *check_run_id,
+                "requested_action",
+                vec![("requested_action", json!({ "identifier": identifier }))],
+            )
+            .await
+        }
+        E::CheckSuiteRequested { check_suite_id, .. } => {
+            b.check_suite(*check_suite_id, "requested").await
+        }
+        E::CheckSuiteRerequested { check_suite_id, .. } => {
+            b.check_suite(*check_suite_id, "rerequested").await
+        }
+        E::CheckSuiteCompleted { check_suite_id, .. } => {
+            b.check_suite(*check_suite_id, "completed").await
+        }
+
+        // ----- repository configuration -----------------------------------------------
+        E::DeployKeyCreated { key, .. } => Ok(vec![b.emit(
+            "deploy_key",
+            Some("created"),
+            vec![("key", key.clone())],
+        )]),
+        E::DeployKeyDeleted { key, .. } => Ok(vec![b.emit(
+            "deploy_key",
+            Some("deleted"),
+            vec![("key", key.clone())],
+        )]),
+        E::BranchProtectionRuleChanged {
+            action,
+            rule,
+            changes,
+            ..
+        } => {
+            let mut entries = vec![("rule", rule.clone())];
+            if action == "edited" {
+                entries.push(("changes", changes.clone()));
+            }
+            Ok(vec![b.emit(
+                "branch_protection_rule",
+                Some(action),
+                entries,
+            )])
+        }
+        E::RepositoryRulesetChanged {
+            action,
+            ruleset,
+            changes,
+            ..
+        } => {
+            let mut entries = vec![("repository_ruleset", ruleset.clone())];
+            if action == "edited" {
+                entries.push(("changes", changes.clone()));
+            }
+            Ok(vec![b.emit("repository_ruleset", Some(action), entries)])
+        }
+        // GitHub's `gollum` has no `deleted` page action: deletions are
+        // domain events (activity, audit) but produce no delivery.
+        E::WikiPagesUpdated { pages, .. } => {
+            let pages: Vec<Value> = pages
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|p| matches!(p["action"].as_str(), Some("created" | "edited")))
+                .cloned()
+                .collect();
+            if pages.is_empty() {
+                return Ok(Vec::new());
+            }
+            Ok(vec![b.emit("gollum", None, vec![("pages", json!(pages))])])
+        }
+
         // bgh-actions doesn't render the run JSON yet: nothing to deliver.
         E::WorkflowRunUpdated { workflow_run, .. } if workflow_run.is_null() => Ok(Vec::new()),
         E::WorkflowRunUpdated {
@@ -769,17 +1089,24 @@ impl Builder<'_> {
         Ok(vec![self.emit("issues", Some(action), entries)])
     }
 
+    /// `extra` is the event's `changes` (edited) or comment snapshot
+    /// (deleted); `null` from older producers.
     async fn issue_comment(
         &self,
         issue_id: i64,
         comment_id: i64,
         action: &str,
+        extra: &Value,
     ) -> anyhow::Result<Vec<HookEvent>> {
         let Some(row) = issue_row(self.state, self.ctx, issue_id).await? else {
             return Ok(Vec::new());
         };
         let comment = if action == "deleted" {
-            deleted_comment_json(&self.state.urls, self.ctx, &row, comment_id)
+            if extra.is_object() {
+                extra.clone()
+            } else {
+                deleted_comment_json(&self.state.urls, self.ctx, &row, comment_id)
+            }
         } else {
             match issues::comment_row(self.state, self.ctx, comment_id).await? {
                 Some(c) => comment_json(self.state, self.ctx, &row, &c).await?,
@@ -789,7 +1116,7 @@ impl Builder<'_> {
         let ij = issue_json(self.state, self.ctx, &row).await?;
         let mut entries = vec![("issue", ij), ("comment", comment)];
         if action == "edited" {
-            entries.push(("changes", json!({})));
+            entries.push(("changes", changes_or_empty(extra)));
         }
         Ok(vec![self.emit("issue_comment", Some(action), entries)])
     }
@@ -848,6 +1175,7 @@ impl Builder<'_> {
         pull_id: i64,
         review_id: i64,
         action: &str,
+        changes: Option<Value>,
     ) -> anyhow::Result<Vec<HookEvent>> {
         let Some(mut rv) = review(self.state, self.ctx, review_id).await? else {
             return Ok(Vec::new());
@@ -858,11 +1186,61 @@ impl Builder<'_> {
         let Some((_, pj)) = self.pull_value(pull_id).await? else {
             return Ok(Vec::new());
         };
+        let mut entries = vec![("review", rv), ("pull_request", pj)];
+        if let Some(c) = changes {
+            entries.push(("changes", c));
+        }
         Ok(vec![self.emit(
             "pull_request_review",
             Some(action),
-            vec![("review", rv), ("pull_request", pj)],
+            entries,
         )])
+    }
+
+    /// `pull_request_review_thread`: the thread is its root comment plus
+    /// replies.
+    async fn review_thread(
+        &self,
+        pull_id: i64,
+        root_id: i64,
+        action: &str,
+    ) -> anyhow::Result<Vec<HookEvent>> {
+        let Some(thread) = pulls::review_thread(self.state, self.ctx, root_id).await? else {
+            return Ok(Vec::new());
+        };
+        let Some((_, pj)) = self.pull_value(pull_id).await? else {
+            return Ok(Vec::new());
+        };
+        Ok(vec![self.emit(
+            "pull_request_review_thread",
+            Some(action),
+            vec![("thread", thread), ("pull_request", pj)],
+        )])
+    }
+
+    async fn check_run(
+        &self,
+        check_run_id: i64,
+        action: &str,
+        extra: Vec<(&'static str, Value)>,
+    ) -> anyhow::Result<Vec<HookEvent>> {
+        let Some(run) = check_run(self.state, self.ctx, check_run_id).await? else {
+            return Ok(Vec::new());
+        };
+        let mut entries = vec![("check_run", run)];
+        entries.extend(extra);
+        Ok(vec![self.emit("check_run", Some(action), entries)])
+    }
+
+    async fn check_suite(
+        &self,
+        check_suite_id: i64,
+        action: &str,
+    ) -> anyhow::Result<Vec<HookEvent>> {
+        Ok(check_suite(self.state, self.ctx, check_suite_id)
+            .await?
+            .map(|s| vec![self.emit("check_suite", Some(action), vec![("check_suite", s)])])
+            .unwrap_or_default())
     }
 
     async fn review_comment(
@@ -870,12 +1248,17 @@ impl Builder<'_> {
         pull_id: i64,
         comment_id: i64,
         action: &str,
+        extra: &Value,
     ) -> anyhow::Result<Vec<HookEvent>> {
         let Some((row, pj)) = self.pull_value(pull_id).await? else {
             return Ok(Vec::new());
         };
         let comment = if action == "deleted" {
-            deleted_review_comment_json(&self.state.urls, self.ctx, row.number, comment_id)
+            if extra.is_object() {
+                extra.clone()
+            } else {
+                deleted_review_comment_json(&self.state.urls, self.ctx, row.number, comment_id)
+            }
         } else {
             match review_comment(self.state, self.ctx, comment_id).await? {
                 Some(c) => c,
@@ -884,7 +1267,7 @@ impl Builder<'_> {
         };
         let mut entries = vec![("comment", comment), ("pull_request", pj)];
         if action == "edited" {
-            entries.push(("changes", json!({})));
+            entries.push(("changes", changes_or_empty(extra)));
         }
         Ok(vec![self.emit(
             "pull_request_review_comment",
@@ -946,6 +1329,15 @@ impl Builder<'_> {
         let mut entries = vec![("milestone", m)];
         entries.extend(extra);
         Ok(vec![self.emit("milestone", Some(action), entries)])
+    }
+}
+
+/// An event's `changes` object, `{}` when an older producer sent none.
+fn changes_or_empty(changes: &Value) -> Value {
+    if changes.is_object() {
+        changes.clone()
+    } else {
+        json!({})
     }
 }
 
@@ -1077,6 +1469,24 @@ pub async fn ping(
     Ok(Value::Object(m))
 }
 
+/// `meta` `deleted` payload: like `ping` (hook, repository/organization,
+/// sender) with an `action` and without `zen`.
+pub async fn meta_deleted(
+    state: &AppState,
+    hook_id: i64,
+    hook_json: serde_json::Value,
+    repo_id: Option<i64>,
+    org_id: Option<i64>,
+    sender_id: Option<i64>,
+) -> anyhow::Result<serde_json::Value> {
+    let mut v = ping(state, hook_id, hook_json, repo_id, org_id, sender_id).await?;
+    if let Some(m) = v.as_object_mut() {
+        m.remove("zen");
+        m.insert("action".into(), json!("deleted"));
+    }
+    Ok(v)
+}
+
 /// Synthetic `push` payload for `POST /repos/{o}/{r}/hooks/{id}/tests`: latest commit on the
 /// default branch (before = its parent or zero sha). None if the repo has no commits.
 pub async fn test_push(
@@ -1140,6 +1550,7 @@ mod tests {
                 repo_id: 1,
                 pusher_id: None,
                 updates,
+                origin: None,
             })
         };
         let create = RefUpdate {

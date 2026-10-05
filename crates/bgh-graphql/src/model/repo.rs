@@ -242,7 +242,7 @@ impl Repository {
         )
     }
     pub async fn mirror_url(&self) -> Option<URI> {
-        None
+        self.r().mirror_url.clone().map(URI)
     }
     pub async fn open_graph_image_url(&self, ctx: &Context<'_>) -> URI {
         URI(gql(ctx)
@@ -392,7 +392,7 @@ impl Repository {
         None
     }
     pub async fn is_mirror(&self) -> bool {
-        false
+        self.r().mirror_url.is_some()
     }
     pub async fn is_private(&self) -> bool {
         self.r().is_private()

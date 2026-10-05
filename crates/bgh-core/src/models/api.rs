@@ -639,7 +639,10 @@ impl MinimalRepository {
             description: repo.description.clone(),
             fork: repo.fork,
             url: urls.repo(&owner.login, &repo.name),
-            links: RepoLinks::new(urls, &owner.login, &repo.name),
+            links: RepoLinks {
+                mirror_url: repo.mirror_url.clone(),
+                ..RepoLinks::new(urls, &owner.login, &repo.name)
+            },
             homepage: repo.homepage.clone(),
             language: repo.language.clone(),
             forks_count: repo.forks_count,

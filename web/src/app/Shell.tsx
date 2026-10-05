@@ -113,6 +113,7 @@ function GlobalShortcuts() {
         { id: 'ui.sidebar', title: 'Toggle sidebar', group: 'Preferences', icon: SidebarCollapseIcon, shortcut: 'mod+\\', run: () => ui.toggleSidebar() },
         { id: 'ui.help', title: 'Show keyboard shortcuts', group: 'Help', shortcut: '?', run: () => ui.setHelp(true) },
         { id: 'repo.new', title: 'Create new repository', group: 'Create', icon: PlusIcon, keywords: 'new repo', run: () => navigate('/new') },
+        { id: 'repo.import', title: 'Import repository', group: 'Create', icon: PlusIcon, keywords: 'import mirror clone migrate', run: () => navigate('/new/import') },
         { id: 'org.new', title: 'Create new organization', group: 'Create', icon: PlusIcon, keywords: 'new org', run: () => navigate('/organizations/new') },
         { id: 'nav.profile', title: 'Go to your profile', group: 'Navigation', icon: PersonIcon, run: () => session.user && navigate(`/${session.user.login}`) },
         ...SETTINGS_COMMANDS.map(([id, title, keywords]) => ({

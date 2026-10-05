@@ -8,5 +8,6 @@ mod conversation;
 mod extras;
 mod issues;
 mod labels_milestones;
+mod links;
 mod smoke;
 mod web_client;

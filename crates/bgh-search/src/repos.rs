@@ -226,8 +226,13 @@ pub async fn filters(
                     .text(value.to_lowercase())
                     .raw(", false)");
             }
-            "mirror" if value.eq_ignore_ascii_case("true") != neg => {
-                s.raw("FALSE");
+            "mirror" => {
+                let want = value.eq_ignore_ascii_case("true") != neg;
+                s.raw(if want {
+                    "r.mirror_url IS NOT NULL"
+                } else {
+                    "r.mirror_url IS NULL"
+                });
             }
             _ => {}
         }

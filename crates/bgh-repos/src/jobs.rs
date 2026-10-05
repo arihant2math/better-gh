@@ -59,6 +59,17 @@ fn choose_default(current: &str, branches: &[String], pushed: &[RefUpdate]) -> O
 /// Post-receive: update `pushed_at`/size, initialize the default branch on
 /// first push, record a sync action and emit [`Event::Push`].
 pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<()> {
+    process_ref_updates(&state, job, None).await
+}
+
+/// [`post_receive`] for refs fetched from a remote (`origin` is
+/// [`PushEvent::ORIGIN_MIRROR`] or [`PushEvent::ORIGIN_IMPORT`]).
+pub(crate) async fn process_ref_updates(
+    state: &AppState,
+    job: PostReceive,
+    origin: Option<&str>,
+) -> anyhow::Result<()> {
+    let state = state.clone();
     let Some(repo) = db::Repository::find(&state.db, job.repo_id).await? else {
         return Ok(()); // deleted meanwhile
     };
@@ -104,6 +115,7 @@ pub async fn post_receive(state: AppState, job: PostReceive) -> anyhow::Result<(
         repo_id: repo.id,
         pusher_id: job.pusher_id,
         updates: job.updates,
+        origin: origin.map(str::to_string),
     }));
     tx.commit().await?;
     Ok(())

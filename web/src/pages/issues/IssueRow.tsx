@@ -5,7 +5,7 @@ import { store } from '../../sync';
 import type { Issue } from '../../sync/models';
 import { AvatarStack, LabelPill, StateIcon } from '../../ui/Badge';
 import { cx } from '../../ui/Button';
-import { CheckIcon, CommentIcon, DotFillIcon, IssueTracksIcon, LockIcon, MilestoneIcon, XIcon } from '../../ui/icons';
+import { CheckIcon, CommentIcon, DotFillIcon, GitPullRequestIcon, IssueTracksIcon, LockIcon, MilestoneIcon, XIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tooltip } from '../../ui/Tooltip';
 import styles from './IssueList.module.css';
@@ -132,6 +132,16 @@ export const IssueRow = observer(function IssueRow({
                 <span className={cx(styles.review, styles[issue.reviewDecision])}>{REVIEW_TEXT[issue.reviewDecision]}</span>
               )}
               {issue.subIssueIds && issue.subIssueIds.length > 0 && <SubIssueProgress issue={issue} />}
+              {!issue.isPr && issue.linkedPullIds && issue.linkedPullIds.length > 0 && (
+                <span
+                  className={styles.milestone}
+                  data-testid="linked-prs"
+                  title={`${issue.linkedPullIds.length} linked pull request${issue.linkedPullIds.length === 1 ? '' : 's'}`}
+                >
+                  <GitPullRequestIcon size={12} />
+                  {issue.linkedPullIds.length}
+                </span>
+              )}
               {issue.locked && (
                 <span className={styles.milestone} title="Locked">
                   <LockIcon size={12} />
