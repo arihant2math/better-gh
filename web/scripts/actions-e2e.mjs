@@ -67,6 +67,8 @@ try {
   // 3. Job logs: failed job, streaming the completed log.
   await page.click('aside[aria-label="Run jobs"] >> text=flaky');
   await page.waitForSelector('text=expected 200, got 500', { timeout: 15_000 });
+  // The annotation (check-run annotations API) can render before the log stream.
+  await page.waitForSelector('text=starting integration test', { timeout: 10_000 }).catch(() => undefined);
   check(await page.isVisible('text=starting integration test'), 'failed step log expanded');
   await shot('actions-job-failed');
 

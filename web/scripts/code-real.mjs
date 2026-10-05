@@ -22,6 +22,10 @@ try {
 
 const [base = 'http://127.0.0.1:3000', login = 'alice', password = 'password', repo = 'alice/tokio', file = 'tokio/src/runtime/builder.rs', out = 'code-real'] = process.argv.slice(2);
 const RUNS = Number(process.env.RUNS ?? 7);
+/** Branch used for tree/blob/commits URLs (the repository's default branch unless BRANCH is set). */
+const BRANCH = process.env.BRANCH ?? 'master';
+/** Fuzzy file finder query (must match a file of the repository). */
+const FIND = process.env.FIND ?? 'rtbuilder';
 mkdirSync(out, { recursive: true });
 
 const browser = await chromium.launch();
@@ -63,14 +67,14 @@ await check('repo home renders listing, README and about sidebar', async () => {
 });
 
 await check('directory navigation + file tree', async () => {
-  await nav(`/${repo}/tree/master/${dir}`);
+  await nav(`/${repo}/tree/${BRANCH}/${dir}`);
   await page.getByRole('link', { name, exact: true }).first().waitFor();
   await page.getByRole('navigation', { name: 'Files' }).waitFor();
   await shot('02-tree');
 });
 
 await check('blob view with highlighting and line permalink', async () => {
-  await nav(`/${repo}/blob/master/${file}#L20-L25`);
+  await nav(`/${repo}/blob/${BRANCH}/${file}#L20-L25`);
   await page.locator('[data-line="20"]').waitFor({ timeout: 15000 });
   const sel = await page.locator('[data-line="22"]').getAttribute('class');
   if (!/selected/.test(sel ?? '')) throw new Error('line 22 not selected');
@@ -87,10 +91,10 @@ await check('blame view with age heatmap and prior link', async () => {
 });
 
 await check('fuzzy file finder (t)', async () => {
-  await nav(`/${repo}/tree/master`);
+  await nav(`/${repo}/tree/${BRANCH}`);
   await page.getByRole('list', { name: 'Files' }).waitFor();
   await page.keyboard.press('t');
-  await page.getByRole('textbox', { name: 'File name' }).fill('rtbuilder');
+  await page.getByRole('textbox', { name: 'File name' }).fill(FIND);
   await page.getByRole('option').first().waitFor();
   await shot('05-finder');
   await page.keyboard.press('Enter');
@@ -114,7 +118,7 @@ await check('branch picker lists branches and tags', async () => {
 });
 
 await check('commits list (grouped by day, virtualized)', async () => {
-  await nav(`/${repo}/commits/master`);
+  await nav(`/${repo}/commits/${BRANCH}`);
   await page.getByText(/Commits on /).first().waitFor({ timeout: 15000 });
   await shot('07-commits');
 });
@@ -128,7 +132,7 @@ await check('single commit page with diff', async () => {
 });
 
 await check('file history', async () => {
-  await nav(`/${repo}/commits/master/${file}`);
+  await nav(`/${repo}/commits/${BRANCH}/${file}`);
   await page.getByText(/History for/).first().waitFor({ timeout: 15000 });
   await shot('09-history');
 });
@@ -161,7 +165,7 @@ await check('compare link target exists (PR compare page owned by pulls-web)', a
 // highlighted line is in the DOM. file→blame: press `b` until the blame
 // gutter renders. Cold = first visit of that file; warm = repeat visits.
 const timings = { 'tree→file (cold)': [], 'tree→file (warm)': [], 'file→blame (cold)': [], 'file→blame (warm)': [] };
-const files = await (await page.request.get(`${base}/_bgh/repos/${repo}/tree/master/${dir}`)).json();
+const files = await (await page.request.get(`${base}/_bgh/repos/${repo}/tree/${BRANCH}/${dir}`)).json();
 const blobs = files.entries.filter((e) => e.type === 'blob' && /\.rs$/.test(e.name)).slice(0, RUNS);
 
 /** Time from `trigger()` (in page) until `selector` is in the DOM and painted (next frame). */
@@ -189,7 +193,7 @@ async function measure(selector, trigger) {
 }
 
 async function treeToFile(entry) {
-  await nav(`/${repo}/tree/master/${dir}`);
+  await nav(`/${repo}/tree/${BRANCH}/${dir}`);
   const link = page.getByRole('list', { name: 'Files' }).getByRole('link', { name: entry.name, exact: true });
   await link.waitFor();
   await page.locator('[data-line]').first().waitFor({ state: 'detached' }).catch(() => {});

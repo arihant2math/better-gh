@@ -99,6 +99,7 @@ async fn create_validation() {
         .send()
         .await;
     res.assert_status(422);
+    assert_eq!(res.json()["message"], "Repository creation failed.");
     assert_eq!(
         res.json()["errors"][0]["message"],
         "name already exists on this account"

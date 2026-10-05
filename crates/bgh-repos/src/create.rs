@@ -185,11 +185,15 @@ async fn create(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match unique_violation(&e).as_deref() {
-        Some("repositories_owner_name_key") => ApiError::invalid_field(FieldError::custom(
-            "Repository",
-            "name",
-            "name already exists on this account",
-        )),
+        // GitHub's message for this case (not "Validation Failed").
+        Some("repositories_owner_name_key") => ApiError::Validation {
+            message: "Repository creation failed.".into(),
+            errors: vec![FieldError::custom(
+                "Repository",
+                "name",
+                "name already exists on this account",
+            )],
+        },
         _ => e.into(),
     })?;
 

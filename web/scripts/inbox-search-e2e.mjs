@@ -62,8 +62,8 @@ const shot = (name) => page.screenshot({ path: join(out, `${name}.png`) });
 
 // ------------------------------------------------------------------ login
 await page.goto(`${base}/login`);
-await page.fill('#login', 'ada');
-await page.fill('#password', 'password-ada-123');
+await page.fill('input[autocomplete=username]', 'ada');
+await page.fill('input[type=password]', 'password-ada-123');
 await page.click('button[type=submit]');
 await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 15000 });
 await page.waitForSelector('text=Loading your workspace…', { state: 'detached', timeout: 20000 }).catch(() => undefined);
