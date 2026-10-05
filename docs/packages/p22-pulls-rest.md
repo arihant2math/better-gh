@@ -1,6 +1,9 @@
+Integration: ready
+P22 done: check/status Link headers, commit node_ids, body media types, HTML-host .diff/.patch; full gate green after merging fc37a0d.
+
 # P22 — Pulls and checks REST correctness
 
-**Status:** done (self-integrated into `claude/sleepy-cray-9jj0t3`).
+**Status:** done; awaiting the integrator (rule 14).
 Branch `bgh/p22-pulls-rest`. Migrations: none (range unused).
 
 ## Implemented
