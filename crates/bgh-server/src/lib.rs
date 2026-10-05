@@ -29,7 +29,7 @@ use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove
 use tower_http::compression::{CompressionLayer, DefaultPredicate};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 
 pub use web::WebFiles;
 
@@ -114,14 +114,11 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
         .layer(CompressionLayer::new().compress_when(compress_when))
         .layer(PropagateRequestIdLayer::x_request_id())
-        .layer(TraceLayer::new_for_http().make_span_with(|req: &Request<Body>| {
-            let request_id = req
-                .headers()
-                .get("x-request-id")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("-");
-            tracing::info_span!("http", method = %req.method(), path = %req.uri().path(), request_id)
-        }))
+        .layer(
+            TraceLayer::new_for_http()
+                .on_response(DefaultOnResponse::new().level(tracing::Level::INFO))
+                .make_span_with(request_span),
+        )
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .with_state(state)
 }
@@ -139,6 +136,21 @@ pub fn factory() -> AppFactory {
 #[cfg(feature = "testing")]
 pub async fn test_app() -> bgh_core::testing::TestApp {
     bgh_core::testing::TestApp::spawn_with(factory()).await
+}
+
+/// Tracing span per request, tagged with the `x-request-id`.
+fn request_span(req: &Request<Body>) -> tracing::Span {
+    let request_id = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("-");
+    tracing::info_span!(
+        "http",
+        method = %req.method(),
+        path = %req.uri().path(),
+        request_id
+    )
 }
 
 async fn api_not_found() -> ApiError {

@@ -287,8 +287,9 @@ add a new one.
 * `bgh_server::test_app().await` (feature `testing`, enabled in every
   crate's dev-dependencies) returns a `bgh_core::testing::TestApp`: the full
   router on a fresh Postgres database (`CREATE DATABASE … TEMPLATE
-  bgh_test_template`; the template is migrated once per process under an
-  advisory lock and rebuilt if migrations changed), a unique Redis key
+  bgh_test_tpl_<hash of migrations>`; the template is migrated once per
+  process under an advisory lock, and keying it by the migration set lets
+  branches with different migrations test concurrently), a unique Redis key
   prefix, a temp data dir, and a real `127.0.0.1` port for git CLI tests.
   Databases are dropped when the `TestApp` drops (`BGH_TEST_KEEP_DB=1` keeps
   them); leftovers of dead processes are cleaned up on the next run.

@@ -13,7 +13,7 @@
 //! ```
 //!
 //! Each [`TestApp`] gets its own Postgres database, cloned from the migrated
-//! template `bgh_test_template` (fast: `CREATE DATABASE ... TEMPLATE`), its
+//! template [`template_db`] (fast: `CREATE DATABASE ... TEMPLATE`), its
 //! own Redis key prefix, its own data directory, and is served on a real
 //! `127.0.0.1` port (for git CLI tests) as well as in-process via
 //! [`TestApp::request`]. The database is dropped when the `TestApp` is
@@ -43,8 +43,23 @@ use crate::models::db;
 use crate::registry::{AppFactory, Registry, spawn_listeners};
 use crate::state::{AppState, connect_redis};
 
-/// Template database holding the migrated schema.
-pub const TEMPLATE_DB: &str = "bgh_test_template";
+/// Name of the template database holding the migrated schema:
+/// `bgh_test_tpl_<hash of the embedded migrations>`. Keying it by the
+/// migration set lets worktrees/branches with different migrations run
+/// tests concurrently on one Postgres without rebuilding each other's
+/// template.
+pub fn template_db() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for m in crate::db::MIGRATOR.iter() {
+            h.update(m.version.to_le_bytes());
+            h.update(&*m.checksum);
+        }
+        format!("bgh_test_tpl_{}", &hex::encode(h.finalize())[..16])
+    })
+}
 /// Password of users created by [`TestApp::create_user`].
 pub const TEST_PASSWORD: &str = "correct-horse-battery";
 /// Advisory lock key serializing template migration / database creation.
@@ -91,7 +106,7 @@ async fn prepare_template() {
             let stale: Vec<String> = sqlx::query_scalar(
                 "SELECT datname FROM pg_database WHERE datname LIKE 'bgh\\_test\\_%' AND datname <> $1",
             )
-            .bind(TEMPLATE_DB)
+            .bind(template_db())
             .fetch_all(&mut admin)
             .await
             .unwrap_or_default();
@@ -104,21 +119,22 @@ async fn prepare_template() {
                 }
             }
 
+            let template = template_db();
             let mut attempt = 0;
             loop {
                 attempt += 1;
                 let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)")
-                    .bind(TEMPLATE_DB)
+                    .bind(template)
                     .fetch_one(&mut admin)
                     .await
                     .expect("query pg_database");
                 if !exists {
                     admin
-                        .execute(format!("CREATE DATABASE \"{TEMPLATE_DB}\"").as_str())
+                        .execute(format!("CREATE DATABASE \"{template}\"").as_str())
                         .await
                         .expect("create template db");
                 }
-                let mut conn = PgConnection::connect_with(&options_for(TEMPLATE_DB))
+                let mut conn = PgConnection::connect_with(&options_for(template))
                     .await
                     .expect("connect template db");
                 let result = crate::db::MIGRATOR.run(&mut conn).await;
@@ -127,13 +143,13 @@ async fn prepare_template() {
                     Ok(()) => break,
                     Err(err) if attempt == 1 => {
                         // Edited/removed migrations: rebuild the template from scratch.
-                        eprintln!("bgh testing: rebuilding {TEMPLATE_DB}: {err}");
+                        eprintln!("bgh testing: rebuilding {template}: {err}");
                         admin
-                            .execute(format!("DROP DATABASE IF EXISTS \"{TEMPLATE_DB}\" WITH (FORCE)").as_str())
+                            .execute(format!("DROP DATABASE IF EXISTS \"{template}\" WITH (FORCE)").as_str())
                             .await
                             .expect("drop template db");
                     }
-                    Err(err) => panic!("migrating {TEMPLATE_DB}: {err}"),
+                    Err(err) => panic!("migrating {template}: {err}"),
                 }
             }
 
@@ -161,7 +177,7 @@ async fn create_test_database() -> String {
         .await
         .expect("advisory lock");
     let created = admin
-        .execute(format!("CREATE DATABASE \"{name}\" TEMPLATE \"{TEMPLATE_DB}\"").as_str())
+        .execute(format!("CREATE DATABASE \"{name}\" TEMPLATE \"{}\"", template_db()).as_str())
         .await;
     let _ = admin
         .execute(format!("SELECT pg_advisory_unlock({LOCK_KEY})").as_str())
