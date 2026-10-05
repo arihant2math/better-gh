@@ -72,6 +72,8 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   const data = event.data as { type?: string } | null;
+  // Sent on sign-in, sign-out and session expiry (`dropShellCache`): the
+  // cached shell embeds the old boot data.
   if (data?.type === 'logout') {
     event.waitUntil(caches.delete(SHELL_CACHE));
   }

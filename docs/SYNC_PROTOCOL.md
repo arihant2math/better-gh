@@ -344,6 +344,12 @@ hydrates from IndexedDB and skips the bootstrap entirely.
 Same-origin, authenticated by the session cookie (the server must verify the
 `Origin` header). One JSON object per text frame. Field `t` is the type.
 
+Access grants: there is no dedicated "scope granted" message. A non-delete
+`viewerRepo` delta for a repo the client isn't subscribed to (new, shared or
+transferred repo), or a `membership` delta for the viewer in an unsubscribed
+org, makes the client load and `sub` the scope `repo:{mid}` / `org:{orgId}`
+(`SyncClient.applyDeltas`).
+
 ### Client → server
 
 | message | meaning |

@@ -268,6 +268,15 @@ export class SyncClient {
     });
     this.queue.noteSyncId(this.lastSyncId);
     this.opts.persistence.setMeta({ lastSyncId: this.lastSyncId });
+    // Access grants arrive in the viewer's own scope (`viewerRepo` for a new,
+    // transferred or shared repo; `membership` for a new org): load and
+    // subscribe the granted scope so its rows (and later deltas) show up live.
+    for (const d of items) {
+      if (d.a === 'D' || !d.d) continue;
+      const scope =
+        d.model === 'viewerRepo' ? `repo:${d.mid}` : d.model === 'membership' && (d.d as { userId?: ID }).userId === this.opts.userId ? `org:${(d.d as { orgId?: ID }).orgId}` : null;
+      if (scope && !scope.endsWith(':undefined') && !this.scopes.has(scope)) void this.ensureScope(scope).catch(() => false);
+    }
   }
 
   private async rebootstrap(): Promise<void> {

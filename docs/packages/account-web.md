@@ -91,3 +91,20 @@ register handlers in `web/src/mock/extra/{auth,user,developer,profile,repo}.ts`
 - `repo_sync_json` lacks `topics`, `has_projects`, `has_wiki`.
 - PATCH /user has no pronouns; no endpoint to link a new SSO identity while
   signed in.
+
+## End-to-end check against the real server
+
+`web/scripts/smoke-real.mjs` drives the account, settings, profile, new
+repo/org and repository-settings pages against a running `bgh` (fresh users
+per run; reads verification/reset links from the dev mail outbox):
+
+```
+cd web && npm run build
+BGH_WEB_DIR=web/dist BGH_DATA_DIR=/tmp/bgh-data BGH_WEBHOOK_ALLOWED_HOSTS='*' \
+  DATABASE_URL=postgres://postgres:postgres@localhost/bgh_e2e REDIS_URL=redis://127.0.0.1/ \
+  target/debug/bgh &
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node web/scripts/smoke-real.mjs http://localhost:3000 /tmp/bgh-data /tmp/shots/real
+```
+
+`ONLY=<regex>` limits the steps (the sign-up steps always run), `DEBUG=1` logs
+console output, navigations and HTTP errors.

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockServer } from '../mock/server';
 import { SyncClient } from './client';
 import type { Issue } from './models';
@@ -65,6 +65,30 @@ describe('SyncClient against the mock backend', () => {
     });
     await expect(done).rejects.toThrow('Validation Failed');
     expect(a.pool.get('issue', issue.id)?.title).toBe(before);
+  });
+
+  it('subscribes to scopes granted through viewerRepo / membership deltas', async () => {
+    const server = new MockServer(null, { now });
+    const a = client(server);
+    await a.start();
+    const spy = vi.spyOn(a, 'ensureScope').mockResolvedValue(true);
+    const known = [...a.scopes].find((sc) => sc.startsWith('repo:'))!;
+    const knownId = Number(known.slice(5));
+    const delta = (model: 'viewerRepo' | 'membership', mid: number, d: Record<string, unknown>) => ({
+      id: a.lastSyncId + 1,
+      scope: `user:${server.db.viewerId}`,
+      model,
+      mid,
+      a: 'U' as const,
+      d: { id: mid, ...d },
+    });
+    a.applyDeltas([
+      delta('viewerRepo', knownId, { permission: 'admin', starred: false, watching: 'subscribed' }),
+      delta('viewerRepo', 987654, { permission: 'admin', starred: false, watching: 'subscribed' }),
+      delta('membership', 55, { orgId: 4321, userId: server.db.viewerId, role: 'admin' }),
+      delta('membership', 56, { orgId: 999, userId: server.db.viewerId + 1, role: 'member' }),
+    ]);
+    expect(spy.mock.calls.map((c) => c[0])).toEqual(['repo:987654', 'org:4321']);
   });
 
   it('loads lazy models via partial sync', async () => {

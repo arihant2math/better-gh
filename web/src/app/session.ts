@@ -121,6 +121,9 @@ class Session {
   }
 
   adopt(boot: BootData) {
+    // The SW's cached shell embeds the previous boot data (e.g. `user: null`
+    // from the login page); drop it so the next reload renders this session.
+    dropShellCache();
     setBoot(boot);
     runInAction(() => {
       this.user = boot.user;
@@ -138,7 +141,7 @@ class Session {
     }
     this.teardown();
     if (user) await IdbPersistence.destroy(dbName(user.id)).catch(() => undefined);
-    navigator.serviceWorker?.controller?.postMessage({ type: 'logout' });
+    dropShellCache();
     navigate('/login');
   }
 
@@ -146,6 +149,7 @@ class Session {
   expired(): void {
     if (!this.user) return;
     this.teardown();
+    dropShellCache();
     toast({ title: 'Your session expired', description: 'Sign in again to continue.' });
     navigate(`/login?return_to=${encodeURIComponent(location.pathname)}`);
   }
@@ -165,3 +169,16 @@ class Session {
 }
 
 export const session = new Session();
+
+/**
+ * Ask the service worker to forget its cached app shell: the shell embeds
+ * boot data (user, CSRF token), which is wrong once the session changes
+ * without a navigation (sign-in, sign-out, expiry).
+ */
+export function dropShellCache(): void {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'logout' });
+  } catch {
+    /* no service worker */
+  }
+}

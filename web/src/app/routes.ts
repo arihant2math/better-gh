@@ -12,6 +12,8 @@ import { hasSync, sync } from '../sync';
 import { issueByNumber, orgByLogin, repoByName } from '../sync/selectors';
 import { preloadMarkdown } from '../ui/Markdown';
 
+/** GitHub login shape (alphanumerics and single inner hyphens). */
+const VALID_LOGIN = /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/;
 const RepoLayout = () => import('../pages/repo/RepoLayout');
 const SettingsLayout = () => import('../pages/settings/SettingsLayout');
 
@@ -94,7 +96,8 @@ export function registerRoutes(): void {
     {
       path: '/:owner',
       load: () => import('../pages/profile/ProfilePage'),
-      prefetch: (p) => prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
+      // Skip paths that can't be accounts (bare pages like /password_reset, /login).
+      prefetch: (p) => VALID_LOGIN.test(p.owner!) && prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
       title: (p) => p.owner!,
     },
     // Projects (owner level). Before `/:owner/...` patterns.
