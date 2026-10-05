@@ -695,13 +695,40 @@ async fn validation_and_permissions() {
         .await;
     list.assert_status(200);
     assert_eq!(list.json().as_array().unwrap().len(), 1);
+    // A second stored import: the list pages with GitHub's Link header.
+    post(with("name", json!("by-admin")), admin)
+        .await
+        .assert_status(201);
+    let list = app
+        .get("/_bgh/admin/metadata-imports?per_page=1")
+        .auth(admin)
+        .send()
+        .await;
+    let link = list.header("link").expect("Link header");
+    assert!(
+        link.contains("rel=\"next\"") && link.contains("page=2"),
+        "{link}"
+    );
+    let first = &list.json()[0];
+    assert_eq!(first["repo_name"], "by-admin");
+    assert_eq!(first["has_token"], true);
+    assert!(first.get("token").is_none() && first.get("enc_token").is_none());
     let org_list = app
         .get("/_bgh/orgs/acme/metadata-imports")
         .auth(&octo)
         .send()
         .await;
     org_list.assert_status(200);
-    assert_eq!(org_list.json()[0]["id"], id);
+    // Org owners see every import into the org, the site admin's too.
+    let ids: Vec<i64> = org_list
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.contains(&id));
     app.get("/_bgh/orgs/acme/metadata-imports")
         .auth(&stranger)
         .send()
@@ -729,5 +756,54 @@ async fn validation_and_permissions() {
             .await
             .json()["status"],
         "cancelled"
+    );
+}
+
+#[tokio::test]
+async fn a_later_match_replaces_a_mannequin_mapping() {
+    let s = setup().await;
+    let app = &s.app;
+    let admin = &s.admin;
+    let opts = |name: &str, map: Value| json!({"name": name, "git": false, "releases": false, "teams": false, "user_map": map});
+    let first = start(&s, opts("first", json!({}))).await;
+    let done = wait(app, admin, first["id"].as_i64().unwrap()).await;
+    assert_eq!(done["status"], "complete", "{done:#}");
+    assert_eq!(done["stats"]["mannequins"], 2);
+    let author = |repo: &'static str| async move {
+        app.get(&format!("/api/v3/repos/acme/{repo}/issues/2"))
+            .auth(admin)
+            .send()
+            .await
+            .json()["user"]["login"]
+            .clone()
+    };
+    assert_eq!(author("first").await, "hubot-imported");
+
+    let second = start(&s, opts("second", json!({"hubot": "hubby"}))).await;
+    let id = second["id"].as_i64().unwrap();
+    let done = wait(app, admin, id).await;
+    assert_eq!(done["status"], "complete", "{done:#}");
+    assert_eq!(author("second").await, "hubby");
+    // The earlier import keeps its mannequin until it is reclaimed (P51);
+    // monalisa (no match) reuses hers.
+    assert_eq!(author("first").await, "hubot-imported");
+    assert_eq!(done["stats"]["mannequins"], Value::Null);
+    let log = app
+        .get(&format!("/_bgh/metadata-imports/{id}/log"))
+        .auth(admin)
+        .send()
+        .await
+        .json();
+    assert!(
+        log["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["message"] == "user hubot: login map (replaces its mannequin)"),
+        "{log:#}"
+    );
+    assert_eq!(
+        count(app, "SELECT count(*) FROM users WHERE mannequin").await,
+        2
     );
 }

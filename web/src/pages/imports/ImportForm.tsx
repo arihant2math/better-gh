@@ -104,8 +104,8 @@ export function ImportForm({ owner: fixedOwner, onCreated }: { owner?: string; o
         <legend className={s.legend}>Destination</legend>
         <div className={s.row}>
           {fixedOwner ? (
-            <Field label="Owner">
-              <Input value={fixedOwner} readOnly aria-readonly />
+            <Field label="Owner" htmlFor={`${id}-owner`}>
+              <Input id={`${id}-owner`} value={fixedOwner} readOnly aria-readonly />
             </Field>
           ) : (
             <Field label="Owner" htmlFor={`${id}-owner`} error={err('owner')} hint="Organization or user login">

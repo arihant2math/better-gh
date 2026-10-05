@@ -29,6 +29,16 @@ enum Via {
     Mannequin,
 }
 
+impl Via {
+    fn describe(&self) -> &'static str {
+        match self {
+            Via::Email => "verified email",
+            Via::LoginMap => "login map",
+            Via::Mannequin => "mannequin",
+        }
+    }
+}
+
 impl Users {
     pub fn new(row: &ImportRow) -> Self {
         Self {
@@ -94,17 +104,23 @@ impl Users {
         login: &str,
         user: &Value,
     ) -> anyhow::Result<Option<i64>> {
-        let existing: Option<i64> = sqlx::query_scalar(
-            "SELECT m.local_id FROM import_mappings m JOIN users u ON u.id = m.local_id
+        let existing: Option<(i64, bool)> = sqlx::query_as(
+            "SELECT m.local_id, u.mannequin FROM import_mappings m JOIN users u ON u.id = m.local_id
               WHERE m.scope = $1 AND m.source_type = 'user' AND m.source_id = $2",
         )
         .bind(&self.host)
         .bind(source_id.to_string())
         .fetch_optional(&state.db)
         .await?;
-        if existing.is_some() {
-            return Ok(existing);
-        }
+        // A real account sticks; a mannequin is only the fallback: a match
+        // found now (email added since, a login map) replaces it for this
+        // and later imports. Moving what earlier imports attributed to the
+        // mannequin is reclaim (P51).
+        let mannequin = match existing {
+            Some((id, false)) => return Ok(Some(id)),
+            Some((id, true)) => Some(id),
+            None => None,
+        };
 
         // The list payloads carry no email; the profile has the public one.
         let profile = match gh.get(&format!("/users/{login}")).await {
@@ -153,6 +169,33 @@ impl Users {
             }
         }
 
+        if let Some(mannequin) = mannequin {
+            let (Some(id), Some(via)) = (local, via) else {
+                return Ok(Some(mannequin));
+            };
+            let mut tx = Tx::begin(state).await?;
+            sqlx::query(
+                "UPDATE import_mappings SET local_id = $3, import_id = $4
+                  WHERE scope = $1 AND source_type = 'user' AND source_id = $2",
+            )
+            .bind(&self.host)
+            .bind(source_id.to_string())
+            .bind(id)
+            .bind(self.import_id)
+            .execute(&mut *tx)
+            .await?;
+            row::bump(&mut tx, self.import_id, "users_mapped", 1).await?;
+            tx.commit().await?;
+            row::log(
+                &state.db,
+                self.import_id,
+                "info",
+                &format!("user {login}: {} (replaces its mannequin)", via.describe()),
+            )
+            .await;
+            return Ok(Some(id));
+        }
+
         let mut tx = Tx::begin(state).await?;
         let (id, via) = match (local, via) {
             (Some(id), Some(via)) => (id, via),
@@ -195,11 +238,7 @@ impl Users {
         };
         row::bump(&mut tx, self.import_id, key, 1).await?;
         tx.commit().await?;
-        let how = match via {
-            Via::Email => "verified email",
-            Via::LoginMap => "login map",
-            Via::Mannequin => "mannequin",
-        };
+        let how = via.describe();
         row::log(
             &state.db,
             self.import_id,

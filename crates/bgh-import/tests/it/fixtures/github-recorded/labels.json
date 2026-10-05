@@ -1,0 +1,112 @@
+[
+  {
+    "id": 12545395896,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OMuA",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/accessibility",
+    "name": "accessibility",
+    "color": "f143ab",
+    "default": true,
+    "description": "Barrier affecting people with disabilities",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395884,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OMrA",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/bug",
+    "name": "bug",
+    "color": "d73a4a",
+    "default": true,
+    "description": "Something isn't working",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395905,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OMwQ",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/documentation",
+    "name": "documentation",
+    "color": "0075ca",
+    "default": true,
+    "description": "Improvements or additions to documentation",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395915,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OMyw",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/duplicate",
+    "name": "duplicate",
+    "color": "cfd3d7",
+    "default": true,
+    "description": "This issue or pull request already exists",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395935,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OM3w",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/enhancement",
+    "name": "enhancement",
+    "color": "a2eeef",
+    "default": true,
+    "description": "New feature or request",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395950,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OM7g",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/good%20first%20issue",
+    "name": "good first issue",
+    "color": "7057ff",
+    "default": true,
+    "description": "Good for newcomers",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395943,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OM5w",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/help%20wanted",
+    "name": "help wanted",
+    "color": "008672",
+    "default": true,
+    "description": "Extra attention is needed",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395957,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OM9Q",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/invalid",
+    "name": "invalid",
+    "color": "e4e669",
+    "default": true,
+    "description": "This doesn't seem right",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395964,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68OM_A",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/question",
+    "name": "question",
+    "color": "d876e3",
+    "default": true,
+    "description": "Further information is requested",
+    "archived_at": null,
+    "archived_by": null
+  },
+  {
+    "id": 12545395968,
+    "node_id": "LA_kwDOU8EiJ88AAAAC68ONAA",
+    "url": "https://api.github.com/repos/arihant2math/better-gh/labels/wontfix",
+    "name": "wontfix",
+    "color": "ffffff",
+    "default": true,
+    "description": "This will not be worked on",
+    "archived_at": null,
+    "archived_by": null
+  }
+]

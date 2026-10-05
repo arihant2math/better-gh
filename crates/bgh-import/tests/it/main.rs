@@ -4,4 +4,5 @@
 mod fake;
 
 mod github;
+mod recorded;
 mod self_import;

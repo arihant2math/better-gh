@@ -1,8 +1,9 @@
 # GitHub REST fixtures (`octo-org/hello-world`)
 
-Recorded-style api.github.com responses for the importer tests. These were
-written by hand to match GitHub's REST shapes; they were not captured from
-live traffic. URLs use `https://api.github.com` / `https://github.com`, and
+Hand-written api.github.com responses for the importer tests, matching
+GitHub's REST shapes (not captured from live traffic; `../github-recorded/`
+holds real responses that `recorded.rs` checks the importer's field paths
+against). URLs use `https://api.github.com` / `https://github.com`, and
 tests rewrite the base. `repo.json` has `clone_url` set to the placeholder
 `{{CLONE_URL}}`.
 
