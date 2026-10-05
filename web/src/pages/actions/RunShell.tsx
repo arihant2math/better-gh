@@ -71,8 +71,10 @@ export function groupJobs(jobs: WorkflowJob[], graph: RunGraph | undefined): { k
     list.push(j);
     byKey.set(key, list);
   }
-  const order = graph?.jobs.map((g) => g.key) ?? [];
-  const keys = [...order.filter((k) => byKey.has(k)), ...[...byKey.keys()].filter((k) => !order.includes(k))];
+  // Creation order (jobs materialize in `needs` order); the stored graph's key
+  // order is not the declaration order (Postgres jsonb sorts keys).
+  const first = (k: string) => Math.min(...byKey.get(k)!.map((j) => j.id));
+  const keys = [...byKey.keys()].sort((a, b) => first(a) - first(b));
   return keys.map((key) => ({ key, name: graph?.jobs.find((g) => g.key === key)?.name ?? key, jobs: byKey.get(key)! }));
 }
 

@@ -88,10 +88,10 @@ try {
 
   // 4. Secret via the settings UI (sealed box), then dispatch with inputs and watch live.
   await page.goto(`${base}${repoBase}/settings/secrets/actions`);
-  await page.click('button:has-text("New")');
-  await page.fill('[role=dialog] input >> nth=0', 'E2E_SECRET');
-  await page.fill('[role=dialog] textarea', 'sealed-box-works');
-  await page.click('[role=dialog] button[type=submit], [role=dialog] button:has-text("Add secret")');
+  await page.click('button:has-text("New repository secret"), button:has-text("New secret") >> nth=0');
+  await page.fill('dialog[open] input >> nth=0', 'E2E_SECRET');
+  await page.fill('dialog[open] textarea', 'sealed-box-works');
+  await page.click('dialog[open] button[type=submit]');
   await page.waitForSelector('text=E2E_SECRET', { timeout: 10_000 });
   check(!(await page.isVisible('text=sealed-box-works')), 'secret value never displayed');
   await shot('actions-secrets');
@@ -144,8 +144,9 @@ try {
 
   // 6. Runners + variables pages.
   await page.goto(`${base}${repoBase}/settings/actions/runners`);
-  await page.waitForSelector('text=/bgh-builtin/', { timeout: 10_000 });
-  check(true, 'built-in runner listed');
+  await page.click('button:has-text("New self-hosted runner")');
+  await page.waitForSelector('text=/bgh-runner register --url/', { timeout: 10_000 });
+  check(await page.isVisible('text=/--token [A-Z0-9]{8,}/'), 'registration token + instructions shown');
   await shot('actions-runners');
   await page.goto(`${base}${repoBase}/settings/variables/actions`);
   await page.waitForTimeout(500);

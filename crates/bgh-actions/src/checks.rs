@@ -129,6 +129,64 @@ pub async fn complete_run(
     .bind(id)
     .bind(conclusion)
     .bind(output)
+    .execute(&mut *conn)
+    .await?;
+    insert_annotations(conn, id, annotations).await
+}
+
+/// Rows of `check_run_annotations` (served by the checks API,
+/// `GET /check-runs/{id}/annotations`), one batched insert.
+async fn insert_annotations(
+    conn: &mut PgConnection,
+    check_run_id: i64,
+    annotations: &[Annotation],
+) -> Result<(), sqlx::Error> {
+    if annotations.is_empty() {
+        return Ok(());
+    }
+    let mut paths = Vec::new();
+    let mut starts = Vec::new();
+    let mut ends = Vec::new();
+    let mut start_cols = Vec::new();
+    let mut end_cols = Vec::new();
+    let mut levels = Vec::new();
+    let mut titles = Vec::new();
+    let mut messages = Vec::new();
+    for a in annotations {
+        let start = a.start_line.unwrap_or(1).clamp(1, i32::MAX as i64) as i32;
+        paths.push(a.path.clone().unwrap_or_else(|| ".github".into()));
+        starts.push(start);
+        ends.push(
+            a.end_line
+                .map_or(start, |e| e.clamp(1, i32::MAX as i64) as i32)
+                .max(start),
+        );
+        start_cols.push(a.start_column.map(|c| c.clamp(0, i32::MAX as i64) as i32));
+        end_cols.push(a.end_column.map(|c| c.clamp(0, i32::MAX as i64) as i32));
+        levels.push(match a.level.as_str() {
+            "failure" | "error" => "failure",
+            "warning" => "warning",
+            _ => "notice",
+        });
+        titles.push(a.title.clone());
+        messages.push(a.message.clone());
+    }
+    sqlx::query(
+        "INSERT INTO check_run_annotations
+                (check_run_id, path, start_line, end_line, start_column, end_column,
+                 annotation_level, title, message)
+         SELECT $1, * FROM UNNEST($2::text[], $3::int[], $4::int[], $5::int[], $6::int[],
+                                  $7::text[], $8::text[], $9::text[])",
+    )
+    .bind(check_run_id)
+    .bind(paths)
+    .bind(starts)
+    .bind(ends)
+    .bind(start_cols)
+    .bind(end_cols)
+    .bind(levels)
+    .bind(titles)
+    .bind(messages)
     .execute(conn)
     .await?;
     Ok(())

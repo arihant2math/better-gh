@@ -115,7 +115,8 @@ jobs:
       - name: Secret is decrypted
         env:
           S: ${{ secrets.E2E_SECRET }}
-        run: test "$S" = "sealed-box-works" && echo "secret matches: $S"
+        run: |
+          test "$S" = "sealed-box-works" && echo "secret matches: $S"
   flaky:
     needs: lint
     if: github.event_name == 'push'
