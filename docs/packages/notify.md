@@ -112,10 +112,24 @@ duplicates deliveries.
   fork, member, repository, label, milestone, status, check_run,
   check_suite, workflow_run, organization (member_added), ping, test push.
 
+## Global (site admin) hooks
+
+Hooks with `repo_id` and `org_id` NULL are managed by bgh-admin
+(`/admin/hooks`). notify delivers them: every repo/org event they subscribe
+to, plus the site-level events from B7: `UserAccountChanged` → `user`
+(`action`, `user`, `changes.login.from` for renames, `sender`),
+`OrganizationChanged` → `organization` (global hooks only), and
+`GlobalHookPing` → a `ping` to that hook (payload `hook` uses the
+`global-hook` shape, `type: "Global"`). This branch merged
+`origin/bgh/admin` to get those events and `bgh_core::settings`.
+
 ## Email
 
-* `mail.send` job (any crate: `bgh_core::mail::enqueue`) → SMTP via lettre
-  (`BGH_SMTP_URL`, pooled) or the dev transport (log + `{data_dir}/mail/*.eml`).
+* `mail.send` job (any crate: `bgh_core::mail::enqueue`) → SMTP via lettre:
+  the admin `smtp` site setting (`bgh_core::settings::load(..).smtp`, when
+  `enabled`; tls `tls`/`starttls`/`none`, its `from` overrides
+  `BGH_MAIL_FROM`), else `BGH_SMTP_URL`, else the dev transport (log +
+  `{data_dir}/mail/*.eml`). Transports are pooled per configuration.
 * `notify.email`: per recipient, honouring settings and read access;
   GitHub-style subjects (`[o/r] Title (Issue #1)`, `Re:` for follow-ups),
   `Message-ID`/`In-Reply-To`/`References` threading, `List-ID`,
@@ -166,8 +180,6 @@ Jobs `mail.send`, `notify.email`, `notify.deliver_webhook`; listeners
 * Reply-by-email (optional) not implemented: creating comments belongs to
   bgh-issues; an inbound endpoint could call a pub service fn from there.
 * Email digests not implemented (one email per activity).
-* No GHES global hooks API (`/admin/hooks`); dispatch already delivers to
-  site-wide rows (`repo_id` and `org_id` NULL) if B7 adds the endpoints.
 * No `meta` (hook deleted) event; no automatic pruning of old
   `webhook_deliveries` (index on `created_at` exists for a cleanup job).
 * Delete events (`IssueCommentDeleted`, review comment deleted) send a

@@ -1,7 +1,9 @@
 //! Mail transport: the `mail.send` job handler.
 //!
-//! With `BGH_SMTP_URL` set, messages go out through an SMTP relay (lettre,
-//! pooled connections, TLS per the URL). Otherwise the dev transport logs
+//! Transport, in order of precedence: the admin-editable `smtp` site
+//! setting (`bgh_core::settings`, when `enabled`), then `BGH_SMTP_URL`
+//! (lettre URL syntax); both use pooled lettre connections. Otherwise the
+//! dev transport logs
 //! the message and writes it to `{data_dir}/mail/{unix_ms}-{uuid}.eml`, which
 //! is also how tests read sent mail ([`outbox`]).
 
@@ -13,8 +15,10 @@ use anyhow::Context;
 use bgh_core::AppState;
 use bgh_core::config::Config;
 use bgh_core::mail::{Email, SendEmail};
+use bgh_core::settings::SmtpSettings;
 use lettre::message::header::{ContentType, HeaderName, HeaderValue};
 use lettre::message::{Mailbox, MultiPart, SinglePart};
+use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
 type Smtp = AsyncSmtpTransport<Tokio1Executor>;
@@ -32,12 +36,43 @@ fn smtp(url: &str) -> anyhow::Result<Smtp> {
     Ok(t)
 }
 
-/// Build the MIME message (multipart/alternative when there is HTML).
+/// SMTP transport for the `smtp` site setting (pooled per configuration).
+fn smtp_from_settings(s: &SmtpSettings) -> anyhow::Result<Smtp> {
+    static POOLS: OnceLock<Mutex<HashMap<String, Smtp>>> = OnceLock::new();
+    let key = serde_json::to_string(s)?;
+    let pools = POOLS.get_or_init(Default::default);
+    let mut pools = pools.lock().expect("smtp pool lock");
+    if let Some(t) = pools.get(&key) {
+        return Ok(t.clone());
+    }
+    let mut b = match s.tls.as_str() {
+        "tls" => Smtp::relay(&s.host)?,
+        "none" => Smtp::builder_dangerous(&s.host),
+        _ => Smtp::starttls_relay(&s.host)?,
+    }
+    .port(s.port);
+    if let Some(user) = s.username.as_ref().filter(|u| !u.is_empty()) {
+        b = b.credentials(Credentials::new(
+            user.clone(),
+            s.password.clone().unwrap_or_default(),
+        ));
+    }
+    let t = b.build();
+    pools.insert(key, t.clone());
+    Ok(t)
+}
+
+/// Build the MIME message (multipart/alternative when there is HTML),
+/// sent from the configured `BGH_MAIL_FROM` address.
 pub fn build_message(config: &Config, email: &Email) -> anyhow::Result<Message> {
-    let mut from: Mailbox = config
-        .mail_from
+    build_message_from(&config.mail_from, email)
+}
+
+/// Like [`build_message`] with an explicit `From:` mailbox.
+pub fn build_message_from(from: &str, email: &Email) -> anyhow::Result<Message> {
+    let mut from: Mailbox = from
         .parse()
-        .with_context(|| format!("invalid BGH_MAIL_FROM {:?}", config.mail_from))?;
+        .with_context(|| format!("invalid mail From address {from:?}"))?;
     if let Some(name) = &email.from_name {
         from.name = Some(name.clone());
     }
@@ -95,6 +130,23 @@ pub fn outbox(config: &Config) -> PathBuf {
 
 /// `mail.send` job handler.
 pub async fn send_email(state: AppState, job: SendEmail) -> anyhow::Result<()> {
+    let site = bgh_core::settings::load(&state)
+        .await
+        .map_err(|e| anyhow::anyhow!("loading site settings: {e:?}"))?;
+    let smtp_site = &site.smtp;
+    if smtp_site.enabled && !smtp_site.host.is_empty() {
+        let from = if smtp_site.from.trim().is_empty() {
+            state.config.mail_from.as_str()
+        } else {
+            smtp_site.from.as_str()
+        };
+        let msg = build_message_from(from, &job.email)?;
+        smtp_from_settings(smtp_site)?
+            .send(msg)
+            .await
+            .with_context(|| format!("sending mail to {}", job.email.to))?;
+        return Ok(());
+    }
     let msg = build_message(&state.config, &job.email)?;
     match state.config.smtp_url.as_deref() {
         Some(url) => {

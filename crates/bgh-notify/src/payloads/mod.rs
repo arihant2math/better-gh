@@ -159,8 +159,101 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::CheckSuiteUpdated { .. } => vec!["check_suite"],
         E::WorkflowRunUpdated { .. } => vec!["workflow_run"],
         E::OrgMemberAdded { .. } => vec!["organization"],
+        // Site-level events: delivered to global (site admin) hooks only.
+        E::UserAccountChanged { .. } => vec!["user"],
+        E::OrganizationChanged { .. } => vec!["organization"],
         _ => Vec::new(),
     }
+}
+
+/// A site-level delivery (global hooks only: no repository or org scope).
+fn global(event: &'static str, action: &str, payload: Value) -> HookEvent {
+    HookEvent {
+        event,
+        action: Some(action.to_string()),
+        repo_id: None,
+        org_id: None,
+        payload,
+    }
+}
+
+/// `changes` for a rename (`{"login": {"from": old}}`) from the event data.
+fn rename_changes(action: &str, data: &Value) -> Option<Value> {
+    (action == "renamed")
+        .then(|| data.get("from").cloned())
+        .flatten()
+        .map(|from| json!({ "login": { "from": from } }))
+}
+
+/// GHES global webhook `user` event.
+async fn user_account_changed(
+    state: &AppState,
+    user_id: i64,
+    login: &str,
+    action: &str,
+    actor_id: i64,
+    data: &Value,
+) -> anyhow::Result<Vec<HookEvent>> {
+    let user = match db::User::find(&state.db, user_id).await? {
+        Some(u) => user_json(&state.urls, &u),
+        // Deleted: render from the event.
+        None => serde_json::to_value(api::SimpleUser::from_parts(
+            &state.urls,
+            user_id,
+            login,
+            "User",
+            false,
+            None,
+        ))?,
+    };
+    let mut m = Map::new();
+    m.insert("action".into(), json!(action));
+    m.insert("user".into(), user);
+    if let Some(changes) = rename_changes(action, data) {
+        m.insert("changes".into(), changes);
+    }
+    m.insert("sender".into(), sender(state, Some(actor_id)).await?);
+    Ok(vec![global("user", action, Value::Object(m))])
+}
+
+/// GHES global webhook `organization` event (created / deleted / renamed).
+async fn organization_changed(
+    state: &AppState,
+    org_id: i64,
+    login: &str,
+    action: &str,
+    actor_id: i64,
+    data: &Value,
+) -> anyhow::Result<Vec<HookEvent>> {
+    let org = match organization(state, org_id).await? {
+        Some(o) => o,
+        None => {
+            let u = api::SimpleUser::from_parts(
+                &state.urls,
+                org_id,
+                login,
+                "Organization",
+                false,
+                None,
+            );
+            json!({
+                "login": u.login,
+                "id": u.id,
+                "node_id": u.node_id,
+                "url": state.urls.org(login),
+                "avatar_url": u.avatar_url,
+                "description": null,
+            })
+        }
+    };
+    let mut m = Map::new();
+    m.insert("action".into(), json!(action));
+    if let Some(changes) = rename_changes(action, data) {
+        m.insert("changes".into(), changes);
+    }
+    m.insert("organization".into(), org);
+    m.insert("sender".into(), sender(state, Some(actor_id)).await?);
+    Ok(vec![global("organization", action, Value::Object(m))])
 }
 
 /// A delivery scoped to `ctx`'s repository (and its org for org hooks).
@@ -195,6 +288,20 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             full_name,
             actor_id,
         } => return repository_deleted(state, *repo_id, *owner_id, full_name, *actor_id).await,
+        E::UserAccountChanged {
+            user_id,
+            login,
+            action,
+            actor_id,
+            data,
+        } => return user_account_changed(state, *user_id, login, action, *actor_id, data).await,
+        E::OrganizationChanged {
+            org_id,
+            login,
+            action,
+            actor_id,
+            data,
+        } => return organization_changed(state, *org_id, login, action, *actor_id, data).await,
         _ => {}
     }
     let Some(repo_id) = event.repo_id() else {

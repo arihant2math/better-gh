@@ -297,6 +297,24 @@ pub fn hook_json(state: &AppState, owner: &Owner, h: &HookRow) -> Hook {
     }
 }
 
+/// GHES `global-hook` (hooks with neither repository nor organization;
+/// managed by bgh-admin under `/admin/hooks`).
+pub fn global_hook_json(state: &AppState, h: &HookRow) -> Value {
+    let url = state.urls.api(&format!("/admin/hooks/{}", h.id));
+    json!({
+        "type": "Global",
+        "id": h.id,
+        "name": h.name,
+        "active": h.active,
+        "events": h.events,
+        "config": config_json(h),
+        "updated_at": Timestamp::from(h.updated_at),
+        "created_at": Timestamp::from(h.created_at),
+        "url": url,
+        "ping_url": format!("{url}/pings"),
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
