@@ -152,11 +152,13 @@ pub struct RunnerRow {
     pub busy: bool,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub arch: String,
+    pub runner_group_id: Option<i64>,
 }
 
 impl RunnerRow {
     pub const COLUMNS: &'static str = "id, repo_id, org_id, name, os, system_labels, labels, \
-        ephemeral, builtin, busy, last_seen_at, created_at";
+        ephemeral, builtin, busy, last_seen_at, created_at, arch, runner_group_id";
 
     /// Online when seen within the last two minutes (runners poll every ~30 s).
     pub fn online(&self) -> bool {

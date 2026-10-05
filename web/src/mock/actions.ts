@@ -274,16 +274,6 @@ interface SecretRow {
   selected?: ID[];
 }
 
-interface RunnerRow {
-  id: number;
-  name: string;
-  os: string;
-  status: 'online' | 'offline';
-  busy: boolean;
-  system: string[];
-  custom: string[];
-}
-
 interface Scope {
   key: string;
   kind: 'repo' | 'org' | 'env';
@@ -898,7 +888,6 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
   const logCache = new Map<ID, string[][]>();
   const secretStore = new Map<string, Map<string, SecretRow>>();
   const variableStore = new Map<string, Map<string, SecretRow>>();
-  const runnerStore = new Map<string, RunnerRow[]>();
   let silent = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -2380,79 +2369,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     return { status: 204 };
   });
 
-  // ------------------------------------------------------------ runners
-
-  const runnersFor = (sc: Scope): RunnerRow[] => {
-    let list = runnerStore.get(sc.key);
-    if (list) return list;
-    const idBase = (sc.repo?.id ?? sc.org!.id) * 10 + (sc.kind === 'org' ? 100_000 : 0);
-    list =
-      sc.kind === 'repo'
-        ? [
-            { id: idBase + 1, name: 'build-box-01', os: 'Linux', status: 'online', busy: false, system: ['self-hosted', 'Linux', 'X64'], custom: ['gpu'] },
-            { id: idBase + 2, name: 'mac-mini-m2', os: 'macOS', status: 'online', busy: true, system: ['self-hosted', 'macOS', 'ARM64'], custom: ['xcode-16'] },
-            { id: idBase + 3, name: 'old-runner', os: 'Linux', status: 'offline', busy: false, system: ['self-hosted', 'Linux', 'X64'], custom: [] },
-          ]
-        : [
-            { id: idBase + 1, name: `${sc.org!.login}-runner-1`, os: 'Linux', status: 'online', busy: true, system: ['self-hosted', 'Linux', 'X64'], custom: ['docker'] },
-            { id: idBase + 2, name: `${sc.org!.login}-runner-2`, os: 'Windows', status: 'offline', busy: false, system: ['self-hosted', 'Windows', 'X64'], custom: [] },
-          ];
-    runnerStore.set(sc.key, list);
-    return list;
-  };
-  const labelsJson = (r: RunnerRow) => {
-    const labels = [...r.system.map((name) => ({ name, type: 'read-only' })), ...r.custom.map((name) => ({ name, type: 'custom' }))].map((l, i) => ({ id: i + 1, ...l }));
-    return { total_count: labels.length, labels };
-  };
-  const runnerJson = (r: RunnerRow) => ({ id: r.id, name: r.name, os: r.os, status: r.status, busy: r.busy, ephemeral: false, runner_group_id: 1, labels: labelsJson(r).labels });
-  const token = (sc: Scope, salt: string) => ({ token: (fakeSha(`${sc.key}:${salt}:${Date.now()}`) + fakeSha(salt)).replace(/[^a-z0-9]/gi, '').slice(0, 29).toUpperCase(), expires_at: iso(Date.now() + 3600_000) });
-
-  const installRunnerRoutes = (prefix: string, resolve: (ctx: Ctx) => Scope | Resp) => {
-    const withScope = (fn: (ctx: Ctx, sc: Scope) => Resp) => (ctx: Ctx) => {
-      const sc = resolve(ctx);
-      return isResp(sc) ? sc : fn(ctx, sc);
-    };
-    const withRunner = (fn: (ctx: Ctx, sc: Scope, r: RunnerRow) => Resp) =>
-      withScope((ctx, sc) => {
-        const r = runnersFor(sc).find((x) => x.id === Number(ctx.m[sc.i]));
-        return r ? fn(ctx, sc, r) : notFound();
-      });
-    R('GET', `${prefix}/runners`, withScope((ctx, sc) => {
-      const list = runnersFor(sc);
-      const p = paginate(ctx, list);
-      return { status: 200, body: { total_count: list.length, runners: p.items.map(runnerJson) }, headers: p.headers };
-    }));
-    R('GET', `${prefix}/runners/downloads`, withScope(() => ({ status: 200, body: [] })));
-    R('POST', `${prefix}/runners/registration-token`, withScope((_ctx, sc) => ({ status: 201, body: token(sc, 'reg') })));
-    R('POST', `${prefix}/runners/remove-token`, withScope((_ctx, sc) => ({ status: 201, body: token(sc, 'remove') })));
-    R('GET', `${prefix}/runners/:id`, withRunner((_ctx, _sc, r) => ({ status: 200, body: runnerJson(r) })));
-    R('DELETE', `${prefix}/runners/:id`, withRunner((_ctx, sc, r) => {
-      if (r.busy) return err(422, `Bad request - Runner "${r.name}" is still running a job"`);
-      runnerStore.set(sc.key, runnersFor(sc).filter((x) => x !== r));
-      return { status: 204 };
-    }));
-    R('GET', `${prefix}/runners/:id/labels`, withRunner((_ctx, _sc, r) => ({ status: 200, body: labelsJson(r) })));
-    const setLabels = (replace: boolean) =>
-      withRunner((ctx, _sc, r) => {
-        const labels = ctx.body.labels;
-        if (!Array.isArray(labels) || (!replace && !labels.length) || labels.some((l) => typeof l !== 'string' || !l.trim()))
-          return err(422, 'Validation Failed', { errors: [{ resource: 'Runner', field: 'labels', code: 'invalid' }] });
-        const names = (labels as string[]).map((l) => l.trim()).filter((l) => !r.system.some((x) => x.toLowerCase() === l.toLowerCase()));
-        r.custom = replace ? [...new Set(names)] : [...new Set([...r.custom, ...names])];
-        return { status: 200, body: labelsJson(r) };
-      });
-    R('POST', `${prefix}/runners/:id/labels`, setLabels(false));
-    R('PUT', `${prefix}/runners/:id/labels`, setLabels(true));
-    R('DELETE', `${prefix}/runners/:id/labels/:name`, withRunner((ctx, sc, r) => {
-      const name = dec(ctx.m[sc.i + 1]);
-      if (r.system.some((x) => x.toLowerCase() === name.toLowerCase())) return err(422, `Cannot remove read-only label '${name}'`);
-      if (!r.custom.includes(name)) return notFound();
-      r.custom = r.custom.filter((x) => x !== name);
-      return { status: 200, body: labelsJson(r) };
-    }));
-  };
-  installRunnerRoutes(`${P}/actions`, repoScope);
-  installRunnerRoutes('/api/v3/orgs/:org/actions', orgScope);
+  // Runners and runner groups: mock/extra/runners.ts (one registry for every scope).
 
   // ------------------------------------------------------------ handle
 

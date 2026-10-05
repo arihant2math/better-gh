@@ -95,6 +95,7 @@ const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
 const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
+const OrgRunnerGroupsPage = () => import('../pages/actions/settings/OrgRunnerGroupsPage');
 
 function prefetchActions(p: Params) {
   void import('../pages/actions/data').then((m) => m.prefetchActions(p));
@@ -192,6 +193,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/imports/:id', layout: AdminLayout, load: () => import('../pages/admin/ImportDetailPage'), title: (p) => `Import #${p.id} · Site admin` },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
+    { path: '/site-admin/actions/runners', layout: AdminLayout, load: () => import('../pages/admin/RunnersPage'), title: () => 'Runners · Site admin' },
     // Organization settings.
     { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
     { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
@@ -243,6 +245,8 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
     { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
     { path: '/organizations/:org/settings/actions/runners', load: ActionsSettingsPage, title: (p) => `Runners · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups', load: OrgRunnerGroupsPage, title: (p) => `Runner groups · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups/:id', load: OrgRunnerGroupsPage, title: (p) => `Runner group · ${p.org}` },
     {
       path: '/:owner/:repo',
       layout: RepoLayout,

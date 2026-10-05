@@ -180,6 +180,8 @@ export interface Runner {
   status: 'online' | 'offline';
   busy: boolean;
   ephemeral: boolean;
+  /** Runner group (organization / site runners); `null` for repository runners. */
+  runner_group_id?: number | null;
   labels: RunnerLabel[];
 }
 
