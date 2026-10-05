@@ -33,11 +33,19 @@ async fn autolinks_rules_and_body_html() {
         ])
     );
     assert_eq!(
-        app.get("/_bgh/repos/alice/secret/autolinks").auth(&bob).send().await.status(),
+        app.get("/_bgh/repos/alice/secret/autolinks")
+            .auth(&bob)
+            .send()
+            .await
+            .status(),
         404
     );
     assert_eq!(
-        app.get("/_bgh/repos/alice/secret/autolinks").auth(&alice).send().await.json(),
+        app.get("/_bgh/repos/alice/secret/autolinks")
+            .auth(&alice)
+            .send()
+            .await
+            .json(),
         json!([])
     );
 
@@ -57,13 +65,20 @@ async fn autolinks_rules_and_body_html() {
         .assert_status(201);
     let base = app.url("");
     let check = |html: &str| {
-        assert!(html.contains(r#"href="https://jira.example/browse/JIRA-12""#), "{html}");
-        assert!(html.contains(r#"href="https://ops.example/3""#), "{html}");
         assert!(
-            html.contains(&format!(r#"href="{base}/alice/hello/issues/1""#)) && html.contains(">GH-1</a>"),
+            html.contains(r#"href="https://jira.example/browse/JIRA-12""#),
             "{html}"
         );
-        assert!(html.contains(r#"<g-emoji class="g-emoji" alias="tada">🎉</g-emoji>"#), "{html}");
+        assert!(html.contains(r#"href="https://ops.example/3""#), "{html}");
+        assert!(
+            html.contains(&format!(r#"href="{base}/alice/hello/issues/1""#))
+                && html.contains(">GH-1</a>"),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<g-emoji class="g-emoji" alias="tada">🎉</g-emoji>"#),
+            "{html}"
+        );
     };
     let issue = app
         .get("/api/v3/repos/alice/hello/issues/1")
@@ -80,7 +95,10 @@ async fn autolinks_rules_and_body_html() {
         .json();
     check(comments[0]["body_html"].as_str().unwrap());
     assert!(
-        comments[0]["body_text"].as_str().unwrap().contains("JIRA-12"),
+        comments[0]["body_text"]
+            .as_str()
+            .unwrap()
+            .contains("JIRA-12"),
         "{comments}"
     );
 }
@@ -101,12 +119,17 @@ async fn highlights_fenced_code() {
     let blocks = res.json()["blocks"].clone();
     assert_eq!(blocks[0]["language"], "rust");
     assert_eq!(blocks[0]["lines"].as_array().unwrap().len(), 1);
-    assert!(blocks[0]["lines"][0].as_str().unwrap().contains("hl-k"), "{blocks}");
+    assert!(
+        blocks[0]["lines"][0].as_str().unwrap().contains("hl-k"),
+        "{blocks}"
+    );
     assert_eq!(blocks[1], Value::Null);
     assert_eq!(blocks[2]["language"], "python");
     assert_eq!(blocks[2]["lines"].as_array().unwrap().len(), 2);
 
-    let too_many: Vec<Value> = (0..51).map(|_| json!({ "lang": "rust", "code": "x" })).collect();
+    let too_many: Vec<Value> = (0..51)
+        .map(|_| json!({ "lang": "rust", "code": "x" }))
+        .collect();
     let res = app
         .post("/_bgh/render/code")
         .json(&json!({ "blocks": too_many }))

@@ -27,7 +27,12 @@ async fn upstream() -> String {
         )
         .route(
             "/big.png",
-            get(|| async { ([(header::CONTENT_TYPE, "image/png")], vec![0u8; 6 * 1024 * 1024]) }),
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "image/png")],
+                    vec![0u8; 6 * 1024 * 1024],
+                )
+            }),
         )
         .route(
             "/moved",
@@ -76,22 +81,38 @@ async fn proxies_external_images() {
         .send()
         .await;
     let html = res.json()["body_html"].as_str().unwrap().to_string();
-    assert!(html.contains("loading=\"lazy\" decoding=\"async\""), "{html}");
+    assert!(
+        html.contains("loading=\"lazy\" decoding=\"async\""),
+        "{html}"
+    );
     assert!(!html.contains(&format!("src=\"{up}")), "{html}");
-    assert!(html.contains("src=\"/user-attachments/assets/x\""), "{html}");
+    assert!(
+        html.contains("src=\"/user-attachments/assets/x\""),
+        "{html}"
+    );
     let src = camo_src(&html);
-    assert!(html.contains(&format!("src=\"{}{src}\"", app.base_url)), "{html}");
+    assert!(
+        html.contains(&format!("src=\"{}{src}\"", app.base_url)),
+        "{html}"
+    );
 
     // The proxy serves the image, locked down.
     let img = app.get(&src).send().await;
     assert_eq!(img.status(), 200, "{}", img.text());
     assert_eq!(img.header("content-type"), Some("image/png"));
     assert_eq!(img.header("x-content-type-options"), Some("nosniff"));
-    assert!(img.header("content-security-policy").unwrap().contains("sandbox"));
+    assert!(
+        img.header("content-security-policy")
+            .unwrap()
+            .contains("sandbox")
+    );
     assert_eq!(img.body, PNG);
 
     // Bad signature, non-images and oversized bodies are refused.
-    let (digest, _) = src.trim_start_matches("/_bgh/camo/").split_once('/').unwrap();
+    let (digest, _) = src
+        .trim_start_matches("/_bgh/camo/")
+        .split_once('/')
+        .unwrap();
     let forged = format!("/_bgh/camo/{digest}/{}", hex::encode(format!("{up}/page")));
     assert_eq!(app.get(&forged).send().await.status(), 404);
 
@@ -115,7 +136,11 @@ async fn proxies_external_images() {
     assert_eq!(map[&urls[4]], "/local.png");
     assert_eq!(map[&urls[5]], Value::String(urls[5].clone()));
     let get = |u: &str| app.get(map[u].as_str().unwrap()).send();
-    assert_eq!(get(&urls[1]).await.status(), 404, "text/html is not proxied");
+    assert_eq!(
+        get(&urls[1]).await.status(),
+        404,
+        "text/html is not proxied"
+    );
     assert_eq!(get(&urls[2]).await.status(), 404, "over the size limit");
     let moved = get(&urls[3]).await;
     assert_eq!(moved.status(), 200, "redirects are followed");

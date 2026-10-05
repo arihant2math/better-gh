@@ -1153,10 +1153,16 @@ mod tests {
 
     #[test]
     fn proxies_external_images_and_keeps_emoji_without_references() {
-        let html = render("![a](https://img.example/a.png) ![b](http://h/x.png)", &ctx());
+        let html = render(
+            "![a](https://img.example/a.png) ![b](http://h/x.png)",
+            &ctx(),
+        );
         assert!(html.contains("src=\"http://h/_bgh/camo/"), "{html}");
         assert!(html.contains("src=\"http://h/x.png\""), "{html}");
-        assert_eq!(html.matches("loading=\"lazy\" decoding=\"async\"").count(), 2);
+        assert_eq!(
+            html.matches("loading=\"lazy\" decoding=\"async\"").count(),
+            2
+        );
         let mut plain = ctx();
         plain.references = false;
         let html = render("#1 @a :tada:", &plain);
