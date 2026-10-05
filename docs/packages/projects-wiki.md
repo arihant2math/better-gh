@@ -56,6 +56,10 @@ interface ProjectWorkflow { id; projectId; kind: 'item_added'|'item_reopened'|'i
   enabled: boolean; config: {statusOptionId?: string; repoIds?: ID[]; filter?: string} ; updatedAt }
 ```
 
+Option colors are GitHub's names: `GRAY|BLUE|GREEN|YELLOW|ORANGE|RED|PINK|PURPLE`.
+Option/iteration ids are short server-generated strings (8 hex chars); clients
+send options without `id` to create them and keep `id` to preserve them.
+
 Ordering: items sort by `viewPositions[viewId] ?? position` (fractional keys,
 base-62 `0-9A-Za-z`, compared bytewise, never ending in `0`).
 
@@ -109,8 +113,31 @@ Git-backed `{data_dir}/repos/{xx}/{repo_id}.wiki.git`, branch `master`.
   `.wiki`/`.wiki.git` to `bgh_wiki::git`). Same auth as repos. `has_wiki`
   false → 404. Push requires write permission, or any signed-in reader when the
   repo's `wikiAnyoneCanEdit` setting is on. Pushing to a wiki that does not exist yet creates it.
+  Anonymous callers that need credentials get a `401` Basic challenge, callers
+  without read access `404`; cloning a wiki that doesn't exist yet → `404`;
+  archived/disabled repos reject pushes (`403`). Tokens need `public_repo` (or
+  `repo`) to use `wikiAnyoneCanEdit`. If a push leaves HEAD's branch missing
+  (e.g. only `main` pushed), HEAD moves to a pushed branch; web edits commit
+  to HEAD's branch.
 * Pages are files at the tree root (`Home.md`, `My-Page.md`); slug = filename
-  without extension; title = slug with `-` → space. `_Sidebar` / `_Footer` are special.
+  without extension; title = slug with `-` → space. `_Sidebar` / `_Footer` are special
+  (excluded from `pages` and search, included rendered in page/overview responses).
+  Page extensions: `md|markdown|mkd|mkdn|mdown` (`format: "markdown"`), `textile`,
+  `rdoc`, `org`, `creole`, `rst|rest` (`rest`), `asciidoc|adoc|asc`, `pod`,
+  `mediawiki|wiki`, `txt`; non-Markdown formats render as escaped `<pre>`.
+  Other files (images, …) are not pages. Slugs are looked up exactly, then
+  case-insensitively.
+* Title → slug (create/rename, wiki links): trim, drop `\ / : * ? " < > | # %`,
+  whitespace runs → `-` (same as the web client's `wikiSlug`). Titles must be
+  non-empty, ≤ 255 chars, without `/` or control characters (`422`
+  `errors: [{resource: "WikiPage", field: "title", code}]`; duplicates, also
+  case-insensitive, → `422` with `code: "already_exists"`). Web-created pages are `{slug}.md`;
+  edits keep the file's extension.
+* Reads require repo read + `has_wiki` (else `404`); writes require the push rule
+  above (anonymous `401`, others `403`, archived `403`). Commits are authored as
+  the signed-in user (name or login; primary email or
+  `{id}+{login}@users.noreply.{host}`). Default messages: `Created {title} (markdown)`,
+  `Updated {title} ({format})`, `Destroyed {title} ({format})`, `Reverted {title} to {sha7}`.
 
 ### Private JSON API (`/_bgh/repos/{o}/{r}/wiki/...`)
 
@@ -129,9 +156,39 @@ Git-backed `{data_dir}/repos/{xx}/{repo_id}.wiki.git`, branch `master`.
 | `GET /wiki/search?q=` | | `{results: [{slug, title, snippet}]}` |
 | `GET/PATCH /wiki/settings` | `{anyoneCanEdit}` (admin) | `{anyoneCanEdit, hasWiki}` |
 
-`Commit = {sha, message, author: {name, email, login|null, avatarUrl|null}, date}`;
+`Commit = {sha, message, author: {name, email, login|null, avatarUrl|null}, date}`
+(`login`/`avatarUrl` resolved from verified emails or noreply addresses; `date` = author date);
 `Rendered = {slug, html}`. Wiki links `[[Page Name]]` / `[[Text|Page Name]]`
-and relative links resolve to `/{o}/{r}/wiki/{slug}`; links to missing pages get class `wiki-missing`.
+and relative links (`[x](Other-Page)`, `Other-Page.md#frag`) resolve to `/{o}/{r}/wiki/{slug}`
+with class `wiki-link`; links to missing pages get `wiki-link wiki-missing`.
+
+Details:
+* Page JSON: `sha` = blob SHA of the page file; `commit` = latest commit that changed
+  the page (at `rev`, default HEAD). `rev` may be any commit SHA/ref (`404` if unknown).
+* `GET /wiki` with no commits yet → `exists: false`, `pages: []`. Page endpoints on an
+  empty wiki → `404`; `GET /wiki/history` → `[]`. The first `POST /wiki/pages` creates it.
+* `PUT`: `body` omitted keeps the content; `title` renames (old file deleted). Unchanged
+  content and title → no commit. `expectedCommit` (send the page's `commit.sha`) is stale
+  when the page changed after it (edits to other pages don't conflict) → `409`.
+  Concurrent writers losing the ref race also get `409`.
+* `DELETE` body is optional.
+* History endpoints are paginated (`page`/`per_page`, default 30, max 100, `Link` header).
+  A deleted page's history is available under its `{slug}.md` name (so it can be restored
+  with `revert`).
+* `revert`: `sha` must be a wiki commit containing the page (unknown commit → `422`
+  `errors[{field: "sha"}]`; page absent at `sha` → `422`). Writes the old file as a new
+  commit (also restores deleted pages); no-op if identical.
+* `compare`: `{base}...{head}` (or `..`), any revs; response has the resolved full SHAs.
+  `diff` is `git diff base head` (no rename detection), limited to the page's file(s) when
+  `slug` is given (empty when the page exists in neither).
+* `search`: case-insensitive substring over titles/slugs and contents of HEAD pages;
+  title hits first, then content hits, max 100. `snippet` = the first matching line
+  (≤ 200 chars, `…`-trimmed around the match) or the page's first line for title-only
+  hits. Empty `q` → `{results: []}`.
+* Settings: `GET` needs repo read only (works when `hasWiki` is false); `PATCH` needs
+  admin (`403`; anonymous `401`). `hasWiki` itself is a repository setting (read-only here).
+* Repository deletion removes the wiki storage (`wiki.delete_storage` job, enqueued by an
+  event listener on `RepositoryDeleted`).
 
 ## Migrations
 
@@ -143,8 +200,17 @@ and relative links resolve to `/{o}/{r}/wiki/{slug}`; links to missing pages get
 
 * Workspace `Cargo.toml`, `bgh-server` (mount both crates).
 * `bgh_core::sync`: scope-provider hook for bootstrap (see below).
-* `bgh-git`: `RepoStore::wiki()` (same layout, `.wiki.git` suffix).
-* `bgh-repos::git_http`: delegate `*.wiki(.git)` names to `bgh_wiki::git`.
+* `bgh-git`: `RepoStore::wiki()` / `is_wiki()` and the `suffix` field (same layout,
+  `.wiki.git` suffix; `REPO_SUFFIX`/`WIKI_SUFFIX` consts); `GitRepo::diff(base, head,
+  paths)`; path-limited `log` and `diff` use `--literal-pathspecs`; fix:
+  `write::commit_changes` deletions now work in bare repositories (`update-index
+  --index-info` instead of `--force-remove`, which needs a work tree) and paths
+  containing `\n` are rejected.
+* `bgh_core::markdown`: `LinkResolver` trait + `render_with_links` (wiki links,
+  link rewriting); sanitizer keeps classes `wiki-link` / `wiki-missing`.
+* `bgh-repos`: depends on `bgh-wiki`; `git_http` delegates `*.wiki(.git)` names to
+  `bgh_wiki::git` (a repository literally named `x.wiki` is therefore not reachable
+  over git HTTP — GitHub reserves the suffix too).
 
 ## Known gaps / TODO
 

@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 bgh-core.workspace = true
 bgh-git.workspace = true
+bgh-wiki.workspace = true
 axum.workspace = true
 tokio.workspace = true
 serde.workspace = true

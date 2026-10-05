@@ -113,6 +113,8 @@ fn allowed_class(c: &str) -> bool {
                 | "footnotes"
                 | "footnote-ref"
                 | "footnote-backref"
+                | "wiki-link"
+                | "wiki-missing"
         )
 }
 
@@ -128,6 +130,162 @@ pub fn render(text: &str, ctx: &RenderContext<'_>) -> String {
         return String::new();
     }
     sanitize(&html)
+}
+
+/// Link resolution hook for [`render_with_links`] (used by wikis).
+pub trait LinkResolver {
+    /// Resolve a `[[target]]` / `[[text|target]]` wiki link to
+    /// `(href, class)`; `None` leaves the brackets as plain text.
+    fn wiki_link(&self, target: &str) -> Option<(String, &'static str)>;
+    /// Rewrite a Markdown link destination (e.g. a relative link) to
+    /// `(href, class)`; `None` keeps the link unchanged.
+    fn rewrite_link(&self, url: &str) -> Option<(String, &'static str)>;
+}
+
+/// Like [`render`], additionally resolving `[[wiki links]]` and rewriting
+/// link destinations through `links`. Resolved links carry the returned
+/// class (only sanitizer-allowed classes such as `wiki-link` /
+/// `wiki-missing` survive).
+pub fn render_with_links(text: &str, ctx: &RenderContext<'_>, links: &dyn LinkResolver) -> String {
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    merge_text_nodes(root);
+    link_wiki_pages(&arena, root, links);
+    rewrite_links(&arena, root, links);
+    if ctx.references {
+        link_references(&arena, root, ctx);
+    }
+    let mut html = String::new();
+    if format_html(root, &OPTIONS, &mut html).is_err() {
+        return String::new();
+    }
+    sanitize(&html)
+}
+
+fn is_text(n: &AstNode<'_>) -> bool {
+    matches!(n.data.borrow().value, NodeValue::Text(_))
+}
+
+/// Join adjacent text siblings (the parser splits text at brackets).
+fn merge_text_nodes<'a>(root: &'a AstNode<'a>) {
+    let parents: Vec<&'a AstNode<'a>> = root.descendants().collect();
+    for parent in parents {
+        let mut child = parent.first_child();
+        while let Some(c) = child {
+            if is_text(c) {
+                while let Some(next) = c.next_sibling().filter(|n| is_text(n)) {
+                    let mut merged = match &c.data.borrow().value {
+                        NodeValue::Text(t) => t.to_string(),
+                        _ => String::new(),
+                    };
+                    if let NodeValue::Text(t) = &next.data.borrow().value {
+                        merged.push_str(t);
+                    }
+                    c.data.borrow_mut().value = NodeValue::Text(merged.into());
+                    next.detach();
+                }
+            }
+            child = c.next_sibling();
+        }
+    }
+}
+
+fn anchor_open(href: &str, class: &str, title: Option<&str>) -> String {
+    match title.filter(|t| !t.is_empty()) {
+        Some(t) => format!(
+            "<a class=\"{}\" href=\"{}\" title=\"{}\">",
+            escape_html(class),
+            escape_html(href),
+            escape_html(t)
+        ),
+        None => format!(
+            "<a class=\"{}\" href=\"{}\">",
+            escape_html(class),
+            escape_html(href)
+        ),
+    }
+}
+
+fn link_wiki_pages<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, links: &dyn LinkResolver) {
+    let text_nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|n| is_text(n) && !inside_link_or_code(n))
+        .collect();
+    for node in text_nodes {
+        let text = match &node.data.borrow().value {
+            NodeValue::Text(t) => t.to_string(),
+            _ => continue,
+        };
+        if !text.contains("[[") {
+            continue;
+        }
+        let mut values: Vec<NodeValue> = Vec::new();
+        let mut rest = text.as_str();
+        let mut changed = false;
+        while let Some(start) = rest.find("[[") {
+            let after = &rest[start + 2..];
+            let Some(end) = after.find("]]") else { break };
+            let inner = &after[..end];
+            let (label, target) = match inner.split_once('|') {
+                Some((l, t)) => (l.trim(), t.trim()),
+                None => (inner.trim(), inner.trim()),
+            };
+            let resolved = (!target.is_empty() && !inner.contains('['))
+                .then(|| links.wiki_link(target))
+                .flatten();
+            let Some((href, class)) = resolved else {
+                // Not a wiki link: keep `[[` verbatim and continue after it.
+                values.push(NodeValue::Text(rest[..start + 2].to_string().into()));
+                rest = &rest[start + 2..];
+                continue;
+            };
+            changed = true;
+            if start > 0 {
+                values.push(NodeValue::Text(rest[..start].to_string().into()));
+            }
+            let label = if label.is_empty() { target } else { label };
+            values.push(NodeValue::HtmlInline(format!(
+                "{}{}</a>",
+                anchor_open(&href, class, None),
+                escape_html(label)
+            )));
+            rest = &after[end + 2..];
+        }
+        if !changed {
+            continue;
+        }
+        if !rest.is_empty() {
+            values.push(NodeValue::Text(rest.to_string().into()));
+        }
+        for value in values {
+            node.insert_before(arena.alloc(value.into()));
+        }
+        node.detach();
+    }
+}
+
+fn rewrite_links<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, links: &dyn LinkResolver) {
+    let link_nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|n| matches!(n.data.borrow().value, NodeValue::Link(_)))
+        .collect();
+    for node in link_nodes {
+        let (url, title) = match &node.data.borrow().value {
+            NodeValue::Link(l) => (l.url.to_string(), l.title.to_string()),
+            _ => continue,
+        };
+        let Some((href, class)) = links.rewrite_link(&url) else {
+            continue;
+        };
+        let open = anchor_open(&href, class, Some(&title));
+        node.insert_before(arena.alloc(NodeValue::HtmlInline(open).into()));
+        let children: Vec<&'a AstNode<'a>> = node.children().collect();
+        for child in children {
+            node.insert_before(child);
+        }
+        node.insert_before(arena.alloc(NodeValue::HtmlInline("</a>".into()).into()));
+        node.detach();
+    }
 }
 
 /// Sanitize arbitrary HTML with the same policy as [`render`].
@@ -446,6 +604,44 @@ mod tests {
         assert!(!html.contains("http://h/example"), "{html}");
         assert!(html.contains("<code>#5</code>"), "{html}");
         assert!(!html.contains("issues/5"), "{html}");
+    }
+
+    struct Wiki;
+    impl LinkResolver for Wiki {
+        fn wiki_link(&self, target: &str) -> Option<(String, &'static str)> {
+            let slug = target.replace(' ', "-");
+            let class = if slug == "Home" {
+                "wiki-link"
+            } else {
+                "wiki-link wiki-missing"
+            };
+            Some((format!("/o/r/wiki/{slug}"), class))
+        }
+        fn rewrite_link(&self, url: &str) -> Option<(String, &'static str)> {
+            (!url.contains(':')).then(|| (format!("/o/r/wiki/{url}"), "wiki-link"))
+        }
+    }
+
+    #[test]
+    fn resolves_wiki_links() {
+        let html = render_with_links(
+            "See [[Home]], [[the docs|Some Page]] and [rel](Home \"t\") or [ext](https://x.y). `[[Code]]` [[ ]]",
+            &ctx(),
+            &Wiki,
+        );
+        assert!(
+            html.contains(r#"<a class="wiki-link" href="/o/r/wiki/Home" rel="nofollow noopener noreferrer">Home</a>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<a class="wiki-link wiki-missing" href="/o/r/wiki/Some-Page" rel="nofollow noopener noreferrer">the docs</a>"#),
+            "{html}"
+        );
+        assert!(html.contains(r#"title="t""#), "{html}");
+        assert!(html.contains(">rel</a>"), "{html}");
+        assert!(html.contains(r#"href="https://x.y""#), "{html}");
+        assert!(html.contains("<code>[[Code]]</code>"), "{html}");
+        assert!(html.contains("[[ ]]"), "{html}");
     }
 
     #[test]
