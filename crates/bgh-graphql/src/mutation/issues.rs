@@ -442,6 +442,9 @@ impl IssueMutations {
         let id = v["id"]
             .as_i64()
             .ok_or_else(|| not_found("issue not created"))?;
+        if let Some(projects) = &input.project_v2_ids {
+            super::projects::add_to_projects(ctx, id, projects).await?;
+        }
         Ok(CreateIssuePayload {
             issue: as_issue(issue_like(ctx, id).await?),
             client_mutation_id: input.client_mutation_id,

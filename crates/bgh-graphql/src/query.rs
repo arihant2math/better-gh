@@ -16,7 +16,7 @@ use crate::model::{
     Bot, Issue, IssueComment, Label, Milestone, Node, Organization, Ref, Release, Repository,
     RepositoryOwner, Team, User, repo,
 };
-use crate::scalars::DateTime;
+use crate::scalars::{DateTime, URI};
 use crate::search::{self, SearchResultItemConnection};
 
 #[derive(Default)]
@@ -108,6 +108,12 @@ impl Query {
             out.push(resolve_node(ctx, id).await?);
         }
         Ok(out)
+    }
+
+    /// Lookup the resource at a URL (issues, pull requests, repositories,
+    /// users, organizations and projects of this server).
+    pub async fn resource(&self, ctx: &Context<'_>, url: URI) -> GResult<Option<Node>> {
+        crate::model::project::resource(ctx, &url.0).await
     }
 
     /// Perform a search across resources.
@@ -268,6 +274,14 @@ pub async fn resolve_node(ctx: &Context<'_>, id: &ID) -> GResult<Option<Node>> {
             }
         }
         (NodeType::Team, Some(n)) => one(&l.teams, n).await?.map(|t| Node::Team(Team(t))),
+        (
+            NodeType::ProjectV2
+            | NodeType::ProjectV2Item
+            | NodeType::ProjectV2Field
+            | NodeType::ProjectV2View
+            | NodeType::DraftIssue,
+            Some(n),
+        ) => crate::model::project::resolve_node(ctx, ty, n).await?,
         (NodeType::Ref, None) => {
             let Some((repo_id, name)) = key.split_once(':') else {
                 return Ok(None);
