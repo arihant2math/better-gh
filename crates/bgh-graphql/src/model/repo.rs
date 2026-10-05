@@ -16,8 +16,7 @@ use super::issue::{
 };
 use super::misc::{
     CodeOfConduct, FundingLink, IssueTemplate, Language, LanguageConnection, License,
-    ProjectConnection, ProjectV2Connection, PullRequestTemplate, RepositoryContactLink,
-    RepositoryTopicConnection,
+    ProjectConnection, PullRequestTemplate, RepositoryContactLink, RepositoryTopicConnection,
 };
 use super::pull::{self, PullRequest, PullRequestConnection};
 use super::release::{self, Release, ReleaseConnection};
@@ -541,13 +540,22 @@ impl Repository {
     #[graphql(name = "projectsV2")]
     pub async fn projects_v2(
         &self,
+        ctx: &Context<'_>,
         first: Option<i32>,
+        last: Option<i32>,
         after: Option<String>,
+        before: Option<String>,
         query: Option<String>,
         order_by: Option<ProjectV2Order>,
-    ) -> ProjectV2Connection {
-        let _ = (first, after, query, order_by);
-        ProjectV2Connection
+    ) -> GResult<super::project::ProjectV2Connection> {
+        super::project::repo_projects(
+            ctx,
+            self.rid(),
+            ConnArgs::new(first, last, after, before),
+            query,
+            order_by,
+        )
+        .await
     }
     pub async fn parent(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         match self.r().parent_id {

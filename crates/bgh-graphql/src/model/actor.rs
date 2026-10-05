@@ -10,7 +10,8 @@ use super::enums::{
     ProjectOrder, ProjectState, ProjectV2Order, RepositoryAffiliation, RepositoryOrder,
     RepositoryPrivacy, TeamOrder,
 };
-use super::misc::{ProjectConnection, ProjectV2Connection};
+use super::misc::ProjectConnection;
+use super::project::{self, ProjectV2, ProjectV2Connection};
 use super::repo::{self, Repository, RepositoryConnection};
 use super::{Actor, nid};
 use crate::conn::{ConnArgs, Page, connection};
@@ -174,13 +175,27 @@ impl User {
     #[graphql(name = "projectsV2")]
     pub async fn projects_v2(
         &self,
+        ctx: &Context<'_>,
         first: Option<i32>,
+        last: Option<i32>,
         after: Option<String>,
+        before: Option<String>,
         query: Option<String>,
         order_by: Option<ProjectV2Order>,
-    ) -> ProjectV2Connection {
-        let _ = (first, after, query, order_by);
-        ProjectV2Connection
+    ) -> GResult<ProjectV2Connection> {
+        project::owner_projects(
+            ctx,
+            &self.0,
+            ConnArgs::new(first, last, after, before),
+            query,
+            order_by,
+        )
+        .await
+    }
+    /// A project by number (NOT_FOUND when missing or not visible).
+    #[graphql(name = "projectV2")]
+    pub async fn project_v2(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<ProjectV2>> {
+        project::owner_project(ctx, &self.0, number).await
     }
     pub async fn followers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
         let n: i64 = sqlx::query_scalar("SELECT count(*) FROM follows WHERE following_id = $1")
@@ -370,6 +385,17 @@ impl Organization {
         )
         .await
     }
+    /// Whether the viewer may create projects for this organization
+    /// (members can).
+    pub async fn viewer_can_create_projects(&self, ctx: &Context<'_>) -> GResult<bool> {
+        let g = gql(ctx);
+        Ok(
+            bgh_projects::access::owner_role(&g.state, g.auth.as_ref(), &self.0)
+                .await
+                .gql()?
+                .is_some_and(|r| r >= bgh_projects::access::Role::Write),
+        )
+    }
     pub async fn projects(
         &self,
         first: Option<i32>,
@@ -383,13 +409,27 @@ impl Organization {
     #[graphql(name = "projectsV2")]
     pub async fn projects_v2(
         &self,
+        ctx: &Context<'_>,
         first: Option<i32>,
+        last: Option<i32>,
         after: Option<String>,
+        before: Option<String>,
         query: Option<String>,
         order_by: Option<ProjectV2Order>,
-    ) -> ProjectV2Connection {
-        let _ = (first, after, query, order_by);
-        ProjectV2Connection
+    ) -> GResult<ProjectV2Connection> {
+        project::owner_projects(
+            ctx,
+            &self.0,
+            ConnArgs::new(first, last, after, before),
+            query,
+            order_by,
+        )
+        .await
+    }
+    /// A project by number (NOT_FOUND when missing or not visible).
+    #[graphql(name = "projectV2")]
+    pub async fn project_v2(&self, ctx: &Context<'_>, number: i32) -> GResult<Option<ProjectV2>> {
+        project::owner_project(ctx, &self.0, number).await
     }
     /// Teams in this organization (visible ones).
     pub async fn teams(

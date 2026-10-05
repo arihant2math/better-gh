@@ -5,6 +5,7 @@
 mod common;
 
 mod mutations;
+mod projects;
 mod queries;
 mod rulesets;
 mod schema;
