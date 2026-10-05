@@ -1,0 +1,108 @@
+.tabs {
+  margin: -6px -8px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.filesPage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.filesHeader {
+  flex-shrink: 0;
+  padding: 20px 24px 0;
+}
+
+.filesHeader .tabs {
+  margin-bottom: 0;
+}
+
+.files {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px;
+  color: var(--fg-subtle);
+}
+
+.ok {
+  color: var(--success);
+}
+
+.fail {
+  color: var(--danger);
+}
+
+.pending {
+  color: var(--warning);
+}
+
+.muted {
+  color: var(--fg-subtle);
+}
+
+.commits {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 920px;
+}
+
+.commitDayTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.commitList {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.commit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg);
+}
+
+.commit:last-child {
+  border-bottom: 0;
+}
+
+.commit:hover {
+  background: var(--bg-hover);
+}
+
+.commitMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.commitMsg {
+  font-weight: var(--fw-semibold);
+  margin-bottom: 2px;
+}
+
+.sha {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
