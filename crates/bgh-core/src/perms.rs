@@ -321,18 +321,6 @@ pub struct ReadableRepos {
 }
 
 impl ReadableRepos {
-    /// SQL predicate over the repositories alias `alias`, binding
-    /// `private_ids` as parameter `$param`
-    /// (`(r.visibility = 'public' OR r.id = ANY($3))`). Always bind
-    /// [`Self::private_ids`] at that position, even when `all`.
-    pub fn sql(&self, alias: &str, param: usize) -> String {
-        if self.all {
-            format!("(${param}::bigint[] IS NOT NULL)")
-        } else {
-            format!("({alias}.visibility = 'public' OR {alias}.id = ANY(${param}))")
-        }
-    }
-
     pub fn can_read(&self, repo: &db::Repository) -> bool {
         self.all || !repo.is_private() || self.private_ids.contains(&repo.id)
     }
