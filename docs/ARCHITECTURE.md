@@ -288,6 +288,17 @@ and octokit-style raw requests.
   without a query (`apps::effective_cap`) and `token_permissions` checks
   categories. They work for git (`x-access-token:<token>`, `contents`
   required) and get a rate-limit bucket per installation.
+* Personal access token restrictions (`bgh_core::pat`, P47): fine-grained
+  tokens (`bgh_pat_…`, `kind = 'fine_grained'`) have one resource owner, a
+  repository selection and a permission map mirrored into their scopes, so
+  `perms::effective` caps them (`pat::effective_cap`, min with the user's
+  role) and `pat::guard` (run from `token_permissions::middleware`) checks
+  repository categories, account and organization permissions.
+  Organization token policies (`org_pat_policies`) are evaluated at
+  authentication into `pat:blocked_org:{id}` scopes. Classic tokens with
+  `repo:status` / `repo_deployment` but no `repo` reach private
+  repositories only for those categories (`pat::narrow_cap`, via a
+  request-scoped category the middleware sets).
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations
