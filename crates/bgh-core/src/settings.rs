@@ -448,7 +448,19 @@ pub async fn check_push_quota(state: &AppState, repo: &db::Repository) -> ApiRes
 
 /// Paths that stay reachable in maintenance mode (status, banner, login).
 fn maintenance_exempt(path: &str) -> bool {
-    matches!(path, "/healthz" | "/_bgh/site" | "/_bgh/session")
+    // Sign-in must keep working so site administrators can get in (and turn
+    // maintenance off); everything a non-admin does afterwards is still 503.
+    matches!(
+        path,
+        "/healthz"
+            | "/_bgh/site"
+            | "/_bgh/session"
+            | "/_bgh/session/two_factor"
+            | "/_bgh/boot"
+            | "/_bgh/auth/login"
+            | "/_bgh/auth/2fa"
+            | "/_bgh/auth/logout"
+    )
 }
 
 /// Requests that reach application data (API, private endpoints, git).
