@@ -230,6 +230,7 @@ async fn rename(
         Permission::Write
     })?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let new_name = body
         .new_name
         .as_deref()
@@ -371,6 +372,7 @@ async fn merge(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let (Some(base), Some(head)) = (body.base.as_deref(), body.head.as_deref()) else {
         return Err(ApiError::invalid_field(FieldError::missing_field(
             "Merge",
@@ -444,6 +446,7 @@ async fn merge_upstream(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let branch = body
         .branch
         .as_deref()

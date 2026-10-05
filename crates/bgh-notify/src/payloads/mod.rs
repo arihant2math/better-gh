@@ -1140,6 +1140,7 @@ mod tests {
                 repo_id: 1,
                 pusher_id: None,
                 updates,
+                origin: None,
             })
         };
         let create = RefUpdate {

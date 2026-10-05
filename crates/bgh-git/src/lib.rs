@@ -15,6 +15,7 @@ pub mod archive;
 pub mod blame;
 pub mod cache;
 mod cmd;
+pub mod fetch;
 pub mod highlight;
 pub mod languages;
 pub mod lastcommit;
