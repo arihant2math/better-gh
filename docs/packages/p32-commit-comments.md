@@ -1,6 +1,6 @@
 # P32 commit-comments — status
 
-**Done.** Branch `bgh/p32-commit-comments`. Scope: `docs/PHASE4_PLAN.md` §P32
+**Done.** Self-integrated (fast-forward) into `claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy, `cargo test --workspace`, web typecheck/lint/test/build). Branch `bgh/p32-commit-comments`. Scope: `docs/PHASE4_PLAN.md` §P32
 (no §5 quick fixes are assigned to P32).
 
 ## Endpoints (bgh-repos `commit_comments.rs`)
