@@ -81,6 +81,44 @@ pub async fn can_create_in(
     target: &db::User,
     private: bool,
 ) -> ApiResult<bool> {
+    let visibility = if private { "private" } else { "public" };
+    can_create_with_visibility(state, user, target, visibility).await
+}
+
+/// Visibility a repository of `visibility` gets under `target`: internal
+/// repositories only exist in organizations, elsewhere they become private.
+pub fn visibility_for_owner(visibility: &str, target: &db::User) -> String {
+    if visibility == "internal" && !target.is_org() {
+        "private".into()
+    } else {
+        visibility.into()
+    }
+}
+
+/// Site policy (`privacy.allowed_visibilities`, 422) and the target org's
+/// member creation settings (`false` → the caller gets a 403) for a new
+/// repository of `visibility` owned by `target`.
+pub async fn check_new_repo(
+    state: &AppState,
+    user: &db::User,
+    target: &db::User,
+    visibility: &str,
+) -> ApiResult<bool> {
+    bgh_core::settings::load(state)
+        .await?
+        .privacy
+        .check_visibility(visibility)?;
+    can_create_with_visibility(state, user, target, visibility).await
+}
+
+/// Like [`can_create_in`] for an exact visibility (`internal` checks
+/// `members_can_create_internal_repositories`).
+pub async fn can_create_with_visibility(
+    state: &AppState,
+    user: &db::User,
+    target: &db::User,
+    visibility: &str,
+) -> ApiResult<bool> {
     if user.id == target.id || user.site_admin {
         return Ok(true);
     }
@@ -96,10 +134,10 @@ pub async fn can_create_in(
             Some(_) => match db::OrgSettings::find(&state.db, target.id).await? {
                 Some(s) => {
                     s.members_can_create_repositories
-                        && if private {
-                            s.members_can_create_private_repositories
-                        } else {
-                            s.members_can_create_public_repositories
+                        && match visibility {
+                            "public" => s.members_can_create_public_repositories,
+                            "internal" => s.members_can_create_internal_repositories,
+                            _ => s.members_can_create_private_repositories,
                         }
                 }
                 None => false,
@@ -182,7 +220,10 @@ pub async fn create_fork(
             })?,
         None => auth.user.clone(),
     };
-    if !can_create_in(&state, &auth.user, &target, src.is_private()).await? {
+    // Forks keep the source's visibility; internal ones stay internal
+    // within an organization and become private elsewhere.
+    let visibility = visibility_for_owner(&src.visibility, &target);
+    if !check_new_repo(&state, &auth.user, &target, &visibility).await? {
         return Err(ApiError::forbidden(format!(
             "You don't have the permission to create repositories on {}",
             target.login
@@ -242,7 +283,7 @@ pub async fn create_fork(
             parent_id, source_id, has_issues, has_projects, has_wiki, has_discussions,
             allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_forking,
             language, size, pushed_at, watchers_count)
-         SELECT $1, $2, COALESCE($5, description), homepage, visibility, default_branch, true,
+         SELECT $1, $2, COALESCE($5, description), homepage, $6, default_branch, true,
                 id, $3, false, has_projects, false, false,
                 allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_forking,
                 language, size, pushed_at, 1
@@ -255,6 +296,7 @@ pub async fn create_fork(
     .bind(network)
     .bind(src.id)
     .bind(description)
+    .bind(&visibility)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match unique_violation(&e).as_deref() {
@@ -371,7 +413,8 @@ pub async fn generate(
             .ok_or_else(|| ApiError::invalid_field(FieldError::invalid("Repository", "owner")))?,
         None => auth.user.clone(),
     };
-    if !can_create_in(&state, &auth.user, &target, body.private).await? {
+    let visibility = if body.private { "private" } else { "public" };
+    if !check_new_repo(&state, &auth.user, &target, visibility).await? {
         return Err(ApiError::forbidden(format!(
             "You don't have the permission to create repositories on {}",
             target.login
@@ -422,7 +465,7 @@ pub async fn generate(
     .bind(target.id)
     .bind(&name)
     .bind(&description)
-    .bind(if body.private { "private" } else { "public" })
+    .bind(visibility)
     .bind(&template.default_branch)
     .bind(template.id)
     .fetch_one(&mut *tx)

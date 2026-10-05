@@ -3,6 +3,7 @@ import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth
 import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
 import { session } from '../../app/session';
+import type { PublicSiteInfo } from '../../app/site';
 import { getBoot, isMockMode } from '../../boot';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
@@ -43,6 +44,7 @@ function Login({ search }: { search: string }) {
   const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
   const [providers, setProviders] = useState<SsoProvider[]>([]);
   const [ssoBusy, setSsoBusy] = useState<string | null>(null);
+  const [privateMode, setPrivateMode] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
   const loginRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +52,11 @@ function Login({ search }: { search: string }) {
     let live = true;
     listSsoProviders().then(
       (p) => live && setProviders(p),
+      () => undefined,
+    );
+    // Private mode (`/_bgh/site` stays public): explain why sign-in is needed.
+    api.get<PublicSiteInfo>('/_bgh/site').then(
+      (info) => live && setPrivateMode(!!info?.private_mode),
       () => undefined,
     );
     return () => {
@@ -172,6 +179,11 @@ function Login({ search }: { search: string }) {
         ) : undefined
       }
     >
+      {privateMode && (
+        <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }} data-testid="private-mode-note">
+          {config.siteName} is private. Sign in to see its repositories, people and organizations.
+        </p>
+      )}
       {isMockMode() && (
         <p className={`${styles.small} ${styles.muted}`} style={{ margin: '0 0 14px' }}>
           Any credentials work. Passwords <code>wrong</code>, <code>throttle</code> and <code>2fa</code> (code <code>123456</code>) try the other paths.

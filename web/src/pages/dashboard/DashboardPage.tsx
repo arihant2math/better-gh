@@ -10,7 +10,7 @@ import { cmp } from '../../sync/selectors';
 import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { CheckCircleIcon, ChevronDownIcon, InboxIcon, LockIcon, PulseIcon, RepoIcon, StarFillIcon } from '../../ui/icons';
+import { CheckCircleIcon, ChevronDownIcon, InboxIcon, LockIcon, OrganizationIcon, PulseIcon, RepoIcon, StarFillIcon } from '../../ui/icons';
 import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
@@ -281,7 +281,7 @@ export default observer(function DashboardPage() {
           <div className={styles.repos}>
             {side.repos.slice(0, 12).map((r) => (
               <Link key={r.id} to={`/${r.owner}/${r.name}`} className={styles.repo}>
-                {r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
+                {r.visibility === 'internal' ? <OrganizationIcon size={14} /> : r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
                 <span className={styles.repoName}>
                   <span className={styles.repoOwner}>{r.owner}/</span>
                   {r.name}

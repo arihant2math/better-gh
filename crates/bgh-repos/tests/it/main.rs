@@ -5,6 +5,7 @@
 mod common;
 mod gitwork;
 
+mod access_policy;
 mod api;
 mod bench;
 mod branches;

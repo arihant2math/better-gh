@@ -120,7 +120,13 @@ pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
 auth providers (password login, OIDC), SMTP, maintenance mode, and push
 hardening (`git`: `fsck_on_push`, `max_object_size_mb` (GH001),
-`warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`). Their defaults come from the
+`warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`), and
+the access policy (`privacy`: `private_mode`, `allow_anonymous_directory`,
+`allowed_visibilities` ⊆ public/internal/private, enforced with 422 on
+repository create, PATCH, transfer, fork and template generation;
+`repositories.default_visibility` must be allowed and falls back to the
+most restrictive allowed one; `GET /users` and `GET /organizations` need
+auth unless the anonymous directory is allowed). Their defaults come from the
 environment where one exists (`SiteSettings::defaults(&config)`:
 `BGH_RATE_LIMIT*` → `rate_limits`, `BGH_OIDC_*` → `auth_providers.oidc`);
 stored fields override them field by field. SMTP is a transport choice
@@ -189,7 +195,20 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
   siblings are served when accepted. Unknown `/api/*` and `/_bgh/*` paths
   get GitHub JSON 404s.
 
-Cross-cutting middleware: maintenance mode (`settings::maintenance_middleware`,
+Cross-cutting middleware: private mode (`privacy::private_mode_middleware`,
+`privacy.private_mode`): anonymous requests get 401 "Requires
+authentication" (API, `/_bgh`, raw/archive/avatars/downloads), 401 +
+`WWW-Authenticate: Basic` for git HTTP/LFS without credentials (requests
+with credentials reach the git handlers, which accept passwords), and a
+302 to `/login?return_to=` for HTML page loads; exempt are `/healthz`,
+`/api/v3/meta`, `/_bgh/site|boot|session|auth/*|signup|password_reset*|
+emails/verify|sso*`, the OAuth token/device-code endpoints, static assets
+and the public sign-in pages; raw/archive URLs with a download `?token=`
+pass to the handler (in private mode the tarball/zipball redirects carry
+one for every repository). The container registry (`/v2/...`) is let through
+and refuses anonymous callers itself (Bearer challenge, no anonymous
+tokens). `RepoAccess` also refuses anonymous callers in
+private mode as a second line. Maintenance mode (`settings::maintenance_middleware`,
 503 + `Retry-After` for API/`_bgh`/git requests except site admins,
 `/healthz`, `/_bgh/site`, `/_bgh/session`) and API rate limiting
 (`ratelimit::middleware` on `/api/v3`, `ratelimit::root_middleware` for
@@ -222,7 +241,11 @@ and octokit-style raw requests.
 * Permission is computed from: repo owner, collaborators, org membership +
   base permission (`org_settings.default_repository_permission`), team
   grants (inherited from parent teams), site admin (→ Admin), public
-  visibility (→ Read). `bgh_core::perms::repo_permission(db, user_id,
+  visibility (→ Read for everyone), internal visibility (→ Read for every
+  signed-in, non-suspended user, GHES semantics; JSON `private: true,
+  visibility: "internal"`; token scopes treat it like private;
+  `perms::visibility_floor`, `ReadableRepos::internal` +
+  `visibility_sql()` for search-style queries). `bgh_core::perms::repo_permission(db, user_id,
   repo)` / batched `repo_permissions(db, user_id, &repos)` →
   `Permission { None, Read, Triage, Write, Maintain, Admin }`. Token scopes
   then cap it (`perms::effective`: private repos need `repo`; writes to

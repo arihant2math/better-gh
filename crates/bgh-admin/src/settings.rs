@@ -174,6 +174,18 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
             return Err(bad("signup.allowed_email_domains"));
         }
     }
+    if let Err(msg) = s.validate_policy() {
+        let field = if msg.starts_with("repositories.") {
+            "repositories.default_visibility"
+        } else {
+            "privacy.allowed_visibilities"
+        };
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            field,
+            msg,
+        )));
+    }
     Ok(())
 }
 
