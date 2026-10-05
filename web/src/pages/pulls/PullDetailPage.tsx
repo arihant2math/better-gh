@@ -1,7 +1,9 @@
 import { observer } from 'mobx-react-lite';
+import { useState } from 'react';
+import { ApiError } from '../../api/client';
 import { useResource } from '../../api/cache';
-import { getPullDiff, listPullCommits } from '../../api/endpoints';
-import type { RestCommit } from '../../api/types';
+import { getPullDiff, getPullRequirements, listPullCommits } from '../../api/endpoints';
+import type { PullRequirements, RestCommit } from '../../api/types';
 import { NotFound } from '../../app/NotFound';
 import { DiffViewer } from '../../components/diff/DiffViewer';
 import { useParams } from '../../router';
@@ -125,8 +127,26 @@ const Reviewers = observer(function Reviewers({ issue }: { issue: Issue }) {
   );
 });
 
+type MergeMethod = 'merge' | 'squash' | 'rebase';
+const METHOD_LABEL: Record<MergeMethod, string> = {
+  merge: 'Create a merge commit',
+  squash: 'Squash and merge',
+  rebase: 'Rebase and merge',
+};
+
 const MergeBox = observer(function MergeBox({ issue }: { issue: Issue }) {
   const writable = canWrite(issue.repoId);
+  const repo = store().get('repo', issue.repoId);
+  const open = issue.state === 'open' && !issue.merged;
+  // Requirements depend on the head/base, reviews and checks: key the
+  // resource on what the synced row tells us so it refetches on change.
+  const key =
+    repo && open
+      ? `requirements:${repo.owner}/${repo.name}#${issue.number}@${issue.headSha}:${issue.baseSha}:${issue.mergeableState}:${issue.reviewDecision}:${issue.checks}:${issue.draft}`
+      : null;
+  const { data: req } = useResource<PullRequirements>(key, () => getPullRequirements(repo!.owner, repo!.name, issue.number), { ttlMs: 10_000 });
+  const [method, setMethod] = useState<MergeMethod | null>(null);
+
   if (issue.merged) {
     return (
       <div className={styles.mergeBox}>
@@ -141,10 +161,23 @@ const MergeBox = observer(function MergeBox({ issue }: { issue: Issue }) {
       </div>
     );
   }
-  if (issue.state === 'closed') return null;
+  if (!open) return null;
   const checksOk = issue.checks === 'success' || issue.checks === 'neutral' || !issue.checks;
-  const blocked = issue.mergeableState === 'dirty' || issue.draft;
+  const conflict = issue.mergeableState === 'dirty' || req?.mergeable === false;
+  const computing = issue.mergeable === null || issue.mergeableState === 'unknown';
+  const blockers = req?.blockers ?? [];
+  const blockedByRules = blockers.length > 0 && !req?.can_bypass;
+  const blocked = conflict || !!issue.draft || blockedByRules;
   const approved = issue.reviewDecision === 'approved';
+  const methods: MergeMethod[] = req?.allowed_merge_methods ?? ['merge', 'squash', 'rebase'];
+  const chosen: MergeMethod = method && methods.includes(method) ? method : (methods[0] ?? 'merge');
+  const reviewHint = req
+    ? req.required_approvals > 0
+      ? `${req.approvals} of ${req.required_approvals} required approving review${req.required_approvals === 1 ? '' : 's'}.`
+      : 'Reviews are not required by branch protection.'
+    : approved
+      ? 'At least one approving review.'
+      : 'Waiting for reviews.';
   return (
     <div className={styles.mergeBox}>
       <span className={styles.mergeIcon} style={{ background: blocked ? 'var(--draft)' : 'var(--open)' }}>
@@ -155,21 +188,42 @@ const MergeBox = observer(function MergeBox({ issue }: { issue: Issue }) {
           {approved ? <CheckCircleIcon size={20} className={pr.ok} /> : <AlertIcon size={20} className={pr.pending} />}
           <div>
             <div className={styles.mergeRowTitle}>{approved ? 'Changes approved' : issue.reviewDecision === 'changes_requested' ? 'Changes requested' : 'Review required'}</div>
-            <div className={styles.subtle}>{approved ? 'At least one approving review.' : 'At least 1 approving review is required by reviewers with write access.'}</div>
+            <div className={styles.subtle}>{reviewHint}</div>
           </div>
         </div>
         <div className={styles.mergeRow}>
           {checksOk ? <CheckCircleIcon size={20} className={pr.ok} /> : issue.checks === 'pending' ? <Spinner size={18} /> : <XCircleFillIcon size={20} className={pr.fail} />}
           <div>
             <div className={styles.mergeRowTitle}>{checksOk ? 'All checks have passed' : issue.checks === 'pending' ? 'Some checks haven’t completed yet' : 'Some checks were not successful'}</div>
-            <div className={styles.subtle}>CI · build, test, lint</div>
+            <div className={styles.subtle}>{req?.required_checks.length ? `Required: ${req.required_checks.join(', ')}` : 'No required checks'}</div>
           </div>
         </div>
+        {blockers.length > 0 && (
+          <div className={styles.mergeRow}>
+            <XCircleFillIcon size={20} className={req?.can_bypass ? pr.pending : pr.fail} />
+            <div>
+              <div className={styles.mergeRowTitle}>Merging is blocked{req?.can_bypass ? ' (you can bypass as an administrator)' : ''}</div>
+              {blockers.map((b) => (
+                <div key={b} className={styles.subtle}>
+                  {b}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className={styles.mergeRow}>
-          {issue.mergeableState === 'dirty' ? <XCircleFillIcon size={20} className={pr.fail} /> : <CheckCircleIcon size={20} className={pr.ok} />}
+          {conflict ? <XCircleFillIcon size={20} className={pr.fail} /> : computing ? <Spinner size={18} /> : <CheckCircleIcon size={20} className={pr.ok} />}
           <div style={{ flex: 1 }}>
             <div className={styles.mergeRowTitle}>
-              {issue.draft ? 'This pull request is still a work in progress' : issue.mergeableState === 'dirty' ? 'This branch has conflicts that must be resolved' : 'No conflicts with base branch'}
+              {issue.draft
+                ? 'This pull request is still a work in progress'
+                : conflict
+                  ? 'This branch has conflicts that must be resolved'
+                  : computing
+                    ? 'Checking for the ability to merge automatically…'
+                    : req?.behind
+                      ? 'This branch is out-of-date with the base branch'
+                      : 'No conflicts with base branch'}
             </div>
             <div className={styles.subtle}>{issue.draft ? 'Draft pull requests cannot be merged.' : 'Merging can be performed automatically.'}</div>
           </div>
@@ -177,19 +231,30 @@ const MergeBox = observer(function MergeBox({ issue }: { issue: Issue }) {
             (issue.draft ? (
               <Button onClick={() => setDraft(issue, false)}>Ready for review</Button>
             ) : (
-              <Button
-                variant="success"
-                leadingIcon={GitMergeIcon}
-                disabled={blocked}
-                onClick={() => {
-                  mergePull(issue).done.then(
-                    () => toast({ kind: 'success', title: `Merged #${issue.number}` }),
-                    () => undefined,
-                  );
-                }}
-              >
-                Merge pull request
-              </Button>
+              <>
+                {methods.length > 1 && (
+                  <select aria-label="Merge method" value={chosen} onChange={(e) => setMethod(e.target.value as MergeMethod)}>
+                    {methods.map((m) => (
+                      <option key={m} value={m}>
+                        {METHOD_LABEL[m]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  variant="success"
+                  leadingIcon={GitMergeIcon}
+                  disabled={blocked || computing}
+                  onClick={() => {
+                    mergePull(issue, chosen).done.then(
+                      () => toast({ kind: 'success', title: `Merged #${issue.number}` }),
+                      () => undefined,
+                    );
+                  }}
+                >
+                  {chosen === 'merge' ? 'Merge pull request' : METHOD_LABEL[chosen]}
+                </Button>
+              </>
             ))}
         </div>
       </div>
@@ -246,11 +311,13 @@ function Commits({ repo, issue }: { repo: Repo; issue: Issue }) {
 }
 
 function Files({ repo, issue }: { repo: Repo; issue: Issue }) {
-  const { data, loading, error } = useResource(`diff:${repo.owner}/${repo.name}#${issue.number}`, () => getPullDiff(repo.owner, repo.name, issue.number), {
-    // A diff between two SHAs never changes: cache for the session.
-    immutable: true,
-  });
-  if (error) return <EmptyState icon={AlertIcon} title="Couldn’t load the diff" />;
+  // Keyed by the SHAs: a diff between two commits never changes.
+  const key = `diff:${repo.owner}/${repo.name}#${issue.number}@${issue.baseSha}...${issue.headSha}`;
+  const { data, loading, error } = useResource(key, () => getPullDiff(repo.owner, repo.name, issue.number), { immutable: true });
+  if (error) {
+    const tooLarge = error instanceof ApiError && error.status === 406;
+    return <EmptyState icon={AlertIcon} title={tooLarge ? 'This diff is too large to display' : 'Couldn’t load the diff'} />;
+  }
   if (loading || data === undefined) {
     return (
       <div className={pr.loading}>

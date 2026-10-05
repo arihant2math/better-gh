@@ -11,6 +11,7 @@ import type {
   HighlightedBlob,
   History,
   LastCommits,
+  PullRequirements,
   RestBranch,
   RestCommit,
   RestRepository,
@@ -49,6 +50,13 @@ export function getPullDiff(owner: string, repo: string, number: number): Promis
 
 export function listPullCommits(owner: string, repo: string, number: number): Promise<RestCommit[]> {
   return api.get<RestCommit[]>(`${v3('repos', owner, repo, 'pulls', number, 'commits')}?per_page=100`);
+}
+
+/** Branch protection / mergeability details for the merge box. */
+export function getPullRequirements(owner: string, repo: string, number: number): Promise<PullRequirements> {
+  return api.get<PullRequirements>(
+    `/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requirements`,
+  );
 }
 
 /** Server-side syntax highlighting, immutable per blob sha. 404 → render plain text. */

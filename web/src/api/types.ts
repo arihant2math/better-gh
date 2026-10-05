@@ -39,6 +39,24 @@ export interface RestCommit {
   author: RestUser | null;
 }
 
+/** `GET /_bgh/repos/{o}/{r}/pulls/{n}/requirements` (merge box data). */
+export interface PullRequirements {
+  mergeable: boolean | null;
+  rebaseable: boolean | null;
+  mergeable_state: string;
+  protected: boolean;
+  blockers: string[];
+  approvals: number;
+  required_approvals: number;
+  changes_requested: boolean;
+  behind: boolean;
+  unstable: boolean;
+  required_checks: string[];
+  linear_history: boolean;
+  allowed_merge_methods: ('merge' | 'squash' | 'rebase')[];
+  can_bypass: boolean;
+}
+
 export interface RestBranch {
   name: string;
   commit: { sha: string };

@@ -1,26 +1,44 @@
-//! bgh-repos: repositories and git transport.
+//! bgh-repos: repositories REST API and git transport routes.
 //!
-//! Implemented: create (`POST /user/repos`, `POST /orgs/{org}/repos`),
-//! `GET`/`DELETE /repos/{owner}/{repo}`, listing (`GET /user/repos`,
-//! `GET /users/{username}/repos`, `GET /orgs/{org}/repos`), git smart HTTP
-//! (`/{owner}/{repo}.git/info/refs`, `git-upload-pack`, `git-receive-pack`)
-//! with permission checks and basic branch protection, and post-receive
-//! processing (`repos.post_receive` job).
-//! Planned here: PATCH/transfer/fork, collaborators, stars, watching,
-//! topics, contents/trees/blobs/commits/refs APIs, branches & protection
-//! APIs, compare, deploy keys. Migrations: 0200-0299.
+//! Each feature module exposes `routes()` (paths relative to `/api/v3`),
+//! merged by [`router`]. See `docs/packages/repos-api.md` for the endpoint
+//! list. Migrations: 0200-0249 (repos-api).
+//!
+//! Shared helpers: [`gitjson`] (GitHub shapes for git data), [`identity`]
+//! (commit identities, email → user batch mapping), [`media`] (`Accept`
+//! media types), [`cache`] (Redis cache for SHA-keyed data), [`refs`]
+//! (API ref writes with branch protection), [`protection`] (rules engine).
 
+pub mod autolinks;
+pub mod branches;
 pub mod browse;
+pub mod cache;
+pub mod collaborators;
+pub mod commits;
+pub mod contents;
 pub mod create;
 pub mod download;
+pub mod forks;
 pub mod git_http;
+pub mod gitdb;
+pub mod gitjson;
+pub mod identity;
 pub mod jobs;
 pub mod json;
+pub mod keys;
 pub mod lfs;
 pub mod maintenance;
+pub mod media;
 pub mod protection;
+pub mod protection_api;
+pub mod refs;
 pub mod repos;
+pub mod rulesets;
+pub mod settings;
 pub mod ssh;
+pub mod stars;
+pub mod stats;
+pub mod watching;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -46,8 +64,24 @@ pub fn router() -> Router<AppState> {
         .route("/users/{username}/repos", get(repos::list_for_user))
         .route(
             "/repos/{owner}/{repo}",
-            get(repos::get_repo).delete(repos::delete_repo),
+            get(repos::get_repo)
+                .delete(repos::delete_repo)
+                .patch(settings::update_repo),
         )
+        .merge(settings::routes())
+        .merge(stats::routes())
+        .merge(forks::routes())
+        .merge(stars::routes())
+        .merge(watching::routes())
+        .merge(collaborators::routes())
+        .merge(keys::routes())
+        .merge(autolinks::routes())
+        .merge(contents::routes())
+        .merge(gitdb::routes())
+        .merge(commits::routes())
+        .merge(branches::routes())
+        .merge(protection_api::routes())
+        .merge(rulesets::routes())
         .merge(download::api_router())
 }
 
@@ -68,10 +102,11 @@ pub fn web_router() -> Router<AppState> {
         .merge(lfs::web_router())
 }
 
-/// Job handlers: post-receive processing and storage cleanup.
+/// Job handlers: post-receive processing, storage cleanup, languages.
 pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
+    reg.job(stats::compute_languages);
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
     reg.job(maintenance::pack_refs);

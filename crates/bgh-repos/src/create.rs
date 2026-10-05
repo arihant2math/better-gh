@@ -7,12 +7,11 @@ use bgh_core::error::unique_violation;
 use bgh_core::models::api::Repository;
 use bgh_core::perms::{self, RepoAccess};
 use bgh_core::prelude::*;
-use bgh_core::sync;
-use bgh_git::write::{self, CommitRequest, FileChange, Identity};
+use bgh_git::write::{self, CommitRequest, FileChange};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::json::{full_repo, repo_sync_json};
+use crate::json::full_repo;
 
 /// Default branch for new repositories.
 pub const DEFAULT_BRANCH: &str = "main";
@@ -109,32 +108,16 @@ fn wants_private(body: &CreateRepoBody) -> bool {
     }
 }
 
-async fn noreply_identity(state: &AppState, user: &db::User) -> ApiResult<Identity> {
-    let email: Option<String> =
-        sqlx::query_scalar("SELECT email FROM user_emails WHERE user_id = $1 AND is_primary")
-            .bind(user.id)
-            .fetch_optional(&state.db)
-            .await?;
-    let email = email.unwrap_or_else(|| {
-        format!(
-            "{}+{}@users.noreply.{}",
-            user.id,
-            user.login,
-            state.config.hostname()
-        )
-    });
-    Ok(Identity::new(
-        user.name.clone().unwrap_or_else(|| user.login.clone()),
-        email,
-    ))
-}
-
 async fn create(
     state: &AppState,
     auth: &AuthContext,
     owner: db::User,
-    body: CreateRepoBody,
+    mut body: CreateRepoBody,
 ) -> ApiResult<(StatusCode, Json<Repository>)> {
+    if body.visibility.is_none() && body.private.is_none() {
+        let settings = bgh_core::settings::load(state).await?;
+        body.visibility = Some(settings.default_visibility(owner.is_org()).to_string());
+    }
     let private = wants_private(&body);
     auth.require_scope(if private { "repo" } else { "public_repo" })?;
 
@@ -210,6 +193,15 @@ async fn create(
         _ => e.into(),
     })?;
 
+    // A new repository takes over a redirect left by a rename/transfer.
+    sqlx::query(
+        "DELETE FROM repo_redirects WHERE lower(owner_login) = lower($1) AND lower(name) = lower($2)",
+    )
+    .bind(&owner.login)
+    .bind(&repo.name)
+    .execute(&mut *tx)
+    .await?;
+
     // The creator watches the new repository (like GitHub).
     sqlx::query("INSERT INTO watches (user_id, repo_id) VALUES ($1, $2)")
         .bind(auth.user.id)
@@ -239,7 +231,6 @@ async fn create(
         &store,
         tx,
         repo,
-        &owner.login,
         body.auto_init.unwrap_or(false),
     )
     .await;
@@ -269,11 +260,10 @@ async fn finish_create(
     store: &bgh_git::RepoStore,
     mut tx: Tx,
     mut repo: db::Repository,
-    owner_login: &str,
     auto_init: bool,
 ) -> ApiResult<db::Repository> {
     if auto_init {
-        let author = noreply_identity(state, &auth.user).await?;
+        let author = crate::identity::default_identity(state, &auth.user).await?;
         let mut readme = format!("# {}\n", repo.name);
         if let Some(d) = &repo.description {
             readme.push_str(&format!("\n{d}\n"));
@@ -299,15 +289,9 @@ async fn finish_create(
         .fetch_one(&mut *tx)
         .await?;
     }
-    let scope = sync::repo_scope(repo.id);
-    tx.sync(
-        &scope,
-        "repository",
-        repo.id,
-        SyncAction::Insert,
-        &repo_sync_json(&repo, owner_login),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Insert)
+        .await?;
+    tx.sync_viewer_repo(auth.user.id, repo.id).await?;
     tx.emit(Event::RepositoryCreated {
         repo_id: repo.id,
         actor_id: auth.user.id,

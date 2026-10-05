@@ -272,21 +272,21 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     tracing::info!(addr = %listen, base_url = %state.config.base_url, "listening");
 
     let http_shutdown = shutdown.clone();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            wait_for_signal().await;
-            tracing::info!("shutting down");
-            http_shutdown.cancel();
-        })
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        wait_for_signal().await;
+        tracing::info!("shutting down");
+        http_shutdown.cancel();
+    })
+    .await?;
 
     shutdown.cancel();
     let _ = worker_task.await;
-    for l in listeners {
+    for l in listeners.into_iter().chain(services) {
         let _ = l.await;
-    }
-    for s in services {
-        let _ = s.await;
     }
     tracing::info!("bye");
     Ok(())

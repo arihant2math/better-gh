@@ -1,12 +1,12 @@
 import { observer } from 'mobx-react-lite';
 import { NotFound } from '../../app/NotFound';
-import { Link, setQuery, useQuery, useParams } from '../../router';
+import { Link, navigate, setQuery, useQuery, useParams } from '../../router';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
 import { orgByLogin, reposForOwner, userByLogin } from '../../sync/selectors';
 import { Avatar, Tag } from '../../ui/Badge';
 import { EmptyState } from '../../ui/EmptyState';
-import { LockIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon } from '../../ui/icons';
+import { LockIcon, OrganizationIcon, PeopleIcon, RepoIcon, StarIcon, TableIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import styles from './ProfilePage.module.css';
@@ -78,13 +78,26 @@ export default observer(function ProfilePage() {
           )}
         </div>
       </header>
+      {user && (
+        <div className={styles.tabs}>
+          <Tabs
+            value="repositories"
+            onChange={(t) => t === 'projects' && navigate(`/users/${user.login}/projects`)}
+            items={[
+              { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.length },
+              { id: 'projects', label: 'Projects', icon: TableIcon },
+            ]}
+          />
+        </div>
+      )}
       {org && (
         <div className={styles.tabs}>
           <Tabs
             value={tab}
-            onChange={(t) => setQuery({ tab: t === 'repositories' ? null : t })}
+            onChange={(t) => (t === 'projects' ? navigate(`/orgs/${org.login}/projects`) : setQuery({ tab: t === 'repositories' ? null : t }))}
             items={[
               { id: 'repositories', label: 'Repositories', icon: RepoIcon, count: repos.length },
+              { id: 'projects', label: 'Projects', icon: TableIcon },
               { id: 'people', label: 'People', icon: PeopleIcon, count: members.length },
               { id: 'teams', label: 'Teams', icon: PeopleIcon, count: teams.length },
             ]}

@@ -8,10 +8,12 @@ import type { BootData } from '../boot';
 import type { Comment, ID, Issue, IssueEvent, ModelMap, ModelName, Notification, Repo, User } from '../sync/models';
 import type { BootstrapResponse, ClientMessage, Delta, PartialResponse } from '../sync/protocol';
 import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
-import { MODEL_NAMES, SCHEMA } from '../sync/schema';
+import { MODEL_NAMES, SCHEMA, type ScopeLookup } from '../sync/schema';
 import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
 import { Rng, fakeSha, iso } from './rng';
+import { installProjectRoutes } from './projects';
 import { emptyTables, seed, type MockDb } from './seed';
+import { installWikiRoutes } from './wiki';
 import { marked } from 'marked';
 
 /** Mock seed content is trusted; the real server sanitizes. */
@@ -36,7 +38,7 @@ interface Route {
   handler: (ctx: Ctx) => Promise<Resp> | Resp;
 }
 
-interface Ctx {
+export interface Ctx {
   m: RegExpMatchArray;
   url: URL;
   body: Record<string, unknown>;
@@ -44,15 +46,18 @@ interface Ctx {
   accept: string;
 }
 
-interface Resp {
+export interface Resp {
   status: number;
   body?: unknown;
   text?: string;
   headers?: Record<string, string>;
 }
 
+/** Route registration helper handed to feature modules (mock/projects.ts, mock/wiki.ts). */
+export type RouteFn = (method: string, pattern: string, handler: (ctx: Ctx) => Promise<Resp> | Resp) => void;
+
 const STATE_DB = 'bgh-mock-server';
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
 const LOG_KEEP = 5000;
 
 export class MockServer implements Transport {
@@ -184,9 +189,10 @@ export class MockServer implements Transport {
 
   // ------------------------------------------------------------ sync log
 
-  private scopeOf(model: ModelName, row: Record<string, unknown>): string | null {
-    const fn = SCHEMA[model].scope as ((r: unknown, v: ID) => string) | null;
-    return fn ? fn(row, this.db.viewerId) : `user:${this.db.viewerId}`;
+  scopeOf(model: ModelName, row: Record<string, unknown>): string | null {
+    const fn = SCHEMA[model].scope as ((r: unknown, v: ID, l: ScopeLookup) => string) | null;
+    const lookup = ((m: ModelName, id: ID) => this.db.tables[m].get(id)) as ScopeLookup;
+    return fn ? fn(row, this.db.viewerId, lookup) : `user:${this.db.viewerId}`;
   }
 
   /** Write a row and append a sync action (`I`/`U`), like `bgh_core::sync::record`. */
@@ -260,22 +266,22 @@ export class MockServer implements Transport {
 
   // ------------------------------------------------------------ helpers
 
-  private now(): string {
+  now(): string {
     return iso(Date.now());
   }
 
-  private nextId(): ID {
+  nextId(): ID {
     return this.db.nextId++;
   }
 
-  private repo(owner: string, name: string): Repo | undefined {
+  repo(owner: string, name: string): Repo | undefined {
     const o = owner.toLowerCase();
     const n = name.toLowerCase();
     for (const r of this.db.tables.repo.values()) if (r.owner.toLowerCase() === o && r.name.toLowerCase() === n) return r;
     return undefined;
   }
 
-  private issue(repo: Repo, number: number): Issue | undefined {
+  issue(repo: Repo, number: number): Issue | undefined {
     for (const i of this.db.tables.issue.values()) if (i.repoId === repo.id && i.number === number) return i;
     return undefined;
   }
@@ -655,6 +661,46 @@ export class MockServer implements Transport {
       this.bumpCounts(repo, pr, -1);
       return { status: 200, body: { sha, merged: true, message: 'Pull Request successfully merged' } };
     });
+    for (const [action, draft] of [['ready_for_review', false], ['convert_to_draft', true]] as const) {
+      R('POST', `/_bgh/repos/:owner/:repo/pulls/:number/${action}`, (ctx) => {
+        const r = issueOr404(ctx);
+        if (isResp(r)) return r;
+        const [, pr] = r;
+        if (!pr.isPr) return { status: 404, body: { message: 'Not Found' } };
+        if (pr.draft !== draft) {
+          this.event(pr, action);
+          this.put('issue', { ...pr, draft, updatedAt: this.now() });
+        }
+        return { status: 200, body: this.restIssue({ ...pr, draft }) };
+      });
+    }
+    R('GET', '/_bgh/repos/:owner/:repo/pulls/:number/requirements', (ctx) => {
+      const r = issueOr404(ctx);
+      if (isResp(r)) return r;
+      const [, pr] = r;
+      const blockers: string[] = [];
+      if (pr.reviewDecision !== 'approved') blockers.push('At least 1 approving review is required by reviewers with write access.');
+      if (pr.checks === 'failure') blockers.push('Required status check "ci" is failing.');
+      return {
+        status: 200,
+        body: {
+          mergeable: pr.mergeable ?? null,
+          rebaseable: pr.mergeable ?? null,
+          mergeable_state: pr.mergeableState ?? 'unknown',
+          protected: true,
+          blockers,
+          approvals: pr.reviewDecision === 'approved' ? 1 : 0,
+          required_approvals: 1,
+          changes_requested: pr.reviewDecision === 'changes_requested',
+          behind: pr.mergeableState === 'behind',
+          unstable: pr.mergeableState === 'unstable',
+          required_checks: ['ci'],
+          linear_history: false,
+          allowed_merge_methods: ['merge', 'squash', 'rebase'],
+          can_bypass: true,
+        },
+      };
+    });
     R('PATCH', '/api/v3/repos/:owner/:repo/pulls/:number', (ctx) => {
       const r = issueOr404(ctx);
       if (isResp(r)) return r;
@@ -700,9 +746,13 @@ export class MockServer implements Transport {
     R('DELETE', '/api/v3/user/starred/:owner/:repo', (ctx) => star(ctx, false));
 
     R('GET', '/api/v3/user', () => ({ status: 200, body: { login: this.viewer.login, id: this.viewer.id, name: this.viewer.name, avatar_url: '' } }));
+
+    // ---------------- projects + wiki (private endpoints)
+    installProjectRoutes(R, this);
+    installWikiRoutes(R, this);
   }
 
-  private userByLogin(login: string): User | undefined {
+  userByLogin(login: string): User | undefined {
     const l = login.toLowerCase();
     for (const u of this.db.tables.user.values()) if (u.login.toLowerCase() === l) return u;
     return undefined;

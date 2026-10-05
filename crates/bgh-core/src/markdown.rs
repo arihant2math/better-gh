@@ -113,6 +113,8 @@ fn allowed_class(c: &str) -> bool {
                 | "footnotes"
                 | "footnote-ref"
                 | "footnote-backref"
+                | "wiki-link"
+                | "wiki-missing"
         )
 }
 
@@ -130,9 +132,220 @@ pub fn render(text: &str, ctx: &RenderContext<'_>) -> String {
     sanitize(&html)
 }
 
+/// Link resolution hook for [`render_with_links`] (used by wikis).
+pub trait LinkResolver {
+    /// Resolve a `[[target]]` / `[[text|target]]` wiki link to
+    /// `(href, class)`; `None` leaves the brackets as plain text.
+    fn wiki_link(&self, target: &str) -> Option<(String, &'static str)>;
+    /// Rewrite a Markdown link destination (e.g. a relative link) to
+    /// `(href, class)`; `None` keeps the link unchanged.
+    fn rewrite_link(&self, url: &str) -> Option<(String, &'static str)>;
+}
+
+/// Like [`render`], additionally resolving `[[wiki links]]` and rewriting
+/// link destinations through `links`. Resolved links carry the returned
+/// class (only sanitizer-allowed classes such as `wiki-link` /
+/// `wiki-missing` survive).
+pub fn render_with_links(text: &str, ctx: &RenderContext<'_>, links: &dyn LinkResolver) -> String {
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    merge_text_nodes(root);
+    link_wiki_pages(&arena, root, links);
+    rewrite_links(&arena, root, links);
+    if ctx.references {
+        link_references(&arena, root, ctx);
+    }
+    let mut html = String::new();
+    if format_html(root, &OPTIONS, &mut html).is_err() {
+        return String::new();
+    }
+    sanitize(&html)
+}
+
+fn is_text(n: &AstNode<'_>) -> bool {
+    matches!(n.data.borrow().value, NodeValue::Text(_))
+}
+
+/// Join adjacent text siblings (the parser splits text at brackets).
+fn merge_text_nodes<'a>(root: &'a AstNode<'a>) {
+    let parents: Vec<&'a AstNode<'a>> = root.descendants().collect();
+    for parent in parents {
+        let mut child = parent.first_child();
+        while let Some(c) = child {
+            if is_text(c) {
+                while let Some(next) = c.next_sibling().filter(|n| is_text(n)) {
+                    let mut merged = match &c.data.borrow().value {
+                        NodeValue::Text(t) => t.to_string(),
+                        _ => String::new(),
+                    };
+                    if let NodeValue::Text(t) = &next.data.borrow().value {
+                        merged.push_str(t);
+                    }
+                    c.data.borrow_mut().value = NodeValue::Text(merged.into());
+                    next.detach();
+                }
+            }
+            child = c.next_sibling();
+        }
+    }
+}
+
+fn anchor_open(href: &str, class: &str, title: Option<&str>) -> String {
+    match title.filter(|t| !t.is_empty()) {
+        Some(t) => format!(
+            "<a class=\"{}\" href=\"{}\" title=\"{}\">",
+            escape_html(class),
+            escape_html(href),
+            escape_html(t)
+        ),
+        None => format!(
+            "<a class=\"{}\" href=\"{}\">",
+            escape_html(class),
+            escape_html(href)
+        ),
+    }
+}
+
+fn link_wiki_pages<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, links: &dyn LinkResolver) {
+    let text_nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|n| is_text(n) && !inside_link_or_code(n))
+        .collect();
+    for node in text_nodes {
+        let text = match &node.data.borrow().value {
+            NodeValue::Text(t) => t.to_string(),
+            _ => continue,
+        };
+        if !text.contains("[[") {
+            continue;
+        }
+        let mut values: Vec<NodeValue> = Vec::new();
+        let mut rest = text.as_str();
+        let mut changed = false;
+        while let Some(start) = rest.find("[[") {
+            let after = &rest[start + 2..];
+            let Some(end) = after.find("]]") else { break };
+            let inner = &after[..end];
+            let (label, target) = match inner.split_once('|') {
+                Some((l, t)) => (l.trim(), t.trim()),
+                None => (inner.trim(), inner.trim()),
+            };
+            let resolved = (!target.is_empty() && !inner.contains('['))
+                .then(|| links.wiki_link(target))
+                .flatten();
+            let Some((href, class)) = resolved else {
+                // Not a wiki link: keep `[[` verbatim and continue after it.
+                values.push(NodeValue::Text(rest[..start + 2].to_string().into()));
+                rest = &rest[start + 2..];
+                continue;
+            };
+            changed = true;
+            if start > 0 {
+                values.push(NodeValue::Text(rest[..start].to_string().into()));
+            }
+            let label = if label.is_empty() { target } else { label };
+            values.push(NodeValue::HtmlInline(format!(
+                "{}{}</a>",
+                anchor_open(&href, class, None),
+                escape_html(label)
+            )));
+            rest = &after[end + 2..];
+        }
+        if !changed {
+            continue;
+        }
+        if !rest.is_empty() {
+            values.push(NodeValue::Text(rest.to_string().into()));
+        }
+        for value in values {
+            node.insert_before(arena.alloc(value.into()));
+        }
+        node.detach();
+    }
+}
+
+fn rewrite_links<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>, links: &dyn LinkResolver) {
+    let link_nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|n| matches!(n.data.borrow().value, NodeValue::Link(_)))
+        .collect();
+    for node in link_nodes {
+        let (url, title) = match &node.data.borrow().value {
+            NodeValue::Link(l) => (l.url.to_string(), l.title.to_string()),
+            _ => continue,
+        };
+        let Some((href, class)) = links.rewrite_link(&url) else {
+            continue;
+        };
+        let open = anchor_open(&href, class, Some(&title));
+        node.insert_before(arena.alloc(NodeValue::HtmlInline(open).into()));
+        let children: Vec<&'a AstNode<'a>> = node.children().collect();
+        for child in children {
+            node.insert_before(child);
+        }
+        node.insert_before(arena.alloc(NodeValue::HtmlInline("</a>".into()).into()));
+        node.detach();
+    }
+}
+
 /// Sanitize arbitrary HTML with the same policy as [`render`].
 pub fn sanitize(html: &str) -> String {
     SANITIZER.clean(html).to_string()
+}
+
+/// `@user` and `@org/team` mentions found in GFM text (outside code spans,
+/// code blocks and links), deduplicated case-insensitively, in order of
+/// first appearance. Logins are returned as written; resolve them with a
+/// case-insensitive lookup.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Mentions {
+    pub users: Vec<String>,
+    /// `(org, team_slug)` pairs.
+    pub teams: Vec<(String, String)>,
+}
+
+/// Extract mentions from `text` (see [`Mentions`]).
+pub fn mentions(text: &str) -> Mentions {
+    let mut out = Mentions::default();
+    if !text.contains('@') {
+        return out;
+    }
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    let ctx = RenderContext::new("");
+    for node in root.descendants() {
+        let NodeValue::Text(t) = &node.data.borrow().value else {
+            continue;
+        };
+        if inside_link_or_code(node) {
+            continue;
+        }
+        for seg in scan(t, &ctx) {
+            let Segment::Link { text, class, .. } = seg else {
+                continue;
+            };
+            let name = text.trim_start_matches('@');
+            match class {
+                "user-mention" => {
+                    if !out.users.iter().any(|u| u.eq_ignore_ascii_case(name)) {
+                        out.users.push(name.to_string());
+                    }
+                }
+                "team-mention" => {
+                    if let Some((org, team)) = name.split_once('/') {
+                        let dup = out.teams.iter().any(|(o, t)| {
+                            o.eq_ignore_ascii_case(org) && t.eq_ignore_ascii_case(team)
+                        });
+                        if !dup {
+                            out.teams.push((org.to_string(), team.to_string()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 fn inside_link_or_code<'a>(node: &'a AstNode<'a>) -> bool {
@@ -390,6 +603,121 @@ fn scan(text: &str, ctx: &RenderContext<'_>) -> Vec<Segment> {
     out
 }
 
+/// An issue reference found in text: `#12` (`owner`/`repo` = `None`) or
+/// `owner/repo#12` / a full issue or pull request URL on this instance.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IssueRef {
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+    pub number: i64,
+}
+
+/// References found in Markdown text (outside code and existing links).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct References {
+    /// `@login` mentions, deduplicated, in order of appearance.
+    pub mentions: Vec<String>,
+    /// `@org/team` mentions as `(org, team_slug)`.
+    pub team_mentions: Vec<(String, String)>,
+    /// Issue references, deduplicated.
+    pub issues: Vec<IssueRef>,
+}
+
+/// Extract `@mentions`, team mentions and issue references from Markdown,
+/// with the same syntax rules as [`render`] (ignoring code spans/blocks).
+/// Links to `{base_url}/{owner}/{repo}/issues|pull/{n}` count as issue
+/// references too.
+pub fn extract_references(text: &str, base_url: &str) -> References {
+    let arena = Arena::new();
+    let root = parse_document(&arena, text, &OPTIONS);
+    // A placeholder repo enables `#123` detection; resolved by the caller.
+    let ctx = RenderContext::new(base_url).with_repo("\0", "\0");
+    let mut out = References::default();
+    let base = base_url.trim_end_matches('/');
+    let push_issue = |out: &mut References, r: IssueRef| {
+        if !out.issues.contains(&r) {
+            out.issues.push(r);
+        }
+    };
+    for node in root.descendants() {
+        let value = node.data.borrow().value.clone();
+        match value {
+            NodeValue::Text(t) if !inside_link_or_code(node) => {
+                for seg in scan(&t, &ctx) {
+                    let Segment::Link { text, class, .. } = seg else {
+                        continue;
+                    };
+                    match class {
+                        "user-mention" => {
+                            let login = text.trim_start_matches('@').to_string();
+                            if !out.mentions.iter().any(|m| m.eq_ignore_ascii_case(&login)) {
+                                out.mentions.push(login);
+                            }
+                        }
+                        "team-mention" => {
+                            if let Some((org, team)) = text.trim_start_matches('@').split_once('/')
+                            {
+                                let t = (org.to_string(), team.to_string());
+                                if !out.team_mentions.contains(&t) {
+                                    out.team_mentions.push(t);
+                                }
+                            }
+                        }
+                        "issue-link" => {
+                            if let Some(r) = parse_issue_ref(&text) {
+                                push_issue(&mut out, r);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            NodeValue::Link(link) => {
+                if let Some(rest) = link.url.strip_prefix(base) {
+                    let parts: Vec<&str> = rest.trim_start_matches('/').split('/').collect();
+                    if parts.len() == 4
+                        && (parts[2] == "issues" || parts[2] == "pull")
+                        && let Ok(number) = parts[3]
+                            .split(['#', '?'])
+                            .next()
+                            .unwrap_or("")
+                            .parse::<i64>()
+                    {
+                        push_issue(
+                            &mut out,
+                            IssueRef {
+                                owner: Some(parts[0].to_string()),
+                                repo: Some(parts[1].to_string()),
+                                number,
+                            },
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn parse_issue_ref(text: &str) -> Option<IssueRef> {
+    let (path, num) = text.rsplit_once('#')?;
+    let number = num.parse().ok()?;
+    if path.is_empty() {
+        return Some(IssueRef {
+            owner: None,
+            repo: None,
+            number,
+        });
+    }
+    let (owner, repo) = path.split_once('/')?;
+    Some(IssueRef {
+        owner: Some(owner.to_string()),
+        repo: Some(repo.to_string()),
+        number,
+    })
+}
+
 /// Which attribute a URL passed to [`rewrite_urls`] came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UrlAttr {
@@ -518,10 +846,72 @@ mod tests {
         assert!(!html.contains("issues/5"), "{html}");
     }
 
+    struct Wiki;
+    impl LinkResolver for Wiki {
+        fn wiki_link(&self, target: &str) -> Option<(String, &'static str)> {
+            let slug = target.replace(' ', "-");
+            let class = if slug == "Home" {
+                "wiki-link"
+            } else {
+                "wiki-link wiki-missing"
+            };
+            Some((format!("/o/r/wiki/{slug}"), class))
+        }
+        fn rewrite_link(&self, url: &str) -> Option<(String, &'static str)> {
+            (!url.contains(':')).then(|| (format!("/o/r/wiki/{url}"), "wiki-link"))
+        }
+    }
+
+    #[test]
+    fn resolves_wiki_links() {
+        let html = render_with_links(
+            "See [[Home]], [[the docs|Some Page]] and [rel](Home \"t\") or [ext](https://x.y). `[[Code]]` [[ ]]",
+            &ctx(),
+            &Wiki,
+        );
+        assert!(
+            html.contains(r#"<a class="wiki-link" href="/o/r/wiki/Home" rel="nofollow noopener noreferrer">Home</a>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<a class="wiki-link wiki-missing" href="/o/r/wiki/Some-Page" rel="nofollow noopener noreferrer">the docs</a>"#),
+            "{html}"
+        );
+        assert!(html.contains(r#"title="t""#), "{html}");
+        assert!(html.contains(">rel</a>"), "{html}");
+        assert!(html.contains(r#"href="https://x.y""#), "{html}");
+        assert!(html.contains("<code>[[Code]]</code>"), "{html}");
+        assert!(html.contains("[[ ]]"), "{html}");
+    }
+
+    #[test]
+    fn extracts_references() {
+        let r = extract_references(
+            "Hi @alice and @Alice, see #12, o/r#3 and http://h.io/x/y/issues/9.\n\n`@bob #4`\n\n@org/team",
+            "http://h.io",
+        );
+        assert_eq!(r.mentions, vec!["alice".to_string()]);
+        assert_eq!(r.team_mentions, vec![("org".into(), "team".into())]);
+        let nums: Vec<i64> = r.issues.iter().map(|i| i.number).collect();
+        assert_eq!(nums, vec![12, 3, 9]);
+        assert_eq!(r.issues[0].owner, None);
+        assert_eq!(r.issues[1].owner.as_deref(), Some("o"));
+    }
+
     #[test]
     fn no_repo_means_no_issue_links() {
         let html = render("see #12", &RenderContext::new("http://h"));
         assert!(!html.contains("issue-link"), "{html}");
+    }
+
+    #[test]
+    fn extracts_mentions() {
+        let m = mentions(
+            "hi @alice and @Bob, cc @acme/core `@notme` @alice\n\n```\n@code\n```\nmail a@b.com [@link](http://x)",
+        );
+        assert_eq!(m.users, vec!["alice".to_string(), "Bob".to_string()]);
+        assert_eq!(m.teams, vec![("acme".to_string(), "core".to_string())]);
+        assert_eq!(mentions("no mentions"), Mentions::default());
     }
 
     #[test]

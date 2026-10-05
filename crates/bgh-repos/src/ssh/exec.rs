@@ -39,7 +39,11 @@ async fn authorize(
         Principal::User { ctx, .. } => {
             let access = RepoAccess::load(state, Some(ctx), owner, repo)
                 .await
-                .map_err(|_| not_found())?;
+                .map_err(|e| match e {
+                    // e.g. "Repository access blocked." for disabled repos
+                    ApiError::Forbidden(m) => format!("ERROR: {m}\n"),
+                    _ => not_found(),
+                })?;
             if write && access.permission < Permission::Write {
                 return Err(denied(&ctx.user.login));
             }
@@ -175,6 +179,13 @@ where
         .await
         .map_err(|e| internal(&e)),
         Command::ReceivePack { .. } => {
+            // Same storage quota as git over HTTP (bgh_core::settings).
+            if let Err(e) = bgh_core::settings::check_push_quota(state, &authz.access.repo).await {
+                return Err(match e {
+                    ApiError::Forbidden(m) => format!("ERROR: {m}\n"),
+                    other => internal(&other),
+                });
+            }
             let adv = smart_http::advertise_refs(
                 &store,
                 repo_id,
@@ -185,21 +196,41 @@ where
             .map_err(|e| internal(&e))?;
             out.write_all(&adv).await.map_err(|e| internal(&e))?;
             out.flush().await.map_err(|e| internal(&e))?;
-            let rules = protection::load_rules(state, repo_id)
+            let access = &authz.access;
+            let rules = protection::RepoRules::load(&state.db, &access.repo)
                 .await
                 .map_err(|e| internal(&e))?;
             let pusher_id = authz.user.as_ref().map(|u| u.user.id);
-            let access = &authz.access;
-            let result =
-                smart_http::receive_pack_stream(&store, repo_id, channel_reader(rx), |u| {
-                    let r = protection::check_push_by(&rules, access, pusher_id, &u);
-                    async move { r }
-                })
-                .await
-                .map_err(|e| match e {
-                    bgh_git::GitError::InvalidInput(m) => format!("ERROR: {m}\n"),
-                    other => internal(&other),
-                })?;
+            let actor = match (&authz.user, rules.is_empty()) {
+                (_, true) => None,
+                (Some(u), false) => Some(
+                    protection::Actor::load(state, access, &u.user)
+                        .await
+                        .map_err(|e| internal(&e))?,
+                ),
+                (None, false) => Some(protection::Actor::deploy_key(access)),
+            };
+            let result = smart_http::receive_pack_stream_with_policy(
+                &store,
+                repo_id,
+                channel_reader(rx),
+                |updates| {
+                    let rules = &rules;
+                    async move {
+                        match &actor {
+                            None => Ok(smart_http::PushPolicy::default()),
+                            Some(actor) => {
+                                protection::authorize_push(state, rules, actor, &updates).await
+                            }
+                        }
+                    }
+                },
+            )
+            .await
+            .map_err(|e| match e {
+                bgh_git::GitError::InvalidInput(m) => format!("ERROR: {m}\n"),
+                other => internal(&other),
+            })?;
             if !result.applied.is_empty() {
                 bgh_core::jobs::enqueue_job(
                     &state.db,

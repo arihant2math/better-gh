@@ -73,8 +73,10 @@ impl Urls {
     }
 
     /// Avatar URL: the stored custom avatar or the built-in generated one.
+    /// Custom values starting with `/` are relative to the base URL.
     pub fn avatar(&self, user_id: i64, custom: Option<&str>) -> String {
         match custom {
+            Some(path) if path.starts_with('/') => format!("{}{path}", self.base),
             Some(url) if !url.is_empty() => url.to_string(),
             _ => format!("{}/avatars/u/{user_id}?v=4", self.base),
         }
