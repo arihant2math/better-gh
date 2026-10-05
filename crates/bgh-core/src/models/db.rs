@@ -309,6 +309,8 @@ pub struct Repository {
     pub pushed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Upstream URL of a pull mirror (no credentials); `None` otherwise.
+    pub mirror_url: Option<String>,
 }
 
 impl Repository {
@@ -320,7 +322,7 @@ impl Repository {
         squash_merge_commit_title, squash_merge_commit_message, merge_commit_title, \
         merge_commit_message, web_commit_signoff_required, topics, language, license_spdx_id, \
         next_issue_number, size, stargazers_count, watchers_count, forks_count, \
-        open_issues_count, pushed_at, created_at, updated_at";
+        open_issues_count, pushed_at, created_at, updated_at, mirror_url";
 
     pub fn is_private(&self) -> bool {
         self.visibility != "public"

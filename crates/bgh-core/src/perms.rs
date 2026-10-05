@@ -311,6 +311,9 @@ pub fn job_token_repo(auth: &AuthContext) -> Option<i64> {
         .find_map(|s| s.strip_prefix(JOB_TOKEN_SCOPE_PREFIX)?.parse().ok())
 }
 
+/// Error message for git writes to a pull mirror.
+pub const MIRROR_READ_ONLY: &str = "This repository is a mirror and is read-only";
+
 /// A repository resolved for the current caller.
 #[derive(Debug, Clone)]
 pub struct RepoAccess {
@@ -410,6 +413,16 @@ impl RepoAccess {
     }
 
     /// Reject writes to archived repositories (403 like GitHub).
+    /// Refuse git data writes (pushes, ref/contents/merge APIs) to a pull
+    /// mirror: its refs only change by syncing from upstream.
+    pub fn require_not_mirror(&self) -> ApiResult<()> {
+        if self.repo.mirror_url.is_some() {
+            Err(ApiError::forbidden(MIRROR_READ_ONLY))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn require_not_archived(&self) -> ApiResult<()> {
         if self.repo.archived {
             Err(ApiError::forbidden(

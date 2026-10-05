@@ -91,6 +91,7 @@ async fn writable(
     let access = RepoAccess::load(state, Some(auth), owner, repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     Ok(access)
 }
 
