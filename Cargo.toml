@@ -115,7 +115,8 @@ opt-level = 3
 # the best inlining. Release builds are for packaging (Docker, CI artifacts).
 lto = "thin"
 codegen-units = 1
-# Keep symbol names (readable panic backtraces), drop DWARF (~4x smaller).
+# Keep symbol names (readable panic backtraces), drop DWARF (the
+# precompiled std ships with debuginfo even when `debug = false`).
 debug = false
 strip = "debuginfo"
 # Unwind, not abort: a panicking request handler or job must not take the
