@@ -8,3 +8,4 @@ mod mutations;
 mod projects;
 mod queries;
 mod schema;
+mod signatures;

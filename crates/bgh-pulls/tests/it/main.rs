@@ -9,4 +9,5 @@ mod governance;
 mod merge;
 mod pulls;
 mod reviews;
+mod signatures;
 mod web_client;
