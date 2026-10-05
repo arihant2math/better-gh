@@ -10,6 +10,9 @@
 //! | `blame/{ref}/{path}` | blame (JSON, or NDJSON stream when `Accept: application/x-ndjson`) |
 //! | `history/{ref}[/{path}]` | commits touching a path |
 //! | `readme/{ref}[/{dir}]` | rendered README of a directory |
+//! | `branch-list` | branches with last commit, ahead/behind, protection, PR |
+//! | `files[/{ref}]` | every file path of a commit (file finder) |
+//! | `commit-status?sha=…` | CI rollup per commit (statuses + check runs) |
 //!
 //! Plus `GET /_bgh/render/blob/{owner}/{repo}/{blob_sha}?path=` (highlighted
 //! lines of one blob, docs/SYNC_PROTOCOL.md §10).
@@ -24,6 +27,7 @@
 pub mod blame;
 pub mod blob;
 pub mod history;
+pub mod overview;
 pub mod readme;
 pub mod refs;
 pub mod render;
@@ -65,6 +69,22 @@ pub fn web_router() -> Router<AppState> {
         .route(
             "/_bgh/repos/{owner}/{repo}/history/{*spec}",
             get(history::get),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/branch-list",
+            get(overview::branch_list),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/files",
+            get(overview::files_root),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/files/{*spec}",
+            get(overview::files),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/commit-status",
+            get(overview::commit_status),
         )
         .route("/_bgh/repos/{owner}/{repo}/readme", get(readme::root))
         .route(

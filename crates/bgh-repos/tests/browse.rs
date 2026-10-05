@@ -682,3 +682,94 @@ async fn loose_refs_are_packed_after_push() {
         "version-sorted, newest first"
     );
 }
+
+#[tokio::test]
+async fn branch_list_files_and_commit_status() {
+    let f = fixture().await;
+    let app = &f.app;
+
+    let res = app.get("/_bgh/repos/alice/demo/branch-list").send().await;
+    res.assert_status(200);
+    let b = res.json();
+    assert_eq!(b["default_branch"], "main");
+    let list = b["branches"].as_array().unwrap();
+    assert_eq!(list[0]["name"], "main", "default branch first");
+    assert_eq!(list[0]["ahead"], 0);
+    assert_eq!(list[0]["behind"], 0);
+    assert_eq!(list[0]["commit"]["sha"], f.c2.as_str());
+    assert_eq!(list[0]["commit"]["summary"], "add lib and bye");
+    assert_eq!(list[1]["name"], "feature/x");
+    assert_eq!(list[1]["ahead"], 1);
+    assert_eq!(list[1]["behind"], 0);
+    assert_eq!(list[1]["protected"], false);
+    assert!(list[1]["pull"].is_null());
+
+    let res = app.get("/_bgh/repos/alice/demo/files/main").send().await;
+    res.assert_status(200);
+    let files = res.json();
+    assert_eq!(files["commit"], f.c2.as_str());
+    assert_eq!(files["truncated"], false);
+    let paths: Vec<&str> = files["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "README.md",
+            "docs/guide.md",
+            "logo.png",
+            "src/lib.rs",
+            "src/main.rs"
+        ]
+    );
+    // Full-SHA requests are immutable.
+    let res = app
+        .get(&format!("/_bgh/repos/alice/demo/files/{}", f.c3))
+        .send()
+        .await;
+    res.assert_status(200);
+    assert!(
+        res.header("cache-control").unwrap().contains("immutable"),
+        "immutable for a commit SHA"
+    );
+
+    let id = repo_id(app, &f.alice, "demo").await;
+    for (sha, ctx, state) in [
+        (&f.c2, "ci/a", "pending"),
+        (&f.c2, "ci/a", "success"),
+        (&f.c3, "ci/a", "success"),
+        (&f.c3, "ci/b", "failure"),
+    ] {
+        sqlx::query(
+            "INSERT INTO commit_statuses (repo_id, sha, context, state) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(sha)
+        .bind(ctx)
+        .bind(state)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    }
+    let res = app
+        .get(&format!(
+            "/_bgh/repos/alice/demo/commit-status?sha={}&sha={},{}",
+            f.c1, f.c2, f.c3
+        ))
+        .send()
+        .await;
+    res.assert_status(200);
+    let s = res.json();
+    assert!(s["statuses"][&f.c1].is_null(), "no CI for c1");
+    assert_eq!(
+        s["statuses"][&f.c2]["state"], "success",
+        "latest per context"
+    );
+    assert_eq!(s["statuses"][&f.c2]["total"], 1);
+    assert_eq!(s["statuses"][&f.c3]["state"], "failure");
+    assert_eq!(s["statuses"][&f.c3]["failure"], 1);
+    assert_eq!(s["statuses"][&f.c3]["success"], 1);
+}
