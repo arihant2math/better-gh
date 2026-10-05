@@ -157,6 +157,31 @@ pub enum Event {
         user_id: i64,
         actor_id: i64,
     },
+    /// Site-level user account change (GHES global webhook `user` event).
+    /// `action`: `created` | `deleted` | `renamed` | `suspended` |
+    /// `unsuspended` | `promoted` | `demoted`. `login` is the current login
+    /// (the old one for `deleted`); `data` holds extras (`{"from": old}`).
+    UserAccountChanged {
+        user_id: i64,
+        login: String,
+        action: String,
+        actor_id: i64,
+        data: serde_json::Value,
+    },
+    /// Site-level organization change (GHES global webhook `organization`
+    /// event). `action`: `created` | `deleted` | `renamed`.
+    OrganizationChanged {
+        org_id: i64,
+        login: String,
+        action: String,
+        actor_id: i64,
+        data: serde_json::Value,
+    },
+    /// `POST /admin/hooks/{id}/pings`: deliver a `ping` to a global webhook.
+    GlobalHookPing {
+        hook_id: i64,
+        actor_id: i64,
+    },
 }
 
 impl Event {
@@ -182,6 +207,9 @@ impl Event {
             Self::PullRequestReviewSubmitted { .. } => "pull_request_review_submitted",
             Self::ReleasePublished { .. } => "release_published",
             Self::OrgMemberAdded { .. } => "org_member_added",
+            Self::UserAccountChanged { .. } => "user_account_changed",
+            Self::OrganizationChanged { .. } => "organization_changed",
+            Self::GlobalHookPing { .. } => "global_hook_ping",
         }
     }
 
@@ -206,7 +234,10 @@ impl Event {
             | Self::PullRequestMerged { repo_id, .. }
             | Self::PullRequestReviewSubmitted { repo_id, .. }
             | Self::ReleasePublished { repo_id, .. } => Some(*repo_id),
-            Self::OrgMemberAdded { .. } => None,
+            Self::OrgMemberAdded { .. }
+            | Self::UserAccountChanged { .. }
+            | Self::OrganizationChanged { .. }
+            | Self::GlobalHookPing { .. } => None,
         }
     }
 
@@ -231,7 +262,10 @@ impl Event {
             | Self::PullRequestMerged { actor_id, .. }
             | Self::PullRequestReviewSubmitted { actor_id, .. }
             | Self::ReleasePublished { actor_id, .. }
-            | Self::OrgMemberAdded { actor_id, .. } => Some(*actor_id),
+            | Self::OrgMemberAdded { actor_id, .. }
+            | Self::UserAccountChanged { actor_id, .. }
+            | Self::OrganizationChanged { actor_id, .. }
+            | Self::GlobalHookPing { actor_id, .. } => Some(*actor_id),
         }
     }
 }

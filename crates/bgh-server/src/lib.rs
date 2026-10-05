@@ -84,6 +84,10 @@ fn web_routes() -> Router<AppState> {
 pub fn app(state: AppState) -> Router {
     let api = api_routes()
         .fallback(api_not_found)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::ratelimit::rate_limit_middleware,
+        ))
         .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn(etag))
         .layer(
@@ -111,6 +115,10 @@ pub fn app(state: AppState) -> Router {
             let web_files = web_files.clone();
             async move { web_files.serve(req).await }
         })
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::settings::maintenance_middleware,
+        ))
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
         .layer(CompressionLayer::new().compress_when(compress_when))
         .layer(PropagateRequestIdLayer::x_request_id())
