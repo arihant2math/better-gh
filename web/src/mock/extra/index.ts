@@ -11,6 +11,7 @@ import { installImportMocks } from './imports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
 import { installRepoSettingsMocks } from './repo';
+import { installRulesetMocks } from './rulesets';
 import { installUploadMocks } from './uploads';
 import { installUserMocks } from './user';
 
@@ -20,6 +21,7 @@ export function installExtraMocks(server: MockServer): void {
   installDeveloperMocks(server);
   installProfileMocks(server);
   installRepoSettingsMocks(server);
+  installRulesetMocks(server);
   installUploadMocks(server);
   installImportMocks(server);
   installPackageMocks(server);
