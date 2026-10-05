@@ -29,6 +29,7 @@ bgh-wiki = { path = "crates/bgh-wiki" }
 bgh-import = { path = "crates/bgh-import" }
 bgh-packages = { path = "crates/bgh-packages" }
 bgh-uploads = { path = "crates/bgh-uploads" }
+bgh-security = { path = "crates/bgh-security" }
 bgh-server = { path = "crates/bgh-server" }
 
 # web / async

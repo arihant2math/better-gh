@@ -53,7 +53,7 @@ pub async fn full_repo(
             source = parent.clone();
         }
     }
-    Ok(Repository::new(
+    let mut full = Repository::new(
         &state.urls,
         repo,
         &access.owner,
@@ -65,7 +65,12 @@ pub async fn full_repo(
             source,
             template_repository,
         },
-    ))
+    );
+    if access.authenticated && access.permission >= Permission::Admin {
+        full.security_and_analysis =
+            Some(bgh_security::settings::security_and_analysis(state, repo.id).await?);
+    }
+    Ok(full)
 }
 
 /// Legacy compact shape. Sync payloads must come from

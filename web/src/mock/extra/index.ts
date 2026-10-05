@@ -24,6 +24,7 @@ import { installRelationshipMocks } from './relationships';
 import { installRepoNavMocks } from './repoNav';
 import { installRulesetMocks } from './rulesets';
 import { installRunnerMocks } from './runners';
+import { installSecretScanningMocks } from './secretScanning';
 import { installUploadMocks } from './uploads';
 import { installUserMocks } from './user';
 
@@ -49,4 +50,5 @@ export function installExtraMocks(server: MockServer): void {
   installRunnerMocks(server);
   installCacheMocks(server);
   installFineGrainedTokenMocks(server);
+  installSecretScanningMocks(server);
 }

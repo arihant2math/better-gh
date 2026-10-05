@@ -74,6 +74,7 @@ function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags'
 }
 
 const DeploymentsPage = () => import('../pages/deployments/DeploymentsPage');
+const SecurityPage = () => import('../pages/security/SecurityPage');
 
 function prefetchDeployments(p: Params) {
   void import('../api/deployments').then((m) => prefetchResource(m.deploymentKeys.summary(p.owner!, p.repo!), () => m.getDeploymentsSummary(p.owner!, p.repo!), { ttlMs: 15_000 }));
@@ -224,6 +225,7 @@ export function registerRoutes(): void {
     { path: '/apps/:slug/installations/new', load: AppPage, title: (p) => `Install ${p.slug}` },
     { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
     { path: '/organizations/:org/settings/issue-types', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgIssueTypesPage'), title: (p) => `Issue types · ${p.org}` },
+    { path: '/organizations/:org/settings/security_analysis', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecretScanningPage'), title: (p) => `Secret scanning · ${p.org}` },
     { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
@@ -381,6 +383,11 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/community', layout: RepoLayout, load: InsightsPage, title: (p) => `Community standards · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/network', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/network/members', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
+    // Security (P65 secret scanning; P66 extends the tab). `view` picks the page inside SecurityPage.
+    { path: '/:owner/:repo/security', layout: RepoLayout, load: SecurityPage, title: (p) => `Security · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/:view', layout: RepoLayout, load: SecurityPage, title: (p) => `${p.view === 'secret-scanning' ? 'Secret scanning' : 'Security'} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/secret-scanning/:number', layout: RepoLayout, load: SecurityPage, title: (p) => `Secret scanning alert #${p.number} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/secret-scanning/unblock-secret/:placeholder', layout: RepoLayout, load: SecurityPage, title: (p) => `Push protection · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);

@@ -62,6 +62,9 @@ crates/
                            GitHub Packages REST, package GC
   bgh-import/              metadata importer (GitHub/GHES issues, labels,
                            milestones, releases, users/mannequins)
+  bgh-security/            secret scanning (pattern engine, history/push
+                           scans, alerts API, custom patterns) and push
+                           protection; code scanning builds on it (P66)
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -509,7 +512,13 @@ Site-level account changes also emit `UserAccountChanged` /
   (`bgh_pulls::protection`): the classic rule protecting the base branch
   plus every active ruleset selecting it, each requirement reported with
   its source and bypassed per source; required checks only count
-  statuses/check runs posted to the base repository. After git exits, refs are re-read to determine which
+  statuses/check runs posted to the base repository. Push protection
+  (`bgh_security::push`, P65) is one more object check combined into
+  `PushPolicy::object_check` by both transports: it scans only the blobs
+  the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,
+  within `push_scan_timeout_secs`, failing open) and rejects with GH013
+  and an unblock URL per secret; accepted pushes are rescanned in the
+  background (`security.scan_push`) to open alerts. After git exits, refs are re-read to determine which
   updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config

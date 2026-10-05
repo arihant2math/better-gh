@@ -383,6 +383,21 @@ export interface SiteSettings {
   privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
   /** Rendered Markdown: proxy external images through `/_bgh/camo`. */
   markdown: { image_proxy: boolean };
+  /** Secret scanning and push protection (P65); absent on older servers. */
+  secret_scanning?: SecretScanningSiteSettings;
+}
+
+export interface SecretScanningSiteSettings {
+  /** Repositories may turn secret scanning on. */
+  available: boolean;
+  /** Force secret scanning on for every repository. */
+  enable_all: boolean;
+  /** Force push protection on for every repository. */
+  push_protection_all: boolean;
+  /** Largest file scanned, in KB. */
+  max_blob_kb: number;
+  /** Time budget for scanning a push; on timeout the push is accepted. */
+  push_scan_timeout_secs: number;
 }
 
 export interface RetentionSettings {
