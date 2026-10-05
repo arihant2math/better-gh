@@ -47,8 +47,23 @@ pub(crate) fn optional_json<T: serde::de::DeserializeOwned + Default>(
 /// REST API routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
     use subscriptions as subs;
+    use webhooks::apps as app_hook;
     use webhooks::deliveries;
     Router::new()
+        // GitHub App hook (app JWT)
+        .route(
+            "/app/hook/config",
+            get(app_hook::get_config).patch(app_hook::update_config),
+        )
+        .route("/app/hook/deliveries", get(app_hook::list_deliveries))
+        .route(
+            "/app/hook/deliveries/{delivery_id}",
+            get(app_hook::get_delivery),
+        )
+        .route(
+            "/app/hook/deliveries/{delivery_id}/attempts",
+            post(app_hook::redeliver_delivery),
+        )
         // Notifications
         .route("/notifications", get(threads::list).put(threads::mark_all))
         .route(
@@ -144,7 +159,18 @@ pub fn router() -> Router<AppState> {
 /// Web-client routes (absolute paths).
 pub fn web_router() -> Router<AppState> {
     use subscriptions as subs;
+    use webhooks::apps as app_hook;
     Router::new()
+        .route("/_bgh/apps/{slug}/hook", get(app_hook::web_hook))
+        .route("/_bgh/apps/{slug}/hook/deliveries", get(app_hook::web_list))
+        .route(
+            "/_bgh/apps/{slug}/hook/deliveries/{delivery_id}",
+            get(app_hook::web_get),
+        )
+        .route(
+            "/_bgh/apps/{slug}/hook/deliveries/{delivery_id}/attempts",
+            post(app_hook::web_redeliver),
+        )
         .route(
             "/_bgh/notifications/settings",
             get(settings::get_settings).put(settings::put_settings),

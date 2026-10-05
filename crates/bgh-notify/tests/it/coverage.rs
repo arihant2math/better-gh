@@ -23,8 +23,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "discussion",
     "discussion_comment",
     "github_app_authorization",
-    "installation",
-    "installation_repositories",
     "installation_target",
     "issue_dependencies",
     "marketplace_purchase",
@@ -58,6 +56,24 @@ fn samples() -> Vec<Event> {
     let sha = "a".repeat(40);
     let v = json!({});
     vec![
+        Event::AppInstallationChanged {
+            installation_id: 1,
+            app_id: 1,
+            account_id: 1,
+            action: "created".into(),
+            actor_id: 1,
+            installation: v.clone(),
+            repositories: v.clone(),
+        },
+        Event::AppInstallationRepositoriesChanged {
+            installation_id: 1,
+            app_id: 1,
+            account_id: 1,
+            actor_id: 1,
+            repository_selection: "selected".into(),
+            added: vec![1],
+            removed: vec![],
+        },
         Event::Push(PushEvent {
             repo_id: 1,
             pusher_id: Some(1),

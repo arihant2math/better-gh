@@ -514,6 +514,28 @@ pub mod templates {
         )
     }
 
+    /// A GitHub App installed on `account` requests new permissions (P46).
+    pub fn app_permissions_requested(
+        site: &str,
+        to: &str,
+        login: &str,
+        app: &str,
+        account: &str,
+        url: &str,
+    ) -> Email {
+        simple(
+            site,
+            to,
+            login,
+            format!("[{site}] {app} is requesting updated permissions"),
+            &[format!(
+                "The GitHub App {app}, installed on @{account}, is requesting additional permissions or events. It keeps its current access until an administrator of @{account} reviews and accepts the request."
+            )],
+            Some((url, "Review permissions")),
+            &format!("You received this email because you administer @{account}."),
+        )
+    }
+
     /// Repository collaboration invitation.
     pub fn repo_invitation(
         site: &str,

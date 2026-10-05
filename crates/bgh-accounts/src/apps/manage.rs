@@ -5,6 +5,9 @@
 //! * `GET|PATCH|DELETE /_bgh/apps/{slug}`
 //! * `POST /_bgh/apps/{slug}/keys` (PEM shown once),
 //!   `DELETE /_bgh/apps/{slug}/keys/{id}`
+//! * `POST /_bgh/apps/{slug}/client_secrets` (secret shown once),
+//!   `DELETE /_bgh/apps/{slug}/client_secrets/{id}` (P46: OAuth for
+//!   user-to-server tokens)
 //!
 //! Only administrators of the owning account (the user, or org admins)
 //! see or change a registration. Writes need a browser session: a token
@@ -17,6 +20,7 @@ use axum::http::StatusCode;
 use bgh_core::apps::{AppRow, GeneratedKey};
 use bgh_core::audit;
 use bgh_core::prelude::*;
+use bgh_core::time::ts;
 use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -57,6 +61,29 @@ pub struct AppDetail {
     pub public: bool,
     pub bot: api::SimpleUser,
     pub keys: Vec<KeyJson>,
+    /// `json` or `form` (P46).
+    pub webhook_content_type: String,
+    pub webhook_insecure_ssl: bool,
+    pub client_secrets: Vec<ClientSecretJson>,
+}
+
+/// An app's client secret (only the last eight characters are kept).
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ClientSecretJson {
+    pub id: i64,
+    pub last_eight: String,
+    #[sqlx(skip)]
+    pub created_at: Option<Timestamp>,
+    #[serde(skip)]
+    pub created: DateTime<Utc>,
+    #[serde(skip)]
+    pub last_used: Option<DateTime<Utc>>,
+    #[sqlx(skip)]
+    pub last_used_at: Option<Timestamp>,
+    /// The secret itself, only in the create response.
+    #[sqlx(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
 }
 
 async fn detail(state: &AppState, app: &AppRow) -> ApiResult<AppDetail> {
@@ -76,7 +103,62 @@ async fn detail(state: &AppState, app: &AppRow) -> ApiResult<AppDetail> {
         public: app.public,
         bot: api::SimpleUser::new(&state.urls, &bot),
         keys: keys(state, app.id).await?,
+        webhook_content_type: app.webhook_content_type.clone(),
+        webhook_insecure_ssl: app.webhook_insecure_ssl,
+        client_secrets: client_secrets(state, app.id).await?,
     })
+}
+
+async fn client_secrets(state: &AppState, app_id: i64) -> ApiResult<Vec<ClientSecretJson>> {
+    let mut rows: Vec<ClientSecretJson> = sqlx::query_as(
+        "SELECT id, last_eight, created_at AS created, last_used_at AS last_used
+           FROM github_app_client_secrets WHERE app_id = $1 ORDER BY id",
+    )
+    .bind(app_id)
+    .fetch_all(&state.db)
+    .await?;
+    for r in &mut rows {
+        r.created_at = Some(r.created.into());
+        r.last_used_at = ts(r.last_used);
+    }
+    Ok(rows)
+}
+
+/// Add a client secret to an app; returns its id and the secret.
+pub(crate) async fn insert_client_secret(
+    conn: &mut sqlx::PgConnection,
+    app_id: i64,
+    creator_id: Option<i64>,
+) -> ApiResult<(i64, String, DateTime<Utc>)> {
+    let secret = hex::encode(rand::rng().random::<[u8; 20]>());
+    let (id, created): (i64, DateTime<Utc>) = sqlx::query_as(
+        "INSERT INTO github_app_client_secrets (app_id, secret_hash, last_eight, creator_id)
+         VALUES ($1, $2, $3, $4) RETURNING id, created_at",
+    )
+    .bind(app_id)
+    .bind(bgh_core::crypto::sha256_hex(&secret))
+    .bind(&secret[secret.len() - 8..])
+    .bind(creator_id)
+    .fetch_one(conn)
+    .await?;
+    Ok((id, secret, created))
+}
+
+/// Store the public half of a freshly generated key.
+pub(crate) async fn insert_key(
+    conn: &mut sqlx::PgConnection,
+    app_id: i64,
+    key: &GeneratedKey,
+) -> ApiResult<(i64, DateTime<Utc>)> {
+    Ok(sqlx::query_as(
+        "INSERT INTO github_app_keys (app_id, public_key, fingerprint) VALUES ($1, $2, $3)
+         RETURNING id, created_at",
+    )
+    .bind(app_id)
+    .bind(&key.public_pem)
+    .bind(&key.fingerprint)
+    .fetch_one(conn)
+    .await?)
 }
 
 async fn keys(state: &AppState, app_id: i64) -> ApiResult<Vec<KeyJson>> {
@@ -170,7 +252,7 @@ fn valid_url(u: &str) -> bool {
     url::Url::parse(u).is_ok_and(|u| matches!(u.scheme(), "http" | "https"))
 }
 
-fn validate(body: &AppBody, creating: bool) -> ApiResult<()> {
+pub(crate) fn validate(body: &AppBody, creating: bool) -> ApiResult<()> {
     let mut errors = Vec::new();
     match body.name.as_deref().map(str::trim) {
         None if creating => errors.push(FieldError::missing_field(RESOURCE, "name")),
@@ -242,7 +324,7 @@ fn name_taken(e: sqlx::Error) -> ApiError {
     }
 }
 
-fn audit_target(owner: &db::User) -> audit::Target {
+pub(crate) fn audit_target(owner: &db::User) -> audit::Target {
     if owner.is_org() {
         audit::Target::Org(owner.id)
     } else {
@@ -274,19 +356,33 @@ pub async fn create(
     if owner.kind == "Bot" || !administers(&state, &auth.user, &owner).await? {
         return Err(ApiError::NotFound);
     }
+    let mut tx = Tx::begin(&state).await?;
+    let app = insert_app(&state, &mut tx, &auth.user, &owner, &body).await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(detail(&state, &app).await?)))
+}
+
+/// Register an app for `owner` (validated `body`) inside `tx`, audited as
+/// `actor`.
+pub(crate) async fn insert_app(
+    state: &AppState,
+    tx: &mut Tx,
+    actor: &db::User,
+    owner: &db::User,
+    body: &AppBody,
+) -> ApiResult<AppRow> {
     let name = body.name.as_deref().unwrap_or_default().trim().to_string();
     let slug = slugify(&name);
     let permissions =
         validate_permissions(RESOURCE, &body.permissions.clone().unwrap_or_default())?;
-    let secret = seal_secret(&state, &body.webhook_secret)?.flatten();
+    let secret = seal_secret(state, &body.webhook_secret)?.flatten();
     let webhook_url = body.webhook_url.clone().into_option().flatten();
-    let mut tx = Tx::begin(&state).await?;
     let bot_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (login, type, name) VALUES ($1, 'Bot', $2) RETURNING id",
     )
     .bind(bot_login(&slug))
     .bind(&name)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(name_taken)?;
     let app: AppRow = sqlx::query_as(&format!(
@@ -319,19 +415,18 @@ pub async fn create(
     .bind(body.events.clone().unwrap_or_default())
     .bind(body.public.unwrap_or(false))
     .bind(new_client_id())
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await
     .map_err(name_taken)?;
     audit::log(
-        &mut *tx,
-        Some(&auth.user),
+        &mut **tx,
+        Some(actor),
         "integration.create",
-        audit_target(&owner),
+        audit_target(owner),
         json!({ "integration": app.slug, "app_id": app.id }),
     )
     .await?;
-    tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(detail(&state, &app).await?)))
+    Ok(app)
 }
 
 /// `GET /_bgh/apps/{slug}`
@@ -425,8 +520,64 @@ pub async fn update(
         json!({ "integration": row.slug, "app_id": row.id }),
     )
     .await?;
+    if row.permissions.0 != app.permissions.0 || row.events != app.events {
+        notify_permission_upgrade(&state, &mut tx, &row).await?;
+    }
     tx.commit().await?;
     Ok(Json(detail(&state, &row).await?))
+}
+
+/// Permission-upgrade flow: installations keep their accepted permissions;
+/// administrators of every account whose installation now differs from the
+/// app's request are mailed a link to review and accept them
+/// (`POST /_bgh/installations/{id}/accept_permissions`).
+async fn notify_permission_upgrade(state: &AppState, tx: &mut Tx, app: &AppRow) -> ApiResult<()> {
+    #[derive(sqlx::FromRow)]
+    struct Recipient {
+        installation_id: i64,
+        account_login: String,
+        account_is_org: bool,
+        login: String,
+        email: String,
+    }
+    let rows: Vec<Recipient> = sqlx::query_as(
+        "SELECT i.id AS installation_id, a.login AS account_login,
+                a.type = 'Organization' AS account_is_org, u.login, e.email
+           FROM app_installations i
+           JOIN users a ON a.id = i.account_id
+           JOIN users u ON u.id = a.id
+                        OR u.id IN (SELECT user_id FROM org_members
+                                     WHERE org_id = a.id AND role = 'admin')
+           JOIN user_emails e ON e.user_id = u.id AND e.is_primary AND e.verified
+          WHERE i.app_id = $1
+            AND (i.permissions <> $2 OR NOT (i.events @> $3 AND i.events <@ $3))
+          ORDER BY i.id, u.id",
+    )
+    .bind(app.id)
+    .bind(&app.permissions)
+    .bind(&app.events)
+    .fetch_all(&mut **tx)
+    .await?;
+    for r in rows {
+        let path = if r.account_is_org {
+            format!(
+                "/organizations/{}/settings/installations/{}",
+                r.account_login, r.installation_id
+            )
+        } else {
+            format!("/settings/installations/{}", r.installation_id)
+        };
+        let email = bgh_core::mail::templates::app_permissions_requested(
+            &state.config.site_name,
+            &r.email,
+            &r.login,
+            &app.name,
+            &r.account_login,
+            &state.urls.html(&path),
+        );
+        tx.enqueue(&bgh_core::mail::SendEmail::new(email)).await?;
+    }
+    Ok(())
 }
 
 /// `DELETE /_bgh/apps/{slug}` → 204. Removes every installation and token;
@@ -474,15 +625,7 @@ pub async fn create_key(
     let app = admin_app(&state, &auth, &slug).await?;
     let key: GeneratedKey = tokio::task::spawn_blocking(bgh_core::apps::generate_key).await??;
     let mut tx = Tx::begin(&state).await?;
-    let (id, created): (i64, DateTime<Utc>) = sqlx::query_as(
-        "INSERT INTO github_app_keys (app_id, public_key, fingerprint) VALUES ($1, $2, $3)
-         RETURNING id, created_at",
-    )
-    .bind(app.id)
-    .bind(&key.public_pem)
-    .bind(&key.fingerprint)
-    .fetch_one(&mut *tx)
-    .await?;
+    let (id, created) = insert_key(&mut tx, app.id, &key).await?;
     let owner = db::User::find(&mut *tx, app.owner_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -533,6 +676,75 @@ pub async fn delete_key(
         "integration.remove_private_key",
         audit_target(&owner),
         json!({ "integration": app.slug, "fingerprint": fingerprint }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /_bgh/apps/{slug}/client_secrets` → 201 with the secret (shown
+/// once).
+pub async fn create_client_secret(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path(slug): Path<String>,
+) -> ApiResult<(StatusCode, Json<ClientSecretJson>)> {
+    util::require_session(&auth)?;
+    let app = admin_app(&state, &auth, &slug).await?;
+    let mut tx = Tx::begin(&state).await?;
+    let (id, secret, created) = insert_client_secret(&mut tx, app.id, Some(auth.user.id)).await?;
+    let owner = db::User::find(&mut *tx, app.owner_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    audit::log(
+        &mut *tx,
+        Some(&auth.user),
+        "integration.generate_client_secret",
+        audit_target(&owner),
+        json!({ "integration": app.slug, "client_secret_id": id }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ClientSecretJson {
+            id,
+            last_eight: secret[secret.len() - 8..].to_string(),
+            created_at: Some(created.into()),
+            created,
+            last_used: None,
+            last_used_at: None,
+            client_secret: Some(secret),
+        }),
+    ))
+}
+
+/// `DELETE /_bgh/apps/{slug}/client_secrets/{id}` → 204.
+pub async fn delete_client_secret(
+    State(state): State<AppState>,
+    auth: RequireUser,
+    Path((slug, id)): Path<(String, i64)>,
+) -> ApiResult<StatusCode> {
+    util::require_session(&auth)?;
+    let app = admin_app(&state, &auth, &slug).await?;
+    let mut tx = Tx::begin(&state).await?;
+    let found: Option<i64> = sqlx::query_scalar(
+        "DELETE FROM github_app_client_secrets WHERE id = $1 AND app_id = $2 RETURNING id",
+    )
+    .bind(id)
+    .bind(app.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    found.ok_or(ApiError::NotFound)?;
+    let owner = db::User::find(&mut *tx, app.owner_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    audit::log(
+        &mut *tx,
+        Some(&auth.user),
+        "integration.remove_client_secret",
+        audit_target(&owner),
+        json!({ "integration": app.slug, "client_secret_id": id }),
     )
     .await?;
     tx.commit().await?;

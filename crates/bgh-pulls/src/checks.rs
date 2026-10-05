@@ -1,8 +1,10 @@
 //! Checks API: check runs (create / update / get / list / annotations /
 //! rerequest) and check suites (create / get / list / rerequest /
-//! preferences). Runs created through the REST API by users belong to the
-//! `api` app; bgh-actions creates runs via [`create_run`] with its own app
-//! slug (`actions`).
+//! preferences). Runs created with a GitHub App's credentials (installation
+//! or user-to-server tokens) belong to that app's suite (`check_suites.app_id`,
+//! P46); bgh-actions creates its own suites (`app_slug = 'actions'`, shown
+//! as GitHub Actions, app id [`ACTIONS_APP_ID`]). Runs created by users
+//! with ordinary tokens have no app (`app: null`, internal slug `api`).
 
 use std::collections::HashMap;
 
@@ -21,6 +23,32 @@ use crate::jobs::ChecksChanged;
 use crate::model::PULL_FROM;
 
 pub const API_APP: &str = "api";
+
+/// App id of the built-in Actions app (GitHub's id for GitHub Actions; real
+/// app ids are above it).
+pub const ACTIONS_APP_ID: i64 = 15368;
+
+/// The integration a caller creates check runs and suites as:
+/// `(app_slug, app_id)`.
+pub async fn caller_app(state: &AppState, auth: &AuthContext) -> ApiResult<(String, Option<i64>)> {
+    let app: Option<(i64, String)> = if bgh_core::apps::installation_id(auth).is_some() {
+        sqlx::query_as("SELECT id, slug FROM github_apps WHERE bot_user_id = $1")
+            .bind(auth.user.id)
+            .fetch_optional(&state.db)
+            .await?
+    } else if let Some(id) = bgh_core::apps::user_to_server_app_id(auth) {
+        sqlx::query_as("SELECT id, slug FROM github_apps WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?
+    } else {
+        None
+    };
+    Ok(match app {
+        Some((id, slug)) => (slug, Some(id)),
+        None => (API_APP.to_string(), None),
+    })
+}
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RunRow {
@@ -53,6 +81,7 @@ pub struct SuiteRow {
     pub before_sha: Option<String>,
     pub after_sha: Option<String>,
     pub app_slug: String,
+    pub app_id: Option<i64>,
     pub status: String,
     pub conclusion: Option<String>,
     pub rerequestable: bool,
@@ -62,7 +91,7 @@ pub struct SuiteRow {
 }
 
 const SUITE_COLUMNS: &str = "id, repo_id, head_sha, head_branch, before_sha, after_sha, app_slug, \
-    status, conclusion, rerequestable, latest_check_runs_count, created_at, updated_at";
+    app_id, status, conclusion, rerequestable, latest_check_runs_count, created_at, updated_at";
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 struct AnnotationRow {
@@ -82,51 +111,80 @@ struct AnnotationRow {
 // JSON shapes
 // ---------------------------------------------------------------------------
 
-/// `integration` (a GitHub App); synthesized per app slug.
-#[derive(Debug, Clone, Serialize)]
-pub struct AppJson {
-    pub id: i64,
-    pub slug: String,
-    pub node_id: String,
-    pub owner: SimpleUser,
-    pub name: String,
-    pub description: String,
-    pub external_url: String,
-    pub html_url: String,
-    pub created_at: Timestamp,
-    pub updated_at: Timestamp,
-    pub permissions: Value,
-    pub events: Vec<String>,
-}
+/// `integration` (a GitHub App) of a check run or suite.
+pub type AppJson = bgh_core::apps::Integration;
 
-fn app_json(state: &AppState, slug: &str, owner: &db::User) -> AppJson {
-    let (id, name, desc) = match slug {
-        "actions" => (
-            1,
-            "Better GitHub Actions",
-            "Built-in continuous integration",
-        ),
-        _ => (
-            2,
-            "Better GitHub API",
-            "Checks created through the REST API",
-        ),
-    };
+/// The built-in Actions app.
+fn actions_app(state: &AppState, owner: &db::User) -> AppJson {
     let epoch = Timestamp::from(DateTime::<Utc>::UNIX_EPOCH);
+    let perms = [
+        ("checks", "write"),
+        ("metadata", "read"),
+        ("statuses", "write"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect();
     AppJson {
-        id,
-        slug: slug.to_string(),
-        node_id: node_id::encode_str(NodeType::Bot, slug),
+        id: ACTIONS_APP_ID,
+        slug: "github-actions".into(),
+        node_id: node_id::encode(NodeType::Integration, ACTIONS_APP_ID),
+        client_id: "Iv1.github-actions".into(),
         owner: SimpleUser::new(&state.urls, owner),
-        name: name.to_string(),
-        description: desc.to_string(),
-        external_url: state.urls.html("/"),
-        html_url: state.urls.html(&format!("/apps/{slug}")),
+        name: "GitHub Actions".into(),
+        description: Some("Automate your workflow from idea to production".into()),
+        external_url: state.urls.html("/features/actions"),
+        html_url: state.urls.html("/apps/github-actions"),
         created_at: epoch,
         updated_at: epoch,
-        permissions: json!({"checks": "write", "metadata": "read", "statuses": "write"}),
+        permissions: perms,
         events: vec!["check_run".into(), "check_suite".into()],
+        installations_count: None,
     }
+}
+
+/// `app` objects of check suites `(app_slug, app_id)`, keyed by suite id
+/// (real apps batch-loaded; `None` for runs created by users).
+async fn suite_apps(
+    state: &AppState,
+    owner: &db::User,
+    suites: &[(i64, String, Option<i64>)],
+) -> ApiResult<HashMap<i64, Option<AppJson>>> {
+    let mut ids: Vec<i64> = suites.iter().filter_map(|s| s.2).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let apps: Vec<bgh_core::apps::AppRow> = if ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(&format!(
+            "SELECT {} FROM github_apps WHERE id = ANY($1)",
+            bgh_core::apps::AppRow::COLUMNS
+        ))
+        .bind(&ids)
+        .fetch_all(&state.db)
+        .await?
+    };
+    let owners = bgh_core::views::users_by_id(state, apps.iter().map(|a| Some(a.owner_id))).await?;
+    let apps: HashMap<i64, AppJson> = apps
+        .iter()
+        .filter_map(|a| {
+            Some((
+                a.id,
+                AppJson::new(&state.urls, a, owners.get(&a.owner_id)?, None),
+            ))
+        })
+        .collect();
+    Ok(suites
+        .iter()
+        .map(|(id, slug, app_id)| {
+            let app = match app_id {
+                Some(a) => apps.get(a).cloned(),
+                None if slug == "actions" => Some(actions_app(state, owner)),
+                None => None,
+            };
+            (*id, app)
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -185,7 +243,7 @@ pub struct CheckRunJson {
     pub output: Output,
     pub name: String,
     pub check_suite: SuiteRef,
-    pub app: AppJson,
+    pub app: Option<AppJson>,
     pub pull_requests: Vec<PrMinimal>,
 }
 
@@ -218,7 +276,7 @@ pub struct CheckSuiteJson {
     pub before: Option<String>,
     pub after: Option<String>,
     pub pull_requests: Vec<PrMinimal>,
-    pub app: AppJson,
+    pub app: Option<AppJson>,
     pub repository: MinimalRepository,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -326,14 +384,12 @@ pub async fn render_runs(
     .into_iter()
     .collect();
     let suite_ids: Vec<i64> = runs.iter().map(|r| r.check_suite_id).collect();
-    let slugs: HashMap<i64, String> = sqlx::query_as::<_, (i64, String)>(
-        "SELECT id, app_slug FROM check_suites WHERE id = ANY($1)",
-    )
-    .bind(&suite_ids)
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .collect();
+    let suites: Vec<(i64, String, Option<i64>)> =
+        sqlx::query_as("SELECT id, app_slug, app_id FROM check_suites WHERE id = ANY($1)")
+            .bind(&suite_ids)
+            .fetch_all(&state.db)
+            .await?;
+    let apps = suite_apps(state, &access.owner, &suites).await?;
     let shas: Vec<String> = runs.iter().map(|r| r.head_sha.clone()).collect();
     let prs = prs_for_shas(state, access, &shas).await?;
     let o = access.owner.login.as_str();
@@ -368,14 +424,7 @@ pub async fn render_runs(
                 check_suite: SuiteRef {
                     id: r.check_suite_id,
                 },
-                app: app_json(
-                    state,
-                    slugs
-                        .get(&r.check_suite_id)
-                        .map(String::as_str)
-                        .unwrap_or(API_APP),
-                    &access.owner,
-                ),
+                app: apps.get(&r.check_suite_id).cloned().flatten(),
                 pull_requests: prs.get(&r.head_sha).cloned().unwrap_or_default(),
             }
         })
@@ -392,6 +441,11 @@ pub async fn render_suites(
     }
     let shas: Vec<String> = suites.iter().map(|s| s.head_sha.clone()).collect();
     let prs = prs_for_shas(state, access, &shas).await?;
+    let keys: Vec<(i64, String, Option<i64>)> = suites
+        .iter()
+        .map(|s| (s.id, s.app_slug.clone(), s.app_id))
+        .collect();
+    let apps = suite_apps(state, &access.owner, &keys).await?;
     let store = git::store(state);
     let lookup = shas.clone();
     let commits: HashMap<String, bgh_git::Commit> = store
@@ -423,7 +477,7 @@ pub async fn render_suites(
                 before: s.before_sha.clone(),
                 after: s.after_sha.clone(),
                 pull_requests: prs.get(&s.head_sha).cloned().unwrap_or_default(),
-                app: app_json(state, &s.app_slug, &access.owner),
+                app: apps.get(&s.id).cloned().flatten(),
                 repository: MinimalRepository::new(
                     &state.urls,
                     &access.repo,
@@ -501,21 +555,27 @@ async fn branch_for_sha(state: &AppState, repo_id: i64, sha: &str) -> ApiResult<
         .unwrap_or(None))
 }
 
-/// Find or create the suite of `app_slug` for `head_sha`.
+/// Find or create the suite of the app `(app_slug, app_id)` for
+/// `head_sha` (one suite per app and commit).
 pub async fn ensure_suite(
     tx: &mut Tx,
     state: &AppState,
     repo_id: i64,
     head_sha: &str,
-    app_slug: &str,
+    app: (&str, Option<i64>),
 ) -> ApiResult<(SuiteRow, bool)> {
+    let (app_slug, app_id) = app;
     let existing: Option<SuiteRow> = sqlx::query_as(&format!(
         "SELECT {SUITE_COLUMNS} FROM check_suites
-          WHERE repo_id = $1 AND head_sha = $2 AND app_slug = $3 ORDER BY id DESC LIMIT 1"
+          WHERE repo_id = $1 AND head_sha = $2
+            AND (CASE WHEN $4::bigint IS NULL THEN app_id IS NULL AND app_slug = $3
+                      ELSE app_id = $4 END)
+          ORDER BY id DESC LIMIT 1"
     ))
     .bind(repo_id)
     .bind(head_sha)
     .bind(app_slug)
+    .bind(app_id)
     .fetch_optional(&mut **tx)
     .await?;
     if let Some(s) = existing {
@@ -523,13 +583,15 @@ pub async fn ensure_suite(
     }
     let branch = branch_for_sha(state, repo_id, head_sha).await?;
     let s: SuiteRow = sqlx::query_as(&format!(
-        "INSERT INTO check_suites (repo_id, head_sha, head_branch, after_sha, app_slug, status)
-         VALUES ($1, $2, $3, $2, $4, 'queued') RETURNING {SUITE_COLUMNS}"
+        "INSERT INTO check_suites (repo_id, head_sha, head_branch, after_sha, app_slug, app_id,
+                status)
+         VALUES ($1, $2, $3, $2, $4, $5, 'queued') RETURNING {SUITE_COLUMNS}"
     ))
     .bind(repo_id)
     .bind(head_sha)
     .bind(branch)
     .bind(app_slug)
+    .bind(app_id)
     .fetch_one(&mut **tx)
     .await?;
     tx.sync_model(SyncModel::CheckSuite, s.id, SyncAction::Insert)
@@ -716,7 +778,7 @@ fn output_json(o: &OutputInput, prev: Option<&Value>) -> Value {
 pub async fn create_run(
     state: &AppState,
     access: &RepoAccess,
-    app_slug: &str,
+    app: (&str, Option<i64>),
     actor_id: Option<i64>,
     input: &RunInput,
 ) -> ApiResult<RunRow> {
@@ -769,8 +831,7 @@ pub async fn create_run(
         .unwrap_or_else(|| json!({}));
 
     let mut tx = Tx::begin(state).await?;
-    let (suite, created) =
-        ensure_suite(&mut tx, state, access.repo.id, &head_sha, app_slug).await?;
+    let (suite, created) = ensure_suite(&mut tx, state, access.repo.id, &head_sha, app).await?;
     let run: RunRow = sqlx::query_as(&format!(
         "INSERT INTO check_runs (check_suite_id, repo_id, head_sha, name, status, conclusion,
                 external_id, details_url, output, actions, started_at, completed_at, creator_id)
@@ -979,7 +1040,8 @@ pub async fn create(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
-    let run = create_run(&state, &access, API_APP, Some(auth.user.id), &input).await?;
+    let (slug, app_id) = caller_app(&state, &auth).await?;
+    let run = create_run(&state, &access, (&slug, app_id), Some(auth.user.id), &input).await?;
     Ok((
         StatusCode::CREATED,
         axum::Json(render_runs(&state, &access, &[run]).await?.remove(0)),
@@ -1160,15 +1222,20 @@ pub struct RunList {
     pub check_runs: Vec<CheckRunJson>,
 }
 
-fn app_slug_for_id(id: i64) -> &'static str {
-    if id == 1 { "actions" } else { API_APP }
+/// `app.id` of a check suite's integration; the expected source of
+/// required checks (`app_id` / `integration_id`): the real app, the
+/// built-in Actions app, or 0 (no app: runs created by users).
+pub fn suite_app_id(slug: &str, app_id: Option<i64>) -> i64 {
+    match app_id {
+        Some(id) => id,
+        None if slug == "actions" => ACTIONS_APP_ID,
+        None => 0,
+    }
 }
 
-/// `app.id` of a check suite's integration (see [`app_json`]); the
-/// expected source of required checks (`app_id` / `integration_id`).
-pub fn app_id_for_slug(slug: &str) -> i64 {
-    if slug == "actions" { 1 } else { 2 }
-}
+/// SQL for a suite's app id (alias `s`), see [`suite_app_id`].
+const SUITE_APP_ID_SQL: &str =
+    "coalesce(s.app_id, CASE WHEN s.app_slug = 'actions' THEN 15368 ELSE 0 END)";
 
 async fn list_runs_where(
     state: &AppState,
@@ -1188,14 +1255,14 @@ async fn list_runs_where(
     {
         return Err(invalid("status"));
     }
-    let app = q.app_id.map(app_slug_for_id);
+    let app = q.app_id;
     let base = format!(
         "SELECT {} FROM check_runs r JOIN check_suites s ON s.id = r.check_suite_id
           WHERE r.repo_id = $1 AND ($2::text IS NULL OR r.head_sha = $2)
             AND ($3::bigint IS NULL OR r.check_suite_id = $3)
             AND ($4::text IS NULL OR r.name = $4)
             AND ($5::text IS NULL OR r.status = $5)
-            AND ($6::text IS NULL OR s.app_slug = $6)",
+            AND ($6::bigint IS NULL OR {SUITE_APP_ID_SQL} = $6)",
         db::prefixed("r", RUN_COLUMNS)
     );
     let inner = if latest {
@@ -1283,10 +1350,13 @@ pub async fn suites_for_ref(
     let sha = git::resolve_commit(&git::store(&state), access.repo.id, &rev)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let app = q.app_id.map(app_slug_for_id);
-    let filter = "repo_id = $1 AND head_sha = $2 AND ($3::text IS NULL OR app_slug = $3)
+    let app = q.app_id;
+    let filter = format!(
+        "repo_id = $1 AND head_sha = $2 AND ($3::bigint IS NULL OR {} = $3)
         AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM check_runs r
-                WHERE r.check_suite_id = check_suites.id AND r.name = $4))";
+                WHERE r.check_suite_id = check_suites.id AND r.name = $4))",
+        SUITE_APP_ID_SQL.replace("s.", "check_suites.")
+    );
     let total: i64 =
         sqlx::query_scalar(&format!("SELECT count(*) FROM check_suites WHERE {filter}"))
             .bind(access.repo.id)
@@ -1344,7 +1414,9 @@ pub async fn create_suite(
         .await?
         .ok_or_else(|| ApiError::unprocessable(format!("No commit found for SHA: {head}")))?;
     let mut tx = Tx::begin(&state).await?;
-    let (suite, created) = ensure_suite(&mut tx, &state, access.repo.id, &sha, API_APP).await?;
+    let (slug, app_id) = caller_app(&state, &auth).await?;
+    let (suite, created) =
+        ensure_suite(&mut tx, &state, access.repo.id, &sha, (&slug, app_id)).await?;
     if created {
         tx.emit(Event::CheckSuiteRequested {
             repo_id: access.repo.id,

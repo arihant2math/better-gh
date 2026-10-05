@@ -15,7 +15,9 @@
 
 pub mod install;
 pub mod manage;
+pub mod manifest;
 pub mod rest;
+pub mod user_tokens;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -371,8 +373,30 @@ pub fn wrapped<T: Serialize>(p: &Pagination, has_next: bool, total: i64, body: T
 pub async fn revoke_tokens(conn: &mut sqlx::PgConnection, installation_id: i64) -> ApiResult<()> {
     sqlx::query("DELETE FROM access_tokens WHERE installation_id = $1")
         .bind(installation_id)
-        .execute(conn)
+        .execute(&mut *conn)
         .await?;
+    strip_user_tokens(conn, installation_id).await
+}
+
+/// Drop an installation's repositories from the app's user-to-server
+/// tokens (they keep the app's other installations).
+pub async fn strip_user_tokens(
+    conn: &mut sqlx::PgConnection,
+    installation_id: i64,
+) -> ApiResult<()> {
+    sqlx::query(
+        "UPDATE access_tokens t
+            SET scopes = ARRAY(
+                SELECT s FROM unnest(t.scopes) s
+                 WHERE s <> 'app:owner:' || i.account_id
+                   AND s NOT IN (SELECT 'app:repo:' || r.id FROM repositories r
+                                  WHERE r.owner_id = i.account_id))
+           FROM app_installations i
+          WHERE i.id = $1 AND t.github_app_id = i.app_id",
+    )
+    .bind(installation_id)
+    .execute(conn)
+    .await?;
     Ok(())
 }
 
@@ -383,7 +407,9 @@ pub async fn revoke_repo(
     repo_id: i64,
 ) -> ApiResult<()> {
     sqlx::query(
-        "UPDATE access_tokens SET scopes = array_remove(scopes, $2) WHERE installation_id = $1",
+        "UPDATE access_tokens SET scopes = array_remove(scopes, $2)
+          WHERE installation_id = $1
+             OR github_app_id = (SELECT app_id FROM app_installations WHERE id = $1)",
     )
     .bind(installation_id)
     .bind(format!("{}{repo_id}", bgh_core::apps::REPO_SCOPE_PREFIX))

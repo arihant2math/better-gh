@@ -259,7 +259,9 @@ impl TokenPermissions {
     /// read-all when read-only). `None` for every other credential.
     pub fn of(auth: &AuthContext) -> Option<Self> {
         // GitHub App installation tokens carry their map the same way.
-        if crate::apps::installation_id(auth).is_some() {
+        if crate::apps::installation_id(auth).is_some()
+            || crate::apps::user_to_server_app_id(auth).is_some()
+        {
             let scopes = auth.scopes.as_deref().unwrap_or_default();
             return Some(Self::from_scopes(scopes).unwrap_or_else(Self::none));
         }

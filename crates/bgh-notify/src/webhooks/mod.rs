@@ -3,7 +3,9 @@
 //!
 //! * `/repos/{owner}/{repo}/hooks[/{id}[/config|/pings|/tests|/deliveries…]]`
 //! * `/orgs/{org}/hooks[/{id}[/config|/pings|/deliveries…]]`
+//! * GitHub App hooks (`/app/hook/…`): [`apps`]
 
+pub mod apps;
 pub mod deliver;
 pub mod deliveries;
 pub mod dispatch;
@@ -327,7 +329,7 @@ pub struct ConfigBody {
     pub insecure_ssl: Option<Value>,
 }
 
-fn invalid(msg: impl Into<String>) -> ApiError {
+pub(crate) fn invalid(msg: impl Into<String>) -> ApiError {
     ApiError::validation(vec![FieldError {
         resource: "Hook".into(),
         field: String::new(),
@@ -336,7 +338,7 @@ fn invalid(msg: impl Into<String>) -> ApiError {
     }])
 }
 
-fn parse_insecure(v: &Value) -> ApiResult<bool> {
+pub(crate) fn parse_insecure(v: &Value) -> ApiResult<bool> {
     match v {
         Value::String(s) if s == "0" => Ok(false),
         Value::String(s) if s == "1" => Ok(true),

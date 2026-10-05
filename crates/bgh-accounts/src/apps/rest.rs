@@ -116,12 +116,16 @@ pub async fn list_installations(
                 .map_err(|_| ApiError::invalid_field(FieldError::invalid("Installation", "since")))
         })
         .transpose()?;
-    // `outdated` (installations on older permissions) is accepted; every
-    // installation is listed.
-    let _ = q.outdated;
+    // `outdated`: only installations that haven't accepted the app's
+    // current permissions / events.
+    let outdated = q
+        .outdated
+        .as_deref()
+        .is_some_and(|v| v != "false" && v != "0");
     let rows: Vec<InstallationRow> = sqlx::query_as(&format!(
         "SELECT {} FROM app_installations
           WHERE app_id = $1 AND ($2::timestamptz IS NULL OR updated_at >= $2)
+            AND (NOT $5 OR permissions <> $6 OR NOT (events @> $7 AND events <@ $7))
           ORDER BY id LIMIT $3 OFFSET $4",
         InstallationRow::COLUMNS
     ))
@@ -129,6 +133,9 @@ pub async fn list_installations(
     .bind(since)
     .bind(p.limit_plus_one())
     .bind(p.offset())
+    .bind(outdated)
+    .bind(&app.permissions)
+    .bind(&app.events)
     .fetch_all(&state.db)
     .await?;
     let page = p.page(rows);

@@ -306,16 +306,47 @@ struct SuiteRow {
     before_sha: Option<String>,
     after_sha: Option<String>,
     app_slug: String,
+    app_id: Option<i64>,
     status: String,
     conclusion: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
 
+/// The `app` of a suite: its GitHub App (P46), the built-in Actions app,
+/// or `null` for runs created by users.
+async fn suite_app(state: &AppState, ctx: &RepoCtx, s: &SuiteRow) -> anyhow::Result<Value> {
+    if let Some(id) = s.app_id {
+        let app: Option<bgh_core::apps::AppRow> = sqlx::query_as(&format!(
+            "SELECT {} FROM github_apps WHERE id = $1",
+            bgh_core::apps::AppRow::COLUMNS
+        ))
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+        if let Some(app) = app
+            && let Some(owner) = bgh_core::models::db::User::find(&state.db, app.owner_id).await?
+        {
+            return Ok(serde_json::to_value(bgh_core::apps::Integration::new(
+                &state.urls,
+                &app,
+                &owner,
+                None,
+            ))?);
+        }
+        return Ok(Value::Null);
+    }
+    Ok(if s.app_slug == "actions" {
+        app_json(&state.urls, ctx, &s.app_slug)
+    } else {
+        Value::Null
+    })
+}
+
 async fn suite_row(state: &AppState, ctx: &RepoCtx, id: i64) -> anyhow::Result<Option<SuiteRow>> {
     Ok(sqlx::query_as(
-        "SELECT id, head_sha, head_branch, before_sha, after_sha, app_slug, status, conclusion,
-                created_at, updated_at
+        "SELECT id, head_sha, head_branch, before_sha, after_sha, app_slug, app_id, status,
+                conclusion, created_at, updated_at
          FROM check_suites WHERE id = $1 AND repo_id = $2",
     )
     .bind(id)
@@ -364,7 +395,7 @@ pub async fn check_suite(
     };
     let urls = &state.urls;
     let prs = pull_requests_for_sha(state, ctx, &s.head_sha).await?;
-    let app = app_json(urls, ctx, &s.app_slug);
+    let app = suite_app(state, ctx, &s).await?;
     let runs: i64 = sqlx::query_scalar("SELECT count(*) FROM check_runs WHERE check_suite_id = $1")
         .bind(s.id)
         .fetch_one(&state.db)
@@ -426,7 +457,7 @@ pub async fn check_run(
     let urls = &state.urls;
     let repo_api = ctx.api_url(urls);
     let prs = pull_requests_for_sha(state, ctx, &run.head_sha).await?;
-    let app = app_json(urls, ctx, &suite.app_slug);
+    let app = suite_app(state, ctx, &suite).await?;
     let out = |k: &str| run.output.get(k).cloned().unwrap_or(Value::Null);
     let annotations_url = format!("{repo_api}/check-runs/{}/annotations", run.id);
     Ok(Some(json!({
