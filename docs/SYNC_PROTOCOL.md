@@ -498,3 +498,22 @@ The server inlines boot data into `index.html` by replacing the
 `user` is `null` when signed out. When boot data is missing or older than
 5 minutes (e.g. the shell came from the service worker cache) the client
 refreshes it in the background from `GET /_bgh/boot` (same JSON).
+
+## 10. Other private endpoints used by the web client
+
+| Endpoint | Request | Response |
+|----------|---------|----------|
+| `GET /_bgh/boot` | — | boot JSON (§9) |
+| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials |
+| `POST /_bgh/auth/signup` | `{"login","email","password"}` | `201` boot JSON + session cookie; `422` validation errors |
+| `POST /_bgh/auth/logout` | — | `204`; server closes the user's sync sockets with `4001` |
+| `GET /_bgh/render/blob/{owner}/{repo}/{sha}?path=src/main.rs` | — | `{"language":"rust","lines":["<span class=\"hl-k\">fn</span> main() {", …]}` — one HTML string per source line, `Cache-Control: public, max-age=31536000, immutable`. `404` when no highlighter applies (client renders plain text). |
+| `DELETE /_bgh/notifications/threads/{id}/read` | `X-Client-Tx` | `204`; marks a thread unread (GitHub's REST API has no endpoint for this) |
+
+Highlight classes (`hl-*`): `k` keyword, `s` string, `c` comment, `n`
+number/constant, `t` type, `f` function/macro name, `a` attribute/tag. The
+server must HTML-escape source text; the client inserts the lines as HTML.
+
+All POST/PATCH/PUT/DELETE requests from the web client carry
+`X-CSRF-Token: <boot.csrf>`; the server rejects cookie-authenticated
+mutations without it (`403`). Token-authenticated API clients don't need it.
