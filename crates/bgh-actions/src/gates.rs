@@ -366,6 +366,7 @@ fn job_html(state: &AppState, owner: &str, repo: &str, job: &JobRow) -> String {
 
 /// After the engine inserted a gated or open job: record the gate, create
 /// the job's deployment (status `queued`), and request reviews.
+#[allow(clippy::too_many_arguments)]
 pub async fn job_created(
     state: &AppState,
     tx: &mut Tx,

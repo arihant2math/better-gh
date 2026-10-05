@@ -1,4 +1,4 @@
-Integration: in progress
+Integration: ready
 Environment protection rules, deployment approvals, job deployments, deployment triggers, required_deployments.
 
 # P20 — Environment protection rules and deployment approvals — status
@@ -105,7 +105,10 @@ repository admin when `can_admins_bypass`.
   `mock/environments.test.ts`.
 * Verified with Playwright in mock mode (light + dark): settings page,
   custom branch rule, waiting run banner, review dialog, approval.
-* Initial bundle unchanged (143.3 KB gzip).
+* Initial bundle: one route entry only (144.2 KB gzip after merging the
+  integration branch, budget 150).
+* `mock/actions.test.ts` (dispatched deploy run) now approves the
+  production review while ticking.
 
 ## Tables (migration 3200)
 
@@ -132,6 +135,16 @@ repository admin when `can_admins_bypass`.
 * `engine.rs`: gate hook in `materialize`, `waiting` run status,
   `StoredJob.environment_url`; `server.rs`: deployment status on claim and
   completion.
+
+## Gate (after merging `claude/sleepy-cray-9jj0t3` @ merge 3e6b517)
+
+`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
+warnings`, `cargo test --workspace` and web `typecheck`, `lint`, `test`
+(436), `build` (budget OK) all green; `scripts/gh-compat.sh` and
+`scripts/api-smoke.sh` green. Merge notes: P16's `engine.rs` changes
+(reusable workflows: `full_key`, `over_limit`, `secret_layers`,
+`permission_caps`, `cancel_one`) combined with the gate hook; call rows
+don't keep a run out of `waiting`.
 
 ## Known gaps / TODO
 
