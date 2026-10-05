@@ -488,6 +488,15 @@ pub async fn dismiss(
 ) -> ApiResult<axum::Json<ReviewJson>> {
     let (access, pull) = load_pull(&state, Some(&auth), &owner, &repo, number).await?;
     access.require(Permission::Write)?;
+    let rules = crate::protection::rules_for(&state.db, access.repo.id, &pull.pr.base_ref).await?;
+    if rules.dismissal_restrictions.is_some() {
+        let actor = bgh_repos::protection::Actor::load(&state, &access, &auth.user).await?;
+        if !rules.may_dismiss(&actor) {
+            return Err(ApiError::forbidden(
+                "You are not allowed to dismiss reviews on this branch.",
+            ));
+        }
+    }
     let message = body
         .message
         .filter(|m| !m.trim().is_empty())
