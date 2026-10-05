@@ -869,6 +869,17 @@ pub async fn activities(state: &AppState, event: &Event) -> ApiResult<Vec<Activi
                 out.push(act);
             }
         }
+        Event::CommitCommentCreated {
+            repo_id,
+            comment_id,
+            actor_id,
+            commit_author_id,
+        } => {
+            out.extend(
+                commit_commented(state, *repo_id, *comment_id, *actor_id, *commit_author_id)
+                    .await?,
+            );
+        }
         Event::CheckSuiteUpdated {
             repo_id,
             check_suite_id,
@@ -888,6 +899,67 @@ pub async fn activities(state: &AppState, event: &Event) -> ApiResult<Vec<Activi
         _ => {}
     }
     Ok(out)
+}
+
+/// Activity for a commit comment: the commit author (`author`) and
+/// mentioned users directly, plus thread subscribers and watchers. The
+/// thread is keyed by the commit's first comment (`subject.id`) and SHA.
+async fn commit_commented(
+    state: &AppState,
+    repo_id: i64,
+    comment_id: i64,
+    actor: i64,
+    commit_author: Option<i64>,
+) -> ApiResult<Option<Activity>> {
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT commit_id, body FROM commit_comments WHERE id = $1")
+            .bind(comment_id)
+            .fetch_optional(&state.db)
+            .await?;
+    let (Some((sha, body)), Some(repo)) = (row, load_repo(state, repo_id).await?) else {
+        return Ok(None);
+    };
+    let first: i64 = sqlx::query_scalar(
+        "SELECT min(id) FROM commit_comments WHERE repo_id = $1 AND commit_id = $2",
+    )
+    .bind(repo_id)
+    .bind(&sha)
+    .fetch_one(&state.db)
+    .await?;
+    let store = bgh_git::RepoStore::from_config(&state.config);
+    let summary = store
+        .read(repo_id, {
+            let sha = sha.clone();
+            move |r| r.commit(&sha)
+        })
+        .await
+        .ok()
+        .and_then(|c| c.message.lines().next().map(str::to_string))
+        .filter(|s| !s.trim().is_empty());
+    let title = summary.unwrap_or_else(|| sha.chars().take(7).collect());
+    let mut act = Activity::new(
+        repo,
+        Subject {
+            kind: "Commit",
+            id: first,
+            key: Some(sha),
+            title,
+        },
+        Some(actor),
+    );
+    act.notify_watchers = true;
+    act.notify_subscribers = true;
+    act.participants.push((actor, Reason::Comment));
+    if let Some(author) = commit_author {
+        act.direct.push((author, Reason::Author));
+        act.participants.push((author, Reason::Author));
+    }
+    let mentions = mention_reasons(state, &act.repo, &body).await?;
+    act.participants.extend(mentions.iter().copied());
+    act.direct.extend(mentions);
+    act.latest_comment = Some(("CommitComment", comment_id));
+    act.email = Some(EmailKind::CommitComment { comment_id });
+    Ok(Some(act))
 }
 
 /// `ci_activity` for a failed check suite, to `actor` (the user who
@@ -977,13 +1049,16 @@ async fn commit_pusher(state: &AppState, repo_id: i64, sha: &str) -> ApiResult<O
     .flatten())
 }
 
-/// Propagate a new issue/PR title to existing notification threads.
+/// Propagate a new issue/PR title to existing notification threads whose
+/// holders can still read the repository (a removed collaborator keeps the
+/// old title until access-loss pruning deletes the row).
 async fn retitle(state: &AppState, issue: &db::Issue) -> ApiResult<()> {
     let subject = issue_subject(issue);
     let mut tx = Tx::begin(state).await?;
     let rows: Vec<NotificationRow> = sqlx::query_as(&format!(
         "UPDATE notifications SET subject_title = $3
           WHERE subject_type = $1 AND subject_id = $2 AND subject_title <> $3
+            AND bgh_can_read_repo(user_id, repo_id)
         RETURNING {}",
         NotificationRow::COLUMNS
     ))

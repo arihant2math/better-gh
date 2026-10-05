@@ -514,6 +514,16 @@ export function registerPullRoutes(host: PullHost): void {
     const run = t().checkRun.get(Number(ctx.m[3]));
     if (!run) return notFound;
     host.put('checkRun', { ...run, status: 'queued', conclusion: null, completedAt: null, startedAt: null });
+    // Like bgh-actions: the rerequested check's job re-runs, and the same
+    // check run moves queued → in_progress → completed.
+    setTimeout(() => {
+      const cur = t().checkRun.get(run.id);
+      if (cur?.status === 'queued') host.put('checkRun', { ...cur, status: 'in_progress', startedAt: host.now() });
+    }, 1500);
+    setTimeout(() => {
+      const cur = t().checkRun.get(run.id);
+      if (cur?.status === 'in_progress') host.put('checkRun', { ...cur, status: 'completed', conclusion: 'success', completedAt: host.now() });
+    }, 4000);
     return { status: 201, body: {} };
   });
 

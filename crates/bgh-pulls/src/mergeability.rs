@@ -4,7 +4,7 @@
 //! from branch protection. Ends by attempting auto-merge.
 
 use bgh_core::prelude::*;
-use bgh_git::merge::{MergeTree, RebaseResult};
+use bgh_git::merge::RebaseResult;
 
 use crate::git;
 use crate::model::{self, Pull};
@@ -23,35 +23,16 @@ pub struct Computed {
 pub async fn compute(state: &AppState, pull: &Pull) -> ApiResult<Computed> {
     let store = git::store(state);
     let repo_id = pull.pr.repo_id;
-    let tree =
-        bgh_git::merge::merge_tree(&store, repo_id, &pull.pr.base_sha, &pull.pr.head_sha, None)
-            .await?;
-    let (mergeable, test_merge) = match tree {
-        MergeTree::Clean { tree } => {
-            // Deterministic test merge (same inputs ⇒ same SHA): date it
-            // like the head commit.
-            let head = pull.pr.head_sha.clone();
-            let when = store
-                .read(repo_id, move |r| Ok(r.commit(&head)?.committer.when))
-                .await?;
-            let mut committer = git::person(&git::site_committer(state));
-            committer.when = when;
-            let msg = format!("Merge {} into {}", pull.pr.head_sha, pull.pr.base_sha);
-            let sha = bgh_git::merge::commit_tree(
-                &store,
-                repo_id,
-                &tree,
-                &[&pull.pr.base_sha, &pull.pr.head_sha],
-                &msg,
-                &committer,
-                &committer,
-            )
-            .await?;
-            bgh_git::merge::force_ref(&store, repo_id, &pull.merge_ref_name(), &sha).await?;
-            (true, Some(sha))
-        }
-        MergeTree::Conflict { .. } => (false, None),
-    };
+    let test_merge = bgh_git::merge::test_merge(
+        &store,
+        repo_id,
+        &pull.merge_ref_name(),
+        &pull.pr.base_sha,
+        &pull.pr.head_sha,
+        &git::site_committer(state),
+    )
+    .await?;
+    let mergeable = test_merge.is_some();
     let rebaseable = if !mergeable || pull.pr.commits > REBASE_CHECK_LIMIT {
         false
     } else {

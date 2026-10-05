@@ -11,7 +11,7 @@ Branch `bgh/actions`.
 |---|---|
 | `workflow/` | `.github/workflows/*.yml` model + validating parser (serde_yaml): `on` (push/PR/PR target filters incl. branches/tags/paths + ignores, workflow_dispatch inputs, schedule, release, issues, issue_comment, workflow_call/workflow_run kept raw), env, defaults, concurrency, permissions, jobs (needs, if, strategy.matrix include/exclude/fail-fast/max-parallel, runs-on, container, services, env, timeout-minutes, continue-on-error, outputs, environment), steps. Filter glob language, POSIX cron (`next_after`), matrix expansion (GitHub include/exclude algorithm). 115 unit tests. |
 | `expr/` | `${{ }}` expression engine: all contexts by name, operators with GitHub coercion rules, object filters, functions contains/startsWith/endsWith/format/join/toJSON/fromJSON/hashFiles/success/failure/always/cancelled; `interpolate`, `evaluate_template`, `evaluate_condition` (implicit `success() &&`). 92 unit tests. |
-| `trigger.rs` | Event listener `actions.trigger` → durable job `actions.trigger`: push (branches/tags/paths via `git diff`), pull_request (workflows from head, ref `refs/pull/N/merge`) / pull_request_target (workflows from base), release published, issues opened/edited/closed/reopened, issue_comment created. `workflow_dispatch` (input validation/typing), `schedule_tick` (cron window per workflow, CAS so multiple processes are safe). Invalid workflow files on push → `startup_failure` run. Default-branch pushes sync `actions_workflows` (names, schedules, deleted). |
+| `trigger.rs` | Event listener `actions.trigger` → durable job `actions.trigger`: push (branches/tags/paths via `git diff`), create/delete, pull_request (workflows from head, ref `refs/pull/N/merge`, `GITHUB_SHA` = test merge commit; conflicting PRs don't run) / pull_request_target (workflows from base), issues, issue_comment, release. `trigger_events.rs` maps the remaining events (all PR activity types, reviews, review comments, label, milestone, watch, fork, public, gollum, check_run, check_suite, workflow_run, repository_dispatch); see `docs/packages/p26-actions-triggers.md`. `workflow_dispatch` (input validation/typing), `schedule_tick` (cron window per workflow, CAS so multiple processes are safe). Invalid workflow files on push → `startup_failure` run. Default-branch pushes sync `actions_workflows` (names, schedules, deleted). |
 | `engine.rs` | Run creation (+ check suite), `run-name`, workflow `concurrency` (one pending run per group, `cancel-in-progress`), scheduler `advance_run` (jobs materialize when needs complete: job `if` with needs/status semantics, matrix expansion, `strategy` context, runs-on labels, timeout, continue-on-error; skipped jobs; fail-fast; max-parallel), cancel / force-cancel, re-run all / failed / single job (new attempt, successful jobs copied with their logs). |
 | `server.rs` | Runner protocol server side: job claiming (`FOR UPDATE SKIP LOCKED`, label subset match, repo/org/site runner scopes), `GITHUB_TOKEN` minting, secrets/vars resolution, job env/container/services evaluation at claim time, heartbeats (cancel signal), completion (check run + annotations + summary, token revoked), stale-job reaper, artifact storage/expiry, `LocalBackend` for the built-in runner. |
 | `runner/` | Job executor shared by the built-in runner and `bgh-runner` (see below). |
@@ -156,13 +156,11 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 ## Known gaps / TODO
 
 * Reusable workflows (`jobs.<id>.uses`) are parsed but fail the job with a
-  clear error. `workflow_run` trigger not wired.
+  clear error.
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
-* Job-level `concurrency` is parsed but not enforced (workflow-level is).
 * `actions/cache` is a no-op; no cache API (`/actions/caches`).
-* PR runs use the head commit (no `refs/pull/N/merge` merge commit is
-  created). Fork pull requests get no secrets and a read-only token
+* Fork pull requests get no secrets and a read-only token
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).

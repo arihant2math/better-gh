@@ -79,6 +79,8 @@ async fn git_access(
             )));
         }
     }
+    // GitHub App installation tokens need `contents` (write to push).
+    bgh_core::apps::check_git(auth.as_ref(), &access.repo, service.is_write())?;
     if service.is_write() {
         if auth.is_none() {
             return Err(challenge("Authentication required."));

@@ -11,6 +11,7 @@
 //! return `Ok(None)` / an empty vec instead of failing.
 
 mod checks;
+mod commit_comments;
 mod common;
 mod deployments;
 mod issues;
@@ -29,6 +30,7 @@ use serde_json::{Map, Value, json};
 pub use checks::{
     ACTIONS_APP_ID, app_json, check_run, check_suite, pull_requests_for_sha, status_payload,
 };
+pub use commit_comments::commit_comment;
 pub use common::{
     RepoCtx, association, author_associations, commit_node_id, organization, reactions, repository,
     sender, user_json, user_or_ghost, user_or_null,
@@ -184,6 +186,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::BranchProtectionRuleChanged { .. } => vec!["branch_protection_rule"],
         E::RepositoryRulesetChanged { .. } => vec!["repository_ruleset"],
         E::WikiPagesUpdated { .. } => vec!["gollum"],
+        E::RepositoryDispatch { .. } => vec!["repository_dispatch"],
         // Organization-level events (org and global hooks; `team_add` and
         // team repository grants also reach the repository's hooks).
         E::TeamCreated { .. } | E::TeamEdited { .. } | E::TeamDeleted { .. } => vec!["team"],
@@ -196,6 +199,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::OrgMemberAdded { .. } => vec!["organization"],
         E::DeploymentCreated { .. } => vec!["deployment"],
         E::DeploymentStatusCreated { .. } => vec!["deployment_status"],
+        E::CommitCommentCreated { .. } => vec!["commit_comment"],
         // Site-level events: delivered to global (site admin) hooks only.
         E::UserAccountChanged { .. } => vec!["user"],
         E::OrganizationChanged { .. } => vec!["organization"],
@@ -761,6 +765,17 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
                 ],
             )])
         }
+        // ----- commit comments -------------------------------------------------
+        E::CommitCommentCreated { comment_id, .. } => {
+            let Some(c) = commit_comment(state, &ctx, *comment_id).await? else {
+                return Ok(Vec::new());
+            };
+            Ok(vec![b.emit(
+                "commit_comment",
+                Some("created"),
+                vec![("comment", c)],
+            )])
+        }
         // ----- packages -------------------------------------------------------
         E::PackagePublished {
             package_id,
@@ -1063,6 +1078,20 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             }
             Ok(vec![b.emit("gollum", None, vec![("pages", json!(pages))])])
         }
+
+        E::RepositoryDispatch {
+            event_type,
+            client_payload,
+            branch,
+            ..
+        } => Ok(vec![b.emit(
+            "repository_dispatch",
+            Some(event_type),
+            vec![
+                ("branch", json!(branch)),
+                ("client_payload", client_payload.clone()),
+            ],
+        )]),
 
         // bgh-actions doesn't render the run JSON yet: nothing to deliver.
         E::WorkflowRunUpdated { workflow_run, .. } if workflow_run.is_null() => Ok(Vec::new()),

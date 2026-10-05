@@ -14,6 +14,11 @@ export async function installMock(): Promise<MockServer> {
   const params = new URLSearchParams(window.location.search);
   if (params.has('reset')) {
     await resetMockState();
+    try {
+      localStorage.removeItem('bgh-mock-commit-comments'); // mock/commitComments.ts
+    } catch {
+      /* ignore */
+    }
     const { deleteDB } = await import('idb');
     for (const db of (await indexedDB.databases?.()) ?? []) {
       if (db.name?.startsWith('bgh-')) await deleteDB(db.name);
