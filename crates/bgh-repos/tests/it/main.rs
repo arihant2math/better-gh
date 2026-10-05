@@ -19,6 +19,7 @@ mod forks;
 mod git_transport;
 mod gitdb;
 mod import;
+mod insights;
 mod keys;
 mod lfs;
 mod maintenance;

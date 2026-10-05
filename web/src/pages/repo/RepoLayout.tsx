@@ -15,6 +15,7 @@ import { Tag } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
 import { loadWatchSettings, watchSettingsKey } from '../notifications/actions';
+import { reportRepoView } from '../../app/traffic';
 import { canonicalRepoUrl, currentRepoTab, visibleRepoTabs, watchLabel, type RepoTabId } from './nav';
 import { SyncFork } from './SyncFork';
 import {
@@ -106,6 +107,11 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
   const status = useEnsureRepo(owner, name, !!repo);
   const [body, setBody] = useState<HTMLDivElement | null>(null);
   useScrollContainer(body);
+  const known = !!repo;
+  // Traffic (P31): one page view per repository URL.
+  useEffect(() => {
+    if (known) reportRepoView(owner, name, pathname);
+  }, [known, owner, name, pathname]);
 
   if (!repo) {
     return status === 'missing' ? (
