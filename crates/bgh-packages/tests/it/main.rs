@@ -4,6 +4,7 @@
 
 mod common;
 mod conformance;
+mod renames;
 mod rest;
 mod tokens;
 mod webhooks_gc;

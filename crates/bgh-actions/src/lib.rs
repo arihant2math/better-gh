@@ -21,9 +21,11 @@ pub mod crypto;
 pub mod deployments;
 pub mod engine;
 pub mod expr;
+pub mod gates;
 pub mod json;
 pub mod logs;
 pub mod models;
+pub mod oidc;
 pub mod protocol;
 pub mod rerequest;
 pub mod results;
@@ -121,8 +123,9 @@ pub fn router() -> Router<AppState> {
         )
         .route(
             &r("/actions/runs/{run_id}/pending_deployments"),
-            get(runs::pending_deployments),
+            get(runs::pending_deployments).post(runs::review_pending_deployments),
         )
+        .route(&r("/actions/runs/{run_id}/approvals"), get(runs::approvals))
         // jobs
         .route(&r("/actions/jobs/{job_id}"), get(runs::get_job))
         .route(&r("/actions/jobs/{job_id}/logs"), get(runs::job_logs))
@@ -248,6 +251,16 @@ pub fn router() -> Router<AppState> {
         // environments
         .route(&r("/environments"), get(environments::list))
         .route(
+            &r("/environments/{env}/deployment-branch-policies"),
+            get(environments::policies_list).post(environments::policies_create),
+        )
+        .route(
+            &r("/environments/{env}/deployment-branch-policies/{id}"),
+            get(environments::policies_get)
+                .put(environments::policies_update)
+                .delete(environments::policies_delete),
+        )
+        .route(
             &r("/environments/{env}"),
             get(environments::get)
                 .put(environments::put)
@@ -335,6 +348,15 @@ pub fn router() -> Router<AppState> {
             &o("/actions/runners/generate-jitconfig"),
             post(runners::org_jitconfig),
         )
+        // OIDC subject claim templates
+        .route(
+            &r("/actions/oidc/customization/sub"),
+            get(oidc::api::repo_get).put(oidc::api::repo_put),
+        )
+        .route(
+            &o("/actions/oidc/customization/sub"),
+            get(oidc::api::org_get).put(oidc::api::org_put),
+        )
         .merge(api::runner_groups::routes())
 }
 
@@ -345,6 +367,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(api::site_runners::routes())
         .merge(cache::v1::routes())
         .merge(results::routes())
+        .merge(oidc::routes())
         .route(
             "/_bgh/repos/{owner}/{repo}/deployments",
             get(deploy_api::web_summary),

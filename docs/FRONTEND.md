@@ -209,7 +209,7 @@ Site admin lives under `/site-admin/*` (`pages/admin`, guarded by
 `/organizations/:org/settings/*` (`pages/orgsettings`). App-wide
 announcement / maintenance banners come from `GET /_bgh/site` and are a lazy
 chunk loaded only while one is active. The admin UI has no mock backend
-(org rulesets excepted):
+(org rulesets, the org danger zone and admin deleted repositories excepted):
 verify it against a real server with `scripts/admin-smoke.mjs`.
 
 ## Performance rules
@@ -235,6 +235,7 @@ npm run build && npx vite preview &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/screenshots.mjs http://localhost:4173 /tmp/shots
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimistic writes, rollback, reload, keyboard
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/rulesets-smoke.mjs   # rulesets UI (repo + org) in mock mode
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/moderation-smoke.mjs # hide comments, edit history, delete issue (mock mode)
 # site admin + org settings against a real backend (see the script header)
 BGH_BACKEND=http://localhost:3000 npx vite --port 5174 &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/admin-smoke.mjs http://localhost:5174 /tmp/admin-shots

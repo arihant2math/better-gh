@@ -6,7 +6,7 @@
  * them pass an `apply` handler that moves the response into the base store.
  */
 import { store } from './index';
-import type { ID, Issue, ReactionContent, Repo, Review, ReviewComment, DiffSide } from './models';
+import type { ID, Issue, ReactionContent, Repo, Review, ReviewComment, DiffSide, ViewedFile } from './models';
 import { commit, enc, nowIso, repoOf } from './mutations';
 import { ops, tempId, type OverlayOp } from './overlay';
 import { pendingReview } from './pullSelectors';
@@ -397,28 +397,49 @@ export function createPull(repo: Repo, input: NewPull) {
   });
 }
 
-/** Commit a ```suggestion block: replace lines `start..end` of `path` on the head branch (contents API). */
-export async function commitSuggestion(pr: Issue, c: ReviewComment, suggestion: string, message?: string): Promise<void> {
+// ------------------------------------------------------------------ review workflow (P38)
+
+/** The viewer's "Viewed" rows of a PR file (normally at most one). */
+function viewedRows(pr: Pick<Issue, 'id'>, path: string): ViewedFile[] {
+  const viewer = store().viewerId;
+  return store()
+    .byIndex('viewedFile', 'issueId', pr.id)
+    .filter((v) => v.userId === viewer && v.path === path);
+}
+
+/**
+ * Mark / unmark a file as viewed (server-side, follows the reviewer across
+ * browsers). `blobSha` is the diff entry's `sha`; the file reads as not
+ * viewed again once the PR diff shows another blob.
+ */
+export function setFileViewed(pr: Issue, path: string, blobSha: string | undefined, viewed: boolean) {
+  const rows = viewedRows(pr, path);
+  if (!viewed) {
+    return commit('Mark file as not viewed', rows.map((r) => ops.delete('viewedFile', r.id)), { method: 'DELETE', path: webPath(pr, `/viewed?path=${enc(path)}`) });
+  }
+  const now = nowIso();
+  const op: OverlayOp = rows[0]
+    ? ops.update('viewedFile', rows[0].id, { blobSha: blobSha ?? rows[0].blobSha, updatedAt: now })
+    : ops.insert('viewedFile', { id: tempId(), repoId: pr.repoId, issueId: pr.id, userId: store().viewerId, path, blobSha: blobSha ?? '', updatedAt: now });
+  return commit('Mark file as viewed', [op], { method: 'PUT', path: webPath(pr, '/viewed'), body: { path, blob_sha: blobSha } });
+}
+
+export interface AppliedSuggestions {
+  commit_sha: string;
+  resolved_thread_ids: ID[];
+}
+
+/**
+ * Apply ```suggestion blocks of `commentIds` as one commit on the head
+ * branch (server-side: line endings kept, `Co-authored-by` trailers, the
+ * threads resolved; the resolutions arrive as deltas).
+ */
+export async function applySuggestions(pr: Issue, commentIds: ID[], message?: string, description?: string): Promise<AppliedSuggestions> {
   const { api } = await import('../api/client');
-  const { decodeContent } = await import('../api/endpoints');
-  const repoId = pr.headRepoId ?? pr.repoId;
-  const path = c.path.split('/').map(enc).join('/');
-  const file = await api.get<{ sha: string; content: string }>(`${repoApi(repoId, `/contents/${path}`)}?ref=${enc(pr.headRef ?? '')}`);
-  const text = decodeContent(file.content);
-  const lines = text.split('\n');
-  const end = c.line ?? c.originalLine ?? 0;
-  const start = c.startLine ?? end;
-  if (!end || end > lines.length) throw new Error('The suggestion no longer applies to this file');
-  const repl = suggestion.replace(/\n$/, '');
-  lines.splice(start - 1, end - start + 1, ...(repl === '' ? [] : repl.split('\n')));
-  const next = lines.join('\n');
-  const bytes = new TextEncoder().encode(next);
-  let bin = '';
-  bytes.forEach((b) => (bin += String.fromCharCode(b)));
-  await api.put(repoApi(repoId, `/contents/${path}`), {
-    message: message || `Apply suggestion from code review\n\nCo-authored-by: ${store().get('user', c.authorId)?.login ?? 'ghost'}`,
-    content: btoa(bin),
-    sha: file.sha,
-    branch: pr.headRef,
+  return api.post<AppliedSuggestions>(webPath(pr, '/suggestions/apply'), {
+    comment_ids: commentIds,
+    message: message || undefined,
+    description: description || undefined,
+    expected_head_sha: pr.headSha,
   });
 }

@@ -34,10 +34,14 @@ const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ d
   applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
   developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
   organizations: { title: 'Organizations', load: () => import('../pages/settings/sections/OrganizationSettings') },
+  reclaims: { title: 'Imported contributions', load: () => import('../pages/settings/sections/ReclaimSettings') },
   apps: { title: 'GitHub Apps', load: () => import('../pages/apps/UserAppsSection') },
   installations: { title: 'Installed GitHub Apps', load: () => import('../pages/apps/UserInstallationsSection') },
   tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
   local: { title: 'Local data & sync', load: () => import('../pages/settings/sections/LocalDataSettings') },
+  // Account and repo lifecycle (package P50).
+  'repositories/deleted': { title: 'Deleted repositories', load: () => import('../pages/settings/sections/DeletedReposSettings') },
+  'repositories/transfers': { title: 'Repository transfers', load: () => import('../pages/settings/sections/TransfersSettings') },
 };
 
 function settingsRoutes() {
@@ -74,6 +78,7 @@ function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags'
 }
 
 const DeploymentsPage = () => import('../pages/deployments/DeploymentsPage');
+const SecurityPage = () => import('../pages/security/SecurityPage');
 
 function prefetchDeployments(p: Params) {
   void import('../api/deployments').then((m) => prefetchResource(m.deploymentKeys.summary(p.owner!, p.repo!), () => m.getDeploymentsSummary(p.owner!, p.repo!), { ttlMs: 15_000 }));
@@ -187,6 +192,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/orgs', layout: AdminLayout, load: () => import('../pages/admin/OrgsPage'), title: () => 'Organizations · Site admin' },
     { path: '/site-admin/orgs/:org', layout: AdminLayout, load: () => import('../pages/admin/OrgDetailPage'), title: (p) => `${p.org} · Site admin` },
     { path: '/site-admin/repos', layout: AdminLayout, load: () => import('../pages/admin/ReposPage'), title: () => 'Repositories · Site admin' },
+    { path: '/site-admin/repos/deleted', layout: AdminLayout, load: () => import('../pages/admin/DeletedReposPage'), title: () => 'Deleted repositories · Site admin' },
     { path: '/site-admin/repos/:owner/:repo', layout: AdminLayout, load: () => import('../pages/admin/RepoDetailPage'), title: (p) => `${p.owner}/${p.repo} · Site admin` },
     { path: '/site-admin/settings', layout: AdminLayout, load: () => import('../pages/admin/SettingsPage'), title: () => 'Site settings · Site admin' },
     { path: '/site-admin/scim', layout: AdminLayout, load: () => import('../pages/admin/ScimPage'), title: () => 'SCIM provisioning · Site admin' },
@@ -194,6 +200,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/jobs', layout: AdminLayout, load: () => import('../pages/admin/JobsPage'), title: () => 'Background jobs · Site admin' },
     { path: '/site-admin/mirrors', layout: AdminLayout, load: () => import('../pages/admin/MirrorsPage'), title: () => 'Mirrors · Site admin' },
     { path: '/site-admin/imports', layout: AdminLayout, load: () => import('../pages/admin/ImportsPage'), title: () => 'Imports · Site admin' },
+    { path: '/site-admin/mannequins', layout: AdminLayout, load: () => import('../pages/admin/MannequinsPage'), title: () => 'Mannequins · Site admin' },
     { path: '/site-admin/imports/:id', layout: AdminLayout, load: () => import('../pages/admin/ImportDetailPage'), title: (p) => `Import #${p.id} · Site admin` },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
@@ -211,9 +218,11 @@ export function registerRoutes(): void {
       title: (p) => `Outside collaborators · ${p.org}`,
     },
     { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
+    { path: '/organizations/:org/settings/security', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecurityPage'), title: (p) => `Authentication security · ${p.org}` },
     { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
     { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
     { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportPage'), title: (p) => `Import · ${p.org}` },
+    { path: '/organizations/:org/settings/mannequins', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgMannequinsPage'), title: (p) => `Mannequins · ${p.org}` },
     { path: '/organizations/:org/settings/import/:id', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportDetailPage'), title: (p) => `Import #${p.id} · ${p.org}` },
     // GitHub Apps (P17): org registrations and installations, public app pages and the install flow.
     { path: '/organizations/:org/settings/apps', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `GitHub Apps · ${p.org}` },
@@ -223,6 +232,8 @@ export function registerRoutes(): void {
     { path: '/apps/:slug', load: AppPage, title: (p) => `${p.slug} · GitHub Apps` },
     { path: '/apps/:slug/installations/new', load: AppPage, title: (p) => `Install ${p.slug}` },
     { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
+    { path: '/organizations/:org/settings/issue-types', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgIssueTypesPage'), title: (p) => `Issue types · ${p.org}` },
+    { path: '/organizations/:org/settings/security_analysis', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecretScanningPage'), title: (p) => `Secret scanning · ${p.org}` },
     { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
@@ -366,6 +377,7 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/environments', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Environments · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/environments/:env/edit', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `${p.env} · Environments · ${p.owner}/${p.repo}` },
     // Header counters, check-run and label/search `html_url`s (package P12).
     { path: '/:owner/:repo/stargazers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Stargazers · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/watchers', layout: RepoLayout, load: RepoPeoplePage, title: (p) => `Watchers · ${p.owner}/${p.repo}` },
@@ -380,6 +392,11 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/community', layout: RepoLayout, load: InsightsPage, title: (p) => `Community standards · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/network', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/network/members', layout: RepoLayout, load: InsightsPage, title: (p) => `Network · ${p.owner}/${p.repo}` },
+    // Security (P65 secret scanning; P66 extends the tab). `view` picks the page inside SecurityPage.
+    { path: '/:owner/:repo/security', layout: RepoLayout, load: SecurityPage, title: (p) => `Security · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/:view', layout: RepoLayout, load: SecurityPage, title: (p) => `${p.view === 'secret-scanning' ? 'Secret scanning' : 'Security'} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/secret-scanning/:number', layout: RepoLayout, load: SecurityPage, title: (p) => `Secret scanning alert #${p.number} · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/security/secret-scanning/unblock-secret/:placeholder', layout: RepoLayout, load: SecurityPage, title: (p) => `Push protection · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);

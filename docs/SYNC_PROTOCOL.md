@@ -176,6 +176,7 @@ interface Issue {             // issues and pull requests share this model
   number: number;
   title: string;
   body?: string | null;       // LAZY: absent in bootstrap (section 6)
+  bodyEditedAt?: Timestamp | null; // LAZY, sent with `body`: latest body edit (edit history), null if never edited
   state: 'open' | 'closed';
   stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
@@ -194,6 +195,11 @@ interface Issue {             // issues and pull requests share this model
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
   isPr: boolean;
+  issueType?: { id: ID; name: string; color: IssueTypeColor | null } | null; // org issue type
+  duplicateOfId?: ID | null;  // closed as a duplicate of this issue (may be in another repo)
+  blockedByIds?: ID[];        // dependencies: issues blocking this one (may be in other repos)
+  openBlockedBy?: number;     // how many of blockedByIds are open ("Blocked" badge)
+  blockingIds?: ID[];         // issues this one blocks
   // Present iff isPr === true:
   draft?: boolean;
   merged?: boolean;
@@ -224,9 +230,12 @@ interface Comment {           // issue/PR conversation comment (LAZY model)
   body: string;               // markdown source; the client renders it
   authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'NONE';
   reactions?: ReactionCounts;
+  minimizedReason?: MinimizedReason | null; // hidden by a triager (P42)
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
+
+type MinimizedReason = 'spam' | 'abuse' | 'off-topic' | 'outdated' | 'duplicate' | 'resolved';
 
 interface Review {            // PR review (LAZY model)
   id: ID;
@@ -237,6 +246,7 @@ interface Review {            // PR review (LAZY model)
   body: string;
   commitId: string;
   submittedAt: Timestamp | null;
+  minimizedReason?: MinimizedReason | null;
 }
 
 interface IssueEvent {        // timeline event (LAZY model)
@@ -252,7 +262,10 @@ interface IssueEvent {        // timeline event (LAZY model)
     | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed'
     | 'mentioned' | 'subscribed' | 'cross-referenced' | 'pinned' | 'unpinned'
     | 'transferred' | 'sub_issue_added' | 'sub_issue_removed'
-    | 'parent_issue_added' | 'parent_issue_removed';
+    | 'parent_issue_added' | 'parent_issue_removed'
+    | 'issue_type_added' | 'issue_type_changed' | 'issue_type_removed'
+    | 'blocked_by_added' | 'blocked_by_removed' | 'blocking_added' | 'blocking_removed'
+    | 'marked_as_duplicate' | 'unmarked_as_duplicate';
   data: {                     // only the keys relevant to `event`
     labelId?: ID; labelName?: string; labelColor?: string;
     assigneeId?: ID; reviewerId?: ID;
@@ -266,6 +279,11 @@ interface IssueEvent {        // timeline event (LAZY model)
     subIssueId?: ID; subIssueNumber?: number; subIssueRepository?: string;          // sub_issue_*
     parentIssueId?: ID; parentIssueNumber?: number; parentIssueRepository?: string; // parent_issue_*
     fromRepository?: string;                      // transferred ("owner/repo")
+    issueTypeName?: string; issueTypeColor?: string;          // issue_type_*
+    prevIssueTypeName?: string; prevIssueTypeColor?: string;  // issue_type_changed
+    // blocked_by_* / blocking_* (the other issue), marked/unmarked_as_duplicate
+    // (the original), closed as duplicate (the original):
+    otherIssueId?: ID; otherIssueNumber?: number; otherIssueRepository?: string;
   };
   createdAt: Timestamp;
 }
@@ -286,8 +304,9 @@ interface Notification {      // scope user:{viewer}
 ```
 
 Server notes: `authorId` / `actorId` / `mergedById` are `null` when the
-user was deleted (GitHub's "ghost"). `stateReason` `duplicate` is sent as
-`not_planned`; `mergeableState` `has_hooks` as `clean`, `draft` as
+user was deleted (GitHub's "ghost"). `IssueTypeColor` is one of GitHub's
+issue type colors (`gray`, `blue`, `green`, `yellow`, `orange`, `red`,
+`pink`, `purple`). `mergeableState` `has_hooks` as `clean`, `draft` as
 `blocked`. `reactions` is always present (`{}` when empty) so a removed
 last reaction reaches the client.
 
@@ -298,7 +317,7 @@ not part of the bootstrap. A client loads them per PR with
 `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (same envelope as partial sync:
 `{lastSyncId, models}` with `reviewComment`, `review` (incl. the viewer's
 pending one), `reaction`, `checkSuite`, `checkRun`, `commitStatus` of the
-head commit, `user`). Clients that don't know a model ignore its deltas.
+head commit, the viewer's `viewedFile` rows, `user`). Clients that don't know a model ignore its deltas.
 Pending reviews and their comments are never broadcast: writes to them
 return the rows in the response (see `TxApply` in `web/src/sync/transactions.ts`).
 The `issue` row of a PR additionally carries `mergeCommitSha`, `rebaseable`,
@@ -355,7 +374,7 @@ are built by the same shape loader as everything else
   reviewId, inReplyToId, authorId, body, path, commitId, originalCommitId,
   subjectType, side, startSide, line, originalLine, startLine,
   originalStartLine, position, originalPosition, diffHunk, outdated,
-  resolvedAt, resolvedById, reactions, createdAt, updatedAt`; comments of
+  resolvedAt, resolvedById, reactions, minimizedReason, createdAt, updatedAt`; comments of
   pending reviews are never sent; the PR page loads the current rows, incl.
   the viewer's own pending ones, from `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`,
   built from the same shapes), `checkRun` (`id, repoId, checkSuiteId, headSha,
@@ -363,6 +382,11 @@ are built by the same shape loader as everything else
   `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
   conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
   state, context, description, targetUrl, creatorId, createdAt`).
+* `viewedFile` (P38; delta-only, in the owner's `user:{userId}` scope): `id,
+  repoId, issueId, userId, path, blobSha, updatedAt` — a PR file the user
+  marked "Viewed"; it counts as viewed only while the PR diff entry's `sha`
+  equals `blobSha`. Unmarking records a `D`. The PR page loads the viewer's
+  rows from `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync` (`models.viewedFile`).
 * `repoImport` (delta-only, `repo:{repoId}`): `id, repoId, status, phase,
   error` when a repository import changes status (queued, importing,
   complete, failed, cancelled). Progress counters are polled from
@@ -623,7 +647,11 @@ The server inlines boot data into `index.html` by replacing the
 <script>window.__BGH_BOOT__={"user":{"id":3,"login":"ada","name":"Ada Lovelace","avatarUrl":""},"csrf":"…","config":{"siteName":"Better GitHub","signupEnabled":true,"version":"0.1.0"},"ts":"2024-01-01T00:00:00Z"}</script>
 ```
 
-`user` is `null` when signed out. When boot data is missing or older than
+`user` is `null` when signed out. `user.twoFactorSetupRequired: true` is
+added when the site requires two-factor authentication
+(`auth_providers.require_2fa`) and the account has none: the client then
+keeps the user on `/settings/security` (the server answers 403 to the
+session outside the 2FA setup endpoints). When boot data is missing or older than
 5 minutes (e.g. the shell came from the service worker cache) the client
 refreshes it in the background from `GET /_bgh/boot` (same JSON).
 
@@ -632,17 +660,26 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | Endpoint | Request | Response |
 |----------|---------|----------|
 | `GET /_bgh/boot` | — | boot JSON (§9) |
-| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials; `401 {"message","twoFactorRequired":true,"twoFactorToken"}` when the account has two-factor authentication (`429` when throttled) |
+| `POST /_bgh/auth/login` | `{"login","password"}` | `200` boot JSON + session cookie; `422 {"message"}` on bad credentials; `401 {"message","twoFactorRequired":true,"twoFactorToken","twoFactorMethods"}` when the account has two-factor authentication (`twoFactorMethods`: `totp`, `recovery_code`, plus `webauthn` with security keys; `429` when throttled) |
+| `POST /_bgh/auth/2fa/webauthn/challenge` → `POST /_bgh/auth/2fa/webauthn` | `{"twoFactorToken"}` → `{"twoFactorToken","id","credential"}` | second factor with a security key: `{id, options}` then `200` boot JSON + cookie; `422` when verification fails |
+| `POST /_bgh/auth/login/passkey/challenge` → `POST /_bgh/auth/login/passkey` | — → `{"id","credential"}` | passwordless sign-in with a passkey (discoverable credential): `200` boot JSON + cookie |
 | `POST /_bgh/auth/2fa` | `{"twoFactorToken","code"}` (TOTP or recovery code) | `200` boot JSON + session cookie; `422` wrong code; `401` pending login expired (sign in again) |
 | `POST /_bgh/auth/signup` | `{"login","email","password"}` | `201` boot JSON + session cookie; `422` validation errors |
 | `POST /_bgh/auth/logout` | — | `204`; server closes the session's sync sockets with `4001` (the server emits `Event::SessionEnded {user_id, session_id}`, which bgh-sync consumes; also emitted when sessions are revoked or a password is reset, then with `session_id: null` = all sessions) |
 | `GET /_bgh/render/blob/{owner}/{repo}/{sha}?path=src/main.rs` | — | `{"language":"rust","lines":["<span class=\"hl-k\">fn</span> main() {", …]}` — one HTML string per source line, `Cache-Control: public, max-age=31536000, immutable`. `404` when no highlighter applies (client renders plain text). |
+| `GET /_bgh/repos/{owner}/{repo}/blob-lines/{commitish}?path=&start=&end=&hl=1&text=0` | — | Diff viewer (P37): `{commit, path, sha, size, binary, image, mime, total_lines, start, end, lines, html, language, raw_url}` — plain (`lines`) and highlighted (`html`, with `hl=1`) lines `start..=end` (1-based, default the whole file, at most 20 000). `{commitish}` is a commit SHA, `{base}...{head}` (two SHAs: their merge base) or a ref; SHA forms are immutable. Binary content: metadata only. `422` without `path`, `404` unknown path / commit |
+| `GET /_bgh/repos/{owner}/{repo}/commits/{sha}/annotations` | — | Every check-run annotation of the commit (≤ 1000, by path and line): `[{check_run_id, check_run_name, path, start_line, end_line, start_column, end_column, annotation_level, title, message, raw_details}]` |
 | `DELETE /_bgh/notifications/threads/{id}/read` | `X-Client-Tx` | `204`; marks a thread unread (GitHub's REST API has no endpoint for this) |
 | `GET /_bgh/repos/{owner}/{repo}/issue-templates[?ref=]` | — | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, body, form}], config: {blank_issues_enabled, contact_links}, errors}`; the client addresses templates by basename (`?template=bug_report.yml`) |
 | `PUT\|DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/pin` | `X-Client-Tx` | `204`; pin / unpin (max 3 per repo → `422`) |
 | `GET /_bgh/repos/{owner}/{repo}/issues/{n}/viewer-reactions` | — | `{"issue": ["+1"], "comments": {"<comment id>": ["heart"]}}` — the viewer's own reactions (rows only carry counts) |
 | `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/reactions/{content}` | `X-Client-Tx` | `204`; removes the viewer's reaction with that content (GitHub's REST API needs the reaction id); `204` when there is none |
 | `DELETE /_bgh/repos/{owner}/{repo}/issues/comments/{id}/reactions/{content}` | `X-Client-Tx` | same for a comment |
+| `PUT\|DELETE /_bgh/repos/{owner}/{repo}/minimized/{kind}/{id}` | `X-Client-Tx`; PUT `{"reason": "spam"\|"abuse"\|"off-topic"\|"outdated"\|"duplicate"\|"resolved"}` (GraphQL classifier spellings like `OFF_TOPIC` too) | `200 {"id","minimizedReason"}`; hide / unhide a comment (triage access). `kind` = `comment`, `review`, `review_comment`, `commit_comment`. The synced row (`comment`, `review`, `reviewComment`) is re-sent |
+| `GET /_bgh/repos/{owner}/{repo}/minimized/{kind}?ids=1,2` | — | `[{"id","minimizedReason"}]` for the minimized ones among `ids` (commit comments aren't synced) |
+| `GET /_bgh/repos/{owner}/{repo}/edits/{kind}/{id}` | — | edit history, newest first: `[{"id","editor","body","previous_body","edited_at","deleted_at","deleted_by"}]` (`body` = text after the edit, `previous_body` = before; `null` once deleted). `kind` also takes `issue` (`id` = the issue's number) |
+| `DELETE /_bgh/repos/{owner}/{repo}/edits/{kind}/{id}/{edit_id}` | — | `204`; deletes that revision's text (content author or repo admin; the current revision → `422`). `edit_id` `0` deletes the original (pre-edit) text |
+| `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}` | `X-Client-Tx` | `204`; deletes an issue (repo admin; PRs → `422`). The number stays reserved: `GET /repos/{o}/{r}/issues/{n}` answers `410` afterwards; clients get a `D` for the issue |
 
 Highlight classes (`hl-*`): `k` keyword, `s` string, `c` comment, `n`
 number/constant, `t` type, `f` function/macro name, `a` attribute/tag. The

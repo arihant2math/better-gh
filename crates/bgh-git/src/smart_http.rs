@@ -161,6 +161,7 @@ pub async fn upload_pack(
     if let Some(p) = git_protocol(headers) {
         c.env("GIT_PROTOCOL", p);
     }
+    let timer = bgh_core::observability::git_op("upload-pack");
     let mut child = c.spawn()?;
     let mut stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
@@ -176,7 +177,9 @@ pub async fn upload_pack(
         let mut err = String::new();
         let _ = stderr.read_to_string(&mut err).await;
         let status = child.wait().await;
-        if !matches!(&status, Ok(s) if s.success()) {
+        let ok = matches!(&status, Ok(s) if s.success());
+        timer.finish(ok);
+        if !ok {
             tracing::debug!(?status, stderr = %err.trim(), "git upload-pack exited unsuccessfully");
         }
     });
@@ -817,6 +820,7 @@ where
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    let timer = bgh_core::observability::git_op("receive-pack");
     let mut child = c.spawn()?;
     let mut stdin = child.stdin.take().expect("stdin");
     let mut stdout = child.stdout.take().expect("stdout");
@@ -852,6 +856,7 @@ where
     }
     let out = out_task.await.unwrap_or_default();
     let err = err_task.await.unwrap_or_default();
+    timer.finish(status.success());
     if !status.success() {
         tracing::warn!(%status, stderr = %err.trim(), "git receive-pack failed");
     }
@@ -1026,6 +1031,7 @@ where
     if let Some(p) = protocol.filter(|p| valid_protocol(p)) {
         c.env("GIT_PROTOCOL", p);
     }
+    let timer = bgh_core::observability::git_op("upload-pack");
     let mut child = c.spawn()?;
     let mut stdin = child.stdin.take().expect("stdin");
     let mut stdout = child.stdout.take().expect("stdout");
@@ -1041,6 +1047,7 @@ where
     let _ = output.flush().await;
     let _ = errors.flush().await;
     let status = child.wait().await?;
+    timer.finish(status.success());
     feeder.abort();
     if let Err(e) = out.and(err) {
         tracing::debug!(?e, "upload-pack: copying output failed");

@@ -502,6 +502,90 @@
   min-height: 0;
 }
 
+/* ------------------------------------------------------- pending deployments */
+.pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--warning-subtle);
+}
+
+.pendingIcon {
+  flex: none;
+  color: var(--warning);
+}
+
+.pendingText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pendingSub {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.reviewForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: min(480px, 80vw);
+}
+
+.reviewEnvs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.reviewLegend {
+  margin-bottom: 6px;
+  font-weight: var(--fw-semibold);
+}
+
+.reviewEnv {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.reviewEnv[data-disabled] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.reviewEnvName {
+  font-weight: var(--fw-semibold);
+}
+
+.reviewEnvMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.reviewActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* A job calling a reusable workflow: its called jobs are the rows. */
 .nodeCall .groupHead .groupCount {
   overflow: hidden;

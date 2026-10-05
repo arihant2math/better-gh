@@ -888,6 +888,26 @@ pub async fn activities(state: &AppState, event: &Event) -> ApiResult<Vec<Activi
         } if action == "completed" => {
             out.extend(ci_failed(state, *repo_id, *check_suite_id, Some(*actor)).await?);
         }
+        Event::DeploymentReview {
+            repo_id,
+            run_id,
+            action,
+            actor_id,
+            reviewer_ids,
+            payload,
+        } if action == "requested" => {
+            out.extend(
+                deployment_review_requested(
+                    state,
+                    *repo_id,
+                    *run_id,
+                    *actor_id,
+                    reviewer_ids,
+                    payload["environment"].as_str().unwrap_or_default(),
+                )
+                .await?,
+            );
+        }
         // Suites reported through the Checks API (external CI): notify
         // whoever pushed the commit.
         Event::CheckSuiteCompleted {
@@ -1017,6 +1037,53 @@ async fn ci_failed(
     act.email = Some(EmailKind::Ci {
         check_suite_id,
         conclusion,
+    });
+    Ok(Some(act))
+}
+
+/// `approval_requested` to an environment's required reviewers (teams
+/// expanded by bgh-actions) when a run waits for them; the thread is the
+/// run's check suite.
+async fn deployment_review_requested(
+    state: &AppState,
+    repo_id: i64,
+    run_id: i64,
+    actor: Option<i64>,
+    reviewers: &[i64],
+    environment: &str,
+) -> ApiResult<Option<Activity>> {
+    let run: Option<(Option<i64>, String, String)> = sqlx::query_as(
+        "SELECT check_suite_id, head_sha, name FROM actions_runs WHERE id = $1 AND repo_id = $2",
+    )
+    .bind(run_id)
+    .bind(repo_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let (Some((Some(suite_id), sha, name)), Some(repo)) = (run, load_repo(state, repo_id).await?)
+    else {
+        return Ok(None);
+    };
+    if reviewers.is_empty() {
+        return Ok(None);
+    }
+    let mut act = Activity::new(
+        repo,
+        Subject {
+            kind: "CheckSuite",
+            id: suite_id,
+            key: Some(sha),
+            title: format!("{name}: review pending deployment to {environment}"),
+        },
+        actor,
+    );
+    act.direct = reviewers
+        .iter()
+        .map(|u| (*u, Reason::ApprovalRequested))
+        .collect();
+    act.include_actor = true;
+    act.email = Some(EmailKind::DeploymentReview {
+        run_id,
+        environment: environment.to_string(),
     });
     Ok(Some(act))
 }

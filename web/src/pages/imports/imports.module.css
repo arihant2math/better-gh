@@ -197,3 +197,40 @@
     align-items: flex-start;
   }
 }
+
+/* Mannequins (P51). */
+.reclaimForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.reclaimForm input {
+  width: 14rem;
+  max-width: 100%;
+}
+
+.fieldError {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.rowActions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.headerLink {
+  font-size: var(--fs-sm);
+}
+
+.moved {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}

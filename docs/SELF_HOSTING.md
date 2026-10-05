@@ -80,7 +80,8 @@ docker run -d --name bgh -p 3000:3000 -p 2222:2222 -v bgh-data:/data \
 
 ## Install (binary + systemd)
 
-Build a release binary with the web client embedded:
+Build a release binary with the web client embedded (needs `pkg-config`
+and the OpenSSL headers, e.g. `libssl-dev`, for WebAuthn):
 
 ```sh
 (cd web && npm ci && npm run build)       # -> web/dist
@@ -161,6 +162,10 @@ Also read by the binary:
 | Variable | Description |
 |----------|-------------|
 | `RUST_LOG` | Log filter (default `info,sqlx=warn,tower_http=info`), e.g. `debug`, `info,bgh_repos=debug`. Logs go to stderr. |
+| `BGH_LOG_FORMAT` | `pretty` (default, human-readable) or `json` (one JSON object per line, see [Monitoring](#monitoring)). |
+| `BGH_METRICS_TOKEN` | Serve Prometheus metrics at `GET /metrics` on the main listener to `Authorization: Bearer <token>` (401 otherwise). Unset: `/metrics` is a 404 there. |
+| `BGH_METRICS_LISTEN` | Extra listener (e.g. `127.0.0.1:9090`) serving only `/metrics`; no token needed unless `BGH_METRICS_TOKEN` is also set. Bind it to a private address. |
+| `BGH_OTLP_ENDPOINT` | OTLP/HTTP collector base URL (e.g. `http://otel-collector:4318`) for trace export; needs a binary built with `cargo build --features bgh-server/otlp`. `OTEL_SERVICE_NAME` overrides the service name (`better-github`). |
 | `BGH_ADMIN_PASSWORD` | Password for `bgh admin create-user` when `--password` is omitted (keeps it out of shell history and `ps`). |
 | `HOSTNAME` | Prefix of the worker ids that job workers record on locked jobs (default `bgh`). |
 
@@ -320,6 +325,11 @@ used entries are evicted beyond it, and entries unused for
 run against hosts it considers GHES; the native `upload-artifact` /
 `download-artifact` handling covers those actions.
 
+Jobs with `permissions: id-token: write` can request OpenID Connect
+tokens (issuer `https://<host>/_services/token`) for keyless AWS, GCP and
+Azure authentication; signing keys live in `{BGH_DATA_DIR}/actions/oidc/`.
+See [ACTIONS_OIDC.md](ACTIONS_OIDC.md) for the cloud trust setup.
+
 ## Backup and restore
 
 What to back up:
@@ -330,6 +340,13 @@ What to back up:
 3. Your configuration (`/etc/bgh/bgh.env` or `.env`).
 
 Redis holds only caches and pub/sub and needs no backup.
+
+The server key (`BGH_ACTIONS_SECRET_KEY`, or `actions/server.key` in the
+data directory) encrypts Actions secrets, mirror credentials and users'
+TOTP two-factor secrets: restoring the database without it locks every
+account with an authenticator app out (site admins can disable 2FA per
+user). WebAuthn security keys and passkeys are bound to the host of
+`BGH_BASE_URL`; changing the domain invalidates them.
 
 Take the database dump **first**, then copy the data directory. Git
 maintenance (the scheduled `repos.maintenance` service and the admin gc)
@@ -435,8 +452,10 @@ Details: `docs/packages/p18-metadata-import.md`.
 * **Health:** `GET /healthz` → `200 {"status":"ok","database":true,"redis":true}`
   or `503` with `"degraded"`. `bgh healthcheck` probes it locally (exit
   status 0/1) without opening database connections itself.
-* **Logs:** structured lines on stderr, one per request with a
-  `request_id` (also returned as `X-Request-Id`); tune with `RUST_LOG`.
+* **Logs:** one line per request on stderr with a `request_id` (also
+  returned as `X-Request-Id`); tune with `RUST_LOG`, switch to JSON with
+  `BGH_LOG_FORMAT=json`. See [Monitoring](#monitoring).
+* **Metrics:** Prometheus, see [Monitoring](#monitoring).
 * **Shutdown:** SIGTERM/SIGINT stop accepting connections, finish in-flight
   requests (up to `BGH_SHUTDOWN_TIMEOUT_SECS`), then stop background work:
   job workers finish their current job, event listeners deliver every
@@ -462,3 +481,87 @@ Details: `docs/packages/p18-metadata-import.md`.
   messages, as on GitHub) and a 2 GB per-push limit. Storage quotas count
   LFS objects and are checked against each incoming push. Repository
   configs are upgraded automatically at startup (`bgh.configVersion`).
+
+## Monitoring
+
+### Metrics
+
+Prometheus text format (`text/plain; version=0.0.4`) at `GET /metrics`.
+It is never public by default; pick one:
+
+* `BGH_METRICS_TOKEN=<random>`: served on the main listener with a bearer
+  token. Prometheus scrape config:
+
+  ```yaml
+  scrape_configs:
+    - job_name: bgh
+      authorization: { type: Bearer, credentials: "<token>" }
+      static_configs: [{ targets: ["git.example.com:3000"] }]
+  ```
+
+  Behind a reverse proxy, you can also deny `/metrics` there and scrape
+  the backend directly.
+* `BGH_METRICS_LISTEN=127.0.0.1:9090`: a separate listener that serves
+  only `/metrics` (open, unless the token is set too).
+
+Gauges marked *scrape* are read from the database when `/metrics` is
+requested (a few indexed aggregate queries); every other series is
+updated in-process as work happens. Labels have bounded values: `route` is
+the route template (`/api/v3/repos/{owner}/{repo}`), or `unmatched` for
+web pages and unknown paths, never a raw path. Counters and histograms
+are per process: sum them across `bgh` processes.
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `bgh_http_requests_total` | counter | `method`, `route`, `status` | HTTP requests |
+| `bgh_http_request_duration_seconds` | histogram | `method`, `route`, `status` | Time to response headers (streamed bodies such as clones continue afterwards; see the git metrics) |
+| `bgh_ratelimit_rejected_total` | counter | `resource` (`core`, `search`, `graphql`) | Requests rejected with 403/429 by the API rate limiter |
+| `bgh_jobs_total` | counter | `kind`, `outcome` (`ok`, `retry`, `failed`) | Background job runs |
+| `bgh_job_duration_seconds` | histogram | `kind` | Background job run time |
+| `bgh_jobs_queued` | gauge (scrape) | `kind` | Jobs waiting or running |
+| `bgh_jobs_failed` | gauge (scrape) | `kind` | Permanently failed jobs kept in `jobs` |
+| `bgh_event_consumer_lag` | gauge (scrape) | `listener` | Committed events a listener has not processed yet |
+| `bgh_event_consumer_oldest_pending_seconds` | gauge (scrape) | `listener` | Age of the oldest unprocessed event |
+| `bgh_db_pool_connections` | gauge (scrape) | `state` (`in_use`, `idle`) | Database pool connections of this process |
+| `bgh_db_pool_max_connections` | gauge (scrape) | | `BGH_DB_MAX_CONNECTIONS` |
+| `bgh_redis_errors_total` | counter | `op` (`ratelimit`, `throttle`, `session`, `sync_publish`) | Failed Redis commands |
+| `bgh_git_operations_total` | counter | `kind` (`upload-pack`, `receive-pack`, `archive`, `merge-tree`), `outcome` (`ok`, `error`) | Git operations (HTTP and SSH); `error` includes clients that disconnected mid-transfer |
+| `bgh_git_operation_duration_seconds` | histogram | `kind` | Git operation duration, including the transfer |
+| `bgh_sync_websocket_connections` | gauge | | Open sync WebSockets (web client live updates) |
+| `bgh_webhook_deliveries_total` | counter | `outcome` (`success`: 2xx, `failure`: other status, `error`: no response) | Webhook delivery attempts |
+| `bgh_actions_jobs_queued` | gauge (scrape) | | Actions jobs waiting for a runner |
+| `bgh_actions_jobs_in_progress` | gauge (scrape) | | Actions jobs running |
+
+Histogram buckets (seconds): 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+2.5, 5, 10, 30, 60, 300.
+
+Starting points for alerts: 5xx ratio
+(`sum(rate(bgh_http_requests_total{status=~"5.."}[5m])) /
+sum(rate(bgh_http_requests_total[5m]))`), p95 latency
+(`histogram_quantile(0.95, sum by (le) (rate(bgh_http_request_duration_seconds_bucket{route!="unmatched"}[5m])))`),
+`bgh_event_consumer_oldest_pending_seconds > 300`, growing
+`bgh_jobs_failed`, `bgh_db_pool_connections{state="idle"} == 0` for
+minutes, and any `bgh_redis_errors_total` increase.
+
+### Logs
+
+`BGH_LOG_FORMAT=json` writes one JSON object per line to stderr, ready for
+Loki, Elasticsearch or Splunk:
+
+```json
+{"timestamp":"2026-10-05T12:00:00.123Z","level":"INFO","message":"finished processing request","latency":"3 ms","status":200,"target":"tower_http::trace::on_response","span":{"name":"http","method":"GET","path":"/api/v3/user","request_id":"6f1c…","client_ip":"198.51.100.7","user_id":42,"token_id":7,"auth_method":"token"}}
+```
+
+The request span (`span`) carries `request_id` (the `X-Request-Id`
+response header), `client_ip` (from `X-Forwarded-For`/`X-Real-IP` only
+with `BGH_TRUST_PROXY`, else the TCP peer) and, once the caller is
+authenticated, `user_id`, `auth_method` (`session`, `token`, `password`,
+`app`) and `token_id` (token auth). Every line logged while handling the
+request carries the same span.
+
+### Traces
+
+Build with `cargo build --release -p bgh-server --features otlp` and set
+`BGH_OTLP_ENDPOINT` to an OTLP/HTTP collector (`/v1/traces` is appended)
+to export the tracing spans (one root span per request with the fields
+above). The default binary and image do not include the exporter.

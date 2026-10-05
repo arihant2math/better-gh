@@ -55,6 +55,12 @@ pub enum NodeType {
     CommitComment,
     /// GitHub App (`Integration`).
     Integration,
+    IssueType,
+    /// An edit-history entry (P42).
+    UserContentEdit,
+    DeploymentBranchPolicy,
+    /// An environment protection rule (GitHub's `Gate`).
+    EnvironmentProtectionRule,
 }
 
 impl NodeType {
@@ -102,6 +108,10 @@ impl NodeType {
         Self::DraftIssue,
         Self::CommitComment,
         Self::Integration,
+        Self::IssueType,
+        Self::UserContentEdit,
+        Self::DeploymentBranchPolicy,
+        Self::EnvironmentProtectionRule,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -149,6 +159,10 @@ impl NodeType {
             Self::DraftIssue => "DraftIssue",
             Self::CommitComment => "CommitComment",
             Self::Integration => "Integration",
+            Self::IssueType => "IssueType",
+            Self::UserContentEdit => "UserContentEdit",
+            Self::DeploymentBranchPolicy => "DeploymentBranchPolicy",
+            Self::EnvironmentProtectionRule => "Gate",
         }
     }
 

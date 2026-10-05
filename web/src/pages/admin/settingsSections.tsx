@@ -300,6 +300,50 @@ export function GitSection({ value, onChange, errors }: Props<'git'>) {
   );
 }
 
+export function SecretScanningSection({ value, onChange, errors }: Props<'secret_scanning'>) {
+  const kb = errors['secret_scanning.max_blob_kb'];
+  const secs = errors['secret_scanning.push_scan_timeout_secs'];
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.available}
+        onChange={(available) => onChange({ available })}
+        label="Allow secret scanning"
+        description="Repository administrators can turn on secret scanning and push protection. When off, no repository is scanned."
+      />
+      <Switch
+        checked={value.available && value.enable_all}
+        disabled={!value.available}
+        onChange={(enable_all) => onChange({ enable_all })}
+        label="Enable secret scanning for every repository"
+        description="Forces secret scanning on everywhere; repository administrators can’t turn it off."
+      />
+      <Switch
+        checked={value.available && value.push_protection_all}
+        disabled={!value.available}
+        onChange={(push_protection_all) => onChange({ push_protection_all })}
+        label="Enable push protection for every repository"
+        description="Pushes containing supported secrets are rejected everywhere unless the pusher bypasses the block with a reason."
+      />
+      <div className={styles.formRow}>
+        <Field label="Largest file scanned" htmlFor="set-ss-blob" error={kb} hint="Larger files are skipped by push and history scans.">
+          <Input id="set-ss-blob" inputMode="numeric" trailing="KB" value={value.max_blob_kb} invalid={!!kb} onChange={(e) => onChange({ max_blob_kb: positiveInput(e.target.value) })} />
+        </Field>
+        <Field label="Push scan time budget" htmlFor="set-ss-timeout" error={secs} hint="If scanning a push takes longer, the push is accepted and scanned afterwards.">
+          <Input
+            id="set-ss-timeout"
+            inputMode="numeric"
+            trailing="seconds"
+            value={value.push_scan_timeout_secs}
+            invalid={!!secs}
+            onChange={(e) => onChange({ push_scan_timeout_secs: positiveInput(e.target.value) })}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 const VISIBILITY_INFO: Record<Visibility, { label: string; description: string }> = {
   public: { label: 'Public repositories', description: 'Readable by anyone who can reach this instance (signed-in users only in private mode).' },
   internal: { label: 'Internal repositories', description: 'Readable by every signed-in user; organizations only.' },
@@ -519,6 +563,12 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         onChange={(password_login) => onChange({ password_login })}
         label="Password sign-in"
         description="Built-in username and password login, on the web and for Git over HTTPS. Turn off to require LDAP or single sign-on (SAML, OIDC); personal access tokens keep working."
+      />
+      <Switch
+        checked={value.require_2fa}
+        onChange={(require_2fa) => onChange({ require_2fa })}
+        label="Require two-factor authentication"
+        description="Every account must set up two-factor authentication before using the site in a browser (tokens keep working). Enable 2FA on your own account first."
       />
       {!value.password_login && (
         <Switch

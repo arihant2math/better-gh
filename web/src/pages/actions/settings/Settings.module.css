@@ -581,3 +581,63 @@
   flex-direction: column;
   gap: var(--sp-5);
 }
+
+/* ------------------------------------------------- environment protection */
+.envRules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.envRule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.envRule:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.envRuleTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-md, 14px);
+}
+
+.reviewerList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reviewerItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.inlineForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}

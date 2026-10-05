@@ -34,6 +34,7 @@ import {
   RepositoriesSection,
   RetentionSection,
   MarkdownSection,
+  SecretScanningSection,
   SignupSection,
   SmtpSection,
 } from './settingsSections';
@@ -212,6 +213,8 @@ export default function SettingsPage() {
         return <SmtpSection value={draft.smtp} onChange={update('smtp')} errors={errors} />;
       case 'git':
         return <GitSection value={draft.git} onChange={update('git')} errors={errors} />;
+      case 'secret_scanning':
+        return <SecretScanningSection value={draft.secret_scanning} onChange={update('secret_scanning')} errors={errors} />;
       case 'retention':
         return <RetentionSection value={draft.retention} onChange={update('retention')} errors={errors} />;
       case 'maintenance':

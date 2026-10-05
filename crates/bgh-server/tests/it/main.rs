@@ -5,4 +5,5 @@
 mod api_compat;
 mod events;
 mod infra;
+mod observability;
 mod server;

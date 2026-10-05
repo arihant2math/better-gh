@@ -5,7 +5,7 @@ import { ApiError } from '../../api/client';
 import { compareRefs, getPullTemplate, listBranches, listForks } from '../../api/endpoints';
 import type { RestBranch, RestCompare, RestFork } from '../../api/types';
 import { toEntries } from '../../components/diff/DiffViewer';
-import { DiffView } from '../../components/diff/DiffView';
+import { DiffView, type DiffSource } from '../../components/diff/DiffView';
 import { parsePatch, type DiffFile } from '../../components/diff/parseDiff';
 import { Link, navigate, useParams, useQuery, setQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -212,7 +212,7 @@ const CompareBody = observer(function CompareBody({
         )}
       </div>
       {!identical && !existing && expand && <CreateForm repoId={repoId} owner={owner} name={name} base={base} head={head} headBranch={headBranch} compare={data} />}
-      {!identical && <CompareDetails compare={data} />}
+      {!identical && <CompareDetails compare={data} owner={owner} name={name} sameRepo={headOwner === owner} />}
     </>
   );
 });
@@ -296,7 +296,7 @@ const CreateForm = observer(function CreateForm({
   );
 });
 
-function CompareDetails({ compare }: { compare: RestCompare }) {
+function CompareDetails({ compare, owner, name, sameRepo }: { compare: RestCompare; owner: string; name: string; sameRepo: boolean }) {
   const mode = useQuery().get('diff') === 'split' ? 'split' : 'unified';
   const files: DiffFile[] = useMemo(
     () =>
@@ -313,6 +313,10 @@ function CompareDetails({ compare }: { compare: RestCompare }) {
     [compare],
   );
   const entries = useMemo(() => toEntries(files), [files]);
+  // Highlighting, context expansion, image/rich diffs (P37): needs both SHAs in this repository.
+  const mergeBase = compare.merge_base_commit?.sha;
+  const headSha = compare.commits.length === compare.total_commits ? compare.commits[compare.commits.length - 1]?.sha : undefined;
+  const source = useMemo<DiffSource | undefined>(() => (sameRepo && mergeBase && headSha ? { owner, repo: name, oldRef: mergeBase, newRef: headSha } : undefined), [sameRepo, mergeBase, headSha, owner, name]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const additions = files.reduce((a, f) => a + f.additions, 0);
   const deletions = files.reduce((a, f) => a + f.deletions, 0);
@@ -356,7 +360,7 @@ function CompareDetails({ compare }: { compare: RestCompare }) {
             <Spinner size={14} /> No file changes.
           </div>
         ) : (
-          <DiffView files={entries} mode={mode} tree={files.length > 1} collapsed={collapsed} onToggleCollapsed={(p) => setCollapsed((c) => (c.has(p) ? new Set([...c].filter((x) => x !== p)) : new Set([...c, p])))} keyboard />
+          <DiffView files={entries} mode={mode} tree={files.length > 1} collapsed={collapsed} onToggleCollapsed={(p) => setCollapsed((c) => (c.has(p) ? new Set([...c].filter((x) => x !== p)) : new Set([...c, p])))} keyboard source={source} />
         )}
       </div>
     </>

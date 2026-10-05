@@ -43,46 +43,7 @@ pub async fn blob(
     if let Some(r) = not_modified(&req, &etag, cache.clone()) {
         return Ok(r);
     }
-    let key = format!("render:{CACHE_VERSION}:{sha}:{path}");
-    let body = match cache_get::<Option<HighlightedBlob>>(&state, &key).await {
-        Some(b) => b,
-        None => {
-            let id = sha.clone();
-            let data = crate::store(&state)
-                .read(access.repo.id, move |r| {
-                    match r.header(&id)? {
-                        Some(("blob", size)) if size as usize <= highlight::MAX_HIGHLIGHT_BYTES => {
-                        }
-                        Some(("blob", _)) => return Ok(None),
-                        _ => return Err(bgh_git::GitError::NotFound(id)),
-                    }
-                    Ok(Some(r.blob(&id)?.data))
-                })
-                .await?;
-            let rendered = match data {
-                Some(d)
-                    if !d.iter().take(8000).any(|&b| b == 0)
-                        && bgh_git::lfs::parse_pointer(&d).is_none() =>
-                {
-                    let text = String::from_utf8_lossy(&d).into_owned();
-                    let p = path.clone();
-                    let h = tokio::task::spawn_blocking(move || highlight::highlight(&p, &text))
-                        .await
-                        .map_err(ApiError::internal)?;
-                    match h.language {
-                        Some(language) if h.highlighted => Some(HighlightedBlob {
-                            language,
-                            lines: h.lines,
-                        }),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
-            cache_put(&state, &key, &rendered).await;
-            rendered
-        }
-    };
+    let body = highlighted_blob(&state, access.repo.id, &sha, &path).await?;
     let body = body.ok_or(ApiError::NotFound)?;
     let mut resp = Response::new(Body::from(
         serde_json::to_vec(&body).map_err(ApiError::internal)?,
@@ -143,4 +104,52 @@ pub async fn code(Json(req): Json<CodeRequest>) -> ApiResult<Json<serde_json::Va
     .await
     .map_err(ApiError::internal)?;
     Ok(Json(serde_json::json!({ "blocks": out })))
+}
+
+/// Highlighted lines of blob `sha` (lowercase hex) as `path`, cached in
+/// Redis by blob SHA. `None` when no highlighter applies (unknown language,
+/// binary, LFS pointer, too large); `NotFound` when `sha` is not a blob.
+pub(crate) async fn highlighted_blob(
+    state: &AppState,
+    repo_id: i64,
+    sha: &str,
+    path: &str,
+) -> ApiResult<Option<HighlightedBlob>> {
+    let key = format!("render:{CACHE_VERSION}:{sha}:{path}");
+    if let Some(b) = cache_get::<Option<HighlightedBlob>>(state, &key).await {
+        return Ok(b);
+    }
+    let id = sha.to_string();
+    let data = crate::store(state)
+        .read(repo_id, move |r| {
+            match r.header(&id)? {
+                Some(("blob", size)) if size as usize <= highlight::MAX_HIGHLIGHT_BYTES => {}
+                Some(("blob", _)) => return Ok(None),
+                _ => return Err(bgh_git::GitError::NotFound(id)),
+            }
+            Ok(Some(r.blob(&id)?.data))
+        })
+        .await?;
+    let rendered = match data {
+        Some(d)
+            if !d.iter().take(8000).any(|&b| b == 0)
+                && bgh_git::lfs::parse_pointer(&d).is_none() =>
+        {
+            let text = String::from_utf8_lossy(&d).into_owned();
+            let p = path.to_string();
+            let h = tokio::task::spawn_blocking(move || highlight::highlight(&p, &text))
+                .await
+                .map_err(ApiError::internal)?;
+            match h.language {
+                Some(language) if h.highlighted => Some(HighlightedBlob {
+                    language,
+                    lines: h.lines,
+                }),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    cache_put(state, &key, &rendered).await;
+    Ok(rendered)
 }

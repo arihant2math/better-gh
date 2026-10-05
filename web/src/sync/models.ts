@@ -107,6 +107,15 @@ export interface Milestone {
 export type ReviewDecision = 'approved' | 'changes_requested' | 'review_required' | null;
 export type ChecksState = 'success' | 'failure' | 'pending' | 'neutral' | null;
 
+export type IssueTypeColor = 'gray' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'pink' | 'purple';
+
+/** Compact issue type embedded in the issue row. */
+export interface IssueTypeRef {
+  id: ID;
+  name: string;
+  color: IssueTypeColor | null;
+}
+
 export interface Issue {
   id: ID;
   repoId: ID;
@@ -114,6 +123,8 @@ export interface Issue {
   title: string;
   /** Lazy: `undefined` = not loaded yet (load via partial sync). */
   body?: string | null;
+  /** Lazy, sent with `body`: latest body edit (edit history, P42); `null` if never edited. */
+  bodyEditedAt?: Timestamp | null;
   state: 'open' | 'closed';
   stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
@@ -133,6 +144,16 @@ export interface Issue {
   pinned?: boolean;
   /** Pull requests that close this issue on merge (keyword or manual link; may be in other repos). */
   linkedPullIds?: ID[];
+  /** Organization issue type (P41). */
+  issueType?: IssueTypeRef | null;
+  /** Closed as a duplicate of this issue (may be in another repo). */
+  duplicateOfId?: ID | null;
+  /** Dependencies: issues blocking this one (may be in other repos). */
+  blockedByIds?: ID[];
+  /** How many of `blockedByIds` are open ("Blocked" badge). */
+  openBlockedBy?: number;
+  /** Issues this one blocks. */
+  blockingIds?: ID[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
@@ -181,9 +202,14 @@ export interface Comment {
   body: string;
   authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'NONE';
   reactions?: ReactionCounts;
+  /** Hidden by a triager (P42); `null`/absent when shown. */
+  minimizedReason?: MinimizedReason | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
+
+/** Why a comment was hidden (GraphQL `minimizedReason` spelling). */
+export type MinimizedReason = 'spam' | 'abuse' | 'off-topic' | 'outdated' | 'duplicate' | 'resolved';
 
 export interface Review {
   id: ID;
@@ -194,6 +220,7 @@ export interface Review {
   body: string;
   commitId: string;
   submittedAt: Timestamp | null;
+  minimizedReason?: MinimizedReason | null;
 }
 
 export type IssueEventType =
@@ -226,7 +253,16 @@ export type IssueEventType =
   | 'parent_issue_added'
   | 'parent_issue_removed'
   | 'connected'
-  | 'disconnected';
+  | 'disconnected'
+  | 'issue_type_added'
+  | 'issue_type_changed'
+  | 'issue_type_removed'
+  | 'blocked_by_added'
+  | 'blocked_by_removed'
+  | 'blocking_added'
+  | 'blocking_removed'
+  | 'marked_as_duplicate'
+  | 'unmarked_as_duplicate';
 
 export interface IssueEvent {
   id: ID;
@@ -259,6 +295,15 @@ export interface IssueEvent {
     parentIssueNumber?: number;
     parentIssueRepository?: string;
     fromRepository?: string;
+    /** issue_type_added / _changed / _removed. */
+    issueTypeName?: string;
+    issueTypeColor?: string;
+    prevIssueTypeName?: string;
+    prevIssueTypeColor?: string;
+    /** blocked_by_* / blocking_* (the other issue), (un)marked_as_duplicate and closed as duplicate (the original). */
+    otherIssueId?: ID;
+    otherIssueNumber?: number;
+    otherIssueRepository?: string;
   };
   createdAt: Timestamp;
 }
@@ -280,6 +325,7 @@ export interface Notification {
     | 'team_mention'
     | 'manual'
     | 'ci_activity'
+    | 'approval_requested'
     | 'security_alert';
   unread: boolean;
   updatedAt: Timestamp;
@@ -448,6 +494,7 @@ export interface ReviewComment {
   resolvedById: ID | null;
   diffHunk?: string;
   reactions?: ReactionCounts;
+  minimizedReason?: MinimizedReason | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -510,6 +557,17 @@ export interface CommitStatus {
   createdAt: Timestamp;
 }
 
+/** A file the viewer marked "Viewed" on a PR (private, `user:{id}` scope): viewed while the diff's blob is still `blobSha`. */
+export interface ViewedFile {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  userId: ID;
+  path: string;
+  blobSha: string;
+  updatedAt: Timestamp;
+}
+
 /** Model name → row type. Adding a synced model starts here (see docs/FRONTEND.md). */
 export interface ModelMap {
   user: User;
@@ -535,6 +593,7 @@ export interface ModelMap {
   checkSuite: CheckSuite;
   checkRun: CheckRun;
   commitStatus: CommitStatus;
+  viewedFile: ViewedFile;
 }
 
 export type ModelName = keyof ModelMap;

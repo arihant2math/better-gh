@@ -1,0 +1,10 @@
+[
+  {
+    "name": "main",
+    "commit": {
+      "sha": "{{SHA_MAIN}}",
+      "url": "https://api.github.com/repos/octo-org/pulls-demo/commits/{{SHA_MAIN}}"
+    },
+    "protected": true
+  }
+]

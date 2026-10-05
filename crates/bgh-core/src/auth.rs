@@ -259,6 +259,9 @@ pub async fn authenticate(
     if let Some(actor) = ctx.as_ref().and_then(crate::perms::job_token_actor) {
         crate::sync::context::note_actions_actor(actor);
     }
+    if let Some(ctx) = &ctx {
+        crate::observability::record_caller(ctx);
+    }
     Ok(ctx)
 }
 
@@ -299,6 +302,7 @@ async fn token_auth(state: &AppState, token: &str) -> ApiResult<AuthContext> {
     if row.expires_at.is_some_and(|e| e <= now) {
         return Err(ApiError::bad_credentials());
     }
+    let _ = TOKEN_EXPIRATION.try_with(|e| e.set(row.expires_at));
     // Touch last_used_at at most once a minute, off the request path.
     if row
         .last_used_at
@@ -629,7 +633,8 @@ async fn session_auth(state: &AppState, token: &str) -> ApiResult<Option<AuthCon
     let hash = crypto::sha256_hex(token);
     let key = state.redis_key(&format!("session:{hash}"));
     let mut redis = state.redis.clone();
-    let cached: Option<String> = redis.get(&key).await.unwrap_or(None);
+    let cached: Option<String> =
+        crate::observability::redis_result("session", redis.get(&key).await).unwrap_or(None);
     let (session_id, user_id) = match cached.as_deref().and_then(|v| v.split_once(':')) {
         Some((sid, uid)) => match (sid.parse::<i64>(), uid.parse::<i64>()) {
             (Ok(s), Ok(u)) => (s, u),
@@ -1032,9 +1037,21 @@ pub async fn csrf_middleware(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
+tokio::task_local! {
+    /// Expiry of the access token that authenticated the current request
+    /// (set by `token_auth` inside [`auth_headers_middleware`]).
+    static TOKEN_EXPIRATION: std::cell::Cell<Option<DateTime<Utc>>>;
+}
+
+/// `GitHub-Authentication-Token-Expiration` value (`2024-01-01 00:00:00 UTC`).
+pub fn token_expiration_header(at: DateTime<Utc>) -> String {
+    at.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+}
+
 /// Middleware: installs an [`AuthSlot`] and, after the handler ran, emits
 /// `X-OAuth-Scopes` for token-authenticated requests and
-/// `X-Accepted-OAuth-Scopes` for scope-gated endpoints (like GitHub).
+/// `X-Accepted-OAuth-Scopes` for scope-gated endpoints (like GitHub), and
+/// `GitHub-Authentication-Token-Expiration` for tokens that expire.
 pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
     let slot = AuthSlot::default();
     req.extensions_mut().insert(slot.clone());
@@ -1043,9 +1060,24 @@ pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .map(|c| c.0);
     let accepted = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let mut resp = PEER
-        .scope(peer, ACCEPTED_SCOPES.scope(accepted.clone(), next.run(req)))
+    let (mut resp, expiry) = TOKEN_EXPIRATION
+        .scope(
+            std::cell::Cell::new(None),
+            PEER.scope(
+                peer,
+                ACCEPTED_SCOPES.scope(accepted.clone(), async {
+                    let resp = next.run(req).await;
+                    (resp, TOKEN_EXPIRATION.with(|e| e.get()))
+                }),
+            ),
+        )
         .await;
+    if let Some(at) = expiry
+        && let Ok(v) = HeaderValue::from_str(&token_expiration_header(at))
+    {
+        resp.headers_mut()
+            .insert("github-authentication-token-expiration", v);
+    }
     if let Ok(wanted) = accepted.lock()
         && !wanted.is_empty()
         && let Ok(v) = HeaderValue::from_str(&accepted_scopes_header(&wanted))

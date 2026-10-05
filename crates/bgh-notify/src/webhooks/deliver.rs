@@ -286,6 +286,11 @@ async fn record(
         None => (None, None),
     };
     let ok = status == "OK";
+    bgh_core::observability::webhook_delivery(match (ok, code) {
+        (true, _) => "success",
+        (false, Some(_)) => "failure",
+        (false, None) => "error",
+    });
     let mut tx = state.db.begin().await?;
     sqlx::query(
         "UPDATE webhook_deliveries

@@ -279,7 +279,7 @@
 }
 
 /* ------------------------------------------------------------------ DiffView additions */
-.empty {
+.emptyState {
   padding: 32px;
   color: var(--fg-muted);
   text-align: center;
@@ -424,4 +424,315 @@
 
 .splitLine > .cell:nth-child(2) {
   border-right: 1px solid var(--border-subtle);
+}
+
+/* ------------------------------------------------------------------ P37: expansion, annotations, file actions, rich/image diffs */
+.hunkExpandable {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.hunkSplit.hunkExpandable {
+  grid-template-columns: 48px minmax(0, 1fr) 48px minmax(0, 1fr);
+}
+
+.expander {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-left: 4px;
+  min-height: 24px;
+}
+
+.expandBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--diff-hunk-fg);
+  cursor: pointer;
+}
+
+.expandBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.generated {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.fileActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fileAction {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.fileAction:hover {
+  background: var(--bg-hover, var(--bg-subtle));
+  color: var(--fg);
+}
+
+.richToggle,
+.richBar {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.richToggle button,
+.richBar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.richToggle button + button,
+.richBar button + button {
+  border-left: 1px solid var(--border);
+}
+
+.richToggle button[aria-pressed='true'],
+.richBar button[aria-pressed='true'] {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.annotations {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 4px 10px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.annotation {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.annotation_failure {
+  border-left-color: var(--danger);
+}
+
+.annotation_warning {
+  border-left-color: var(--warning);
+}
+
+.annotation_notice {
+  border-left-color: var(--accent);
+}
+
+.annotation_failure .annotationIcon {
+  color: var(--danger);
+}
+
+.annotation_warning .annotationIcon {
+  color: var(--warning);
+}
+
+.annotation_notice .annotationIcon {
+  color: var(--accent);
+}
+
+.annotationIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.annotationBody {
+  min-width: 0;
+  flex: 1;
+}
+
+.annotationHead {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.annotationLines {
+  margin-left: auto;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.annotationMessage {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.annotationBody pre {
+  overflow: auto;
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.rich,
+.imageDiff {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.richPanes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.richSplit {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.richPane {
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.richBefore {
+  border-top: 3px solid var(--danger);
+}
+
+.richAfter {
+  border-top: 3px solid var(--success);
+}
+
+.richLabel,
+.imageLabel {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.richNote {
+  color: var(--fg-muted);
+}
+
+.binarySizes {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.imageTwoUp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.imageFigure {
+  margin: 0;
+  text-align: center;
+}
+
+.imageFigure img {
+  max-width: 100%;
+  max-height: 480px;
+  border: 1px solid var(--border);
+  background: repeating-conic-gradient(var(--bg-subtle) 0 25%, var(--bg) 0 50%) 50% / 16px 16px;
+}
+
+.imageFigure figcaption {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.imageBefore img {
+  border-color: var(--danger);
+}
+
+.imageAfter img {
+  border-color: var(--success);
+}
+
+.imageStackWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.imageStack {
+  position: relative;
+  max-width: 100%;
+  min-width: 32px;
+  min-height: 32px;
+  background: repeating-conic-gradient(var(--bg-subtle) 0 25%, var(--bg) 0 50%) 50% / 16px 16px;
+}
+
+.imageStack > img {
+  display: block;
+  position: absolute;
+  inset: 0 auto auto 0;
+}
+
+.swipeAfter {
+  position: absolute;
+  inset: 0 0 0 auto;
+  overflow: hidden;
+  direction: rtl;
+}
+
+.swipeAfter img {
+  display: block;
+  max-width: none;
+}
+
+.swipeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.onionTop {
+  z-index: 1;
 }

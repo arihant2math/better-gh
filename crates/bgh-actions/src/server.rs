@@ -164,6 +164,7 @@ pub async fn try_acquire(state: &AppState, runner: &RunnerRow) -> anyhow::Result
                 .execute(&mut *tx)
                 .await?;
             checks::start_run(&mut tx, job.check_run_id).await?;
+            crate::gates::job_started(&mut tx, &job).await?;
             engine::sync_job(&mut tx, &job, SyncAction::Update).await?;
             let ev = engine::job_event(&mut tx, &job, "in_progress").await?;
             tx.emit(ev);
@@ -314,6 +315,8 @@ async fn prepare_spec(
     .await?;
     spec.runtime_token = crate::runtime::mint(state, job, expires.timestamp())
         .map_err(|e| anyhow::anyhow!("minting runtime token: {e}"))?;
+    spec.id_token_request_url =
+        crate::oidc::allowed(&permissions).then(|| crate::oidc::request_url(state));
     spec.token_permissions = permissions
         .iter()
         .map(|(c, a)| (c.as_str().to_string(), a.as_str().to_string()))
@@ -516,6 +519,7 @@ pub async fn finish_job_row(
             .await?;
     }
     checks::complete_run(tx, row.check_run_id, conclusion, summary, annotations).await?;
+    crate::gates::job_finished(tx, &job, conclusion).await?;
     if let Some(ev) = checks::check_run_event(row.repo_id, row.check_run_id, "completed", None) {
         tx.emit(ev);
     }

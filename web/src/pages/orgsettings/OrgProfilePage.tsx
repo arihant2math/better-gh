@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { mutate, refresh, useResource } from '../../api/cache';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime } from '../../components/admin/format';
 import { ErrorState, PageHeader, Panel, RadioCards, Switch, errorMessage, useConfirm } from '../../components/admin/kit';
-import { useParams } from '../../router';
+import { navigate, useParams } from '../../router';
+import { canonicalAccountUrl } from '../profile/canonical';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar, Tag } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -25,6 +26,7 @@ import {
   type OrgPatch,
 } from './api';
 import { useOrgAccess } from './common';
+import { OrgDangerZone } from './OrgDangerZone';
 import local from './OrgSettings.module.css';
 
 interface Form {
@@ -173,6 +175,14 @@ export default function OrgProfilePage() {
     'mod+s': { handler: () => void save(), description: 'Save changes', group: 'Organization' },
   });
 
+  // `GET /orgs/{old}` resolves a renamed organization: move to its current name.
+  const currentLogin = res.data?.login;
+  useEffect(() => {
+    if (!currentLogin) return;
+    const to = canonicalAccountUrl(window.location, org, currentLogin, 2);
+    if (to) navigate(to, { replace: true });
+  }, [currentLogin, org]);
+
   if (res.error && !res.data) {
     return (
       <div className={styles.page}>
@@ -242,7 +252,7 @@ export default function OrgProfilePage() {
                   {text('company', 'Company')}
                 </div>
               </div>
-              <AvatarEditor org={org} data={res.data!} readOnly={readOnly} />
+              {res.data && <AvatarEditor org={org} data={res.data} readOnly={readOnly} />}
             </div>
           </Panel>
 
@@ -366,6 +376,7 @@ export default function OrgProfilePage() {
           )}
         </form>
       )}
+      {access.isOwner && res.data && <OrgDangerZone org={res.data.login ?? org} />}
     </div>
   );
 }

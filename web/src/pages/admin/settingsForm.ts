@@ -5,7 +5,7 @@
  * per-section PATCH bodies.
  */
 import { fromLocalInput, toLocalInput } from '../../components/admin/format';
-import { REDACTED, type LdapSettings, type OidcProvider, type SamlSettings, type SiteSettings, type Visibility, type patchSettings } from './api';
+import { REDACTED, type LdapSettings, type OidcProvider, type SamlSettings, type SecretScanningSiteSettings, type SiteSettings, type Visibility, type patchSettings } from './api';
 
 /** Sections of the settings page (`git_maintenance` has its own page). */
 export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;
@@ -15,6 +15,7 @@ export const SECTIONS: { key: SectionKey; title: string; anchor: string }[] = [
   { key: 'repositories', title: 'Repositories', anchor: 'repositories' },
   { key: 'privacy', title: 'Privacy', anchor: 'privacy' },
   { key: 'git', title: 'Git pushes', anchor: 'git' },
+  { key: 'secret_scanning', title: 'Secret scanning', anchor: 'secret-scanning' },
   { key: 'organizations', title: 'Organizations', anchor: 'organizations' },
   { key: 'announcement', title: 'Announcement', anchor: 'announcement' },
   { key: 'rate_limits', title: 'Rate limits', anchor: 'rate-limits' },
@@ -116,6 +117,8 @@ export interface AuthForm {
   saml: SamlForm;
   /** `auth_providers.scim.enabled`. */
   scim: boolean;
+  /** Every account must use 2FA (P36). */
+  require_2fa: boolean;
 }
 
 export interface SettingsForm {
@@ -140,7 +143,17 @@ export interface SettingsForm {
   actions: SiteSettings['actions'];
   privacy: { private_mode: boolean; anonymous_directory: boolean; allowed: Visibility[] };
   markdown: SiteSettings['markdown'];
+  secret_scanning: { available: boolean; enable_all: boolean; push_protection_all: boolean; max_blob_kb: string; push_scan_timeout_secs: string };
 }
+
+/** Server defaults of the `secret_scanning` section (used when an older server omits it). */
+export const SECRET_SCANNING_DEFAULTS: SecretScanningSiteSettings = {
+  available: true,
+  enable_all: false,
+  push_protection_all: false,
+  max_blob_kb: 1024,
+  push_scan_timeout_secs: 20,
+};
 
 /** Retention windows (days); off = keep forever (0 in the API). */
 export const RETENTION_WINDOWS = ['notifications_days', 'webhook_payload_days', 'webhook_delivery_days', 'activity_days'] as const;
@@ -319,6 +332,7 @@ export function toForm(s: SiteSettings): SettingsForm {
       ldap: ldapToForm(s.auth_providers.ldap),
       saml: samlToForm(s.auth_providers.saml ?? SAML_DEFAULTS),
       scim: s.auth_providers.scim?.enabled ?? false,
+      require_2fa: s.auth_providers.require_2fa ?? false,
     },
     smtp: {
       enabled: s.smtp.enabled,
@@ -354,6 +368,17 @@ export function toForm(s: SiteSettings): SettingsForm {
       allowed: VISIBILITIES.filter((v) => (s.privacy?.allowed_visibilities ?? VISIBILITIES).includes(v)),
     },
     markdown: { ...(s.markdown ?? { image_proxy: true }) },
+    secret_scanning: secretScanningToForm(s.secret_scanning ?? SECRET_SCANNING_DEFAULTS),
+  };
+}
+
+function secretScanningToForm(ss: SecretScanningSiteSettings): SettingsForm['secret_scanning'] {
+  return {
+    available: ss.available,
+    enable_all: ss.enable_all,
+    push_protection_all: ss.push_protection_all,
+    max_blob_kb: String(ss.max_blob_kb),
+    push_scan_timeout_secs: String(ss.push_scan_timeout_secs),
   };
 }
 
@@ -468,6 +493,10 @@ export function validate(f: SettingsForm): Errors {
   const { max_object: max, warn_object: warn } = f.git;
   if (max.on && warn.on && !e['git.max_object'] && !e['git.warn_object'] && Number(warn.mb) >= Number(max.mb))
     e['git.warn_object'] = 'The warning size must be below the maximum file size.';
+  const ss = f.secret_scanning;
+  if (!POSITIVE_INT.test(ss.max_blob_kb.trim()) || Number(ss.max_blob_kb) > 1_048_576) e['secret_scanning.max_blob_kb'] = 'Enter a whole number of kilobytes between 1 and 1048576.';
+  if (!POSITIVE_INT.test(ss.push_scan_timeout_secs.trim()) || Number(ss.push_scan_timeout_secs) > 600)
+    e['secret_scanning.push_scan_timeout_secs'] = 'Enter a whole number of seconds between 1 and 600.';
   if (f.privacy.allowed.length === 0) e['privacy.allowed'] = 'Allow at least one visibility.';
   else if (!f.privacy.allowed.includes(f.repositories.default_visibility))
     e['privacy.allowed'] = `The default visibility (${f.repositories.default_visibility}, under Repositories) must be allowed. Allow it or change the default.`;
@@ -579,6 +608,7 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
       case 'auth_providers':
         out.auth_providers = {
           password_login: f.auth_providers.password_login,
+          require_2fa: f.auth_providers.require_2fa,
           password_login_admin_exempt: f.auth_providers.password_login_admin_exempt,
           ldap: ldapValue(f.auth_providers.ldap),
           saml: samlValue(f.auth_providers.saml),
@@ -631,6 +661,15 @@ export function toPatch(f: SettingsForm, keys: SectionKey[]): Patch {
         break;
       case 'actions':
         out.actions = { ...f.actions };
+        break;
+      case 'secret_scanning':
+        out.secret_scanning = {
+          available: f.secret_scanning.available,
+          enable_all: f.secret_scanning.enable_all,
+          push_protection_all: f.secret_scanning.push_protection_all,
+          max_blob_kb: Number(f.secret_scanning.max_blob_kb),
+          push_scan_timeout_secs: Number(f.secret_scanning.push_scan_timeout_secs),
+        };
         break;
       case 'privacy':
         out.privacy = {

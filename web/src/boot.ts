@@ -9,6 +9,8 @@ export interface BootUser {
   avatarUrl: string;
   /** Site administrator (optional; fetched from `/api/v3/user` when absent). */
   siteAdmin?: boolean;
+  /** The site requires 2FA and this account has none (P36): only setup is allowed. */
+  twoFactorSetupRequired?: boolean;
 }
 
 export interface BootData {

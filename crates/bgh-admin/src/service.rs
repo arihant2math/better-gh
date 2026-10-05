@@ -7,7 +7,6 @@ use axum::http::HeaderMap;
 use bgh_core::audit::Target;
 use bgh_core::prelude::*;
 use bgh_core::sync;
-use bgh_repos::jobs::DeleteStorage;
 use serde_json::json;
 
 use crate::common::{self, account_target, log, login_taken, repo_target};
@@ -109,32 +108,9 @@ pub async fn rename_account(
         return Ok(account.clone());
     }
     let mut tx = Tx::begin(state).await?;
-    let renamed: db::User = sqlx::query_as(&format!(
-        "UPDATE users SET login = $2, updated_at = now() WHERE id = $1 RETURNING {}",
-        db::User::COLUMNS
-    ))
-    .bind(account.id)
-    .bind(new_login)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(login_taken(resource))?;
-    let repos: Vec<db::Repository> = sqlx::query_as(&format!(
-        "SELECT {} FROM repositories WHERE owner_id = $1",
-        db::Repository::COLUMNS
-    ))
-    .bind(account.id)
-    .fetch_all(&mut *tx)
-    .await?;
-    for repo in &repos {
-        tx.sync_model(SyncModel::Repo, repo.id, SyncAction::Update)
-            .await?;
-    }
-    if renamed.is_org() {
-        tx.sync_model(SyncModel::Org, renamed.id, SyncAction::Update)
-            .await?;
-    } else {
-        tx.sync_user(renamed.id).await?;
-    }
+    // Redirects for the old login and every owned repository, login
+    // reservation and sync (bgh_core::lifecycle).
+    let renamed = bgh_core::lifecycle::rename_account_in(&mut tx, account, new_login).await?;
     let action = if renamed.is_org() {
         "org.rename"
     } else {
@@ -209,45 +185,15 @@ pub async fn transfer_repo_in(
     Ok(moved)
 }
 
-/// Delete a repository row now and its storage in a job.
+/// Soft-delete a repository (restorable for 90 days; storage is purged by
+/// bgh-repos `repos.purge_deleted`).
 pub async fn delete_repo_in(
     tx: &mut Tx,
     actor: &AuthContext,
     owner: &db::User,
     repo: &db::Repository,
 ) -> ApiResult<()> {
-    // Direct forks borrow objects via alternates; the storage job makes them
-    // self-contained before removing the directory.
-    let forks: Vec<i64> = sqlx::query_scalar("SELECT id FROM repositories WHERE parent_id = $1")
-        .bind(repo.id)
-        .fetch_all(&mut **tx)
-        .await?;
-    sqlx::query("DELETE FROM repositories WHERE id = $1")
-        .bind(repo.id)
-        .execute(&mut **tx)
-        .await?;
-    if let Some(parent) = repo.parent_id {
-        sqlx::query(
-            "UPDATE repositories SET forks_count = greatest(forks_count - 1, 0) WHERE id = $1",
-        )
-        .bind(parent)
-        .execute(&mut **tx)
-        .await?;
-    }
-    tx.sync_delete(&sync::repo_scope(repo.id), SyncModel::Repo, repo.id)
-        .await?;
-    tx.enqueue(&DeleteStorage {
-        repo_id: repo.id,
-        forks,
-    })
-    .await?;
-    tx.emit(Event::RepositoryDeleted {
-        repo_id: repo.id,
-        owner_id: owner.id,
-        full_name: format!("{}/{}", owner.login, repo.name),
-        actor_id: actor.user.id,
-    });
-    Ok(())
+    bgh_core::lifecycle::soft_delete_repo_in(tx, actor.user.id, owner, repo).await
 }
 
 /// Delete a user or organization. Authored content (issues, comments,

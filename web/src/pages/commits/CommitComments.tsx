@@ -4,8 +4,9 @@
  * resource (`api/commitComments`) patched in place after each write.
  * Reuses the PR review-thread look (`pulls/Review.module.css`).
  */
+import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { mutate, useResource } from '../../api/cache';
 import {
   COMMIT_REACTIONS,
@@ -18,16 +19,18 @@ import {
   type CommitComment,
   type CommitReactionContent,
 } from '../../api/commitComments';
+import { minimizedStates, setMinimizedRest } from '../../api/moderation';
 import { session } from '../../app/session';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import type { DiffAnnotations, LineSelection } from '../../components/diff/DiffView';
 import { MarkdownEditor } from '../../components/editor/MarkdownEditor';
-import type { Repo } from '../../sync/models';
-import { canWrite } from '../../sync/selectors';
+import type { MinimizedReason, Repo } from '../../sync/models';
+import { canAdmin, reasonLabel } from '../../sync/moderation';
+import { canTriage, canWrite } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { IconButton, cx } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
-import { CopyIcon, KebabHorizontalIcon, PencilIcon, SmileyIcon, TrashIcon } from '../../ui/icons';
+import { CopyIcon, EyeClosedIcon, EyeIcon, KebabHorizontalIcon, PencilIcon, SmileyIcon, TrashIcon, TriangleDownIcon } from '../../ui/icons';
 import { Markdown } from '../../ui/Markdown';
 import { Menu } from '../../ui/Menu';
 import { Popover } from '../../ui/Popover';
@@ -47,6 +50,41 @@ const EMOJI: Record<CommitReactionContent, string> = {
   eyes: '👀',
 };
 
+// Moderation (P42): lazily loaded edit history / hide dialog.
+const EditHistory = lazy(() => import('../issues/Moderation').then((m) => ({ default: m.EditHistory })));
+const HideDialog = lazy(() => import('../issues/Moderation').then((m) => ({ default: m.HideDialog })));
+
+/** Hidden states of loaded commit comments (not part of GitHub's REST shape). */
+const hiddenReasons = observable.map<number, string>();
+
+function useHiddenStates(repo: Repo, comments: CommitComment[] | undefined) {
+  const ids = (comments ?? []).map((c) => c.id).join(',');
+  useEffect(() => {
+    if (!ids) return;
+    const list = ids.split(',').map(Number);
+    minimizedStates(repo.owner, repo.name, 'commit_comment', list).then(
+      (states) =>
+        runInAction(() => {
+          for (const id of list) hiddenReasons.delete(id);
+          for (const st of states) if (st.minimizedReason) hiddenReasons.set(st.id, st.minimizedReason);
+        }),
+      () => undefined,
+    );
+  }, [repo.owner, repo.name, ids]);
+}
+
+async function setHidden(repo: Repo, c: CommitComment, reason: MinimizedReason | null) {
+  try {
+    await setMinimizedRest(repo.owner, repo.name, 'commit_comment', c.id, reason);
+    runInAction(() => {
+      if (reason) hiddenReasons.set(c.id, reason);
+      else hiddenReasons.delete(c.id);
+    });
+  } catch (e) {
+    toast({ kind: 'error', title: reason ? 'Couldn’t hide the comment' : 'Couldn’t unhide the comment', description: errorText(e) });
+  }
+}
+
 /** Reactions the viewer toggled this session (`{id}:{content}`); the REST list has no "viewer reacted" flag. */
 const myReactions = new Set<string>();
 
@@ -55,6 +93,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined);
 function useComments(repo: Repo, sha: string | undefined) {
   const key = sha ? commitCommentKeys.forCommit(repo.owner, repo.name, sha) : null;
   const res = useResource<CommitComment[]>(key, () => listCommitComments(repo.owner, repo.name, sha!));
+  useHiddenStates(repo, res.data);
   return { key, ...res };
 }
 
@@ -144,6 +183,13 @@ const CommentItem = observer(function CommentItem({ comment: c, repo, act, compa
   const full = `${repo.owner}/${repo.name}`;
   const anchor = `commitcomment-${c.id}`;
   const user = c.user ? { login: c.user.login, avatarUrl: c.user.avatar_url } : null;
+  const hiddenReason = hiddenReasons.get(c.id);
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyRef = useRef<HTMLButtonElement>(null);
+  const collapsed = !!hiddenReason && !showHidden && editing === null;
+  const triage = !!viewer && canTriage(repo.id);
   return (
     <div className={cx(review.comment, !compact && styles.timelineComment)} id={anchor} data-comment-id={c.id}>
       <Avatar user={user} size={compact ? 24 : 32} />
@@ -154,8 +200,20 @@ const CommentItem = observer(function CommentItem({ comment: c, repo, act, compa
             <a href={`#${anchor}`} className={styles.timeLink}>
               <RelativeTime date={c.created_at} />
             </a>
-            {c.updated_at !== c.created_at && ' · edited'}
           </span>
+          {c.updated_at !== c.created_at && (
+            <button ref={historyRef} type="button" className={review.editedButton} aria-expanded={historyOpen} aria-haspopup="dialog" onClick={() => setHistoryOpen((o) => !o)}>
+              edited <TriangleDownIcon size={12} />
+            </button>
+          )}
+          {hiddenReason && (
+            <span className={review.minimizedNote}>
+              · Marked as {reasonLabel(hiddenReason)}.{' '}
+              <button type="button" className={review.linkButton} onClick={() => setShowHidden((v) => !v)} aria-expanded={!collapsed}>
+                {collapsed ? 'Show comment' : 'Hide comment'}
+              </button>
+            </span>
+          )}
           {c.author_association && c.author_association !== 'NONE' && <span className={review.chip}>{c.author_association.toLowerCase()}</span>}
           <span className={review.spacer} />
           <IconButton ref={menuRef} icon={KebabHorizontalIcon} label="Comment actions" size="sm" onClick={() => setMenu((o) => !o)} />
@@ -167,11 +225,34 @@ const CommentItem = observer(function CommentItem({ comment: c, repo, act, compa
             items={[
               { id: 'copy', label: 'Copy link', icon: CopyIcon, onSelect: () => void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#${anchor}`) },
               ...(mine ? [{ id: 'edit', label: 'Edit', icon: PencilIcon, onSelect: () => setEditing(c.body) }] : []),
+              ...(triage
+                ? [
+                    hiddenReason
+                      ? { id: 'unhide', label: 'Unhide', icon: EyeIcon, onSelect: () => void setHidden(repo, c, null) }
+                      : { id: 'hide', label: 'Hide', icon: EyeClosedIcon, onSelect: () => setHiding(true) },
+                  ]
+                : []),
               ...(mine || writable ? [{ separator: true as const, id: 's' }, { id: 'delete', label: 'Delete', icon: TrashIcon, danger: true, onSelect: () => setConfirm(true) }] : []),
             ]}
           />
         </div>
-        {editing !== null ? (
+        {historyOpen && (
+          <Suspense fallback={null}>
+            <EditHistory
+              target={{ owner: repo.owner, repo: repo.name, kind: 'commit_comment', id: c.id, canDelete: mine || canAdmin(repo.id) }}
+              anchor={historyRef}
+              onClose={() => setHistoryOpen(false)}
+              authorLogin={c.user?.login ?? 'ghost'}
+              createdAt={c.created_at}
+            />
+          </Suspense>
+        )}
+        {hiding && (
+          <Suspense fallback={null}>
+            <HideDialog onClose={() => setHiding(false)} onHide={(reason) => void setHidden(repo, c, reason)} />
+          </Suspense>
+        )}
+        {collapsed ? null : editing !== null ? (
           <MarkdownEditor
             value={editing}
             onChange={setEditing}
@@ -192,7 +273,7 @@ const CommentItem = observer(function CommentItem({ comment: c, repo, act, compa
         ) : (
           <Markdown source={c.body} repo={full} />
         )}
-        <Reactions comment={c} act={act} signedIn={!!viewer} />
+        {!collapsed && <Reactions comment={c} act={act} signedIn={!!viewer} />}
       </div>
       <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={() => void act.remove(c)} title="Delete comment?">
         Are you sure you want to delete this comment?

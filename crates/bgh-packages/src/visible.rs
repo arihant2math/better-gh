@@ -100,7 +100,7 @@ pub async fn list(
 
 /// Owner by login (users and organizations).
 pub async fn owner(state: &AppState, login: &str) -> ApiResult<db::User> {
-    db::User::find_by_login(&state.db, login)
+    bgh_core::lifecycle::resolve_owner(&state.db, login)
         .await?
         .ok_or(bgh_core::ApiError::NotFound)
 }

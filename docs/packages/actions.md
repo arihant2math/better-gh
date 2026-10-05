@@ -77,7 +77,8 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   …/runs/{id}`, `GET …/attempts/{n}`, `GET …/attempts/{n}/jobs`,
   `GET …/attempts/{n}/logs`, `POST …/cancel` (202), `POST …/force-cancel`,
   `POST …/rerun` (201), `POST …/rerun-failed-jobs`, `GET …/jobs?filter=`,
-  `GET|DELETE …/logs` (302 → zip), `GET …/artifacts`, `GET …/pending_deployments` (`[]`).
+  `GET|DELETE …/logs` (302 → zip), `GET …/artifacts`, `GET|POST …/pending_deployments` and `GET …/approvals`
+  (P20, see `docs/packages/p20-environment-protection.md`).
 * Jobs: `GET /repos/{o}/{r}/actions/jobs/{id}`, `GET …/logs` (302 → text),
   `POST …/rerun`.
 * Artifacts: `GET /repos/{o}/{r}/actions/artifacts?name=`, `GET|DELETE
@@ -89,10 +90,12 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
   `{name}/repositories[/{repo_id}]`).
 * Variables: same three levels (`/actions/variables`, `…/organization-variables`,
   `/environments/{env}/variables`, `/orgs/{org}/actions/variables…`).
+* Environments with protection rules (P20): `GET /repos/{o}/{r}/environments`,
+  `GET|PUT|DELETE …/environments/{name}` (`wait_timer`, `reviewers`,
+  `prevent_self_review`, `deployment_branch_policy`, `can_admins_bypass`),
+  `…/environments/{name}/deployment-branch-policies[/{id}]`.
 * Reusable workflow access: `GET|PUT /repos/{o}/{r}/actions/permissions/access`
   (`access_level` none/user/organization/enterprise).
-* Environments (minimal, no protection rules): `GET /repos/{o}/{r}/environments`,
-  `GET|PUT|DELETE …/environments/{name}`.
 * Runners: repo and org — `GET …/actions/runners`, `GET …/runners/downloads`
   (`[]`), `POST …/registration-token`, `POST …/remove-token`, `GET|DELETE
   …/runners/{id}`, labels `GET|POST|PUT|DELETE …/{id}/labels`, `DELETE
@@ -175,7 +178,8 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).
-* Usage/billing, OIDC tokens not implemented.
+* Usage/billing not implemented. OIDC id-tokens: see
+  `docs/packages/p28-actions-oidc.md` and `docs/ACTIONS_OIDC.md`.
 * Runner: upload-artifact ignores `overwrite`/`compression-level`/`pattern`;
   checkout ignores `submodules`/`lfs`; masking does not cover encoded forms
   of secrets; docker actions ignore `pre-entrypoint`; `docker login` for

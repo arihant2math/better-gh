@@ -338,6 +338,19 @@ pub async fn update(
         }
     }
     validate(&typed)?;
+    // Requiring 2FA site-wide: the admin turning it on must have it (P36).
+    if typed.auth_providers.require_2fa
+        && current.pointer("/auth_providers/require_2fa") != Some(&Value::Bool(true))
+        && bgh_core::two_factor::enabled_at(&mut *tx, auth.user.id)
+            .await?
+            .is_none()
+    {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "auth_providers.require_2fa",
+            "enable two-factor authentication on your own account before requiring it",
+        )));
+    }
     let normalized = serde_json::to_value(&typed)?;
     for key in body.keys() {
         // Store only the fields set (normalized), not the defaults.

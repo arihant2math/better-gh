@@ -51,6 +51,10 @@ pub struct StoredJob {
     /// takes the site default when the token is minted.
     #[serde(default)]
     pub permissions: Option<crate::workflow::Permissions>,
+    /// Raw `environment.url` (evaluated when the job completes, for its
+    /// deployment status).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_url: Option<String>,
     /// Secret layers of the reusable workflow calls leading to this job
     /// (empty for jobs of the run's own workflow).
     #[serde(default)]
@@ -843,7 +847,20 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
                 && (r.status == "in_progress"
                     || (r.status == "completed" && r.conclusion.as_deref() != Some("skipped")))
         });
-        let status = if started { "in_progress" } else { "queued" };
+        // A job waiting for an environment's protection rules makes the
+        // run `waiting` while nothing else is queued or running.
+        let waiting = rows.iter().any(|r| r.status == "waiting")
+            && !rows
+                .iter()
+                .any(|r| !r.is_call() && matches!(r.status.as_str(), "queued" | "in_progress"));
+        let status = if waiting {
+            "waiting"
+        } else if started {
+            "in_progress"
+        } else {
+            "queued"
+        };
+        let suite_status = if started { "in_progress" } else { "queued" };
         if run.status != status {
             run = sqlx::query_as(&format!(
                 "UPDATE actions_runs SET status = $2, updated_at = now(),
@@ -855,7 +872,7 @@ pub async fn advance_run(state: &AppState, run_id: i64) -> anyhow::Result<()> {
             .bind(status)
             .fetch_one(&mut *tx)
             .await?;
-            checks::set_suite_status(&mut tx, run.check_suite_id, status, None).await?;
+            checks::set_suite_status(&mut tx, run.check_suite_id, suite_status, None).await?;
             sync_run(&mut tx, &run).await?;
             if status == "in_progress" {
                 let ev = run_event(state, &mut tx, &run, "in_progress").await?;
@@ -1084,6 +1101,7 @@ async fn cancel_one(tx: &mut Tx, rows: &mut [JobRow], id: i64) -> anyhow::Result
     .await?;
     if !row.is_call() {
         if row.status == "completed" && row.conclusion.as_deref() == Some("cancelled") {
+            crate::gates::job_finished(tx, &row, "cancelled").await?;
             checks::complete_run(tx, row.check_run_id, "cancelled", None, &[]).await?;
             if let Some(ev) =
                 checks::check_run_event(row.repo_id, row.check_run_id, "completed", None)
@@ -1186,6 +1204,11 @@ async fn materialize(
     let mut github = context::github_context(state, run, &info, Some(key));
     if let Some(sha) = &scope.job_workflow_sha {
         github["job_workflow_sha"] = json!(sha);
+        // The called workflow (the OIDC `job_workflow_ref` claim).
+        github["job_workflow_ref"] = json!(format!(
+            "{}/{}@{}",
+            scope.source.full_name, scope.path, scope.source.git_ref
+        ));
     }
     let full_key = scope.key(key);
     let needs = scope.results(&job.needs, rows);
@@ -1377,14 +1400,27 @@ async fn materialize(
             .filter(|t| *t > 0)
             .unwrap_or(DEFAULT_TIMEOUT_MINUTES);
         let continue_on_error = eval_bool(&job.continue_on_error, &ctx, false);
-        let environment = job.environment.as_ref().and_then(|e| {
-            let v = expr::evaluate_value(e, &ctx).ok()?;
-            match v {
-                Value::String(s) => Some(s),
-                Value::Object(o) => o.get("name").and_then(|n| n.as_str()).map(String::from),
-                _ => None,
-            }
-        });
+        // `environment: name` or `{name, url}`; the url may use step
+        // outputs, so it is kept raw and evaluated when the job completes.
+        let (environment, environment_url) = match &job.environment {
+            Some(Value::Object(o)) => (
+                o.get("name")
+                    .and_then(|n| expr::evaluate_value(n, &ctx).ok())
+                    .map(|v| expr::to_display_string(&v)),
+                o.get("url").and_then(|u| u.as_str()).map(String::from),
+            ),
+            Some(e) => (
+                expr::evaluate_value(e, &ctx)
+                    .ok()
+                    .filter(|v| !v.is_null())
+                    .map(|v| expr::to_display_string(&v)),
+                None,
+            ),
+            None => (None, None),
+        };
+        let environment = environment
+            .map(|e| e.trim().to_string())
+            .filter(|e| !e.is_empty());
         let def = &scope.def;
         let defaults = job
             .defaults
@@ -1430,9 +1466,10 @@ async fn materialize(
             steps: job.steps.clone(),
             outputs: job.outputs.clone(),
             timeout_minutes: timeout as u64,
-            environment,
+            environment: environment.clone(),
             token_permissions: IndexMap::new(),
             runtime_token: String::new(),
+            id_token_request_url: None,
         };
         let stored = StoredJob {
             spec,
@@ -1441,10 +1478,43 @@ async fn materialize(
             container: job.container.clone(),
             services: job.services.clone(),
             permissions: job.permissions.clone().or_else(|| def.permissions.clone()),
+            environment_url,
             secret_layers: scope.secret_layers.clone(),
             permission_caps: scope.permission_caps.clone(),
         };
-        let status = if over_limit { "pending" } else { "queued" };
+        let mut status = if over_limit { "pending" } else { "queued" };
+        // Environment protection rules (branch policy, timer, reviewers).
+        let gate = match &environment {
+            Some(env) => Some(crate::gates::job_gate(state, tx, run, &data.repo, env).await?),
+            None => None,
+        };
+        match &gate {
+            Some(crate::gates::Gate::Blocked { message }) => {
+                let row = insert_job(
+                    tx,
+                    run,
+                    data,
+                    &full_key,
+                    &name,
+                    combo.map(Value::Object),
+                    "completed",
+                    Some("failure"),
+                    &labels,
+                    Some(serde_json::to_value(&stored)?),
+                    continue_on_error,
+                    timeout,
+                    &[],
+                )
+                .await?;
+                crate::logs::append(state, row.id, 1, &format!("##[error]{message}"))
+                    .await
+                    .ok();
+                out.push(row);
+                continue;
+            }
+            Some(crate::gates::Gate::Wait { .. }) => status = "waiting",
+            _ => {}
+        }
         let steps = initial_steps(&job.steps);
         let mut row = insert_job(
             tx,
@@ -1462,6 +1532,14 @@ async fn materialize(
             &steps,
         )
         .await?;
+        if let (Some(env), Some(gate)) = (&environment, &gate) {
+            crate::gates::job_created(state, tx, run, &data.repo, &data.owner, &row, env, gate)
+                .await?;
+            if status == "waiting" {
+                let ev = job_event(tx, &row, "waiting").await?;
+                tx.emit(ev);
+            }
+        }
         if let Some(conc) = &job.concurrency {
             let group = expr::interpolate(&conc.group, &ctx).unwrap_or_else(|_| conc.group.clone());
             let cancel_in_progress = eval_bool(&conc.cancel_in_progress, &ctx, false);

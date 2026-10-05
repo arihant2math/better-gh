@@ -72,7 +72,7 @@ const Crumbs = observer(function Crumbs() {
         const ms = repo ? milestoneByNumber(repo.id, Number(p.number)) : undefined;
         parts.push({ to: `${base}/milestone/${p.number}`, label: ms?.title ?? `#${p.number}` });
       } else if (p.number) {
-        const issue = repo ? issueByNumber(repo.id, Number(p.number)) : undefined;
+        const issue = repo && section !== 'security' ? issueByNumber(repo.id, Number(p.number)) : undefined;
         parts.push({ to: pathname, label: issue ? `#${issue.number} ${issue.title}` : `#${p.number}` });
       } else if (section === 'issues' && pathname.split('/')[4] === 'new') {
         parts.push({ to: pathname, label: 'New issue' });

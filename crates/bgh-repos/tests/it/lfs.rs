@@ -496,6 +496,14 @@ async fn raw_resolves_pointers_and_gc() {
         store.size(&oid).await.is_some(),
         "grace period protects new objects"
     );
+    // Kept while the repository is restorable, collected once purged.
+    assert_eq!(
+        bgh_repos::lfs::gc::collect(&app.state, Duration::ZERO)
+            .await
+            .unwrap(),
+        0
+    );
+    app.purge_deleted_repos().await;
     let removed = bgh_repos::lfs::gc::collect(&app.state, Duration::ZERO)
         .await
         .unwrap();

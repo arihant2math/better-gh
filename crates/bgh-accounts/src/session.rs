@@ -242,13 +242,16 @@ pub struct TwoFactorBody {
     pub code: String,
 }
 
-/// Check the second factor of a pending login; returns the user and
-/// consumes the pending login on success.
-pub async fn verify_pending_two_factor(
-    state: &AppState,
-    token: &str,
-    code: &str,
-) -> ApiResult<db::User> {
+/// A pending login waiting for its second factor (see [`after_first_factor`]).
+pub struct PendingLogin {
+    pub user_id: i64,
+    /// sha256 of the pending-login token.
+    pub hash: String,
+    key: String,
+}
+
+/// Resolve a pending-login token; 401 when it expired.
+pub async fn pending_login(state: &AppState, token: &str) -> ApiResult<PendingLogin> {
     let hash = crypto::sha256_hex(token.trim());
     let key = state.redis_key(&format!("2fa_pending:{hash}"));
     let mut redis = state.redis.clone();
@@ -257,37 +260,69 @@ pub async fn verify_pending_two_factor(
         message: "Two-factor login expired. Please sign in again.".into(),
         www_authenticate: None,
     })?;
-    let attempts =
-        ratelimit::hit(state, &format!("2fa_attempts:{hash}"), PENDING_2FA_TTL_SECS).await?;
-    if attempts > MAX_2FA_ATTEMPTS {
-        let _: Result<(), _> = redis.del(&key).await;
-        return Err(too_many(
-            "Too many two-factor attempts. Please sign in again.",
-        ));
+    Ok(PendingLogin { user_id, hash, key })
+}
+
+impl PendingLogin {
+    /// Count a second-factor attempt; 429 (and the pending login is
+    /// dropped) after [`MAX_2FA_ATTEMPTS`].
+    pub async fn count_attempt(&self, state: &AppState) -> ApiResult<()> {
+        let attempts = ratelimit::hit(
+            state,
+            &format!("2fa_attempts:{}", self.hash),
+            PENDING_2FA_TTL_SECS,
+        )
+        .await?;
+        if attempts > MAX_2FA_ATTEMPTS {
+            let mut redis = state.redis.clone();
+            let _: Result<(), _> = redis.del(&self.key).await;
+            return Err(too_many(
+                "Too many two-factor attempts. Please sign in again.",
+            ));
+        }
+        Ok(())
     }
-    if !twofa::verify_second_factor(state, user_id, code).await? {
+
+    /// The second factor was verified: consume the pending login and
+    /// return the user (403 when suspended meanwhile).
+    pub async fn complete(self, state: &AppState) -> ApiResult<db::User> {
+        let mut redis = state.redis.clone();
+        let _: Result<(), _> = redis.del(&self.key).await;
+        let user = db::User::find(&state.db, self.user_id)
+            .await?
+            .ok_or_else(ApiError::bad_credentials)?;
+        if user.is_suspended() {
+            audit::log_with_ip(
+                &state.db,
+                Some(&user),
+                "user.failed_login",
+                audit::Target::User(user.id),
+                json!({ "reason": "suspended" }),
+                None,
+            )
+            .await?;
+            return Err(ApiError::forbidden("Sorry. Your account was suspended."));
+        }
+        Ok(user)
+    }
+}
+
+/// Check the second factor of a pending login; returns the user and
+/// consumes the pending login on success.
+pub async fn verify_pending_two_factor(
+    state: &AppState,
+    token: &str,
+    code: &str,
+) -> ApiResult<db::User> {
+    let pending = pending_login(state, token).await?;
+    pending.count_attempt(state).await?;
+    if !twofa::verify_second_factor(state, pending.user_id, code).await? {
         return Err(ApiError::Unauthorized {
             message: "Two-factor authentication failed.".into(),
             www_authenticate: None,
         });
     }
-    let _: Result<(), _> = redis.del(&key).await;
-    let user = db::User::find(&state.db, user_id)
-        .await?
-        .ok_or_else(ApiError::bad_credentials)?;
-    if user.is_suspended() {
-        audit::log_with_ip(
-            &state.db,
-            Some(&user),
-            "user.failed_login",
-            audit::Target::User(user.id),
-            json!({ "reason": "suspended" }),
-            None,
-        )
-        .await?;
-        return Err(ApiError::forbidden("Sorry. Your account was suspended."));
-    }
-    Ok(user)
+    pending.complete(state).await
 }
 
 /// `POST /_bgh/session/two_factor {two_factor_token, code}` → 200 + cookie.

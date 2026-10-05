@@ -79,6 +79,8 @@ pub struct GitHub {
     token: Option<String>,
     policy: ssrf::Policy,
     clients: Mutex<HashMap<String, reqwest::Client>>,
+    /// GitLab REST API v4: the token goes in `PRIVATE-TOKEN` (P51).
+    pub gitlab: bool,
     /// Requests sent / answered from cache (304), for logs and tests.
     pub requests: AtomicU64,
     pub not_modified: AtomicU64,
@@ -111,6 +113,7 @@ impl GitHub {
             token: token.filter(|t| !t.is_empty()),
             policy,
             clients: Mutex::new(HashMap::new()),
+            gitlab: false,
             requests: AtomicU64::new(0),
             not_modified: AtomicU64::new(0),
         })
@@ -212,7 +215,11 @@ impl GitHub {
                 if let Some(t) = &self.token
                     && self.authorized(&parsed)
                 {
-                    req = req.header(AUTHORIZATION, format!("Bearer {t}"));
+                    req = if self.gitlab {
+                        req.header("PRIVATE-TOKEN", t.as_str())
+                    } else {
+                        req.header(AUTHORIZATION, format!("Bearer {t}"))
+                    };
                 }
                 if let Some(e) = etag
                     && hops == 0
@@ -283,8 +290,12 @@ impl GitHub {
         if let Some(secs) = header("retry-after") {
             return Some(Duration::from_secs(secs.clamp(1, 24 * 3600) as u64));
         }
-        if header("x-ratelimit-remaining") == Some(0) {
-            let reset = header("x-ratelimit-reset").unwrap_or(0);
+        // GitHub `X-RateLimit-*`, GitLab `RateLimit-*`.
+        let remaining = header("x-ratelimit-remaining").or_else(|| header("ratelimit-remaining"));
+        if remaining == Some(0) {
+            let reset = header("x-ratelimit-reset")
+                .or_else(|| header("ratelimit-reset"))
+                .unwrap_or(0);
             let secs = (reset - Utc::now().timestamp()).clamp(1, 24 * 3600) + 1;
             return Some(Duration::from_secs(secs as u64));
         }

@@ -7,8 +7,9 @@ use std::time::Duration;
 use bgh_core::AppState;
 use tokio_util::sync::CancellationToken;
 
-/// Every 30 s: fire due cron schedules, fail jobs of vanished runners and
-/// expire artifacts and caches.
+/// Every 30 s: fire due cron schedules, start jobs whose environment wait
+/// timer elapsed, fail jobs of vanished runners and expire artifacts and
+/// caches.
 pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
     let mut tick = tokio::time::interval(Duration::from_secs(30));
     loop {
@@ -21,6 +22,9 @@ pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
         {
             tracing::warn!(?err, "actions scheduler tick failed");
         }
+        if let Err(err) = crate::gates::release_ready(&state, None).await {
+            tracing::warn!(?err, "releasing environment wait timers failed");
+        }
         if let Err(err) = crate::server::reap_stale_jobs(&state).await {
             tracing::warn!(?err, "reaping stale jobs failed");
         }
@@ -29,6 +33,9 @@ pub async fn maintenance(state: AppState, shutdown: CancellationToken) {
         }
         if let Err(err) = crate::cache::expire(&state).await {
             tracing::warn!(?err, "expiring actions caches failed");
+        }
+        if let Err(err) = crate::oidc::rotate(&state, false).await {
+            tracing::warn!(?err, "rotating the OIDC signing key failed");
         }
     }
 }

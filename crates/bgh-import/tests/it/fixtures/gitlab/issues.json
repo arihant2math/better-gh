@@ -1,0 +1,172 @@
+[
+  {
+    "id": 7001,
+    "iid": 1,
+    "project_id": 99,
+    "title": "Crash on start",
+    "description": "Body of Crash on start",
+    "state": "opened",
+    "created_at": "2024-01-05T10:00:00.000Z",
+    "updated_at": "2024-01-05T10:00:00.000Z",
+    "closed_at": null,
+    "closed_by": null,
+    "labels": [
+      "bug"
+    ],
+    "milestone": {
+      "id": 601,
+      "iid": 1,
+      "project_id": 99,
+      "title": "v1",
+      "description": "First",
+      "state": "active",
+      "created_at": "2024-01-02T00:00:00.000Z",
+      "updated_at": "2024-01-02T00:00:00.000Z",
+      "due_date": "2024-06-30",
+      "start_date": null,
+      "expired": false,
+      "web_url": "https://gitlab.example/group/sub/glproj/-/milestones/1"
+    },
+    "assignees": [
+      {
+        "id": 12,
+        "username": "hubot",
+        "name": "Hubot",
+        "state": "active",
+        "locked": false,
+        "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/12/avatar.png",
+        "web_url": "https://gitlab.example/hubot"
+      }
+    ],
+    "author": {
+      "id": 11,
+      "username": "octocat",
+      "name": "The Octocat",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/11/avatar.png",
+      "web_url": "https://gitlab.example/octocat"
+    },
+    "type": "ISSUE",
+    "assignee": {
+      "id": 12,
+      "username": "hubot",
+      "name": "Hubot",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/12/avatar.png",
+      "web_url": "https://gitlab.example/hubot"
+    },
+    "user_notes_count": 1,
+    "merge_requests_count": 0,
+    "upvotes": 1,
+    "downvotes": 0,
+    "due_date": null,
+    "confidential": false,
+    "discussion_locked": false,
+    "issue_type": "issue",
+    "web_url": "https://gitlab.example/group/sub/glproj/-/issues/1",
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    }
+  },
+  {
+    "id": 7002,
+    "iid": 2,
+    "project_id": 99,
+    "title": "Docs typo",
+    "description": "Body of Docs typo",
+    "state": "closed",
+    "created_at": "2024-01-06T10:00:00.000Z",
+    "updated_at": "2024-01-07T10:00:00.000Z",
+    "closed_at": "2024-01-07T10:00:00.000Z",
+    "closed_by": {
+      "id": 11,
+      "username": "octocat",
+      "name": "The Octocat",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/11/avatar.png",
+      "web_url": "https://gitlab.example/octocat"
+    },
+    "labels": [],
+    "milestone": null,
+    "assignees": [],
+    "author": {
+      "id": 13,
+      "username": "mona",
+      "name": "Mona",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/13/avatar.png",
+      "web_url": "https://gitlab.example/mona"
+    },
+    "type": "ISSUE",
+    "assignee": null,
+    "user_notes_count": 1,
+    "merge_requests_count": 0,
+    "upvotes": 0,
+    "downvotes": 0,
+    "due_date": null,
+    "confidential": false,
+    "discussion_locked": false,
+    "issue_type": "issue",
+    "web_url": "https://gitlab.example/group/sub/glproj/-/issues/2",
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    }
+  },
+  {
+    "id": 7003,
+    "iid": 3,
+    "project_id": 99,
+    "title": "Security hole",
+    "description": "Body of Security hole",
+    "state": "opened",
+    "created_at": "2024-01-08T10:00:00.000Z",
+    "updated_at": "2024-01-08T10:00:00.000Z",
+    "closed_at": null,
+    "closed_by": null,
+    "labels": [],
+    "milestone": null,
+    "assignees": [],
+    "author": {
+      "id": 12,
+      "username": "hubot",
+      "name": "Hubot",
+      "state": "active",
+      "locked": false,
+      "avatar_url": "https://gitlab.example/uploads/-/system/user/avatar/12/avatar.png",
+      "web_url": "https://gitlab.example/hubot"
+    },
+    "type": "ISSUE",
+    "assignee": null,
+    "user_notes_count": 1,
+    "merge_requests_count": 0,
+    "upvotes": 0,
+    "downvotes": 0,
+    "due_date": null,
+    "confidential": true,
+    "discussion_locked": false,
+    "issue_type": "issue",
+    "web_url": "https://gitlab.example/group/sub/glproj/-/issues/3",
+    "time_stats": {
+      "time_estimate": 0,
+      "total_time_spent": 0
+    },
+    "task_completion_status": {
+      "count": 0,
+      "completed_count": 0
+    }
+  }
+]

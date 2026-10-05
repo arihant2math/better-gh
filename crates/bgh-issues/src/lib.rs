@@ -1,20 +1,24 @@
 //! bgh-issues: issues, labels, milestones, assignees, comments, reactions,
 //! locking, events and timeline, issue templates, sub-issues, pinned
-//! issues, transfers, mentions and cross-references.
+//! issues, transfers, mentions and cross-references, issue types and
+//! dependencies (blocked by / blocking).
 //!
 //! See `docs/packages/issues.md` for the endpoint list and design notes.
 //! Migrations for this crate use the 0300-0399 range.
 
 pub mod assignees;
 pub mod comments;
+pub mod dependencies;
 pub mod deployed;
 pub mod events;
 pub mod import;
+pub mod issue_types;
 pub mod issues;
 pub mod json;
 pub mod labels;
 pub mod links;
 pub mod milestones;
+pub mod moderation;
 pub mod pins;
 pub mod reactions;
 pub mod refs;
@@ -127,6 +131,28 @@ pub fn router() -> Router<AppState> {
         .route(&i("/sub_issue"), delete(sub_issues::remove))
         .route(&i("/sub_issues/priority"), patch(sub_issues::reprioritize))
         .route(&i("/parent"), get(sub_issues::parent))
+        // Issue dependencies (blocked by / blocking).
+        .route(
+            &i("/dependencies/blocked_by"),
+            get(dependencies::list_blocked_by).post(dependencies::add),
+        )
+        .route(
+            &i("/dependencies/blocked_by/{issue_id}"),
+            delete(dependencies::remove),
+        )
+        .route(
+            &i("/dependencies/blocking"),
+            get(dependencies::list_blocking),
+        )
+        // Organization issue types.
+        .route(
+            "/orgs/{org}/issue-types",
+            get(issue_types::list).post(issue_types::create),
+        )
+        .route(
+            "/orgs/{org}/issue-types/{issue_type_id}",
+            put(issue_types::update).delete(issue_types::delete),
+        )
 }
 
 /// Web-client routes (absolute paths).
@@ -160,6 +186,27 @@ pub fn web_router() -> Router<AppState> {
         .route(
             "/_bgh/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions/{content}",
             delete(reactions::delete_own_for_comment),
+        )
+        // Moderation (P42): hide comments, edit history, issue deletion.
+        .route(
+            "/_bgh/repos/{owner}/{repo}/minimized/{kind}",
+            get(moderation::minimized_list),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/minimized/{kind}/{id}",
+            put(moderation::minimize).delete(moderation::unminimize),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/edits/{kind}/{id}",
+            get(moderation::edits),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/edits/{kind}/{id}/{edit_id}",
+            delete(moderation::delete_edit),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/issues/{issue_number}",
+            delete(moderation::delete_issue),
         )
 }
 

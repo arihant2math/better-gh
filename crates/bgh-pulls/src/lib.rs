@@ -14,7 +14,9 @@ pub mod checks;
 pub mod codeowners;
 pub mod comments;
 pub mod commits;
+pub mod diffview;
 pub mod git;
+pub mod import;
 pub mod jobs;
 pub mod json;
 pub mod merge;
@@ -22,11 +24,14 @@ pub mod mergeability;
 pub mod model;
 pub mod protection;
 pub mod pulls;
+pub mod ranges;
 pub mod reviewers;
 pub mod reviews;
 pub mod statuses;
+pub mod suggestions;
 pub mod synchronize;
 pub mod timeline;
+pub mod viewed;
 pub mod web;
 
 use axum::Router;
@@ -167,6 +172,17 @@ pub fn web_router() -> Router<AppState> {
             post(web::create_pending_comment),
         )
         .route(&p("/patch"), get(web::file_patch))
+        // review workflow (P38)
+        .route(&p("/files"), get(ranges::range_files))
+        .route(
+            &p("/viewed"),
+            get(viewed::list).put(viewed::put).delete(viewed::delete),
+        )
+        .route(&p("/suggestions/apply"), post(suggestions::apply_handler))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/commits/{sha}/annotations",
+            get(diffview::commit_annotations),
+        )
         .route(
             "/_bgh/repos/{owner}/{repo}/check-runs/{id}/requested-action",
             post(checks::request_action),

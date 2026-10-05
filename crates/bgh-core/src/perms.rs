@@ -391,43 +391,20 @@ impl RepoAccess {
         owner: &str,
         name: &str,
     ) -> ApiResult<Self> {
-        let name = name.strip_suffix(".git").unwrap_or(name);
-        let found = match db::User::find_by_login(&state.db, owner).await? {
-            Some(owner) => db::Repository::find_by_name(&state.db, owner.id, name)
-                .await?
-                .map(|repo| (repo, owner)),
-            None => None,
-        };
-        let (repo, owner) = match found {
-            Some(found) => found,
-            // Renamed / transferred repositories keep answering on their old
-            // name (`repo_redirects`, maintained by bgh-repos).
-            None => Self::follow_redirect(state, owner, name)
-                .await?
-                .ok_or(ApiError::NotFound)?,
-        };
+        // Renamed / transferred repositories and renamed owners keep
+        // answering on their old names (`repo_redirects`,
+        // `login_redirects`; see `crate::lifecycle`).
+        let (repo, owner) = crate::lifecycle::resolve_repo(&state.db, owner, name)
+            .await?
+            .ok_or(ApiError::NotFound)?;
         Self::for_repo(state, auth, repo, owner).await
     }
 
-    async fn follow_redirect(
-        state: &AppState,
-        owner: &str,
-        name: &str,
-    ) -> ApiResult<Option<(db::Repository, db::User)>> {
-        let repo: Option<db::Repository> = sqlx::query_as(&format!(
-            "SELECT {} FROM repositories WHERE id = (
-                SELECT repo_id FROM repo_redirects
-                 WHERE lower(owner_login) = lower($1) AND lower(name) = lower($2))",
-            db::prefixed("repositories", db::Repository::COLUMNS)
-        ))
-        .bind(owner)
-        .bind(name)
-        .fetch_optional(&state.db)
-        .await?;
-        let Some(repo) = repo else { return Ok(None) };
-        Ok(db::User::find(&state.db, repo.owner_id)
-            .await?
-            .map(|owner| (repo, owner)))
+    /// Whether this was resolved through a redirect, i.e. `owner/name` (as
+    /// requested) is not the repository's current full name.
+    pub fn is_redirect(&self, owner: &str, name: &str) -> bool {
+        let name = name.strip_suffix(".git").unwrap_or(name);
+        !(self.owner.login.eq_ignore_ascii_case(owner) && self.repo.name.eq_ignore_ascii_case(name))
     }
 
     /// Like [`Self::load`] when the rows are already loaded.

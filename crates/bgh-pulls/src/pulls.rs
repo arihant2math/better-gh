@@ -612,6 +612,16 @@ pub async fn update(
         && Some(b) != locked.issue.body.as_ref()
     {
         changes.insert("body".into(), json!({"from": locked.issue.body}));
+        bgh_core::moderation::record_edit(
+            &mut tx,
+            access.repo.id,
+            bgh_core::moderation::ContentKind::Issue,
+            pull.id(),
+            auth.user.id,
+            locked.issue.body.as_deref().unwrap_or(""),
+            b,
+        )
+        .await?;
     }
     sqlx::query(
         "UPDATE issues SET title = coalesce($2, title), body = coalesce($3, body),

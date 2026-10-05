@@ -5,10 +5,12 @@ import { Link, useLocation } from '../../router';
 import { Avatar } from '../../ui/Badge';
 import {
   AppsIcon,
+  ArrowSwitchIcon,
   BellIcon,
   BlockedIcon,
   CodeIcon,
   DeviceDesktopIcon,
+  DownloadIcon,
   GearIcon,
   KeyAsteriskIcon,
   KeyIcon,
@@ -19,6 +21,7 @@ import {
   PlugIcon,
   ShieldLockIcon,
   SyncIcon,
+  TrashIcon,
   type Icon,
 } from '../../ui/icons';
 import styles from './SettingsLayout.module.css';
@@ -39,6 +42,13 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
     ],
   },
   {
+    group: 'Repositories',
+    items: [
+      { id: 'repositories/deleted', label: 'Deleted repositories', icon: TrashIcon },
+      { id: 'repositories/transfers', label: 'Transfer requests', icon: ArrowSwitchIcon },
+    ],
+  },
+  {
     group: 'Access',
     items: [
       { id: 'emails', label: 'Emails', icon: MailIcon },
@@ -47,6 +57,7 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
       { id: 'keys', label: 'SSH and GPG keys', icon: KeyIcon },
       { id: 'blocked', label: 'Blocked users', icon: BlockedIcon },
       { id: 'organizations', label: 'Organizations', icon: OrganizationIcon },
+      { id: 'reclaims', label: 'Imported contributions', icon: DownloadIcon },
     ],
   },
   {
@@ -70,10 +81,18 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
   },
 ];
 
+/** Nav id of a `/settings/...` path: the longest id it starts with (ids may have two segments). */
+function currentSection(pathname: string): string {
+  const rest = pathname.split('/').slice(2).join('/');
+  let best = '';
+  for (const g of SETTINGS_NAV) for (const s of g.items) if ((rest === s.id || rest.startsWith(`${s.id}/`)) && s.id.length > best.length) best = s.id;
+  return best || pathname.split('/')[2] || 'profile';
+}
+
 /** Persistent layout for `/settings/*`: nav on the left, section page on the right. */
 export default observer(function SettingsLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const current = pathname.split('/')[2] || 'profile';
+  const current = currentSection(pathname);
   const user = session.user;
   return (
     <div className={styles.page}>

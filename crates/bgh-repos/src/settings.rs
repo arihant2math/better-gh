@@ -69,7 +69,8 @@ pub struct UpdateRepoBody {
     pub archived: Option<bool>,
     pub allow_forking: Option<bool>,
     pub web_commit_signoff_required: Option<bool>,
-    /// Accepted and ignored (security features are not modelled).
+    /// Secret scanning toggles (`bgh_security::settings::apply`); other
+    /// features are accepted and ignored.
     pub security_and_analysis: Option<serde_json::Value>,
 }
 
@@ -297,6 +298,25 @@ pub async fn update_repo(
 
     let mut tx = Tx::begin(&state).await?;
     let updated = save(&mut tx, &r).await?;
+    if let Some(sa) = &body.security_and_analysis {
+        let change = bgh_security::settings::apply(&mut tx, updated.id, sa).await?;
+        if change.changed() {
+            audit::log(
+                &mut *tx,
+                Some(&auth.user),
+                "repo.security_and_analysis",
+                audit::Target::Repo {
+                    id: updated.id,
+                    org_id: access.owner.is_org().then_some(access.owner.id),
+                },
+                json!({"security_and_analysis": sa}),
+            )
+            .await?;
+        }
+        if change.scanning_enabled() {
+            bgh_security::jobs::enqueue_history_scan(&mut tx, updated.id, "backfill").await?;
+        }
+    }
     let owner_login = access.owner.login.clone();
     let org_id = access.owner.is_org().then_some(access.owner.id);
     let target = audit::Target::Repo {
@@ -399,6 +419,7 @@ pub async fn transfer(
 ) -> ApiResult<(StatusCode, Json<Repository>)> {
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Admin)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let new_owner_login = body
         .new_owner
         .as_deref()
@@ -416,13 +437,6 @@ pub async fn transfer(
                 format!("{new_owner_login} does not exist"),
             ))
         })?;
-    let visibility = crate::forks::visibility_for_owner(&access.repo.visibility, &new_owner);
-    if !crate::forks::check_new_repo(&state, &auth.user, &new_owner, &visibility).await? {
-        return Err(ApiError::forbidden(format!(
-            "You don't have the permission to create repositories on {}",
-            new_owner.login
-        )));
-    }
     let new_name = match body.new_name.as_deref().map(str::trim) {
         Some(n) if !n.is_empty() => {
             if !is_valid_repo_name(n) {
@@ -439,10 +453,46 @@ pub async fn transfer(
             "Repository is already owned by the new owner",
         )));
     }
+    // Transfers to another user wait for that user's acceptance
+    // (`crate::lifecycle`); to an organization or to yourself they are
+    // immediate.
+    if !new_owner.is_org() && new_owner.id != auth.user.id {
+        crate::lifecycle::request_transfer(&state, &auth, &access, &new_owner, &new_name).await?;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(full_repo(&state, Some(&auth), &access).await?),
+        ));
+    }
+    let access =
+        apply_transfer(&state, &auth, &access, new_owner, new_name, &body.team_ids).await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(full_repo(&state, Some(&auth), &access).await?),
+    ))
+}
+
+/// Move `access`'s repository to `new_owner` as `new_name` now, on behalf
+/// of `auth` (who must be able to create repositories there). The old
+/// `owner/name` keeps redirecting.
+pub(crate) async fn apply_transfer(
+    state: &AppState,
+    auth: &AuthContext,
+    access: &RepoAccess,
+    new_owner: db::User,
+    new_name: String,
+    team_ids: &[i64],
+) -> ApiResult<RepoAccess> {
+    let visibility = crate::forks::visibility_for_owner(&access.repo.visibility, &new_owner);
+    if !crate::forks::check_new_repo(state, &auth.user, &new_owner, &visibility).await? {
+        return Err(ApiError::forbidden(format!(
+            "You don't have the permission to create repositories on {}",
+            new_owner.login
+        )));
+    }
     let old = access.repo.clone();
     let old_owner = access.owner.clone();
 
-    let mut tx = Tx::begin(&state).await?;
+    let mut tx = Tx::begin(state).await?;
     let updated: db::Repository = sqlx::query_as(&format!(
         "UPDATE repositories SET owner_id = $2, name = $3, visibility = $4, updated_at = now()
           WHERE id = $1 RETURNING {}",
@@ -479,18 +529,18 @@ pub async fn transfer(
     .bind(new_owner.id)
     .execute(&mut *tx)
     .await?;
-    if new_owner.is_org() && !body.team_ids.is_empty() {
+    if new_owner.is_org() && !team_ids.is_empty() {
         let added = sqlx::query(
             "INSERT INTO team_repos (team_id, repo_id, permission)
              SELECT t.id, $1, t.permission FROM teams t WHERE t.id = ANY($2) AND t.org_id = $3
              ON CONFLICT (team_id, repo_id) DO NOTHING",
         )
         .bind(old.id)
-        .bind(&body.team_ids)
+        .bind(team_ids)
         .bind(new_owner.id)
         .execute(&mut *tx)
         .await?;
-        if added.rows_affected() as usize != body.team_ids.len() {
+        if added.rows_affected() as usize != team_ids.len() {
             return Err(invalid("team_ids"));
         }
     }
@@ -515,11 +565,7 @@ pub async fn transfer(
     });
     tx.commit().await?;
 
-    let access = RepoAccess::for_repo(&state, Some(&auth), updated, new_owner).await?;
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(full_repo(&state, Some(&auth), &access).await?),
-    ))
+    RepoAccess::for_repo(state, Some(auth), updated, new_owner).await
 }
 
 /// Webhook-facing events for a settings change: `archived`/`unarchived`,

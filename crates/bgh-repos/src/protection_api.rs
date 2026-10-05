@@ -309,7 +309,7 @@ pub fn webhook_rule_json(row: &ProtectionRow) -> Value {
         "allow_force_pushes_enforcement_level": level(row.allow_force_pushes),
         "allow_deletions_enforcement_level": level(row.allow_deletions),
         "merge_queue_enforcement_level": "off",
-        "required_deployments_enforcement_level": "off",
+        "required_deployments_enforcement_level": level(!row.required_deployment_environments.is_empty()),
         "required_conversation_resolution_level": level(row.required_conversation_resolution),
         "authorized_actors_only": restrictions.is_some(),
         "authorized_actor_names": actor_names,
@@ -1082,7 +1082,39 @@ impl Cx<'_> {
             required_signatures: existing.as_ref().is_some_and(|r| r.required_signatures),
             ..d
         };
-        let row = self.persist(&mut tx, existing.is_some(), &d).await?;
+        let mut row = self.persist(&mut tx, existing.is_some(), &d).await?;
+        // Extension (GraphQL `requiredDeploymentEnvironments`; GitHub's REST
+        // body has no field for it): environments whose latest deployment
+        // of the head commit must be `success` before merging.
+        if let Some(v) = obj.get("required_deployment_environments") {
+            let envs: Vec<String> = match v {
+                Value::Null => vec![],
+                Value::Array(a) => a
+                    .iter()
+                    .map(|e| e.as_str().map(|s| s.trim().to_string()))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        ApiError::invalid_field(FieldError::invalid(
+                            "ProtectedBranch",
+                            "required_deployment_environments",
+                        ))
+                    })?,
+                _ => {
+                    return Err(ApiError::invalid_field(FieldError::invalid(
+                        "ProtectedBranch",
+                        "required_deployment_environments",
+                    )));
+                }
+            };
+            sqlx::query(
+                "UPDATE branch_protections SET required_deployment_environments = $2 WHERE id = $1",
+            )
+            .bind(row.id)
+            .bind(&envs)
+            .execute(&mut *tx)
+            .await?;
+            row.required_deployment_environments = envs;
+        }
         tx.commit().await?;
         ok_json(self.render(&row).await?)
     }

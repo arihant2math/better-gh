@@ -8,19 +8,13 @@ import { Skeleton } from '../../../ui/EmptyState';
 import { InfoIcon, KeyIcon, LinkIcon } from '../../../ui/icons';
 import { RelativeTime } from '../../../ui/RelativeTime';
 import { toast } from '../../../ui/Toast';
-import { Tooltip } from '../../../ui/Tooltip';
+import { DeleteAccountDialog, RenameUserDialog } from './AccountDialogs';
 import styles from './userSettings.module.css';
-
-/**
- * Username changes and account deletion have no self-service endpoint in
- * bgh-accounts (only site admins: PATCH/DELETE /admin/users/{u}), so those
- * controls are shown disabled with an explanation.
- */
-const RENAME_UNAVAILABLE = 'Username changes are not available on this server yet. A site administrator can rename your account.';
-const DELETE_UNAVAILABLE = 'Self-service account deletion is not available on this server yet. Ask a site administrator to delete your account.';
 
 export default observer(function AccountSettings() {
   const login = session.user?.login ?? '';
+  const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
+  const close = () => setDialog(null);
   return (
     <>
       <PageHeader title="Account" description="Your username, linked sign-in providers and account lifecycle." />
@@ -33,14 +27,13 @@ export default observer(function AccountSettings() {
               {login}
             </div>
           </div>
-          <Tooltip label={RENAME_UNAVAILABLE}>
-            <Button disabled aria-describedby="rename-unavailable">
-              Change username
-            </Button>
-          </Tooltip>
+          <Button onClick={() => setDialog('rename')} disabled={!login}>
+            Change username
+          </Button>
         </div>
-        <p id="rename-unavailable" className={styles.small}>
-          <InfoIcon size={14} /> {RENAME_UNAVAILABLE} Old links to your profile and repositories would redirect for a limited time only.
+        <p className={styles.small}>
+          <InfoIcon size={14} /> Links to your profile and repositories and git remotes keep working: requests to the old name redirect. The old name stays reserved
+          for you for 90 days.
         </p>
       </Section>
 
@@ -49,16 +42,14 @@ export default observer(function AccountSettings() {
       <Section danger title="Delete account" description="Once you delete your account, there is no going back. Please be certain.">
         <div className={styles.inlineRow}>
           <p className={styles.grow}>Your repositories, issues and comments will be removed or attributed to a ghost user.</p>
-          <Tooltip label={DELETE_UNAVAILABLE}>
-            <Button variant="danger" disabled aria-describedby="delete-unavailable">
-              Delete your account
-            </Button>
-          </Tooltip>
+          <Button variant="danger" onClick={() => setDialog('delete')} disabled={!login}>
+            Delete your account
+          </Button>
         </div>
-        <p id="delete-unavailable" className={styles.small}>
-          <InfoIcon size={14} /> {DELETE_UNAVAILABLE}
-        </p>
       </Section>
+
+      <RenameUserDialog open={dialog === 'rename'} onClose={close} login={login} />
+      <DeleteAccountDialog open={dialog === 'delete'} onClose={close} login={login} />
     </>
   );
 });

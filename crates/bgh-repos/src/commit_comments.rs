@@ -329,14 +329,27 @@ async fn update(
     let text = body.body.filter(|b| !b.trim().is_empty()).ok_or_else(|| {
         ApiError::invalid_field(FieldError::missing_field("CommitComment", "body"))
     })?;
+    let mut tx = Tx::begin(&state).await?;
+    let old_body = row.body;
     let row: CommitCommentRow = sqlx::query_as(&format!(
         "UPDATE commit_comments SET body = $2, updated_at = now() WHERE id = $1 RETURNING {}",
         CommitCommentRow::COLUMNS
     ))
     .bind(row.id)
     .bind(&text)
-    .fetch_one(&state.db)
+    .fetch_one(&mut *tx)
     .await?;
+    bgh_core::moderation::record_edit(
+        &mut tx,
+        access.repo.id,
+        bgh_core::moderation::ContentKind::CommitComment,
+        row.id,
+        auth.user.id,
+        &old_body,
+        &text,
+    )
+    .await?;
+    tx.commit().await?;
     Ok(Json(
         render_one(&state, &access, row, body_format(&headers)).await?,
     ))

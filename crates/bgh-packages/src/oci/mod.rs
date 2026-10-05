@@ -279,7 +279,9 @@ async fn load_repo(state: &AppState, full_name: &str) -> OciResult<Option<Repo>>
             "repository name must be {owner}/{package}",
         ));
     };
-    let Some(owner) = db::User::find_by_login(&state.db, owner).await? else {
+    // A renamed owner's old login keeps working (`docker pull` of old
+    // image references, P50).
+    let Some(owner) = bgh_core::lifecycle::resolve_owner(&state.db, owner).await? else {
         return Ok(None);
     };
     let package = model::find_package(&state.db, owner.id, "container", name).await?;

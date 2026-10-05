@@ -717,6 +717,9 @@ pub struct Repository {
     /// Present for forks: root of the fork network.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<Box<MinimalRepository>>,
+    /// Shown to repository admins (P65, `bgh_security::settings`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_and_analysis: Option<serde_json::Value>,
 }
 
 /// Optional related data for [`Repository::new`].
@@ -746,6 +749,7 @@ impl Repository {
             organization: owner.is_org().then(|| SimpleUser::new(urls, owner)),
             parent: extras.parent.map(Box::new),
             source: extras.source.map(Box::new),
+            security_and_analysis: None,
         }
     }
 }

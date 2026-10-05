@@ -37,16 +37,23 @@ import { RelativeTime } from '../../../ui/RelativeTime';
 import { toast } from '../../../ui/Toast';
 import { encodeQr, qrPath } from '../qr';
 import styles from './userSettings.module.css';
+import { WebauthnSection } from './WebauthnSettings';
 
-export default function SecuritySettings() {
+export default observer(function SecuritySettings() {
   return (
     <>
       <PageHeader title="Password and authentication" description="Keep your account secure with a strong password and a second factor." />
+      {session.user?.twoFactorSetupRequired && (
+        <Banner tone="warning" icon={AlertIcon}>
+          <strong>Two-factor authentication is required on this site.</strong> Set up an authenticator app below to continue using your account.
+        </Banner>
+      )}
       <PasswordSection />
+      <WebauthnSection kind="passkey" twoFactorEnabled />
       <TwoFactorSection />
     </>
   );
-}
+});
 
 // ------------------------------------------------------------------ password
 
@@ -169,118 +176,123 @@ const TwoFactorSection = observer(function TwoFactorSection() {
 
   const s = status.data;
   return (
-    <Section
-      title={
-        <span className={styles.titleRow}>
-          Two-factor authentication {s && (s.enabled ? <Pill tone="success">Enabled</Pill> : <Pill>Disabled</Pill>)}
-        </span>
-      }
-      description="Two-factor authentication adds an additional layer of security by requiring a code from your authenticator app when you sign in."
-    >
-      {status.error && !s ? (
-        <Banner tone="danger">{errorMessage(status.error)}</Banner>
-      ) : !s ? (
-        <Skeleton height={72} />
-      ) : codes ? (
-        <RecoveryCodes
-          codes={codes}
-          onDone={() => {
-            setCodes(null);
-            void status.refresh();
-          }}
-        />
-      ) : setup ? (
-        <TotpSetupPanel
-          setup={setup}
-          onCancel={() => setSetup(null)}
-          onEnabled={(c) => {
-            setSetup(null);
-            setCodes(c);
-            status.update(() => ({ enabled: true, enabled_at: new Date().toISOString(), recovery_codes_remaining: c.length }));
-            invalidate(KEYS.me);
-          }}
-        />
-      ) : s.enabled ? (
-        <Box>
-          <div className={styles.factorRow}>
-            <DeviceMobileIcon size={20} />
-            <div className={styles.grow}>
-              <div className={styles.strong}>Authenticator app</div>
-              <div className={styles.muted}>
-                Configured {s.enabled_at && <RelativeTime date={s.enabled_at} />}. Use codes from your authenticator app to sign in.
-              </div>
-            </div>
-            <Pill tone="success">Configured</Pill>
-          </div>
-          <div className={styles.factorRow}>
-            <KeyIcon size={20} />
-            <div className={styles.grow}>
-              <div className={styles.strong}>Recovery codes</div>
-              <div className={styles.muted} data-testid="recovery-remaining">
-                {s.recovery_codes_remaining} of 10 unused. Use them to sign in if you lose access to your device.
-              </div>
-              {s.recovery_codes_remaining <= 3 && (
-                <div className={styles.warnText}>
-                  <AlertIcon size={14} /> You are running low on recovery codes. Generate new ones.
+    <>
+      <Section
+        title={
+          <span className={styles.titleRow}>
+            Two-factor authentication {s && (s.enabled ? <Pill tone="success">Enabled</Pill> : <Pill>Disabled</Pill>)}
+          </span>
+        }
+        description="Two-factor authentication adds an additional layer of security by requiring a code from your authenticator app when you sign in."
+      >
+        {status.error && !s ? (
+          <Banner tone="danger">{errorMessage(status.error)}</Banner>
+        ) : !s ? (
+          <Skeleton height={72} />
+        ) : codes ? (
+          <RecoveryCodes
+            codes={codes}
+            onDone={() => {
+              setCodes(null);
+              void status.refresh();
+            }}
+          />
+        ) : setup ? (
+          <TotpSetupPanel
+            setup={setup}
+            onCancel={() => setSetup(null)}
+            onEnabled={(c) => {
+              setSetup(null);
+              setCodes(c);
+              status.update((x) => ({ ...x, enabled: true, enabled_at: new Date().toISOString(), recovery_codes_remaining: c.length }));
+              invalidate(KEYS.me);
+              session.updateUser({ twoFactorSetupRequired: false });
+            }}
+          />
+        ) : s.enabled ? (
+          <Box>
+            <div className={styles.factorRow}>
+              <DeviceMobileIcon size={20} />
+              <div className={styles.grow}>
+                <div className={styles.strong}>Authenticator app</div>
+                <div className={styles.muted}>
+                  Configured {s.enabled_at && <RelativeTime date={s.enabled_at} />}. Use codes from your authenticator app to sign in.
                 </div>
-              )}
+              </div>
+              <Pill tone="success">Configured</Pill>
             </div>
-            <Button size="sm" onClick={() => setPrompt('regenerate')}>
-              Regenerate
-            </Button>
-          </div>
-          <div className={styles.factorRow}>
-            <ShieldCheckIcon size={20} />
-            <div className={styles.grow}>
-              <div className={styles.strong}>Disable two-factor authentication</div>
-              <div className={styles.muted}>Your account will only be protected by your password.</div>
+            <div className={styles.factorRow}>
+              <KeyIcon size={20} />
+              <div className={styles.grow}>
+                <div className={styles.strong}>Recovery codes</div>
+                <div className={styles.muted} data-testid="recovery-remaining">
+                  {s.recovery_codes_remaining} of 10 unused. Use them to sign in if you lose access to your device.
+                </div>
+                {s.recovery_codes_remaining <= 3 && (
+                  <div className={styles.warnText}>
+                    <AlertIcon size={14} /> You are running low on recovery codes. Generate new ones.
+                  </div>
+                )}
+              </div>
+              <Button size="sm" onClick={() => setPrompt('regenerate')}>
+                Regenerate
+              </Button>
             </div>
-            <Button size="sm" variant="danger" onClick={() => setPrompt('disable')}>
-              Disable
-            </Button>
-          </div>
-        </Box>
-      ) : (
-        <Box padded>
-          <div className={styles.factorRow}>
-            <ShieldCheckIcon size={24} />
-            <div className={styles.grow}>
-              <div className={styles.strong}>Two-factor authentication is not enabled yet.</div>
-              <div className={styles.muted}>Use an authenticator app such as 1Password, Authy or Google Authenticator. Accounts with 2FA must use tokens for Git over HTTPS.</div>
+            <div className={styles.factorRow}>
+              <ShieldCheckIcon size={20} />
+              <div className={styles.grow}>
+                <div className={styles.strong}>Disable two-factor authentication</div>
+                <div className={styles.muted}>Your account will only be protected by your password.</div>
+              </div>
+              <Button size="sm" variant="danger" onClick={() => setPrompt('disable')}>
+                Disable
+              </Button>
             </div>
-            <Button variant="primary" loading={starting} onClick={() => void begin()}>
-              Enable two-factor authentication
-            </Button>
-          </div>
-        </Box>
-      )}
-      <PasswordPrompt
-        open={prompt === 'disable'}
-        title="Disable two-factor authentication"
-        confirmLabel="Disable"
-        danger
-        description="Confirm your password to turn off two-factor authentication. Your recovery codes will stop working."
-        onClose={() => setPrompt(null)}
-        onSubmit={async (pw) => {
-          await disableTwoFactor(pw);
-          status.update(() => ({ enabled: false, enabled_at: null, recovery_codes_remaining: 0 }));
-          invalidate(KEYS.me);
-          toast({ kind: 'success', title: 'Two-factor authentication disabled' });
-        }}
-      />
-      <PasswordPrompt
-        open={prompt === 'regenerate'}
-        title="Regenerate recovery codes"
-        confirmLabel="Generate new codes"
-        description="Your old recovery codes will stop working immediately."
-        onClose={() => setPrompt(null)}
-        onSubmit={async (pw) => {
-          const r = await regenerateRecoveryCodes(pw);
-          setCodes(r.recovery_codes);
-          status.update((x) => ({ ...x, recovery_codes_remaining: r.recovery_codes.length }));
-        }}
-      />
-    </Section>
+          </Box>
+        ) : (
+          <Box padded>
+            <div className={styles.factorRow}>
+              <ShieldCheckIcon size={24} />
+              <div className={styles.grow}>
+                <div className={styles.strong}>Two-factor authentication is not enabled yet.</div>
+                <div className={styles.muted}>Use an authenticator app such as 1Password, Authy or Google Authenticator. Accounts with 2FA must use tokens for Git over HTTPS.</div>
+              </div>
+              <Button variant="primary" loading={starting} onClick={() => void begin()}>
+                Enable two-factor authentication
+              </Button>
+            </div>
+          </Box>
+        )}
+        <PasswordPrompt
+          open={prompt === 'disable'}
+          title="Disable two-factor authentication"
+          confirmLabel="Disable"
+          danger
+          description="Confirm your password to turn off two-factor authentication. Your recovery codes and security keys will stop working; passkeys stay."
+          onClose={() => setPrompt(null)}
+          onSubmit={async (pw) => {
+            await disableTwoFactor(pw);
+            status.update((x) => ({ ...x, enabled: false, enabled_at: null, recovery_codes_remaining: 0, security_keys: 0 }));
+            invalidate(KEYS.webauthn);
+            invalidate(KEYS.me);
+            toast({ kind: 'success', title: 'Two-factor authentication disabled' });
+          }}
+        />
+        <PasswordPrompt
+          open={prompt === 'regenerate'}
+          title="Regenerate recovery codes"
+          confirmLabel="Generate new codes"
+          description="Your old recovery codes will stop working immediately."
+          onClose={() => setPrompt(null)}
+          onSubmit={async (pw) => {
+            const r = await regenerateRecoveryCodes(pw);
+            setCodes(r.recovery_codes);
+            status.update((x) => ({ ...x, recovery_codes_remaining: r.recovery_codes.length }));
+          }}
+        />
+      </Section>
+      {s && <WebauthnSection kind="security_key" twoFactorEnabled={s.enabled} />}
+    </>
   );
 });
 

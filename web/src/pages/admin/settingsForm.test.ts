@@ -246,3 +246,29 @@ describe('privacy settings form', () => {
     expect(validate(f)).toEqual({});
   });
 });
+
+describe('secret scanning settings form', () => {
+  it('defaults when the server has no secret_scanning section', () => {
+    const f = toForm(settings);
+    expect(f.secret_scanning).toEqual({ available: true, enable_all: false, push_protection_all: false, max_blob_kb: '1024', push_scan_timeout_secs: '20' });
+    expect(validate(f)).toEqual({});
+  });
+
+  it('round-trips the policy and limits', () => {
+    const ss = { available: true, enable_all: true, push_protection_all: false, max_blob_kb: 2048, push_scan_timeout_secs: 30 };
+    const saved = toForm({ ...settings, secret_scanning: ss });
+    expect(toPatch(saved, ['secret_scanning']).secret_scanning).toEqual(ss);
+    const draft = { ...saved, secret_scanning: { ...saved.secret_scanning, push_protection_all: true } };
+    expect(dirtySections(draft, saved)).toEqual(['secret_scanning']);
+    expect(toPatch(draft, ['secret_scanning']).secret_scanning).toEqual({ ...ss, push_protection_all: true });
+  });
+
+  it('validates the limits', () => {
+    const f = toForm(settings);
+    f.secret_scanning.max_blob_kb = '0';
+    f.secret_scanning.push_scan_timeout_secs = '';
+    const e = validate(f);
+    expect(e['secret_scanning.max_blob_kb']).toMatch(/kilobytes/);
+    expect(e['secret_scanning.push_scan_timeout_secs']).toMatch(/seconds/);
+  });
+});
