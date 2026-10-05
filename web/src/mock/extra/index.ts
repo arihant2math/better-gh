@@ -5,6 +5,7 @@
  * models go through `server.put` / `server.remove` like the real backend.
  */
 import type { MockServer } from '../server';
+import { installAppsMocks } from './apps';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
 import { installImportMocks } from './imports';
@@ -19,4 +20,5 @@ export function installExtraMocks(server: MockServer): void {
   installProfileMocks(server);
   installRepoSettingsMocks(server);
   installImportMocks(server);
+  installAppsMocks(server);
 }
