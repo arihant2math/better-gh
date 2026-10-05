@@ -168,6 +168,20 @@ export const EVENTS = [
   'release',
   'issues',
   'issue_comment',
+  'pull_request_review',
+  'pull_request_review_comment',
+  'repository_dispatch',
+  'workflow_run',
+  'create',
+  'delete',
+  'check_run',
+  'check_suite',
+  'label',
+  'milestone',
+  'watch',
+  'fork',
+  'public',
+  'gollum',
 ] as const;
 
 export const STATUS_FILTERS = ['queued', 'in_progress', 'waiting', 'completed', 'success', 'failure', 'cancelled', 'skipped'] as const;

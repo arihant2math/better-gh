@@ -58,10 +58,12 @@ Branch `bgh/p16-reusable-workflows`. Migration
   of P8's token permissions) a called job's token starts from its own
   `permissions:`, else the innermost caller's, and is intersected with every
   caller's (per category, the lower level).
-* Caller `concurrency` (job level): the call row waits as `pending` while
-  another active row holds the group (newer pending rows replace older
-  ones, `cancel-in-progress` cancels the holder through the durable
-  `actions.cancel_job` job); finishing a call wakes waiting runs.
+* Caller `concurrency` (job level), with P26's job concurrency: the call
+  row waits as `pending` while another active row holds the group (newer
+  pending rows replace older ones, `cancel-in-progress` cancels the holder
+  through `actions.cancel_job`); P26's `release_job_groups` starts the next
+  waiting row when the group frees up (a call row goes to `in_progress` and
+  its run is re-evaluated).
 * Limits: nesting depth 4 (`reusable::MAX_DEPTH`) and 20 unique called
   workflows per run (`MAX_UNIQUE_WORKFLOWS`).
 * Errors (bad ref syntax at run time, missing workflow or ref, no access,
@@ -85,8 +87,8 @@ Branch `bgh/p16-reusable-workflows`. Migration
 
 ## Tables / migration 2800
 
-* `actions_jobs.kind` (`job` | `call`), `actions_jobs.concurrency_group`
-  (+ partial index on active grouped rows).
+* `actions_jobs.kind` (`job` | `call`). (`actions_jobs.concurrency_group`
+  is P26's, migration 3800.)
 * `actions_repo_access (repo_id PK, access_level, updated_at)`.
 
 ## Web
@@ -124,8 +126,7 @@ None outside `bgh-actions` (migration only).
 * `runs::pull_request_events_trigger_runs` (pre-existing) failed once under
   full-workspace load (settle timing); it passed 4/4 in isolation and in the
   final gate.
-* Job-level `concurrency` is only enforced for calling jobs (normal jobs:
-  P26). The called workflow's own top-level `concurrency:` is ignored.
+* The called workflow's own top-level `concurrency:` is ignored.
 * Run-name / `on.workflow_call` validation happens when the calling job
   becomes ready, not at run start (GitHub reports some errors as a
   startup failure instead).

@@ -1773,6 +1773,25 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     const wf = wfOf(st, ctx.m[3]!);
     return wf ? { status: 200, body: workflowJson(st.repo, wf) } : notFound();
   });
+  // Status badge (served by bgh-actions as /{o}/{r}/actions/workflows/{file}/badge.svg).
+  R('GET', '/:owner/:repo/actions/workflows/:id/badge.svg', (ctx) => {
+    const st = repoOf(ctx);
+    if (isResp(st)) return st;
+    const wf = wfOf(st, ctx.m[3]!);
+    if (!wf) return notFound();
+    const branch = ctx.url.searchParams.get('branch') || st.repo.defaultBranch;
+    const event = ctx.url.searchParams.get('event');
+    const latest = [...st.runs.values()]
+      .filter((r) => r.wf.id === wf.id && r.headBranch === branch && r.status === 'completed' && (!event || r.event === event))
+      .sort((a, b) => b.id - a.id)[0];
+    const [msg, color] =
+      latest?.conclusion === 'success'
+        ? ['passing', '#2ea44f']
+        : latest && ['failure', 'timed_out', 'startup_failure'].includes(latest.conclusion ?? '')
+          ? ['failing', '#cb2431']
+          : ['no status', '#6a737d'];
+    return { status: 200, text: badgeSvg(wf.def.name, msg, color), headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'no-cache' } };
+  });
   for (const [action, state] of [
     ['enable', 'active'],
     ['disable', 'disabled_manually'],
@@ -2500,4 +2519,20 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     },
     activeRuns: () => [...active].map((r) => r.id),
   });
+}
+
+/** Two-part status badge (same layout as bgh-actions' badge.rs). */
+function badgeSvg(label: string, message: string, color: string): string {
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const width = (t: string) => [...t].reduce((n, c) => n + (/[il.,:;!| ']/.test(c) ? 4 : /[mwMW]/.test(c) ? 10 : /[A-Z]/.test(c) ? 8 : 7), 0);
+  const lw = width(label) + 12;
+  const mw = width(message) + 12;
+  const w = lw + mw;
+  const [l, m] = [esc(label), esc(message)];
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="20" role="img" aria-label="${l}: ${m}"><title>${l}: ${m}</title>` +
+    `<clipPath id="r"><rect width="${w}" height="20" rx="3" fill="#fff"/></clipPath><g clip-path="url(#r)"><rect width="${lw}" height="20" fill="#555"/>` +
+    `<rect x="${lw}" width="${mw}" height="20" fill="${color}"/></g><g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">` +
+    `<text x="${lw / 2}" y="14">${l}</text><text x="${lw + mw / 2}" y="14">${m}</text></g></svg>`
+  );
 }

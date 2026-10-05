@@ -184,6 +184,7 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         E::BranchProtectionRuleChanged { .. } => vec!["branch_protection_rule"],
         E::RepositoryRulesetChanged { .. } => vec!["repository_ruleset"],
         E::WikiPagesUpdated { .. } => vec!["gollum"],
+        E::RepositoryDispatch { .. } => vec!["repository_dispatch"],
         // Organization-level events (org and global hooks; `team_add` and
         // team repository grants also reach the repository's hooks).
         E::TeamCreated { .. } | E::TeamEdited { .. } | E::TeamDeleted { .. } => vec!["team"],
@@ -1063,6 +1064,20 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             }
             Ok(vec![b.emit("gollum", None, vec![("pages", json!(pages))])])
         }
+
+        E::RepositoryDispatch {
+            event_type,
+            client_payload,
+            branch,
+            ..
+        } => Ok(vec![b.emit(
+            "repository_dispatch",
+            Some(event_type),
+            vec![
+                ("branch", json!(branch)),
+                ("client_payload", client_payload.clone()),
+            ],
+        )]),
 
         // bgh-actions doesn't render the run JSON yet: nothing to deliver.
         E::WorkflowRunUpdated { workflow_run, .. } if workflow_run.is_null() => Ok(Vec::new()),

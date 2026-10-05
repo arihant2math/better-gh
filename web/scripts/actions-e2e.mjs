@@ -158,7 +158,46 @@ try {
   await page.waitForSelector('button:has-text("Latest #2")', { timeout: 20_000 });
   check(true, 're-run failed jobs creates a new attempt');
 
-  // 6. Runners + variables pages.
+  // 6. Status badge (P26): dialog preview + Markdown, and the SVG itself.
+  await page.goto(`${base}${repoBase}/actions/workflows/ci.yml`);
+  await page.click('button[aria-label="Workflow options"]');
+  await page.click('text=Create status badge');
+  await page.waitForSelector('dialog[open] img[alt="CI status"]', { timeout: 10_000 });
+  const md = await page.inputValue('dialog[open] textarea');
+  check(md.includes(`/${login}/${repo}/actions/workflows/ci.yml/badge.svg`), 'badge Markdown links the badge.svg');
+  await page.selectOption('#badge-event', 'push');
+  await page.waitForTimeout(300);
+  check((await page.inputValue('dialog[open] textarea')).includes('badge.svg?event=push'), 'badge Markdown follows the event filter');
+  await shot('actions-badge');
+  await page.keyboard.press('Escape');
+  const svg = await (await fetch(`${base}${repoBase}/actions/workflows/ci.yml/badge.svg`)).text();
+  check(svg.startsWith('<svg') && /CI: (passing|failing)/.test(svg), `badge.svg renders the latest main run (${/CI: [a-z ]+/.exec(svg)?.[0]})`);
+
+  // 7. Re-run from the PR Checks tab moves the check queued → completed (P26).
+  const pulls = await rest(`/repos/${login}/${repo}/pulls`);
+  const prNumber = pulls[0].number;
+  const prHead = pulls[0].head.sha;
+  const checkRuns = await rest(`/repos/${login}/${repo}/commits/${prHead}/check-runs`);
+  const flakyCheck = checkRuns.check_runs.find((c) => c.name === 'flaky');
+  check(flakyCheck?.status === 'completed', `PR head has the push run's checks (${checkRuns.total_count})`);
+  await page.goto(`${base}${repoBase}/pull/${prNumber}/checks?run=${flakyCheck.id}`);
+  await page.waitForSelector('nav[aria-label=Checks] >> text=flaky', { timeout: 15_000 });
+  await page.click('button:has-text("Re-run")');
+  // The same check run is reused by the re-run job: it completes again
+  // (later completed_at) instead of staying queued.
+  let rerun;
+  for (let i = 0; i < 90; i++) {
+    rerun = await rest(`/repos/${login}/${repo}/check-runs/${flakyCheck.id}`);
+    if (rerun.status === 'completed' && rerun.completed_at !== flakyCheck.completed_at) break;
+    await page.waitForTimeout(500);
+  }
+  check(rerun.status === 'completed' && rerun.completed_at !== flakyCheck.completed_at, `re-run from Checks: queued → completed (${rerun.status}/${rerun.conclusion})`);
+  const prRuns = await rest(`/repos/${login}/${repo}/actions/runs?branch=feature`);
+  check(prRuns.workflow_runs[0]?.run_attempt === 2, 'the check re-run is a new attempt of the run');
+  await page.waitForTimeout(1500);
+  await shot('actions-checks-rerun');
+
+  // 8. Runners + variables pages.
   await page.goto(`${base}${repoBase}/settings/actions/runners`);
   await page.click('button:has-text("New self-hosted runner")');
   await page.waitForSelector('text=/bgh-runner register --url/', { timeout: 10_000 });

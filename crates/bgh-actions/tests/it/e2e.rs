@@ -316,3 +316,112 @@ async fn external_runner_over_http() {
     assert!(log.contains("hello from repo"), "{log}");
     assert!(log.contains("##[notice]from http runner"), "{log}");
 }
+
+const TRIGGERS_WORKFLOW: &str = r###"
+name: Triggers
+on:
+  pull_request:
+  repository_dispatch:
+    types: [deploy]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - if: github.event_name == 'pull_request'
+        name: Tests the merge commit
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_REF" = "refs/pull/${{ github.event.number }}/merge"
+          test "$(git cat-file -p HEAD | grep -c '^parent ')" = 2
+          test -f feature.txt && test -f main.txt
+      - if: github.event_name == 'repository_dispatch'
+        name: Sees the client payload
+        run: |
+          test "${{ github.event.action }}" = deploy
+          test "${{ github.event.client_payload.env }}" = prod
+          test "$GITHUB_REF" = refs/heads/main
+"###;
+
+/// P26: a PR run checks out `refs/pull/N/merge` (base + head merged) and a
+/// `repository_dispatch` run sees its client payload, on the shell executor.
+#[tokio::test]
+async fn merge_ref_and_repository_dispatch_runs_with_shell_executor() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    app.create_repo(&alice, "proj").await;
+    let wc = WorkingCopy::new(&app, &alice, "alice", "proj").await;
+    wc.commit(&[(".github/workflows/t.yml", TRIGGERS_WORKFLOW)], "ci")
+        .await;
+    wc.push("main").await;
+    wc.checkout_new("feature").await;
+    wc.commit(&[("feature.txt", "f")], "feature").await;
+    wc.push("feature").await;
+    // main moves on: the merge commit must contain both sides.
+    git(&wc.path, &["checkout", "-q", "main"]).await;
+    wc.commit(&[("main.txt", "m")], "main").await;
+    wc.push("main").await;
+    settle(&app).await;
+    app.post("/api/v3/repos/alice/proj/pulls")
+        .auth(&alice)
+        .json(&json!({"title": "PR", "head": "feature", "base": "main"}))
+        .send()
+        .await
+        .assert_status(201);
+    app.post("/api/v3/repos/alice/proj/dispatches")
+        .auth(&alice)
+        .json(&json!({"event_type": "deploy", "client_payload": {"env": "prod"}}))
+        .send()
+        .await
+        .assert_status(204);
+    settle(&app).await;
+
+    let work = tempfile::tempdir().unwrap();
+    let cfg = bgh_actions::runner::RunnerConfig {
+        work_dir: work.path().to_path_buf(),
+        executor: bgh_actions::runner::ExecutorKind::Shell,
+        remote_actions: false,
+        ..Default::default()
+    };
+    for _ in 0..10 {
+        let n = bgh_actions::services::run_queued_jobs(&app.state, cfg.clone())
+            .await
+            .unwrap();
+        settle(&app).await;
+        if n == 0 {
+            break;
+        }
+    }
+    let all = runs(&app, &alice, "alice/proj").await;
+    let mut seen: Vec<(String, String)> = all
+        .iter()
+        .filter(|r| r["event"] != "push")
+        .map(|r| {
+            (
+                r["event"].as_str().unwrap().to_string(),
+                r["conclusion"].as_str().unwrap_or("-").to_string(),
+            )
+        })
+        .collect();
+    seen.sort();
+    for r in all.iter().filter(|r| r["conclusion"] == "failure") {
+        for j in jobs(&app, &alice, "alice/proj", r["id"].as_i64().unwrap()).await {
+            let res = app
+                .get(&format!(
+                    "/api/v3/repos/alice/proj/actions/jobs/{}/logs",
+                    j["id"]
+                ))
+                .auth(&alice)
+                .send()
+                .await;
+            eprintln!("{} log:\n{}", r["event"], follow(&app, &res).await.text());
+        }
+    }
+    assert_eq!(
+        seen,
+        [
+            ("pull_request".to_string(), "success".to_string()),
+            ("repository_dispatch".to_string(), "success".to_string()),
+        ]
+    );
+}

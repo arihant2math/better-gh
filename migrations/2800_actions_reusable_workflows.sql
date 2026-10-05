@@ -5,13 +5,10 @@
 -- run or logs; the called workflow's jobs are ordinary `job` rows whose
 -- `job_key` is prefixed with the call's key (`build/test`, `build.1/test`).
 -- A call completes when its jobs did, with the called workflow's outputs.
+-- (`actions_jobs.concurrency_group`, used for the calling job's
+-- `concurrency:`, comes from P26's migration 3800.)
 ALTER TABLE actions_jobs
-    ADD COLUMN kind TEXT NOT NULL DEFAULT 'job' CHECK (kind IN ('job', 'call')),
-    -- Job-level `concurrency.group` (evaluated) of a waiting/active row.
-    ADD COLUMN concurrency_group TEXT;
-
-CREATE INDEX actions_jobs_concurrency_idx ON actions_jobs (repo_id, concurrency_group, id)
-    WHERE status <> 'completed' AND concurrency_group IS NOT NULL;
+    ADD COLUMN kind TEXT NOT NULL DEFAULT 'job' CHECK (kind IN ('job', 'call'));
 
 -- Who may call this (private or internal) repository's reusable workflows
 -- and actions (GitHub's `/actions/permissions/access`). No row = `none`.
