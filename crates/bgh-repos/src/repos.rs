@@ -34,6 +34,7 @@ pub async fn delete_repo(
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Admin)?;
     auth.require_scope("delete_repo")?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let repo = &access.repo;
 
     let mut tx = Tx::begin(&state).await?;

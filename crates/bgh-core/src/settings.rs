@@ -243,6 +243,9 @@ pub struct AuthProviderSettings {
     /// Built-in username/password login.
     pub password_login: bool,
     pub oidc: Vec<OidcProvider>,
+    /// Every user must enable two-factor authentication: signed-in browser
+    /// sessions without it are sent to set it up (P36; tokens unaffected).
+    pub require_2fa: bool,
 }
 
 impl Default for AuthProviderSettings {
@@ -250,6 +253,7 @@ impl Default for AuthProviderSettings {
         Self {
             password_login: true,
             oidc: Vec::new(),
+            require_2fa: false,
         }
     }
 }
@@ -854,6 +858,7 @@ pub fn public_info(state: &AppState, s: &SiteSettings) -> Value {
         },
         "signup_policy": s.signup.policy,
         "password_login": s.auth_providers.password_login,
+        "require_2fa": s.auth_providers.require_2fa,
         "oidc_providers": s.auth_providers.oidc.iter().map(|p| json!({
             "name": p.name,
             "display_name": p.display_name.clone().unwrap_or_else(|| p.name.clone()),

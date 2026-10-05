@@ -12,7 +12,9 @@ pub mod json;
 pub mod keys;
 pub mod meta;
 pub mod oauth;
+pub mod org_two_factor;
 pub mod orgs;
+pub mod security;
 pub mod session;
 pub mod social;
 pub mod sso;
@@ -23,6 +25,7 @@ pub mod twofa;
 pub mod users;
 pub mod util;
 pub mod validate;
+pub mod webauthn;
 
 use axum::Router;
 use axum::routing::{delete, get, patch, post, put};
@@ -287,6 +290,38 @@ pub fn web_router() -> Router<AppState> {
             "/_bgh/user/two_factor/recovery_codes",
             post(twofa::regenerate),
         )
+        // WebAuthn security keys / passkeys, sudo mode (P36)
+        .route("/_bgh/user/webauthn", get(webauthn::list))
+        .route(
+            "/_bgh/user/webauthn/registrations",
+            post(webauthn::start_registration),
+        )
+        .route(
+            "/_bgh/user/webauthn/registrations/{id}",
+            post(webauthn::finish_registration),
+        )
+        .route(
+            "/_bgh/user/webauthn/{id}",
+            patch(webauthn::rename).delete(webauthn::delete),
+        )
+        .route(
+            "/_bgh/auth/login/passkey/challenge",
+            post(webauthn::passkey_challenge),
+        )
+        .route("/_bgh/auth/login/passkey", post(webauthn::passkey_login))
+        .route(
+            "/_bgh/auth/2fa/webauthn/challenge",
+            post(webauthn::two_factor_challenge),
+        )
+        .route("/_bgh/auth/2fa/webauthn", post(webauthn::two_factor_login))
+        .route(
+            "/_bgh/sudo",
+            get(security::sudo_status).post(security::sudo),
+        )
+        .route(
+            "/_bgh/sudo/webauthn/challenge",
+            post(security::sudo_challenge),
+        )
         .route("/_bgh/emails/verify", post(emails::verify))
         .route(
             "/_bgh/user/emails/{email}/verification",
@@ -392,6 +427,9 @@ pub fn web_router() -> Router<AppState> {
         .route("/_bgh/authorizations/{id}", delete(oauth::delete_grant))
 }
 
-/// Background jobs and event listeners: none (account mail is queued as
-/// the shared `mail.send` job of `bgh_core::mail`).
-pub fn register(_reg: &mut Registry) {}
+/// Background work: the `accounts.security` service (PAT expiry reminders,
+/// legacy TOTP secret encryption). Account mail is queued as the shared
+/// `mail.send` job of `bgh_core::mail`.
+pub fn register(reg: &mut Registry) {
+    reg.service("accounts.security", security::service);
+}

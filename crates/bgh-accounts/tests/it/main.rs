@@ -10,6 +10,7 @@ mod auth;
 mod boot;
 mod oauth;
 mod orgs;
+mod security;
 mod sso_avatars_ratelimit;
 mod teams;
 mod users;

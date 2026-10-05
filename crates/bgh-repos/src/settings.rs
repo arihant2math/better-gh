@@ -392,6 +392,7 @@ pub async fn transfer(
 ) -> ApiResult<(StatusCode, Json<Repository>)> {
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     access.require(Permission::Admin)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let new_owner_login = body
         .new_owner
         .as_deref()

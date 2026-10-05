@@ -25,6 +25,10 @@ RUN npm run build
 
 # --- rust toolchain + cargo-chef ----------------------------------------------
 FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
+# OpenSSL headers: webauthn-rs (security keys / passkeys) links libssl.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo install cargo-chef --locked --version ^0.1
 WORKDIR /src
@@ -56,9 +60,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # --- runtime --------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # git: smart HTTP / SSH transport and write plumbing. tini: PID 1 that
-# forwards signals and reaps orphaned git subprocesses.
+# forwards signals and reaps orphaned git subprocesses. libssl: WebAuthn.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git git-lfs tini \
+ && (apt-get install -y --no-install-recommends libssl3t64 \
+     || apt-get install -y --no-install-recommends libssl3) \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 bgh \
  && useradd --system --uid 10001 --gid bgh --home-dir /data --shell /usr/sbin/nologin bgh \
