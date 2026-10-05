@@ -27,7 +27,7 @@ from the mock, handy for testing rollbacks.
 | `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`) |
 | `src/ui/` | design system (import from `ui/…` files or the `ui` barrel) |
 | `src/shortcuts/` | `useShortcuts`, `formatKeys` |
-| `src/components/` | domain components shared by pages (e.g. `diff/DiffViewer`) |
+| `src/components/` | domain components shared by pages (e.g. `diff/DiffViewer`; `admin/` = kit for admin-style pages) |
 | `src/pages/<area>/` | route pages, one folder per area, each with its own CSS module |
 | `src/mock/` | in-browser backend (reference implementation of the sync protocol) |
 
@@ -173,6 +173,32 @@ Styling: CSS Modules per component/page + the tokens in `ui/tokens.css`
 hard-code colors; both themes must work (check with the theme toggle). Keep
 animations ≤ 150 ms and use `var(--dur)` / `var(--ease)`.
 
+## Admin-style pages (site admin, org settings)
+
+Data that isn't synced (site admin, org settings, audit logs, jobs) is read
+over REST with `useResource` (detail) or `usePagedList` (lists that follow
+`Link: rel="next"`, cached per URL), and written with plain requests;
+update caches with `mutate`/`refresh` (`api/cache`) and
+`updateLists`/`invalidateLists`. Build pages from `components/admin`:
+
+* `DataTable` — virtualized, sticky header, server sort, infinite scroll,
+  `j`/`k`/`Enter`; `kit.tsx` — `PageHeader`, `Panel`, `KeyValue`,
+  `StatusPill` (icon + label, never colour alone), `SearchInput` (`/`),
+  `Switch`, `RadioCards`, `useConfirm` (type-to-confirm, reason),
+  `Drawer`, `JsonView`, `errorMessage`;
+* `charts.tsx` — hand-rolled SVG `StatTile`, `Sparkline`, `Meter`,
+  `StackedBar`, `BarList` using the `--chart-*` tokens (categorical slots
+  in fixed order, validated for colour-blindness in both themes);
+* `format.ts` (`formatBytes`, `formatCount`, `plural`, dates), `csv.ts`
+  (client-side CSV export, formula-injection safe).
+
+Site admin lives under `/site-admin/*` (`pages/admin`, guarded by
+`site.viewerSiteAdmin` from `app/site.ts`), org settings under
+`/organizations/:org/settings/*` (`pages/orgsettings`). App-wide
+announcement / maintenance banners come from `GET /_bgh/site` and are a lazy
+chunk loaded only while one is active. The admin UI has no mock backend:
+verify it against a real server with `scripts/admin-smoke.mjs`.
+
 ## Performance rules
 
 1. **Never await the network to navigate or to show what's in the store.**
@@ -195,4 +221,7 @@ animations ≤ 150 ms and use `var(--dur)` / `var(--ease)`.
 npm run build && npx vite preview &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/screenshots.mjs http://localhost:4173 /tmp/shots
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimistic writes, rollback, reload, keyboard
+# site admin + org settings against a real backend (see the script header)
+BGH_BACKEND=http://localhost:3000 npx vite --port 5174 &
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/admin-smoke.mjs http://localhost:5174 /tmp/admin-shots
 ```
