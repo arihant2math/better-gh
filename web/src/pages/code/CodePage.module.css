@@ -1,0 +1,257 @@
+.page {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.tree {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100%;
+  height: calc(100vh - 160px);
+  overflow-y: auto;
+  padding: 12px 8px 24px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.treeTitle {
+  padding: 0 8px 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeItem:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.treeItem svg {
+  color: var(--fg-subtle);
+  flex-shrink: 0;
+}
+
+.treeActive {
+  background: var(--bg-active);
+  font-weight: var(--fw-medium);
+}
+
+.treeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeLoading {
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.dirIcon {
+  color: #54aeff !important;
+}
+
+.fileIcon {
+  color: var(--fg-subtle);
+}
+
+.main {
+  min-width: 0;
+  padding: 16px 24px 48px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: var(--fs-base);
+}
+
+.crumbRoot {
+  font-weight: var(--fw-semibold);
+}
+
+.crumbPart {
+  display: inline-flex;
+  align-items: center;
+}
+
+.crumbSep {
+  margin: 0 4px;
+  color: var(--fg-faint);
+}
+
+.lastCommit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-subtle);
+  font-size: var(--fs-md);
+}
+
+.commitMsg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.sha {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.subtle {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.listing {
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow: hidden;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--fg);
+}
+
+.entry:first-child {
+  border-top: 0;
+}
+
+.entry:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.entryName {
+  flex: 1;
+}
+
+.readme {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.readmeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: var(--fw-semibold);
+}
+
+.readmeBody {
+  padding: 24px 32px;
+}
+
+.file {
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow: hidden;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.lang {
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  text-transform: capitalize;
+}
+
+.fileBody {
+  overflow-x: auto;
+}
+
+.code {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  tab-size: 4;
+}
+
+.lineNo {
+  width: 1%;
+  min-width: 50px;
+  padding: 0 12px 0 16px;
+  color: var(--fg-faint);
+  text-align: right;
+  vertical-align: top;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.lineCode {
+  padding: 0 16px 0 8px;
+  white-space: pre;
+}
+
+.code tr:first-child td {
+  padding-top: 8px;
+}
+
+.code tr:last-child td {
+  padding-bottom: 8px;
+}
+
+.code tr:hover .lineNo {
+  color: var(--fg-muted);
+}
