@@ -76,6 +76,8 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
         return Ok(());
     }
     let (repo_id, kind) = match &*event {
+        // Imports and mirror syncs fetch history; they never run workflows.
+        Event::Push(p) if p.is_fetched() => return Ok(()),
         Event::Push(p) => (
             p.repo_id,
             TriggerKind::Push {

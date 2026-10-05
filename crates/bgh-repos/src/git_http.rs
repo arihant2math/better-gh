@@ -74,8 +74,29 @@ async fn git_access(
             other => other,
         })?;
         access.require_not_archived()?;
+        access.require_not_mirror()?;
+        crate::import::require_not_importing(state, access.repo.id).await?;
     }
     Ok((access, auth))
+}
+
+/// git shows `text/plain` error bodies to the user (`remote: …`) but not
+/// JSON ones, so refusals (archived, mirror, importing, permission) are
+/// sent as plain text.
+fn git_response(result: ApiResult<Response>) -> Response {
+    match result {
+        Ok(r) => r,
+        Err(ApiError::Forbidden(message)) => (
+            axum::http::StatusCode::FORBIDDEN,
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "text/plain; charset=utf-8",
+            )],
+            format!("{message}\n"),
+        )
+            .into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +109,16 @@ pub async fn info_refs(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
     Query(q): Query<InfoRefsQuery>,
+    headers: HeaderMap,
+) -> Response {
+    git_response(info_refs_inner(state, owner, repo, q, headers).await)
+}
+
+async fn info_refs_inner(
+    state: AppState,
+    owner: String,
+    repo: String,
+    q: InfoRefsQuery,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     if bgh_wiki::git::wiki_repo_name(&repo).is_some() {
@@ -127,6 +158,15 @@ pub async fn upload_pack(
 pub async fn receive_pack(
     State(state): State<AppState>,
     Path((owner, repo)): Path<(String, String)>,
+    req: Request,
+) -> Response {
+    git_response(receive_pack_inner(state, owner, repo, req).await)
+}
+
+async fn receive_pack_inner(
+    state: AppState,
+    owner: String,
+    repo: String,
     req: Request,
 ) -> ApiResult<Response> {
     if bgh_wiki::git::wiki_repo_name(&repo).is_some() {

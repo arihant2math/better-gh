@@ -49,6 +49,7 @@ pub async fn write_ref(
     force: bool,
 ) -> ApiResult<RefUpdate> {
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let store = crate::store(state);
     let git = store.cli(access.repo.id)?;
     let update = RefUpdate {

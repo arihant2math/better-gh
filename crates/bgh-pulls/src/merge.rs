@@ -537,6 +537,7 @@ pub async fn merge(
     let (access, pull) = load_pull(&state, Some(&auth), &owner, &repo, number).await?;
     access.require(Permission::Write)?;
     access.require_not_archived()?;
+    access.require_not_mirror()?;
     let method = match body.merge_method.as_deref() {
         None => MergeMethod::Merge,
         Some(m) => MergeMethod::parse(m).ok_or_else(|| {

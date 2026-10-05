@@ -50,6 +50,22 @@ pub struct PushEvent {
     pub repo_id: i64,
     pub pusher_id: Option<i64>,
     pub updates: Vec<RefUpdate>,
+    /// Where the refs came from when not a client push:
+    /// [`PushEvent::ORIGIN_MIRROR`] or [`PushEvent::ORIGIN_IMPORT`]. Search
+    /// indexing, activity and webhooks treat these like pushes; Actions
+    /// doesn't start workflows for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+}
+
+impl PushEvent {
+    pub const ORIGIN_MIRROR: &'static str = "mirror";
+    pub const ORIGIN_IMPORT: &'static str = "import";
+
+    /// Refs fetched from a remote (mirror sync or import), not pushed.
+    pub fn is_fetched(&self) -> bool {
+        self.origin.is_some()
+    }
 }
 
 /// Domain events. Serialized as `{"type": "issue_opened", ...}`.
@@ -1059,6 +1075,7 @@ mod tests {
             repo_id: 1,
             pusher_id: None,
             updates: vec![],
+            origin: None,
         });
         assert_eq!(serde_json::to_value(&p).unwrap()["type"], p.name());
     }

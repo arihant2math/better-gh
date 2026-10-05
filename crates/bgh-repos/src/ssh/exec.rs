@@ -97,6 +97,13 @@ async fn authorize(
     if write && authz.access.repo.archived {
         return Err("ERROR: This repository was archived so it is read-only.\n".into());
     }
+    if write && authz.access.repo.mirror_url.is_some() {
+        return Err(format!("ERROR: {}.\n", bgh_core::perms::MIRROR_READ_ONLY));
+    }
+    if write && let Err(e) = crate::import::require_not_importing(state, authz.access.repo.id).await
+    {
+        return Err(format!("ERROR: {e}\n"));
+    }
     Ok(authz)
 }
 
