@@ -435,3 +435,31 @@ async fn labels_milestones_and_search() {
     assert_eq!(d["search"]["issueCount"], 0);
     assert_eq!(d["rateLimit"]["limit"], 5000);
 }
+
+#[tokio::test]
+async fn assignable_and_mentionable_users() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let bob = app.create_user("bob").await;
+    let carol = app.create_user("carol").await;
+    let org = app.create_org("acme", &alice).await;
+    app.add_org_member(&org, &bob, "member").await;
+    app.create_repo_with(&alice, Some("acme"), json!({"name": "proj"}))
+        .await;
+    let q = r#"{ repository(owner: "acme", name: "proj") {
+        assignableUsers(first: 10) { nodes { login } }
+        mentionableUsers(first: 10) { nodes { login } } } }"#;
+    let d = data(&app, &alice, q, json!({})).await;
+    let logins = |k: &str| -> Vec<String> {
+        d["repository"][k]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["login"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // Org base permission is `read`: bob can be mentioned, not assigned.
+    assert_eq!(logins("assignableUsers"), vec!["alice"]);
+    assert_eq!(logins("mentionableUsers"), vec!["alice", "bob"]);
+    assert!(!logins("mentionableUsers").contains(&carol.login));
+}

@@ -832,8 +832,10 @@ impl Repository {
     }
 }
 
-/// Users with push access (assignable) or that can read (mentionable),
-/// optionally filtered by login/name prefix.
+/// Users that can be assigned (triage or better) or mentioned (any
+/// grant), optionally filtered by login/name. One query: the best grant per
+/// user from ownership, collaborators, org membership (+ base permission)
+/// and team grants (inherited from parent teams), like `bgh_core::perms`.
 async fn people(
     ctx: &Context<'_>,
     repo: &Repository,
@@ -842,40 +844,54 @@ async fn people(
 ) -> GResult<Vec<User>> {
     let g = gql(ctx);
     let r = repo.r();
-    let candidates: Vec<db::User> = sqlx::query_as(&format!(
-        "SELECT {} FROM users u
-          WHERE u.type = 'User' AND u.suspended_at IS NULL
-            AND (u.id = $1
-                 OR u.id IN (SELECT user_id FROM collaborators WHERE repo_id = $2)
-                 OR u.id IN (SELECT user_id FROM org_members WHERE org_id = $1)
-                 OR u.id IN (SELECT tm.user_id FROM team_members tm
-                               JOIN team_repos tr ON tr.team_id = tm.team_id
-                              WHERE tr.repo_id = $2))
-            AND ($3::text IS NULL OR lower(u.login) LIKE lower($3) || '%'
-                 OR lower(coalesce(u.name, '')) LIKE '%' || lower($3) || '%')
-          ORDER BY lower(u.login)",
-        db::prefixed("u", db::User::COLUMNS)
+    let min_rank: i32 = if write_only { 2 } else { 1 };
+    let users: Vec<db::User> = sqlx::query_as(&format!(
+        r#"
+        WITH RECURSIVE
+        ranks(name, rk) AS (VALUES ('read', 1), ('pull', 1), ('triage', 2), ('write', 3),
+                                   ('push', 3), ('maintain', 4), ('admin', 5)),
+        team_tree(team_id, granting_id) AS (
+            SELECT id, id FROM teams WHERE org_id = $1
+            UNION
+            SELECT tt.team_id, t.parent_id FROM team_tree tt JOIN teams t ON t.id = tt.granting_id
+             WHERE t.parent_id IS NOT NULL
+        ),
+        grants(user_id, rk) AS (
+            SELECT $1::bigint, 5
+            UNION ALL
+            SELECT c.user_id, rn.rk FROM collaborators c JOIN ranks rn ON rn.name = c.permission
+             WHERE c.repo_id = $2
+            UNION ALL
+            SELECT m.user_id,
+                   CASE WHEN m.role = 'admin' THEN 5
+                        ELSE coalesce((SELECT rk FROM ranks WHERE name = s.default_repository_permission), 0)
+                   END
+              FROM org_members m LEFT JOIN org_settings s ON s.org_id = m.org_id
+             WHERE m.org_id = $1
+            UNION ALL
+            SELECT tm.user_id, rn.rk
+              FROM team_members tm
+              JOIN team_tree tt ON tt.team_id = tm.team_id
+              JOIN team_repos tr ON tr.team_id = tt.granting_id AND tr.repo_id = $2
+              JOIN ranks rn ON rn.name = tr.permission
+        )
+        SELECT {cols} FROM users u
+          JOIN (SELECT user_id, max(rk) AS rk FROM grants GROUP BY user_id) gr ON gr.user_id = u.id
+         WHERE u.type = 'User' AND u.suspended_at IS NULL AND gr.rk >= $4
+           AND ($3::text IS NULL OR lower(u.login) LIKE lower($3) || '%'
+                OR lower(coalesce(u.name, '')) LIKE '%' || lower($3) || '%')
+         ORDER BY lower(u.login)
+        "#,
+        cols = db::prefixed("u", db::User::COLUMNS)
     ))
     .bind(r.owner_id)
     .bind(r.id)
     .bind(query.filter(|q| !q.is_empty()))
+    .bind(min_rank)
     .fetch_all(&g.state.db)
     .await
     .gql()?;
-    if !write_only {
-        return Ok(candidates.into_iter().map(|u| User(Arc::new(u))).collect());
-    }
-    let mut out = Vec::with_capacity(candidates.len());
-    let repos = std::slice::from_ref(r);
-    for u in candidates {
-        let p = bgh_core::perms::repo_permissions(&g.state.db, Some(u.id), repos)
-            .await
-            .gql()?;
-        if p.get(&r.id).copied().unwrap_or(Permission::None) >= Permission::Triage {
-            out.push(User(Arc::new(u)));
-        }
-    }
-    Ok(out)
+    Ok(users.into_iter().map(|u| User(Arc::new(u))).collect())
 }
 
 pub fn html_escape(s: &str) -> String {
