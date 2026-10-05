@@ -340,12 +340,16 @@ pub async fn create_session(
 /// Delete a session by its secret cookie value (and evict the cache).
 pub async fn destroy_session(state: &AppState, token: &str) -> ApiResult<()> {
     let hash = crypto::sha256_hex(token);
-    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
-        .bind(&hash)
-        .execute(&state.db)
-        .await?;
+    let deleted: Option<(i64, i64)> =
+        sqlx::query_as("DELETE FROM sessions WHERE token_hash = $1 RETURNING id, user_id")
+            .bind(&hash)
+            .fetch_optional(&state.db)
+            .await?;
     let mut redis = state.redis.clone();
     let _: Result<(), _> = redis.del(state.redis_key(&format!("session:{hash}"))).await;
+    if let Some((session_id, user_id)) = deleted {
+        crate::sync::signal_signed_out(state, user_id, Some(session_id)).await;
+    }
     Ok(())
 }
 
@@ -363,6 +367,7 @@ pub async fn destroy_user_sessions(state: &AppState, user_id: i64) -> ApiResult<
             .collect();
         let mut redis = state.redis.clone();
         let _: Result<(), _> = redis.del(keys).await;
+        crate::sync::signal_signed_out(state, user_id, None).await;
     }
     Ok(())
 }

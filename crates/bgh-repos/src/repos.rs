@@ -60,14 +60,8 @@ pub async fn delete_repo(
         json!({ "name": access.full_name() }),
     )
     .await?;
-    tx.sync(
-        &sync::repo_scope(repo.id),
-        "repository",
-        repo.id,
-        SyncAction::Delete,
-        &json!({ "id": repo.id }),
-    )
-    .await?;
+    tx.sync_delete(&sync::repo_scope(repo.id), SyncModel::Repo, repo.id)
+        .await?;
     tx.enqueue(&DeleteStorage { repo_id: repo.id }).await?;
     tx.emit(Event::RepositoryDeleted {
         repo_id: repo.id,

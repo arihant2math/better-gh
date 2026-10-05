@@ -112,6 +112,10 @@ pub fn app(state: AppState) -> Router {
             let web_files = web_files.clone();
             async move { web_files.serve(req).await }
         })
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_sync::http_middleware,
+        ))
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
         .layer(CompressionLayer::new().compress_when(compress_when))
         .layer(PropagateRequestIdLayer::x_request_id())
