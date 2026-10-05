@@ -78,26 +78,63 @@ if [[ $SKIP_DOCKER == 0 ]] && command -v docker >/dev/null && docker info >/dev/
   printf 'hello from bgh %s\n' "$RANDOM" >"$ctx/hello.txt"
   printf 'FROM scratch\nCOPY hello.txt /hello.txt\nLABEL org.opencontainers.image.source=%s/%s/none\n' \
     "$HTTP_BASE" "$LOGIN" >"$ctx/Dockerfile"
-  step() { if "$@" >>"$WORK/docker.log" 2>&1; then ts_log "docker: ok   $*"; else ts_log "docker: FAIL $* (log: $WORK/docker.log)"; FAILED=1; fi; }
+  # Logs the command without its last argument for `login` (a secret).
+  step() {
+    local what="$*"
+    [[ $1 == login ]] && what="login $2"
+    if "$@" >>"$WORK/docker.log" 2>&1; then ts_log "docker: ok   $what"; else ts_log "docker: FAIL $what (log: $WORK/docker.log)"; FAILED=1; fi
+  }
   # Passwords are refused, tokens accepted.
   if docker login "$REG" -u "$TS_LOGIN" --password-stdin <<<"$TS_PASSWORD" >>"$WORK/docker.log" 2>&1; then
     ts_log "docker: FAIL login with a password was accepted"; FAILED=1
   else
     ts_log "docker: ok   password login refused"
   fi
-  step docker login "$REG" -u "$TS_LOGIN" --password "$TS_TOKEN"
+  login() { docker login "$REG" -u "$1" --password-stdin <<<"$2"; }
+  step login "$TS_LOGIN" "$TS_TOKEN"
   step docker build -q -t "$IMAGE:v1" "$ctx"
   step docker push "$IMAGE:v1"
   step docker rmi "$IMAGE:v1"
   step docker pull "$IMAGE:v1"
   step docker logout "$REG"
   # Anonymous pull of the (private) package is refused.
-  if docker pull "$IMAGE:v1-missing" >>"$WORK/docker.log" 2>&1 || ! docker pull "$IMAGE:v1" 2>&1 | grep -qiE "unauthorized|denied|authentication"; then
+  docker rmi "$IMAGE:v1" >/dev/null 2>&1 || true
+  anon_out="$(docker pull "$IMAGE:v1" 2>&1)"
+  anon_rc=$?
+  printf '%s\n' "$anon_out" >>"$WORK/docker.log"
+  if [[ $anon_rc == 0 ]] || ! grep -qiE "unauthorized|denied|authentication" <<<"$anon_out"; then
     ts_log "docker: FAIL anonymous pull of a private image"; FAILED=1
   else
     ts_log "docker: ok   anonymous pull of a private image refused"
   fi
-  docker rmi "$IMAGE:v1" >/dev/null 2>&1 || true
+
+  # An Actions job token (GITHUB_TOKEN: `actions:repo:<id>` scope) pushes to
+  # its repository's namespace; the package gets linked to the repository.
+  repo_id="$(curl -sf -H "authorization: token $TS_TOKEN" -H 'content-type: application/json' \
+    -d '{"name":"ci-app","private":true}' "$HTTP_BASE/api/v3/user/repos" | jq -r .id)"
+  # Minted like bgh-actions does when a job is claimed (the CLI only
+  # issues classic scopes).
+  job_token="bghp_$(python3 -c 'import secrets,string; print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(40)))')"
+  db_url=""
+  for kv in "${TS_SERVER_ENV[@]}"; do [[ $kv == DATABASE_URL=* ]] && db_url="${kv#DATABASE_URL=}"; done
+  psql -q "$db_url" -c "INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, kind, expires_at)
+    SELECT id, 'GITHUB_TOKEN (e2e)', encode(sha256('$job_token'::bytea), 'hex'), right('$job_token', 8),
+           ARRAY['repo', 'workflow', 'actions:repo:$repo_id'], 'app', now() + interval '1 hour'
+      FROM users WHERE login = '$TS_LOGIN'" >/dev/null || ts_log "minting a job token failed"
+  step login "$TS_LOGIN" "$TS_TOKEN"
+  step docker pull "$IMAGE:v1"
+  step login x-access-token "$job_token"
+  step docker tag "$IMAGE:v1" "$REG/$LOGIN/ci-app:sha-1"
+  step docker push "$REG/$LOGIN/ci-app:sha-1"
+  linked="$(curl -sf -H "authorization: token $TS_TOKEN" "$HTTP_BASE/_bgh/repos/$LOGIN/ci-app/packages" |
+    jq -r '.packages[0].name // empty')"
+  if [[ $linked == ci-app ]]; then
+    ts_log "docker: ok   GITHUB_TOKEN push linked the package to the repository"
+  else
+    ts_log "docker: FAIL GITHUB_TOKEN push did not link the package"; FAILED=1
+  fi
+  docker rmi "$REG/$LOGIN/ci-app:sha-1" >/dev/null 2>&1 || true
+  docker logout "$REG" >/dev/null 2>&1 || true
 else
   ts_log "docker: SKIP (no reachable docker daemon)"
 fi
