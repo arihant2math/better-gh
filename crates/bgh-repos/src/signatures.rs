@@ -495,6 +495,136 @@ pub async fn unverified(state: &AppState, commits: &[Commit]) -> ApiResult<Vec<S
         .collect())
 }
 
+/// Most commits per [`commit_signatures`] request.
+const MAX_BADGE_SHAS: usize = 100;
+
+/// Who made a signature (web badge details).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Signer {
+    pub login: String,
+    pub avatar_url: String,
+}
+
+/// One commit's signature, compact (web badges).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SignatureInfo {
+    pub verified: bool,
+    pub reason: String,
+    /// `gpg` | `ssh` | `x509` | `unknown`
+    pub key_type: &'static str,
+    /// OpenPGP key id or SSH fingerprint the signature names.
+    pub key_id: Option<String>,
+    /// Owner of the matching key (`None` for web-flow and unknown keys).
+    pub signer: Option<Signer>,
+    /// Made by the server's web-flow key.
+    pub web_flow: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SignatureInfos {
+    /// Signed commits only; unsigned ones are absent.
+    pub signatures: std::collections::BTreeMap<String, SignatureInfo>,
+}
+
+/// `GET /_bgh/repos/{o}/{r}/commit-signatures?sha=…&sha=…`: verification
+/// of up to 100 commits for Verified badges (signed commits only).
+pub async fn commit_signatures(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    auth: MaybeUser,
+    Path((owner, repo)): Path<(String, String)>,
+    axum::extract::RawQuery(query): axum::extract::RawQuery,
+) -> ApiResult<Json<SignatureInfos>> {
+    let access = RepoAccess::load(&state, auth.as_ref(), &owner, &repo).await?;
+    let mut shas: Vec<String> = query
+        .unwrap_or_default()
+        .split('&')
+        .filter_map(|kv| kv.strip_prefix("sha="))
+        .flat_map(|v| {
+            v.replace("%2C", ",")
+                .replace("%2c", ",")
+                .split(',')
+                .map(str::to_ascii_lowercase)
+                .collect::<Vec<_>>()
+        })
+        .filter(|s| bgh_git::is_sha(s) && s.len() == 40)
+        .collect();
+    shas.sort();
+    shas.dedup();
+    shas.truncate(MAX_BADGE_SHAS);
+    let commits = match crate::store(&state)
+        .cli(access.repo.id)?
+        .commits(&shas)
+        .await
+    {
+        Ok(c) => c,
+        Err(bgh_git::GitError::NotFound(_)) => vec![],
+        Err(e) => return Err(e.into()),
+    };
+    let signed: Vec<Commit> = commits
+        .into_iter()
+        .filter(|c| c.signature.is_some())
+        .collect();
+    let verified = verify_commits(&state, &signed).await?;
+    let ids: Vec<&str> = signed.iter().map(|c| c.sha.as_str()).collect();
+    let details: HashMap<String, (Option<String>, Option<i64>, Option<String>, Option<String>)> =
+        sqlx::query_as::<
+            _,
+            (
+                String,
+                Option<String>,
+                Option<i64>,
+                Option<String>,
+                Option<String>,
+            ),
+        >(
+            "SELECT v.sha, v.signer_key, u.id, u.login, u.avatar_url
+               FROM signature_verifications v LEFT JOIN users u ON u.id = v.signer_id
+              WHERE v.sha = ANY($1)",
+        )
+        .bind(&ids)
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|(sha, key, id, login, avatar)| (sha, (key, id, login, avatar)))
+        .collect();
+    let web_flow = bgh_git::storage::web_flow_signer(&state.config).map(|k| k.key_id.clone());
+    let mut out = std::collections::BTreeMap::new();
+    for c in &signed {
+        let Some(v) = verified.get(&c.sha) else {
+            continue;
+        };
+        let (key_id, signer) = match details.get(&c.sha) {
+            Some((key, Some(id), Some(login), avatar)) => (
+                key.clone(),
+                Some(Signer {
+                    login: login.clone(),
+                    avatar_url: state.urls.avatar(*id, avatar.as_deref()),
+                }),
+            ),
+            Some((key, ..)) => (key.clone(), None),
+            None => (None, None),
+        };
+        let key_type = match signing::format_of(c.signature.as_deref().unwrap_or_default()) {
+            SignatureFormat::OpenPgp => "gpg",
+            SignatureFormat::Ssh => "ssh",
+            SignatureFormat::X509 => "x509",
+            SignatureFormat::Unknown => "unknown",
+        };
+        out.insert(
+            c.sha.clone(),
+            SignatureInfo {
+                verified: v.verified,
+                reason: v.reason.clone(),
+                key_type,
+                web_flow: key_id.is_some() && key_id == web_flow,
+                key_id,
+                signer,
+            },
+        );
+    }
+    Ok(Json(SignatureInfos { signatures: out }))
+}
+
 /// `GET /web-flow.gpg`: the public key that signs server-made commits
 /// (import it to verify them locally: `curl …/web-flow.gpg | gpg --import`).
 pub async fn web_flow_gpg(

@@ -16,6 +16,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import styles from '../issues/IssueView.module.css';
 import { RollupIcon } from './ChecksIcon';
+import { SignatureBadge, useSignatures } from '../commits/Signature';
 import pr from './PullDetail.module.css';
 
 function useCommits(repo: Repo, issue: Issue) {
@@ -25,6 +26,7 @@ function useCommits(repo: Repo, issue: Issue) {
 /** Commits tab: commit list grouped by day; `/pull/{n}/commits/{sha}` shows one commit's diff. */
 export default observer(function CommitsTab({ repo, pr: issue, sha, base }: { repo: Repo; pr: Issue; sha?: string; base: string }) {
   const { data, loading, error } = useCommits(repo, issue);
+  const sigs = useSignatures(repo.owner, repo.name, data && !sha ? [data.map((c) => c.sha)] : []);
   if (sha) return <CommitDiff repo={repo} sha={sha} commits={data} base={base} />;
   if (error) return <EmptyState icon={AlertIcon} title="Couldn’t load commits" />;
   if (loading || !data) {
@@ -61,6 +63,7 @@ export default observer(function CommitsTab({ repo, pr: issue, sha, base }: { re
                   </div>
                 </div>
                 {c.sha === issue.headSha && <HeadStatus sha={c.sha} />}
+                <SignatureBadge signature={sigs[c.sha]} />
                 <code className={pr.sha}>{c.sha.slice(0, 7)}</code>
               </Link>
             ))}

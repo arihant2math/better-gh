@@ -109,6 +109,10 @@ pub fn web_router() -> Router<AppState> {
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
         .route("/web-flow.gpg", get(signatures::web_flow_gpg))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/commit-signatures",
+            get(signatures::commit_signatures),
+        )
 }
 
 /// Job handlers: post-receive processing, storage cleanup, languages;

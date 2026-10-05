@@ -46,6 +46,37 @@ export function codeMock(): CodeMock {
   return shared!;
 }
 
+/**
+ * Deterministic signature of a mock commit (by SHA): 2/5 GPG-verified,
+ * 1/5 SSH-verified, 1/5 unverified (`bad_email`), 1/5 unsigned.
+ */
+export function mockSignature(sha: string, signer: { login: string; avatar_url: string } | null) {
+  const n = Number.parseInt(sha.slice(0, 6), 16) % 5;
+  if (n === 4) return null;
+  const ssh = n === 2;
+  return {
+    verified: n !== 3,
+    reason: n === 3 ? 'bad_email' : 'valid',
+    key_type: ssh ? 'ssh' : 'gpg',
+    key_id: ssh ? `SHA256:${btoa(sha).slice(0, 43)}` : sha.slice(0, 16).toUpperCase(),
+    signer: n === 3 ? null : signer,
+    web_flow: false,
+  };
+}
+
+function restVerification(sha: string) {
+  const s = mockSignature(sha, null);
+  if (!s) return { verified: false, reason: 'unsigned', signature: null, payload: null, verified_at: null };
+  const armor = s.key_type === 'ssh' ? 'SSH SIGNATURE' : 'PGP SIGNATURE';
+  return {
+    verified: s.verified,
+    reason: s.reason,
+    signature: `-----BEGIN ${armor}-----\n…\n-----END ${armor}-----`,
+    payload: `tree …\n`,
+    verified_at: s.verified ? '2024-01-01T00:00:00Z' : null,
+  };
+}
+
 export function installCodeRoutes(R: RouteFn, s: MockServer): void {
   const people = (id: number): User | undefined => s.db.tables.user.get(id);
   const restUser = (id: number) => {
@@ -73,7 +104,7 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
         committer: { name: p.name, email: p.email, date: c.date },
         tree: { sha: fakeSha(`tree:${c.sha}`) },
         comment_count: 0,
-        verification: { verified: false, reason: 'unsigned', signature: null, payload: null },
+        verification: restVerification(c.sha),
       },
       author: restUser(c.authorId),
       committer: restUser(c.authorId),
@@ -282,6 +313,20 @@ export function installCodeRoutes(R: RouteFn, s: MockServer): void {
       };
     });
     return { status: 200, body: { default_branch: r.repo.defaultBranch, branches } };
+  });
+  R('GET', '/_bgh/repos/:owner/:repo/commit-signatures', (ctx) => {
+    const r = repoOf(ctx);
+    if (isResp(r)) return r;
+    const signatures: Record<string, unknown> = {};
+    for (const sha of ctx.url.searchParams.getAll('sha').flatMap((v) => v.split(','))) {
+      if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+      // PR commits are synthetic (not in the mock git store): no signer.
+      const c = r.git.commits.get(sha);
+      const u = c ? people(c.authorId) : undefined;
+      const sig = mockSignature(sha, u ? { login: u.login, avatar_url: u.avatarUrl } : null);
+      if (sig) signatures[sha] = sig;
+    }
+    return { status: 200, body: { signatures } };
   });
   R('GET', '/_bgh/repos/:owner/:repo/commit-status', (ctx) => {
     const r = repoOf(ctx);

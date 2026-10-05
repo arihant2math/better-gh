@@ -307,6 +307,20 @@ async fn gpg_and_ssh_signatures_verify() {
     assert_eq!(by_sha(&by_ssh), "valid");
     assert_eq!(by_sha(&unsigned), "unsigned");
     let res = app
+        .get(&format!(
+            "/_bgh/repos/alice/sig/commit-signatures?sha={by_ssh},{by_gpg},{unsigned}"
+        ))
+        .auth(&alice)
+        .send()
+        .await;
+    let sigs = &res.json()["signatures"];
+    assert_eq!(sigs.as_object().unwrap().len(), 2, "{sigs}");
+    assert_eq!(sigs[&by_ssh]["key_type"], "ssh");
+    assert_eq!(sigs[&by_gpg]["key_type"], "gpg");
+    assert_eq!(sigs[&by_gpg]["key_id"], gpg.fingerprint[24..]);
+    assert_eq!(sigs[&by_gpg]["signer"]["login"], "alice");
+    assert_eq!(sigs[&by_gpg]["web_flow"], false);
+    let res = app
         .get(&format!("/api/v3/repos/alice/sig/git/commits/{by_ssh}"))
         .auth(&alice)
         .send()
@@ -425,6 +439,30 @@ async fn web_flow_signs_server_commits() {
         .await;
     res.assert_status(201);
     assert_eq!(res.json()["verification"]["reason"], "unsigned");
+
+    // Compact badge data for the web (signed commits only).
+    let unsigned = res.json()["sha"].as_str().unwrap().to_string();
+    let res = app
+        .get(&format!(
+            "/_bgh/repos/alice/web/commit-signatures?sha={sha}&sha={unsigned}&sha=nope"
+        ))
+        .auth(&alice)
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(
+        res.json(),
+        json!({"signatures": {sha.clone(): {
+            "verified": true, "reason": "valid", "key_type": "gpg", "web_flow": true,
+            "key_id": res.json()["signatures"][&sha]["key_id"], "signer": null}}})
+    );
+    assert_eq!(
+        res.json()["signatures"][&sha]["key_id"]
+            .as_str()
+            .unwrap()
+            .len(),
+        16
+    );
 
     // The public key is published and gpg agrees with the signature.
     let res = app.get("/web-flow.gpg").send().await;

@@ -22,7 +22,7 @@ const KNOWN_SCOPES = new Set([
   'write:repo_hook', 'read:repo_hook', 'admin:org', 'write:org', 'read:org', 'admin:public_key', 'write:public_key',
   'read:public_key', 'admin:org_hook', 'gist', 'notifications', 'user', 'read:user', 'user:email', 'user:follow',
   'project', 'read:project', 'delete_repo', 'write:packages', 'read:packages', 'delete:packages', 'admin:gpg_key',
-  'write:gpg_key', 'read:gpg_key', 'workflow',
+  'write:gpg_key', 'read:gpg_key', 'admin:ssh_signing_key', 'write:ssh_signing_key', 'read:ssh_signing_key', 'workflow',
 ]);
 
 interface ConsentReq {

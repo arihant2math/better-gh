@@ -17,6 +17,7 @@ import { Spinner } from '../../ui/Spinner';
 import { splitMessage } from './group';
 import { CommitCommentThread, useCommitCommentAnnotations } from './CommitComments';
 import { CiIcon, Person, copyText } from './parts';
+import { SignatureBadge, useSignatures } from './Signature';
 import commentStyles from './CommitComments.module.css';
 import styles from './Commits.module.css';
 
@@ -87,7 +88,8 @@ function CommitHeader({ repo, c }: { repo: Repo; c: RestCommitDetail }) {
   const author = asPerson(c.author, c.commit.author);
   const committer = asPerson(c.committer, c.commit.committer);
   const sameCommitter = (author.login ?? author.name) === (committer.login ?? committer.name);
-  const verified = c.commit.verification?.verified;
+  const signed = !!c.commit.verification?.signature;
+  const sigs = useSignatures(repo.owner, repo.name, signed ? [[c.sha]] : []);
   return (
     <div className={styles.commitHeader}>
       <div className={styles.commitTitleRow}>
@@ -116,7 +118,7 @@ function CommitHeader({ repo, c }: { repo: Repo; c: RestCommitDetail }) {
             </>
           )}
           <CiIcon status={ci.data?.statuses[c.sha]} />
-          {verified !== undefined && <span className={styles.muted}>{verified ? 'Verified' : 'Unverified'}</span>}
+          <SignatureBadge signature={sigs[c.sha]} size="md" />
         </span>
         <span className={styles.commitRefs}>
           <span>
