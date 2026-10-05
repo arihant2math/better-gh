@@ -66,8 +66,8 @@ pub async fn add_event(
     data: Value,
 ) -> ApiResult<EventRow> {
     let row: EventRow = sqlx::query_as(&format!(
-        "INSERT INTO issue_events (issue_id, repo_id, actor_id, event, commit_id, data)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING {}",
+        "INSERT INTO issue_events (issue_id, repo_id, actor_id, event, commit_id, data, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp()) RETURNING {}",
         EventRow::COLUMNS
     ))
     .bind(issue.id)
@@ -540,7 +540,8 @@ pub async fn add_assignees(
             break;
         }
         let n = sqlx::query(
-            "INSERT INTO issue_assignees (issue_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO issue_assignees (issue_id, user_id, created_at) VALUES ($1, $2, clock_timestamp())
+             ON CONFLICT DO NOTHING",
         )
         .bind(issue.id)
         .bind(uid)

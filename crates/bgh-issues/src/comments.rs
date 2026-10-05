@@ -185,7 +185,8 @@ pub async fn create(
     let mut tx = Tx::begin(&state).await?;
     let issue = service::lock_issue(&mut tx, issue.id).await?;
     let c: db::Comment = sqlx::query_as(&format!(
-        "INSERT INTO comments (issue_id, repo_id, author_id, body) VALUES ($1, $2, $3, $4) RETURNING {}",
+        "INSERT INTO comments (issue_id, repo_id, author_id, body, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, clock_timestamp(), clock_timestamp()) RETURNING {}",
         db::Comment::COLUMNS
     ))
     .bind(issue.id)

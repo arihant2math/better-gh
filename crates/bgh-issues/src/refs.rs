@@ -15,6 +15,7 @@ use crate::service;
 /// Upper bound of mentions / references processed per text.
 const MAX_REFS: usize = 50;
 
+#[allow(clippy::too_many_arguments)]
 /// Process references in `new_text` that were not already in `old_text`
 /// (edits only notify for newly added references).
 ///
@@ -236,7 +237,7 @@ pub fn closing_refs(message: &str) -> Vec<i64> {
         if !CLOSING.contains(&kw.as_str()) {
             continue;
         }
-        let target = w[1].trim_end_matches(|c: char| matches!(c, '.' | ',' | ';' | ')' | '!'));
+        let target = w[1].trim_end_matches(['.', ',', ';', ')', '!']);
         if let Some(n) = target.strip_prefix('#').and_then(|n| n.parse::<i64>().ok())
             && !out.contains(&n)
         {
