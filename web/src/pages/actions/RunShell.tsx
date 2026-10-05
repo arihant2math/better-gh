@@ -19,6 +19,7 @@ import { Skeleton } from '../../ui/EmptyState';
 import { ArrowLeftIcon, ChevronDownIcon, DownloadIcon, FileCodeIcon, HomeIcon, KebabHorizontalIcon, StopIcon, SyncIcon } from '../../ui/icons';
 import { Menu, type MenuEntry } from '../../ui/Menu';
 import { toast } from '../../ui/Toast';
+import { calledLabel, rootKey } from './calls';
 import { graphKey, jobsKey, loadGraph, loadJobs, loadRun, refreshRun, runKey } from './data';
 import { jobs as liveJobs, runs as liveRuns, useOnRunJobs, usePolling } from './live';
 import { StatusIcon, statusText, workflowFile } from './shared';
@@ -62,11 +63,12 @@ export function useRunData(owner: string, repo: string, runId: number, attempt: 
   };
 }
 
-/** Jobs grouped by workflow job key (matrix jobs together), in graph order. */
+/** Jobs grouped by top-level workflow job key (matrix and called jobs together), in graph order. */
 export function groupJobs(jobs: WorkflowJob[], graph: RunGraph | undefined): { key: string; name: string; jobs: WorkflowJob[] }[] {
   const byKey = new Map<string, WorkflowJob[]>();
   for (const j of jobs) {
-    const key = graph?.job_keys[String(j.id)] ?? j.name.replace(/ \(.*\)$/, '');
+    const known = graph?.job_keys[String(j.id)];
+    const key = known != null ? rootKey(known) : j.name.replace(/ \(.*\)$/, '');
     const list = byKey.get(key) ?? [];
     list.push(j);
     byKey.set(key, list);
@@ -104,11 +106,17 @@ export const RunShell = observer(function RunShell({ data, jobId, children }: { 
         {!jobs
           ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} width="75%" height={14} style={{ margin: '6px 8px' }} />)
           : groups.map((g) =>
-              g.jobs.length > 1 || graph?.jobs.find((x) => x.key === g.key)?.matrix ? (
+              g.jobs.length > 1 || graph?.jobs.some((x) => x.key === g.key && (x.matrix || x.uses)) ? (
                 <div key={g.key} className={styles.sideGroup}>
                   <div className={styles.sideGroupName}>{g.name}</div>
                   {g.jobs.map((j) => (
-                    <JobLink key={j.id} job={j} href={`${runBase}/job/${j.id}`} active={j.id === jobId} />
+                    <JobLink
+                      key={j.id}
+                      job={j}
+                      href={`${runBase}/job/${j.id}`}
+                      active={j.id === jobId}
+                      label={graph?.jobs.some((x) => x.key === g.key && x.uses) ? calledLabel(j.name, g.name) : undefined}
+                    />
                   ))}
                 </div>
               ) : (
@@ -153,11 +161,11 @@ export const RunShell = observer(function RunShell({ data, jobId, children }: { 
   );
 });
 
-const JobLink = observer(function JobLink({ job, href, active }: { job: WorkflowJob; href: string; active: boolean }) {
+const JobLink = observer(function JobLink({ job, href, active, label }: { job: WorkflowJob; href: string; active: boolean; label?: string }) {
   return (
     <Link to={href} className={cx(styles.sideItem, active && styles.sideItemActive)} title={`${job.name} — ${statusText(job.status, job.conclusion)}`}>
       <StatusIcon status={job.status} conclusion={job.conclusion} />
-      <span className={styles.sideText}>{job.name}</span>
+      <span className={styles.sideText}>{label ?? job.name}</span>
     </Link>
   );
 });
