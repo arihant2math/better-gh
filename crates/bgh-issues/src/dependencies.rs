@@ -118,12 +118,10 @@ async fn list_side(
     auth: Option<&AuthContext>,
     fmt: BodyFormat,
     p: Pagination,
-    owner: &str,
-    repo: &str,
-    number: i64,
+    (owner, repo, number): (String, String, i64),
     blocked_by: bool,
 ) -> ApiResult<Page<json::Issue>> {
-    let (_, issue) = issues::load(state, auth, owner, repo, number).await?;
+    let (_, issue) = issues::load(state, auth, &owner, &repo, number).await?;
     if issue.is_pull_request {
         return Err(ApiError::NotFound);
     }
@@ -156,9 +154,9 @@ pub async fn list_blocked_by(
     auth: MaybeUser,
     fmt: BodyFormat,
     p: Pagination,
-    Path((owner, repo, number)): Path<(String, String, i64)>,
+    Path(path): Path<(String, String, i64)>,
 ) -> ApiResult<Page<json::Issue>> {
-    list_side(&state, auth.as_ref(), fmt, p, &owner, &repo, number, true).await
+    list_side(&state, auth.as_ref(), fmt, p, path, true).await
 }
 
 /// `GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocking`
@@ -167,9 +165,9 @@ pub async fn list_blocking(
     auth: MaybeUser,
     fmt: BodyFormat,
     p: Pagination,
-    Path((owner, repo, number)): Path<(String, String, i64)>,
+    Path(path): Path<(String, String, i64)>,
 ) -> ApiResult<Page<json::Issue>> {
-    list_side(&state, auth.as_ref(), fmt, p, &owner, &repo, number, false).await
+    list_side(&state, auth.as_ref(), fmt, p, path, false).await
 }
 
 #[derive(Debug, Default, Deserialize)]
