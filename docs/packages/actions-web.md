@@ -143,3 +143,11 @@ JobPage 9.3 KB, ActionsSettingsPage 10.9 KB, sealedBox 11.7 KB, RunsPage
   (`/{o}/{r}/actions/runs/{run}/job/{job}`), which this package routes; the
   PR Checks tab (F4, not yet integrated) opens it in a new tab — switching it
   to in-app `navigate()` is a one-line change once both are merged.
+* Repo/org runner lists show only runners registered at that scope (as the
+  REST API does); the site-wide built-in runner is described in a note, not
+  listed.
+* Environments: no protection rules / reviewers / deployment branch policies
+  (the backend doesn't implement them); `pending_deployments` UI not built.
+* Wide job graphs scroll horizontally inside the card (no zoom / minimap).
+* Mock mode and the real server differ in timing only; the e2e script needs
+  postgres + redis and Playwright's Chromium.
