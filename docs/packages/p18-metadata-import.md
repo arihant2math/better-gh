@@ -1,8 +1,11 @@
+Integration: pending (gate running)
+GitHub/GHES metadata importer (new crate `bgh-import`, migration 3000), CLI, site-admin and org Import UI; full gate green on the merged branch.
+
 # P18 — Metadata importer, part 1: GitHub/GHES issues, labels, milestones, releases, users — status
 
-**Done.** Branch `bgh/p18-metadata-import`, self-integrated into
-`claude/sleepy-cray-9jj0t3`. New crate `bgh-import`; migration
-`3000_metadata_import.sql`.
+**Done.** Branch `bgh/p18-metadata-import`, merged with the integration
+branch and gate-green; waiting for the integrator (WORKER_GUIDE rule 14).
+New crate `bgh-import`; migration `3000_metadata_import.sql`.
 
 ## What it does
 
