@@ -11,6 +11,7 @@ import { PROTOCOL_SCHEMA_VERSION } from '../sync/protocol';
 import { MODEL_NAMES, SCHEMA } from '../sync/schema';
 import { blobSha, highlight, languageOf, pullDiff, repoFiles, type MockFile } from './content';
 import { Rng, fakeSha, iso } from './rng';
+import { installExtraMocks } from './extra';
 import { emptyTables, seed, type MockDb } from './seed';
 
 export interface MockOptions {
@@ -30,9 +31,11 @@ interface Route {
   method: string;
   re: RegExp;
   handler: (ctx: Ctx) => Promise<Resp> | Resp;
+  /** Reachable while signed out (sign-in flows). */
+  public?: boolean;
 }
 
-interface Ctx {
+export interface Ctx {
   m: RegExpMatchArray;
   url: URL;
   body: Record<string, unknown>;
@@ -40,7 +43,7 @@ interface Ctx {
   accept: string;
 }
 
-interface Resp {
+export interface Resp {
   status: number;
   body?: unknown;
   text?: string;
@@ -73,6 +76,7 @@ export class MockServer implements Transport {
   ) {
     this.db = db ?? seed(opts.now);
     this.buildRoutes();
+    installExtraMocks(this);
     if (opts.live) this.scheduleLive();
   }
 
@@ -123,7 +127,7 @@ export class MockServer implements Transport {
     }
     const route = this.routes.find((r) => r.method === method && r.re.test(url.pathname));
     if (!route) return json(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest' });
-    const isAuthRoute = url.pathname.startsWith('/_bgh/auth') || url.pathname === '/_bgh/boot';
+    const isAuthRoute = route.public || url.pathname.startsWith('/_bgh/auth') || url.pathname === '/_bgh/boot';
     if (!this.signedIn && !isAuthRoute) return json(401, { message: 'Requires authentication' });
     const ctx: Ctx = {
       m: url.pathname.match(route.re)!,
@@ -256,15 +260,25 @@ export class MockServer implements Transport {
 
   // ------------------------------------------------------------ helpers
 
-  private now(): string {
+  now(): string {
     return iso(Date.now());
   }
 
-  private nextId(): ID {
+  nextId(): ID {
     return this.db.nextId++;
   }
 
-  private repo(owner: string, name: string): Repo | undefined {
+  /**
+   * Register an extra route (used by `mock/extra/*`). Patterns use `:name`
+   * and `:name*`; captures land in `ctx.m[1..]` (still URI-encoded).
+   * Routes registered here are matched after the built-in ones.
+   */
+  route(method: string, pattern: string, handler: Route['handler'], opts: { public?: boolean } = {}): void {
+    const re = new RegExp(`^${pattern.replace(/:\w+\*/g, '(.*)').replace(/:\w+/g, '([^/]+)')}$`);
+    this.routes.push({ method, re, handler, public: opts.public });
+  }
+
+  repo(owner: string, name: string): Repo | undefined {
     const o = owner.toLowerCase();
     const n = name.toLowerCase();
     for (const r of this.db.tables.repo.values()) if (r.owner.toLowerCase() === o && r.name.toLowerCase() === n) return r;

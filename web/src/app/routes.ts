@@ -5,12 +5,45 @@
  */
 import { prefetch as prefetchResource } from '../api/cache';
 import { getContents, getPullDiff, listPullCommits } from '../api/endpoints';
-import { defineRoutes, type Params } from '../router';
+import type { ComponentType } from 'react';
+import { defineRoutes, type Params, type RouteDef } from '../router';
 import { hasSync, sync } from '../sync';
 import { issueByNumber, repoByName } from '../sync/selectors';
 import { preloadMarkdown } from '../ui/Markdown';
 
 const RepoLayout = () => import('../pages/repo/RepoLayout');
+const SettingsLayout = () => import('../pages/settings/SettingsLayout');
+
+/** `/settings/<id>` → section chunk (nav lives in SettingsLayout). */
+const SETTINGS_SECTIONS: Record<string, { title: string; load: () => Promise<{ default: ComponentType }> }> = {
+  profile: { title: 'Public profile', load: () => import('../pages/settings/sections/ProfileSettings') },
+  account: { title: 'Account', load: () => import('../pages/settings/sections/AccountSettings') },
+  appearance: { title: 'Appearance', load: () => import('../pages/settings/sections/AppearanceSettings') },
+  notifications: { title: 'Notifications', load: () => import('../pages/settings/sections/NotificationSettings') },
+  emails: { title: 'Emails', load: () => import('../pages/settings/sections/EmailSettings') },
+  security: { title: 'Password and authentication', load: () => import('../pages/settings/sections/SecuritySettings') },
+  sessions: { title: 'Sessions', load: () => import('../pages/settings/sections/SessionSettings') },
+  keys: { title: 'SSH and GPG keys', load: () => import('../pages/settings/sections/KeySettings') },
+  blocked: { title: 'Blocked users', load: () => import('../pages/settings/sections/BlockedSettings') },
+  applications: { title: 'Applications', load: () => import('../pages/settings/sections/ApplicationSettings') },
+  developers: { title: 'OAuth apps', load: () => import('../pages/settings/sections/DeveloperSettings') },
+  tokens: { title: 'Personal access tokens', load: () => import('../pages/settings/sections/TokenSettings') },
+  local: { title: 'Local data & sync', load: () => import('../pages/settings/sections/LocalDataSettings') },
+};
+
+function settingsRoutes() {
+  const out: RouteDef[] = [
+    { path: '/settings', layout: SettingsLayout, load: SETTINGS_SECTIONS.profile!.load, title: () => 'Settings' },
+  ];
+  for (const [id, s] of Object.entries(SETTINGS_SECTIONS)) {
+    // `/*` covers sub-pages such as /settings/developers/new or /settings/tokens/new.
+    out.push({ path: `/settings/${id}`, layout: SettingsLayout, load: s.load, title: () => `${s.title} · Settings` });
+    out.push({ path: `/settings/${id}/*`, layout: SettingsLayout, load: s.load, title: () => `${s.title} · Settings` });
+  }
+  return out;
+}
+
+const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 
 function prefetchIssue(p: Params) {
   if (!hasSync()) return;
@@ -41,8 +74,11 @@ export function registerRoutes(): void {
     { path: '/notifications', load: () => import('../pages/notifications/NotificationsPage'), title: () => 'Inbox' },
     { path: '/issues', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'My issues' },
     { path: '/pulls', load: () => import('../pages/issues/MyIssuesPage'), title: () => 'Reviews' },
-    { path: '/settings', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
-    { path: '/settings/:section', load: () => import('../pages/settings/SettingsPage'), title: () => 'Settings' },
+    ...settingsRoutes(),
+    { path: '/new', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
+    { path: '/new/import', load: () => import('../pages/new/NewRepoPage'), title: () => 'New repository' },
+    { path: '/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
+    { path: '/account/organizations/new', load: () => import('../pages/new/NewOrgPage'), title: () => 'New organization' },
     { path: '/:owner', load: () => import('../pages/profile/ProfilePage'), title: (p) => p.owner! },
     {
       path: '/:owner/:repo',
@@ -76,6 +112,8 @@ export function registerRoutes(): void {
       prefetch: prefetchPull,
       title: (p) => `PR #${p.number} · ${p.owner}/${p.repo}`,
     },
+    { path: '/:owner/:repo/settings', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/settings/*', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/:tab/*', layout: RepoLayout, load: () => import('../pages/repo/RepoPlaceholderPage'), title: (p) => `${p.tab} · ${p.owner}/${p.repo}` },
   ]);
