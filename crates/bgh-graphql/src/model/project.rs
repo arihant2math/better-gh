@@ -146,6 +146,7 @@ pub enum ProjectV2ItemType {
 /// The layout of a project view.
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 #[graphql(name = "ProjectV2ViewLayout")]
+#[allow(clippy::enum_variant_names)] // GitHub's value names
 pub enum ProjectV2ViewLayout {
     BoardLayout,
     TableLayout,
