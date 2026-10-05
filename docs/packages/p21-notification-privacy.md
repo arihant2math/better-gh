@@ -1,6 +1,7 @@
 # P21 — Notification privacy, retention and polling
 
-Status: **in progress** (branch `bgh/p21-notification-privacy`).
+Status: **done**, self-integrated into `claude/sleepy-cray-9jj0t3` (branch
+`bgh/p21-notification-privacy`).
 
 ## What exists
 
@@ -89,6 +90,10 @@ partial `webhook_deliveries (created_at) WHERE payload_raw <> ''`.
   stripped-delivery 422 and the admin trigger; notifications polling.
 * `crates/bgh-search/tests/it/activity.rs` `timelines_support_polling`.
 * `bgh_core::polling` unit tests.
+* Web: vitest for the retention form; Playwright check of the Site settings
+  "Data retention" section against a real server (render + save).
+* Gate: fmt, clippy, `cargo test --workspace`, web typecheck/lint/test/build,
+  `api-smoke.sh` (45/45) and `gh-compat.sh` (55/55) green.
 
 ## Known gaps
 
