@@ -16,6 +16,7 @@ pub mod api;
 pub mod checks;
 pub mod context;
 pub mod crypto;
+pub mod deployments;
 pub mod engine;
 pub mod expr;
 pub mod json;
@@ -36,7 +37,10 @@ use axum::Router;
 use axum::routing::{get, post, put};
 use bgh_core::{AppState, Registry};
 
-use api::{access, artifacts, environments, runners, runs, secrets, variables, workflows};
+use api::{
+    access, artifacts, deployments as deploy_api, environments, runners, runs, secrets, variables,
+    workflows,
+};
 
 /// REST API routes (relative to `/api/v3`).
 pub fn router() -> Router<AppState> {
@@ -223,6 +227,23 @@ pub fn router() -> Router<AppState> {
                 .put(environments::put)
                 .delete(environments::delete),
         )
+        // deployments
+        .route(
+            &r("/deployments"),
+            get(deploy_api::list).post(deploy_api::create),
+        )
+        .route(
+            &r("/deployments/{deployment_id}"),
+            get(deploy_api::get).delete(deploy_api::delete),
+        )
+        .route(
+            &r("/deployments/{deployment_id}/statuses"),
+            get(deploy_api::list_statuses).post(deploy_api::create_status),
+        )
+        .route(
+            &r("/deployments/{deployment_id}/statuses/{status_id}"),
+            get(deploy_api::get_status),
+        )
         // runners
         .route(&r("/actions/runners"), get(runners::repo::list))
         .route(
@@ -284,7 +305,10 @@ pub fn router() -> Router<AppState> {
 
 /// Non-API routes (`/_bgh/actions/...`).
 pub fn web_router() -> Router<AppState> {
-    web::routes().merge(ui::routes())
+    web::routes().merge(ui::routes()).route(
+        "/_bgh/repos/{owner}/{repo}/deployments",
+        get(deploy_api::web_summary),
+    )
 }
 
 /// Background jobs, event listeners and services.

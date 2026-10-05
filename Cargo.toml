@@ -84,6 +84,9 @@ rand = "0.9"
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
+# GitHub App JWTs (RS256) and key generation
+rsa = { version = "0.9", features = ["sha2", "pem"] }
+rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
 
 # content
 comrak = { version = "0.55", default-features = false }
