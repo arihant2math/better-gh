@@ -128,7 +128,7 @@ start-up with an error naming the variable.
 | `BGH_DB_MAX_CONNECTIONS` | `20` | Size of the PostgreSQL connection pool (per `bgh` process). |
 | `REDIS_URL` | `redis://127.0.0.1/` | Redis connection URL (`redis://[:password@]host[:port][/db]`; TLS `rediss://` is not compiled in). |
 | `BGH_REDIS_PREFIX` | `bgh:` | Prefix for every Redis key and pub/sub channel. Lets several instances share one Redis. (Unlike other variables, an empty value means "no prefix".) |
-| `BGH_DATA_DIR` | `./data` | Persistent data: bare git repositories in `repos/` (sharded as `repos/{id % 256}/{id}.git`), uploads in `files/`. Back this up. |
+| `BGH_DATA_DIR` | `./data` | Persistent data: bare git repositories in `repos/` (sharded as `repos/{id % 256}/{id}.git`), uploads in `files/` (release assets, comment attachments in `files/attachments/`). Back this up. |
 | `BGH_WEB_DIR` | `web/dist` | Directory of the built web client. Binaries built with `embed-web` only use it when it contains an `index.html`. |
 | `BGH_SSH_PORT` | `2222` | Port advertised in `ssh_url` (and bound by the SSH server once it ships). Set to the port users connect to (e.g. `22` when a proxy/NAT forwards 22 → 2222). |
 | `BGH_SSH_ENABLED` | `true` | Enable git over SSH (no effect until the SSH server ships, see [SSH](#ssh)). |

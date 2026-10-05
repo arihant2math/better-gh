@@ -758,6 +758,28 @@ pub async fn check_push_quota(state: &AppState, repo: &db::Repository) -> ApiRes
     }
 }
 
+/// 403 when storing `add_bytes` more for `owner_id` (user attachments)
+/// would exceed the owner's total storage quota. Repositories (as recorded
+/// after their last push) and existing attachments count towards it.
+pub async fn check_upload_quota(state: &AppState, owner_id: i64, add_bytes: u64) -> ApiResult<()> {
+    let (_, total) = storage_limits_kb(state, owner_id).await?;
+    let Some(limit) = total else { return Ok(()) };
+    let used: i64 = sqlx::query_scalar(
+        "SELECT (SELECT coalesce(sum(size + lfs_size / 1024), 0) FROM repositories WHERE owner_id = $1)::bigint
+              + ((SELECT coalesce(sum(size), 0) FROM attachments WHERE owner_id = $1) / 1024)::bigint",
+    )
+    .bind(owner_id)
+    .fetch_one(&state.db)
+    .await?;
+    if used + (add_bytes / 1024) as i64 > limit {
+        return Err(ApiError::forbidden(format!(
+            "The owner is over its storage quota ({} MB).",
+            limit / 1024
+        )));
+    }
+    Ok(())
+}
+
 /// Paths that stay reachable in maintenance mode (status, banner, login).
 fn maintenance_exempt(path: &str) -> bool {
     // Sign-in must keep working so site administrators can get in (and turn

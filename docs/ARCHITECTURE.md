@@ -50,6 +50,7 @@ crates/
                            statuses, check runs/suites, CODEOWNERS, auto-merge
   bgh-notify/              notifications, subscriptions, webhooks, email
   bgh-releases/            releases, assets
+  bgh-uploads/             user attachments (comment/PR/release/wiki uploads)
   bgh-search/              issues/PR/code/repo/user search
   bgh-admin/               site administration, audit log
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
