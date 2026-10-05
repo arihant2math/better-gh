@@ -470,7 +470,15 @@ Site-level account changes also emit `UserAccountChanged` /
   `pre-receive` hook (`smart_http::PRE_RECEIVE_HOOK`, enabled per push via
   `-c core.hooksPath`, inputs in `PushPolicy`/`PushLimits`) while the
   objects are quarantined (`GIT_QUARANTINE_PATH`), so rejected packs leave
-  nothing behind. `refs/pull/*` and `refs/bgh/*` are server-only:
+  nothing behind. Rulesets (repository and organization ones, `active`
+  and `evaluate`) are evaluated by `bgh_repos::rule_eval`: ref rules in
+  the authorize callback, object rules (force pushes, linear history,
+  commit metadata patterns, file path / extension / size / path length
+  push rules) from the hook, which calls back into the server over a FIFO
+  pair (`PushPolicy::object_check`, `BGH_CHECK_DIR`) so the evaluation
+  runs in Rust against the quarantined objects. Violations are reported
+  with GitHub's `GH013` text; every evaluated update (and PR merge) is
+  stored in `rule_suites`. `refs/pull/*` and `refs/bgh/*` are server-only:
   `receive.hideRefs` (repo config and `-c` on every receive-pack) rejects
   them per ref ("deny updating a hidden ref"), pushes touching only them
   are refused before git runs, and `write_ref` answers 422; internal

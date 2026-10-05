@@ -37,16 +37,20 @@ pub mod licenses;
 pub mod maintenance;
 pub mod media;
 pub mod mirrors;
+pub mod org_rulesets;
 pub mod protection;
 pub mod protection_api;
 pub mod refs;
 pub mod repos;
 pub mod repositories;
+pub mod rule_eval;
+pub mod rule_suites;
 pub mod rulesets;
 pub mod settings;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
+pub mod tag_protection;
 pub mod traffic;
 pub mod watching;
 pub mod workflow_scope;
@@ -98,6 +102,9 @@ pub fn router() -> Router<AppState> {
         .merge(branches::routes())
         .merge(protection_api::routes())
         .merge(rulesets::routes())
+        .merge(org_rulesets::routes())
+        .merge(rule_suites::routes())
+        .merge(tag_protection::routes())
         .merge(download::api_router())
         .merge(licenses::routes())
         .merge(gitignore::routes())

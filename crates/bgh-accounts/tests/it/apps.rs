@@ -538,6 +538,55 @@ async fn git_with_installation_token() {
     assert!(!out.status.success());
 }
 
+/// Ruleset `Integration` bypass actors match pushes made with the app's
+/// installation tokens (P23).
+#[tokio::test]
+async fn ruleset_integration_bypass() {
+    let s = setup(json!({"contents": "write"})).await;
+    let inst = install(&s, &["one"]).await;
+    let (_, tok) = mint(&s, inst, json!({})).await;
+    s.app
+        .post("/api/v3/repos/acme/one/rulesets")
+        .auth(&s.alice)
+        .json(&json!({
+            "name": "locked main",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+            "rules": [{"type": "update"}],
+            "bypass_actors": [{"actor_id": s.app_id, "actor_type": "Integration", "bypass_mode": "always"}],
+        }))
+        .send()
+        .await
+        .assert_status(201);
+    let tmp = tempfile::tempdir().unwrap();
+    let alice_url = s.app.git_remote(&s.alice, "acme", "one");
+    let out = git(tmp.path(), &["clone", &alice_url, "one"]).await;
+    assert!(out.status.success());
+    let work = tmp.path().join("one");
+    std::fs::write(work.join("app.txt"), "hello\n").unwrap();
+    git(&work, &["add", "."]).await;
+    git(&work, &["commit", "-m", "from app"]).await;
+    // The org owner is not a bypass actor.
+    let out = git(&work, &["push", &alice_url, "HEAD:main"]).await;
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("Cannot update this protected ref."),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The app is.
+    let app_url = s.app.url("/acme/one.git").replace(
+        "http://",
+        &format!("http://x-access-token:{}@", tok["token"].as_str().unwrap()),
+    );
+    let out = git(&work, &["push", &app_url, "HEAD:main"]).await;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[tokio::test]
 async fn user_installation_endpoints() {
     let s = setup(json!({"issues": "read"})).await;
