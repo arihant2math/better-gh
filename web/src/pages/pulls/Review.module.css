@@ -320,7 +320,7 @@
   margin-left: 4px;
   padding: 0 6px;
   border-radius: var(--radius-full);
-  background: var(--warning-subtle);
-  color: var(--warning);
+  background: color-mix(in srgb, currentColor 22%, transparent);
+  color: inherit;
   font-size: var(--fs-xs);
 }

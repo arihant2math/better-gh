@@ -70,6 +70,8 @@ export function registerRoutes(): void {
       prefetch: prefetchIssue,
       title: (p) => `#${p.number} · ${p.owner}/${p.repo}`,
     },
+    { path: '/:owner/:repo/compare', layout: RepoLayout, load: () => import('../pages/pulls/ComparePage'), title: (p) => `Compare · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/compare/*', layout: RepoLayout, load: () => import('../pages/pulls/ComparePage'), title: (p) => `Comparing ${p['*']} · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/pulls', layout: RepoLayout, load: () => import('../pages/pulls/PullListPage'), title: (p) => `Pull requests · ${p.owner}/${p.repo}` },
     {
       path: '/:owner/:repo/pull/:number',
