@@ -36,7 +36,9 @@ Deployment (Docker, systemd, proxies): `docs/SELF_HOSTING.md`.
 * Synced model writes must call `bgh_core::sync::record` in the same
   transaction (see ARCHITECTURE.md "Sync engine").
 * Keep domain crates independent; shared code goes to `bgh-core`.
-* Tests: integration tests per crate under `tests/` using
+* Tests: integration tests per crate under `tests/it/` — one test binary
+  per crate: add `tests/it/<name>.rs` and declare `mod <name>;` in
+  `tests/it/main.rs` (never a new top-level `tests/*.rs`), using
   `bgh_server::test_app().await` (a `bgh_core::testing::TestApp` with a
   fresh database). Run `cargo test -p <crate>`.
 * Domain crates expose `router()` (paths relative to `/api/v3`),

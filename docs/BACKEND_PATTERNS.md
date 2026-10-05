@@ -285,7 +285,7 @@ Rules:
 Tests: assert the recorded action with
 `SELECT model, model_id, action::text, data FROM sync_actions` — `data`
 must equal the row `GET /_bgh/sync/bootstrap` (or partial sync) returns.
-`crates/bgh-sync/tests/shapes.rs` drives every crate's API and checks
+`crates/bgh-sync/tests/it/shapes.rs` drives every crate's API and checks
 this for every model; extend it when you add a model.
 
 ## 9. Background jobs
@@ -403,8 +403,20 @@ by object SHA is immutable: cache it and send
 
 ## 13. Integration tests
 
+Each crate has **one** integration-test binary, `tests/it/main.rs`, which
+declares every test file as a module (`mod labels;`) plus the shared helper
+modules (`mod common;`, `bgh-repos` also `mod gitwork;`, `bgh-notify` uses
+`mod support;`). A new test file goes in `tests/it/<name>.rs` and **must be
+added to `main.rs`** (an undeclared file is silently not compiled); it pulls
+helpers in with `use crate::common;`. Never add a top-level `tests/*.rs`:
+every extra test binary statically links the whole server (~250 MB, plus a
+long link step). All tests of a crate run as threads of one process, so
+don't use process-global state in tests (`std::env::set_var`,
+`set_current_dir`, fixed ports, shared statics asserted by count) — use the
+per-test `TestApp` resources (its database, data dir, port) instead.
+
 ```rust
-// crates/bgh-issues/tests/labels.rs   (dev-deps already set up)
+// crates/bgh-issues/tests/it/labels.rs   (+ `mod labels;` in tests/it/main.rs)
 use serde_json::json;
 
 #[tokio::test]
@@ -432,13 +444,14 @@ Also: `app.drain_jobs().await` (run queued jobs now),
 repo)` for the real TCP listener. Custom config:
 `TestApp::spawn_with_config(bgh_server::factory(), |c| c.signup_enabled = false)`.
 Extra test-only jobs/listeners: `TestApp::spawn_with(AppFactory { router:
-bgh_server::app, register: my_register })` (see `bgh-server/tests/infra.rs`).
+bgh_server::app, register: my_register })` (see `bgh-server/tests/it/infra.rs`).
 
 When shelling out (e.g. `git`) inside a test, use `tokio::process` — the
 server runs on the test's runtime, so blocking calls deadlock. See
-`crates/bgh-repos/tests/git_transport.rs`.
+`crates/bgh-repos/tests/it/git_transport.rs`.
 
-Requires Postgres + Redis (`./scripts/dev-setup.sh`). `cargo test -p <crate>`.
+Requires Postgres + Redis (`./scripts/dev-setup.sh`). `cargo test -p <crate>`
+(`cargo test -p <crate> --test it <module>::` runs one file's tests).
 
 ## 14. Before committing
 

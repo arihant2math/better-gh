@@ -426,7 +426,8 @@ Site-level account changes also emit `UserAccountChanged` /
   prefix, a temp data dir, and a real `127.0.0.1` port for git CLI tests.
   Databases are dropped when the `TestApp` drops (`BGH_TEST_KEEP_DB=1` keeps
   them); leftovers of dead processes are cleaned up on the next run.
-* Each domain crate has integration tests in `tests/` hitting the HTTP
+* Each domain crate has integration tests in `tests/it/` (one test binary
+  per crate, `tests/it/main.rs` declares a module per file) hitting the HTTP
   router with real requests and asserting GitHub-compatible JSON.
 * `scripts/gh-compat.sh` exercises the real `gh` CLI (GHES mode, behind a
   throwaway TLS proxy) against a fresh server or a running one and reports
