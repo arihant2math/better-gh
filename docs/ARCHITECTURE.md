@@ -366,8 +366,30 @@ Site-level account changes also emit `UserAccountChanged` /
   size, default branch on first push, sync record, `Event::Push`) before
   responding. All git subprocesses run with an isolated config
   (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL=/dev/null`).
-* LFS batch API + object storage on disk.
-* Highlighted/rendered output cached in Redis keyed by blob SHA.
+* Repository handles: `RepoStore::open` serves cheap clones of cached
+  `gix::ThreadSafeRepository` handles (process-wide LRU of 256, keyed by
+  path; gix is built with `parallel`). `RepoStore::delete` evicts; call
+  `bgh_git::cache::evict` after repack/gc.
+* SSH: `bgh_repos::ssh` (russh) runs as the `ssh` service
+  (`Registry::service`, started by `bgh serve` only). Public-key auth
+  against `ssh_keys` / `deploy_keys` by OpenSSH `SHA256:` fingerprint;
+  upload-pack is full duplex, receive-pack reuses the smart-HTTP
+  pre-authorization path (`smart_http::receive_pack_stream`), so branch
+  protection and `repos.post_receive` are identical. Host key in
+  `{data_dir}/ssh/host_ed25519_key`.
+* LFS: batch API (basic transfer), objects content-addressed in
+  `{data_dir}/lfs` and linked per repository in `lfs_objects`
+  (`repositories.lfs_size` accounting), locks in `lfs_locks`; SSH
+  `git-lfs-authenticate` issues `RemoteAuth` tokens (Redis, 1 h).
+* Archives (`git archive`) stream while being teed into
+  `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
+  blobs via `git cat-file` and resolve LFS pointers.
+* Code browser endpoints (`/_bgh/repos/{o}/{r}/tree|tree-commits|blob|
+  blame|history|readme|refs`): see `bgh_repos::browse`. Highlighting is
+  syntect (class-based `hl-*` spans, CSS at `/_bgh/highlight.css`), cached
+  in Redis by blob SHA; last-commit maps, blame and history are cached by
+  commit + path. Full-SHA URLs are immutable (`private` for private
+  repositories).
 
 ## Web client (web/)
 

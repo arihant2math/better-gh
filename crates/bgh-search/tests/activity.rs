@@ -143,11 +143,13 @@ async fn records_and_serves_github_events() {
     app.state.events.emit(Event::RepositoryStarred {
         repo_id: demo,
         actor_id: bob.id,
+        starred: true,
     });
     app.state.events.emit(Event::CollaboratorAdded {
         repo_id: demo,
         user_id: bob.id,
         actor_id: alice.id,
+        permission: "write".into(),
     });
     wait_events(&app, 13).await;
 
@@ -421,6 +423,7 @@ async fn private_events_received_events_orgs_networks_and_feed() {
     app.state.events.emit(Event::RepositoryStarred {
         repo_id: public,
         actor_id: bob.id,
+        starred: true,
     });
     wait_events(&app, 5).await;
     let v = get_json(&app, "/api/v3/users/carol/received_events", Some(&carol)).await;

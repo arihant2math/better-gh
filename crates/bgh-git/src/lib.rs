@@ -19,6 +19,7 @@ pub mod highlight;
 pub mod languages;
 pub mod lastcommit;
 pub mod lfs;
+pub mod maintenance;
 pub mod merge;
 pub mod objects;
 pub mod ops;

@@ -124,10 +124,20 @@ impl GitRepo {
                 gix::refs::TargetRef::Object(id) => id.to_hex().to_string(),
                 gix::refs::TargetRef::Symbolic(_) => continue,
             };
-            let peeled = r
-                .peel_to_id()
-                .map(|id| id.detach().to_string())
-                .unwrap_or_else(|_| target.clone());
+            // Avoid `peel_to_id` (it stats packed-refs per call): use the
+            // packed-refs peel cache, branches point at commits, and only
+            // loose annotated tags need an object read.
+            let peeled = match r.inner.peeled {
+                Some(p) => p.to_string(),
+                None if name.starts_with("refs/heads/") => target.clone(),
+                None => match self.header(&target)? {
+                    Some(("tag", _)) => r
+                        .peel_to_id()
+                        .map(|id| id.detach().to_string())
+                        .unwrap_or_else(|_| target.clone()),
+                    _ => target.clone(),
+                },
+            };
             out.push(RefInfo {
                 name,
                 target,

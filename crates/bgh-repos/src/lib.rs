@@ -27,6 +27,7 @@ pub mod jobs;
 pub mod json;
 pub mod keys;
 pub mod lfs;
+pub mod maintenance;
 pub mod media;
 pub mod protection;
 pub mod protection_api;
@@ -108,5 +109,7 @@ pub fn register(reg: &mut Registry) {
     reg.job(stats::compute_languages);
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
+    reg.job(maintenance::pack_refs);
+    reg.on_event("repos.pack_refs", maintenance::on_event);
     reg.service("ssh", ssh::service);
 }
