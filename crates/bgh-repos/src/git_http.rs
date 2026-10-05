@@ -136,6 +136,7 @@ pub async fn receive_pack(
     let (access, auth) =
         git_access(&state, &parts.headers, &owner, &repo, Service::ReceivePack).await?;
     let pusher = auth.ok_or_else(|| challenge("Authentication required."))?;
+    bgh_core::settings::check_push_quota(&state, &access.repo).await?;
     let rules = RepoRules::load(&state.db, &access.repo).await?;
     let actor = if rules.is_empty() {
         None

@@ -33,7 +33,6 @@ pub use users::{NewAccount, create_user};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(meta::root))
-        .route("/rate_limit", get(meta::rate_limit))
         // users
         .route(
             "/user",

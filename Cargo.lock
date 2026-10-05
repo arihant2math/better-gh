@@ -322,8 +322,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bgh-accounts",
  "bgh-core",
+ "bgh-git",
+ "bgh-repos",
  "bgh-server",
+ "chrono",
+ "redis",
  "serde",
  "serde_json",
  "sqlx",

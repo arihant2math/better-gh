@@ -93,7 +93,7 @@ pub fn app(state: AppState) -> Router {
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            bgh_core::ratelimit::middleware,
+            bgh_core::ratelimit::rate_limit_middleware,
         ))
         .layer(middleware::from_fn(api_headers))
         .layer(middleware::from_fn(etag))
@@ -125,6 +125,10 @@ pub fn app(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bgh_sync::http_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::settings::maintenance_middleware,
         ))
         .layer(middleware::from_fn(bgh_core::auth::auth_headers_middleware))
         .layer(CompressionLayer::new().compress_when(compress_when))

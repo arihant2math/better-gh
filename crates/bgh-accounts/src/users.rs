@@ -76,6 +76,13 @@ pub async fn create_user(
         json!({ "login": user.login, "site_admin": user.site_admin }),
     )
     .await?;
+    tx.emit(bgh_core::events::Event::UserAccountChanged {
+        user_id: user.id,
+        login: user.login.clone(),
+        action: "created".into(),
+        actor_id: actor.map_or(user.id, |a| a.id),
+        data: json!({}),
+    });
     tx.commit().await?;
     Ok(user)
 }

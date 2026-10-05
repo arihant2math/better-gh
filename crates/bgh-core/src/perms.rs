@@ -348,6 +348,10 @@ impl RepoAccess {
         if permission < Permission::Read {
             return Err(ApiError::NotFound);
         }
+        // Repositories disabled by a site admin are blocked for everyone else.
+        if repo.disabled && !auth.is_some_and(|a| a.user.site_admin) {
+            return Err(ApiError::forbidden("Repository access blocked"));
+        }
         Ok(Self {
             repo,
             owner,

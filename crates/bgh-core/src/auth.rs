@@ -498,6 +498,20 @@ pub fn client_ip(config: &Config, headers: &HeaderMap, extensions: &Extensions) 
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// First `X-Forwarded-For` hop, else `X-Real-IP`, regardless of
+/// `BGH_TRUST_PROXY` (spoofable: informational use only, e.g. audit
+/// entries written where only headers are at hand). Prefer [`client_ip`].
+pub fn forwarded_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// Optional authentication: `MaybeUser(None)` for anonymous callers.
 /// Bad credentials still fail with 401.
 #[derive(Debug, Clone)]

@@ -19,9 +19,11 @@ pub mod pagination;
 pub mod perms;
 pub mod ratelimit;
 pub mod registry;
+pub mod settings;
 pub mod state;
 pub mod sync;
 pub mod time;
+pub mod two_factor;
 pub mod urls;
 pub mod views;
 
