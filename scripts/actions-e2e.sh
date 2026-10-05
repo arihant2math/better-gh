@@ -143,11 +143,23 @@ printf '# demo\n' >"$SRC/README.md"
     git push -q "http://$TS_LOGIN:$TS_TOKEN@${API_BASE#http://}/$TS_LOGIN/$REPO.git" main
 ) || ts_die "git push failed"
 
-# Wait for the push run to finish (the built-in runner picks it up).
-ts_log "waiting for the push run"
+# A pull request from `feature` (its push run reports checks on the PR head;
+# the UI re-runs one from the Checks tab).
+(
+  cd "$SRC" &&
+    git checkout -q -b feature &&
+    printf 'fn main() {}\n' >"src/main.rs" &&
+    git -c user.name=E2E -c user.email=e2e@example.com commit -qam "Simplify main" &&
+    git push -q "http://$TS_LOGIN:$TS_TOKEN@${API_BASE#http://}/$TS_LOGIN/$REPO.git" feature
+) || ts_die "git push feature failed"
+api -d '{"title":"Simplify main","head":"feature","base":"main"}' "$API_BASE/api/v3/repos/$TS_LOGIN/$REPO/pulls" >/dev/null ||
+  ts_die "creating the pull request failed"
+
+# Wait for the push runs to finish (the built-in runner picks them up).
+ts_log "waiting for the push runs"
 for _ in $(seq 1 180); do
   st="$(api "$API_BASE/api/v3/repos/$TS_LOGIN/$REPO/actions/runs" |
-    python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print(r[0]["status"] if r else "none")')"
+    python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print("completed" if len(r) >= 2 and all(x["status"] == "completed" for x in r) else "waiting")')"
   [[ $st == completed ]] && break
   sleep 1
 done
