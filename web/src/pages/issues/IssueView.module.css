@@ -621,3 +621,32 @@
 .linkButton:hover {
   text-decoration: underline;
 }
+
+/* Development section (linked pull requests / issues and branches). */
+.devNote {
+  margin: 0 0 var(--sp-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.devItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+  color: var(--fg);
+}
+
+.devItem:hover .devTitle {
+  color: var(--accent-fg);
+}
+
+.devTitle {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

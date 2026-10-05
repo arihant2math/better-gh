@@ -236,3 +236,26 @@ export interface History {
   has_more: boolean;
   commits: BrowseCommit[];
 }
+
+/** `GET /_bgh/repos/{o}/{r}/issues/{n}/links`: the Development section (P4). */
+export interface IssueLinkItem {
+  id: number;
+  repoId: number;
+  repository: string;
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
+  isPr: boolean;
+  draft: boolean;
+  merged: boolean;
+  htmlUrl: string;
+  source: 'keyword' | 'manual';
+  createdAt: string;
+}
+
+export interface IssueLinks {
+  links: IssueLinkItem[];
+  /** Branches named `{number}-…` (issues only). */
+  branches: { name: string }[];
+}

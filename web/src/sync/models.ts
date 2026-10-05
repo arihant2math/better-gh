@@ -127,6 +127,8 @@ export interface Issue {
   subIssueIds?: ID[];
   /** Pinned to the repository's issue list. */
   pinned?: boolean;
+  /** Pull requests that close this issue on merge (keyword or manual link; may be in other repos). */
+  linkedPullIds?: ID[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
   closedAt: Timestamp | null;
@@ -156,6 +158,8 @@ export interface Issue {
   maintainerCanModify?: boolean;
   autoMerge?: AutoMerge | null;
   reviewComments?: number;
+  /** PRs only: issues this pull request closes on merge (may be in other repos). */
+  closingIssueIds?: ID[];
 }
 
 export interface AutoMerge {
@@ -216,7 +220,9 @@ export type IssueEventType =
   | 'sub_issue_added'
   | 'sub_issue_removed'
   | 'parent_issue_added'
-  | 'parent_issue_removed';
+  | 'parent_issue_removed'
+  | 'connected'
+  | 'disconnected';
 
 export interface IssueEvent {
   id: ID;
@@ -238,7 +244,7 @@ export interface IssueEvent {
     lockReason?: string;
     sourceIssueId?: ID;
     sourceCommentId?: ID;
-    /** cross-referenced: where the reference came from ("owner/repo", number). */
+    /** cross-referenced, connected/disconnected, closed by a PR: the other side ("owner/repo", number). */
     sourceNumber?: number;
     sourceRepository?: string;
     sourceIsPr?: boolean;
