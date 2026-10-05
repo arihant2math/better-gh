@@ -193,6 +193,9 @@ where
                     other => internal(&other),
                 });
             }
+            let limits = crate::git_http::push_limits(state, &authz.access.repo)
+                .await
+                .map_err(|e| internal(&e))?;
             let adv = smart_http::advertise_refs(
                 &store,
                 repo_id,
@@ -224,12 +227,14 @@ where
                 |updates| {
                     let rules = &rules;
                     async move {
-                        match &actor {
-                            None => Ok(smart_http::PushPolicy::default()),
+                        crate::git_http::deny_hidden_refs(&updates)?;
+                        let policy = match &actor {
+                            None => smart_http::PushPolicy::default(),
                             Some(actor) => {
-                                protection::authorize_push(state, rules, actor, &updates).await
+                                protection::authorize_push(state, rules, actor, &updates).await?
                             }
-                        }
+                        };
+                        Ok(policy.with_limits(limits))
                     }
                 },
             )

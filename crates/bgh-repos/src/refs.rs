@@ -50,6 +50,12 @@ pub async fn write_ref(
 ) -> ApiResult<RefUpdate> {
     access.require_not_archived()?;
     access.require_not_mirror()?;
+    if bgh_git::storage::is_hidden_ref(refname) {
+        // Server-only namespaces (`refs/pull/*`, `refs/bgh/*`).
+        return Err(ApiError::unprocessable(format!(
+            "Reference update failed: {refname} is a hidden ref."
+        )));
+    }
     let store = crate::store(state);
     let git = store.cli(access.repo.id)?;
     let update = RefUpdate {

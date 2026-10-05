@@ -120,6 +120,21 @@ pub fn lfs_json<T: Serialize>(status: axum::http::StatusCode, body: &T) -> Respo
         .into_response()
 }
 
+/// 507 (LFS JSON error) when storing `incoming` more bytes in `repo` would
+/// exceed its storage quota (git objects plus LFS, see
+/// `bgh_core::settings::quota_headroom`).
+pub async fn check_quota(state: &AppState, repo: &db::Repository, incoming: i64) -> LfsResult<()> {
+    let Some(h) = bgh_core::settings::quota_headroom(state, repo).await? else {
+        return Ok(());
+    };
+    if incoming > 0 && (incoming + 1023) / 1024 > h.remaining_kb {
+        return Err(
+            ApiError::Status(axum::http::StatusCode::INSUFFICIENT_STORAGE, h.message()).into(),
+        );
+    }
+    Ok(())
+}
+
 /// Authorization granted by `git-lfs-authenticate` over SSH.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LfsGrant {

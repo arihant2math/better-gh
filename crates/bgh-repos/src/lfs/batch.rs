@@ -134,6 +134,20 @@ pub async fn batch(
     .into_iter()
     .collect();
 
+    if upload {
+        // Objects this batch would add, against the storage quota (git +
+        // LFS): the spec's 507 Insufficient Storage for the whole batch.
+        let mut seen = std::collections::HashSet::new();
+        let incoming: i64 = req
+            .objects
+            .iter()
+            .filter(|o| is_valid_oid(&o.oid) && o.size >= 0)
+            .filter(|o| present.get(&o.oid) != Some(&o.size) && seen.insert(o.oid.as_str()))
+            .map(|o| o.size)
+            .sum();
+        super::check_quota(&state, &lfs.access.repo, incoming).await?;
+    }
+
     let base = objects_url(&state, &lfs.access);
     let objects = req
         .objects
