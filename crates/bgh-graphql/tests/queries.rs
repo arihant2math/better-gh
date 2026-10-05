@@ -118,7 +118,7 @@ async fn issues_connection_filters_and_pagination() {
         .await
         .unwrap();
     let label: i64 = sqlx::query_scalar(
-        "INSERT INTO labels (repo_id, name, color) VALUES ($1, 'bug', 'ff0000') RETURNING id",
+        "INSERT INTO labels (repo_id, name, color) VALUES ($1, 'gql-bug', 'ff0000') RETURNING id",
     )
     .bind(repo_id)
     .fetch_one(&app.state.db)
@@ -178,7 +178,7 @@ async fn issues_connection_filters_and_pagination() {
         .collect();
     assert_eq!(titles, vec!["Issue 2", "Issue 1"]);
     let issue2 = &d["repository"]["issues"]["nodes"][0];
-    assert_eq!(issue2["labels"]["nodes"][0]["name"], "bug");
+    assert_eq!(issue2["labels"]["nodes"][0]["name"], "gql-bug");
     assert_eq!(issue2["assignees"]["nodes"][0]["login"], "alice");
 
     let d = data(
@@ -203,7 +203,7 @@ async fn issues_connection_filters_and_pagination() {
     let d = data(
         &app,
         &alice,
-        r#"{ repository(owner: "alice", name: "hello") { issues(labels: ["BUG"], last: 1) { totalCount nodes { title } pageInfo { hasPreviousPage } } } }"#,
+        r#"{ repository(owner: "alice", name: "hello") { issues(labels: ["GQL-BUG"], last: 1) { totalCount nodes { title } pageInfo { hasPreviousPage } } } }"#,
         json!({}),
     )
     .await;
@@ -381,7 +381,7 @@ async fn labels_milestones_and_search() {
     let alice = app.create_user("alice").await;
     let repo = app.create_repo(&alice, "hello").await;
     let repo_id = repo["id"].as_i64().unwrap();
-    sqlx::query("INSERT INTO labels (repo_id, name, color, description) VALUES ($1, 'bug', 'd73a4a', 'broken'), ($1, 'docs', '0075ca', NULL)")
+    sqlx::query("INSERT INTO labels (repo_id, name, color, description) VALUES ($1, 'gql-bug', 'd73a4a', 'broken'), ($1, 'gql-docs', '0075ca', NULL)")
         .bind(repo_id)
         .execute(&app.state.db)
         .await
@@ -396,15 +396,15 @@ async fn labels_milestones_and_search() {
         &app,
         &alice,
         r#"{ repository(owner: "alice", name: "hello") {
-             labels(first: 100, orderBy: {field: NAME, direction: ASC}) { totalCount nodes { name color description } }
-             label(name: "BUG") { name }
+             labels(first: 100, query: "gql", orderBy: {field: NAME, direction: ASC}) { totalCount nodes { name color description } }
+             label(name: "GQL-BUG") { name }
              milestones(first: 10, states: OPEN) { nodes { number title } }
              milestone(number: 1) { title } } }"#,
         json!({}),
     )
     .await;
-    assert_eq!(d["repository"]["labels"]["nodes"][0]["name"], "bug");
-    assert_eq!(d["repository"]["label"]["name"], "bug");
+    assert_eq!(d["repository"]["labels"]["nodes"][0]["name"], "gql-bug");
+    assert_eq!(d["repository"]["label"]["name"], "gql-bug");
     assert_eq!(d["repository"]["milestones"]["nodes"][0]["title"], "v1");
 
     let d = data(

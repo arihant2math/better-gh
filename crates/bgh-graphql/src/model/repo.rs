@@ -10,7 +10,7 @@ use sqlx::{Postgres, QueryBuilder};
 
 use super::actor::{CountOnly, User, UserConnection};
 use super::enums::*;
-use super::git::{self, Commit, GitObject};
+use super::git::{self, GitObject};
 use super::issue::{
     self, Issue, IssueConnection, Label, LabelConnection, Milestone, MilestoneConnection,
 };
@@ -555,7 +555,7 @@ impl Repository {
         order_by: Option<ProjectOrder>,
     ) -> ProjectConnection {
         let _ = (first, after, states, order_by);
-        ProjectConnection::default()
+        ProjectConnection
     }
     #[graphql(name = "projectsV2")]
     pub async fn projects_v2(
@@ -566,7 +566,7 @@ impl Repository {
         order_by: Option<ProjectV2Order>,
     ) -> ProjectV2Connection {
         let _ = (first, after, query, order_by);
-        ProjectV2Connection::default()
+        ProjectV2Connection
     }
     pub async fn parent(&self, ctx: &Context<'_>) -> GResult<Option<Repository>> {
         match self.r().parent_id {
@@ -596,7 +596,6 @@ impl Repository {
         };
         Ref::load(ctx, self.clone(), &full).await
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn refs(
         &self,
         ctx: &Context<'_>,
@@ -650,7 +649,6 @@ impl Repository {
 
     // --- issues & pull requests -----------------------------------------
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn issues(
         &self,
         ctx: &Context<'_>,
@@ -684,7 +682,6 @@ impl Repository {
     ) -> GResult<Option<issue::IssueOrPullRequest>> {
         issue::issue_or_pull(ctx, self, i64::from(number)).await
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn pull_requests(
         &self,
         ctx: &Context<'_>,
@@ -722,7 +719,6 @@ impl Repository {
 
     // --- labels, milestones, people --------------------------------------
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn labels(
         &self,
         ctx: &Context<'_>,
@@ -745,7 +741,6 @@ impl Repository {
     pub async fn label(&self, ctx: &Context<'_>, name: String) -> GResult<Option<Label>> {
         issue::repo_label(ctx, self, &name).await
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn milestones(
         &self,
         ctx: &Context<'_>,

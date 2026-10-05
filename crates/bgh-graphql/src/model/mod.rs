@@ -1,5 +1,9 @@
 //! GraphQL object model (GitHub v4 type and field names).
 
+// The interface derives repeat `ty = ...` in field/arg attributes, which
+// clippy mistakes for duplicated attributes.
+#![allow(clippy::duplicated_attributes)]
+
 pub mod actor;
 pub mod enums;
 pub mod git;

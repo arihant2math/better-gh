@@ -36,10 +36,26 @@ pub struct AppFactory {
     pub register: fn(&mut Registry),
 }
 
+type ServiceFn = Arc<
+    dyn Fn(AppState, CancellationToken) -> BoxFuture<'static, anyhow::Result<()>> + Send + Sync,
+>;
+
+/// A named long-running background task (e.g. the built-in CI runner, a
+/// scheduler or the SSH server), started by the server binary next to the
+/// job workers. The task must return once its `CancellationToken` is
+/// cancelled; an error is logged. Not started by the test harness (tests
+/// drive the work deterministically or start what they need explicitly).
+#[derive(Clone)]
+pub struct Service {
+    pub name: &'static str,
+    run: ServiceFn,
+}
+
 #[derive(Clone, Default)]
 pub struct Registry {
     pub jobs: JobRegistry,
     pub listeners: Vec<Listener>,
+    pub services: Vec<Service>,
 }
 
 impl Registry {
@@ -71,6 +87,49 @@ impl Registry {
         });
         self
     }
+
+    /// Register a bootstrap scope provider for synced models owned by this
+    /// crate (see [`crate::sync::ScopeProvider`]).
+    pub fn scope_provider(&mut self, provider: crate::sync::ScopeProvider) -> &mut Self {
+        crate::sync::register_scope_provider(provider);
+        self
+    }
+}
+
+impl Registry {
+    /// Register a long-running background service (see [`Service`]).
+    pub fn service<F, Fut>(&mut self, name: &'static str, run: F) -> &mut Self
+    where
+        F: Fn(AppState, CancellationToken) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        self.services.push(Service {
+            name,
+            run: Arc::new(move |s, c| run(s, c).boxed()),
+        });
+        self
+    }
+}
+
+/// Spawn every service; each runs until `shutdown` is cancelled.
+pub fn spawn_services(
+    state: &AppState,
+    services: &[Service],
+    shutdown: CancellationToken,
+) -> Vec<JoinHandle<()>> {
+    services
+        .iter()
+        .cloned()
+        .map(|svc| {
+            tracing::info!(service = svc.name, "starting service");
+            let fut = (svc.run)(state.clone(), shutdown.clone());
+            tokio::spawn(async move {
+                if let Err(err) = fut.await {
+                    tracing::error!(service = svc.name, ?err, "service failed");
+                }
+            })
+        })
+        .collect()
 }
 
 /// Spawn one task per listener, each consuming the event bus in order until

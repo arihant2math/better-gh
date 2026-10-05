@@ -47,10 +47,22 @@ pub async fn log(
     target: Target,
     data: Value,
 ) -> Result<(), sqlx::Error> {
+    log_with_ip(db, actor, action, target, data, None).await
+}
+
+/// [`log`] recording the client IP (see [`crate::auth::client_ip`]).
+pub async fn log_with_ip(
+    db: impl PgExecutor<'_>,
+    actor: Option<&db::User>,
+    action: &str,
+    target: Target,
+    data: Value,
+    ip: Option<&str>,
+) -> Result<(), sqlx::Error> {
     let (target_type, target_id, org_id, repo_id) = target.parts();
     sqlx::query(
-        "INSERT INTO audit_log (actor_id, actor_login, action, target_type, target_id, org_id, repo_id, data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "INSERT INTO audit_log (actor_id, actor_login, action, target_type, target_id, org_id, repo_id, data, ip)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
     )
     .bind(actor.map(|a| a.id))
     .bind(actor.map(|a| a.login.as_str()))
@@ -60,6 +72,7 @@ pub async fn log(
     .bind(org_id)
     .bind(repo_id)
     .bind(data)
+    .bind(ip)
     .execute(db)
     .await?;
     Ok(())

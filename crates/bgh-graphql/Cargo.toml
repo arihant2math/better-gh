@@ -9,6 +9,9 @@ publish.workspace = true
 [dependencies]
 bgh-core.workspace = true
 bgh-git.workspace = true
+bgh-issues.workspace = true
+bgh-pulls.workspace = true
+bgh-repos.workspace = true
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true

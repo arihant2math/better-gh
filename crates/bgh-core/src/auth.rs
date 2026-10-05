@@ -14,7 +14,7 @@ use std::sync::{Arc, OnceLock};
 
 use axum::extract::{FromRequestParts, OptionalFromRequestParts, Request};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, header};
+use axum::http::{Extensions, HeaderMap, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use base64::Engine;
@@ -70,6 +70,7 @@ fn implied(granted: &str, wanted: &str) -> bool {
         "write:gpg_key" => wanted == "read:gpg_key",
         "user" => matches!(wanted, "read:user" | "user:email" | "user:follow"),
         "write:packages" => wanted == "read:packages",
+        "project" => wanted == "read:project",
         "workflow" => false,
         "site_admin" => false,
         _ => false,
@@ -212,7 +213,7 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     let (login, secret) = decoded
         .split_once(':')
         .ok_or_else(ApiError::bad_credentials)?;
-    if secret.starts_with(crypto::PAT_PREFIX) {
+    if secret.starts_with(crypto::PAT_PREFIX) || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX) {
         // Like GitHub, the username is ignored for token auth.
         return token_auth(state, secret).await;
     }
@@ -222,6 +223,16 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     let user = verify_login(state, login, secret)
         .await?
         .ok_or_else(ApiError::bad_credentials)?;
+    // Accounts with two-factor authentication must use a token.
+    let two_factor: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM user_two_factor WHERE user_id = $1 AND enabled_at IS NOT NULL)",
+    )
+    .bind(user.id)
+    .fetch_one(&state.db)
+    .await?;
+    if two_factor {
+        return Err(ApiError::bad_credentials());
+    }
     Ok(AuthContext {
         user,
         method: AuthMethod::Password,
@@ -340,12 +351,16 @@ pub async fn create_session(
 /// Delete a session by its secret cookie value (and evict the cache).
 pub async fn destroy_session(state: &AppState, token: &str) -> ApiResult<()> {
     let hash = crypto::sha256_hex(token);
-    sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
-        .bind(&hash)
-        .execute(&state.db)
-        .await?;
+    let deleted: Option<(i64, i64)> =
+        sqlx::query_as("DELETE FROM sessions WHERE token_hash = $1 RETURNING id, user_id")
+            .bind(&hash)
+            .fetch_optional(&state.db)
+            .await?;
     let mut redis = state.redis.clone();
     let _: Result<(), _> = redis.del(state.redis_key(&format!("session:{hash}"))).await;
+    if let Some((session_id, user_id)) = deleted {
+        crate::sync::signal_signed_out(state, user_id, Some(session_id)).await;
+    }
     Ok(())
 }
 
@@ -363,6 +378,7 @@ pub async fn destroy_user_sessions(state: &AppState, user_id: i64) -> ApiResult<
             .collect();
         let mut redis = state.redis.clone();
         let _: Result<(), _> = redis.del(keys).await;
+        crate::sync::signal_signed_out(state, user_id, None).await;
     }
     Ok(())
 }
@@ -433,16 +449,72 @@ struct Resolved(Option<AuthContext>);
 #[derive(Clone, Default)]
 pub struct AuthSlot(Arc<OnceLock<AuthContext>>);
 
-async fn resolve(parts: &mut Parts, state: &AppState) -> ApiResult<Option<AuthContext>> {
-    if let Some(Resolved(ctx)) = parts.extensions.get::<Resolved>() {
+async fn resolve_cached(
+    state: &AppState,
+    headers: &HeaderMap,
+    extensions: &mut Extensions,
+) -> ApiResult<Option<AuthContext>> {
+    if let Some(Resolved(ctx)) = extensions.get::<Resolved>() {
         return Ok(ctx.clone());
     }
-    let ctx = authenticate(state, &parts.headers, AuthOptions::default()).await?;
-    if let (Some(ctx), Some(slot)) = (&ctx, parts.extensions.get::<AuthSlot>()) {
+    let ctx = authenticate(state, headers, AuthOptions::default()).await?;
+    if let (Some(ctx), Some(slot)) = (&ctx, extensions.get::<AuthSlot>()) {
         let _ = slot.0.set(ctx.clone());
     }
-    parts.extensions.insert(Resolved(ctx.clone()));
+    extensions.insert(Resolved(ctx.clone()));
     Ok(ctx)
+}
+
+async fn resolve(parts: &mut Parts, state: &AppState) -> ApiResult<Option<AuthContext>> {
+    resolve_cached(state, &parts.headers, &mut parts.extensions).await
+}
+
+/// Resolve (and cache for the extractors) the caller of `req`, for
+/// middleware that needs the user before the handler runs.
+pub async fn resolve_request(
+    state: &AppState,
+    req: &mut Request,
+) -> ApiResult<Option<AuthContext>> {
+    let (mut parts, body) = std::mem::take(req).into_parts();
+    let ctx = resolve_cached(state, &parts.headers, &mut parts.extensions).await;
+    *req = Request::from_parts(parts, body);
+    ctx
+}
+
+/// Client IP of a request: `X-Forwarded-For` / `X-Real-IP` when
+/// `BGH_TRUST_PROXY` is set, else the TCP peer address (when the server was
+/// started with connect info), else `"unknown"`.
+pub fn client_ip(config: &Config, headers: &HeaderMap, extensions: &Extensions) -> String {
+    if config.trust_proxy {
+        let forwarded = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split(',').next())
+            .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        if let Some(ip) = forwarded {
+            return ip.to_string();
+        }
+    }
+    extensions
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|ci| ci.0.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// First `X-Forwarded-For` hop, else `X-Real-IP`, regardless of
+/// `BGH_TRUST_PROXY` (spoofable: informational use only, e.g. audit
+/// entries written where only headers are at hand). Prefer [`client_ip`].
+pub fn forwarded_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Optional authentication: `MaybeUser(None)` for anonymous callers.
@@ -525,6 +597,66 @@ impl FromRequestParts<AppState> for RequireSiteAdmin {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CSRF
+// ---------------------------------------------------------------------------
+
+/// Header carrying the CSRF token (`boot.csrf`, docs/SYNC_PROTOCOL.md §10).
+pub const CSRF_HEADER: &str = "x-csrf-token";
+
+/// CSRF token bound to a session: derived from the secret session cookie
+/// (which scripts can't read), so it needs no storage.
+pub fn csrf_token(session_token: &str) -> String {
+    crypto::sha256_hex(&format!("bgh-csrf:{session_token}"))[..40].to_string()
+}
+
+/// Paths that accept cookie-carrying mutations without `X-CSRF-Token`:
+/// sign-in endpoints (no session yet) and server-rendered forms that carry
+/// their own one-time nonce.
+const CSRF_EXEMPT: &[&str] = &[
+    "/_bgh/auth/login",
+    "/_bgh/auth/signup",
+    "/_bgh/auth/2fa",
+    "/_bgh/signup",
+    "/_bgh/session/two_factor",
+    "/_bgh/password_reset",
+    "/_bgh/emails/verify",
+    "/login/oauth/",
+    "/login/device",
+];
+
+fn csrf_exempt(path: &str, method: &axum::http::Method) -> bool {
+    // `POST /_bgh/session` (login) is exempt; `DELETE` (logout) is not.
+    (path == "/_bgh/session" && method == axum::http::Method::POST)
+        || CSRF_EXEMPT.iter().any(|p| path.starts_with(p))
+}
+
+/// Middleware: cookie-authenticated mutating requests (no `Authorization`
+/// header, a `bgh_session` cookie, method other than GET/HEAD/OPTIONS) must
+/// carry `X-CSRF-Token` matching [`csrf_token`], else 403. Token-authenticated
+/// clients are unaffected.
+pub async fn csrf_middleware(req: Request, next: Next) -> Response {
+    use axum::http::Method;
+    use axum::response::IntoResponse;
+    let mutating = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    if mutating
+        && !req.headers().contains_key(header::AUTHORIZATION)
+        && !csrf_exempt(req.uri().path(), req.method())
+        && let Some(session) = cookie(req.headers(), SESSION_COOKIE)
+    {
+        let sent = req
+            .headers()
+            .get(CSRF_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !crypto::constant_time_eq(sent, &csrf_token(&session)) {
+            return ApiError::forbidden("Missing or invalid CSRF token (X-CSRF-Token).")
+                .into_response();
+        }
+    }
+    next.run(req).await
+}
+
 /// Middleware: installs an [`AuthSlot`] and, after the handler ran, emits
 /// `X-OAuth-Scopes` for token-authenticated requests (like GitHub).
 pub async fn auth_headers_middleware(mut req: Request, next: Next) -> Response {
@@ -550,6 +682,17 @@ mod tests {
         assert!(implied("admin:org", "read:org"));
         assert!(!implied("public_repo", "repo"));
         assert!(!implied("read:org", "admin:org"));
+    }
+
+    #[test]
+    fn csrf_exemptions() {
+        use axum::http::Method;
+        assert!(csrf_exempt("/_bgh/auth/login", &Method::POST));
+        assert!(csrf_exempt("/_bgh/session", &Method::POST));
+        assert!(!csrf_exempt("/_bgh/session", &Method::DELETE));
+        assert!(!csrf_exempt("/api/v3/user", &Method::PATCH));
+        assert_eq!(csrf_token("a"), csrf_token("a"));
+        assert_ne!(csrf_token("a"), csrf_token("b"));
     }
 
     #[test]

@@ -180,23 +180,100 @@ let label: db::Label = sqlx::query_as(&format!(
     "INSERT INTO labels (repo_id, name, color) VALUES ($1, $2, $3) RETURNING {}", db::Label::COLUMNS))
     .bind(access.repo.id).bind(&name).bind(&color)
     .fetch_one(&mut *tx).await?;                                   // &mut *tx is a PgConnection
-tx.sync(&access.scope(), "label", label.id, SyncAction::Insert, &label_client_json(&label)).await?;
 bgh_core::audit::log(&mut *tx, Some(&auth.user), "label.create",
     bgh_core::audit::Target::Repo { id: access.repo.id, org_id: None }, json!({"name": name})).await?;
 tx.enqueue(&ReindexRepo { repo_id: access.repo.id }).await?;    // runs after commit
 tx.emit(Event::RepositoryUpdated { repo_id: access.repo.id, actor_id: auth.user.id });
+tx.sync_model(SyncModel::Label, label.id, SyncAction::Insert).await?; // last: see 8a
 tx.commit().await?;   // commit → publish sync deltas to Redis → emit events
 ```
 
-* Every synced model change calls `tx.sync` **in the same transaction**.
-  Scopes: `sync::repo_scope(id)`, `sync::user_scope(id)`, `sync::org_scope(id)`.
-  `data` is the compact client shape (not the REST shape), deletes send
-  `{"id": ..}`. See `bgh_repos::json::repo_sync_json`.
+* Audit every security-relevant write (`audit::log`, or
+  `audit::log_with_ip(.., Some(&bgh_core::auth::client_ip(&state.config, &headers, &extensions)))`
+  when the request is at hand).
+* Site-wide behaviour switches come from `bgh_core::settings::load(&state)`
+  (typed, cached); never read `site_settings` directly.
+* Every synced model change records a sync action **in the same
+  transaction** — through the helpers of section 8a, never hand-built JSON.
 * Dropping a `Tx` without `commit()` rolls back and discards all side effects.
 * Counters (`open_issues_count`, `comments_count`, ...) are updated by the
   owning code in the same transaction (`UPDATE … SET n = n + 1`).
 * Low-level equivalents exist (`sync::record` + `sync::notify`,
   `jobs::enqueue_job`, `state.events.emit`) for code that can't use `Tx`.
+
+## 8a. Sync payloads (local-first clients)
+
+The web client keeps a local copy of every *synced model* (`user`, `org`,
+`membership`, `team`, `repo`, `viewerRepo`, `label`, `milestone`, `issue`
+— PRs included —, `comment`, `review`, `issueEvent`, `notification`;
+docs/SYNC_PROTOCOL.md §3) and learns about changes only from
+`sync_actions`. **Any write that changes what one of these rows looks like
+must record it**, or clients go stale until their next bootstrap.
+
+The compact shapes are built in exactly one place,
+`bgh_core::sync::shapes` (SQL that renders rows straight from the tables).
+Bootstrap, partial sync and your deltas all use it, so you never write
+sync JSON yourself. `SyncModel` (= `shapes::Model`) is in the prelude.
+
+| You changed | Record (inside your `Tx`, after the writes) |
+|-------------|------------------------------------------|
+| a row's own columns, or its child rows (issue labels/assignees/reactions, PR reviewers/reviews/checks, team members/repos) | `tx.sync_model(SyncModel::X, id, SyncAction::Update)` (`Insert` for new rows) |
+| many rows of one model | `tx.sync_models(SyncModel::X, &ids, action)` (one query) |
+| an issue / PR | `tx.sync_issue(issue_id, action, body_changed)` — pass `true` when the body was set/edited (inserts with a body too); the lazy `body` is only sent then |
+| deleted a row | `tx.sync_delete(&scope, SyncModel::X, id)` (scope: `sync::repo_scope(repo_id)`, `org_scope`, `user_scope`) — the client also drops an issue's comments/reviews/events |
+| a user's login/name/avatar | `tx.sync_user(user_id)` (user scope + every org scope of the user) |
+| stars, watches, or someone's access to a repo | `tx.sync_viewer_repo(user_id, repo_id)` (records `D` when they lost read access) |
+
+Rows are loaded **inside your transaction**, so they reflect your
+uncommitted writes. Derived values follow the data, so re-sync the rows
+that show them:
+
+* issue opened/closed/transferred → also `sync_model(Repo, repo_id)`
+  (`openIssues`/`openPulls`) and the milestone (`openIssues`/`closedIssues`);
+* comment created/deleted → also the issue (`comments`);
+* label deleted (cascades `issue_labels`) → `sync_models(Issue, &affected)`
+  before the delete commits, then `sync_delete` the label;
+* review submitted/dismissed, reviewer requested, check run/status
+  changed → the PR's issue (`reviewDecision`, `checks`);
+* org member added/removed → `sync_model(Membership, ..)` /
+  `sync_delete(&org_scope, Membership, id)`, the teams whose `memberIds`
+  changed, and `sync_viewer_repo` for the member's affected repos.
+
+Rules:
+
+* **Record last.** `record` takes a transaction-scoped advisory lock so
+  sync ids commit in id order (clients resume from "everything ≤ N"); it is
+  held until commit, so do the slow work first and the `tx.sync*` calls
+  right before `tx.commit()`.
+* **Access changes:** after removing a collaborator / team grant /
+  membership, changing visibility or transferring a repository, also
+  `tx.emit(Event::AccessChanged { repo_id, org_id, user_id })` (any ids you
+  know). bgh-sync rechecks live WebSockets and revokes lost scopes
+  (`repo`/`org`/`membership`/`team`/`viewerRepo` deltas and
+  `RepositoryUpdated`/`RepositoryDeleted` events trigger it too, and a
+  5-minute sweep is the safety net). Ending sessions through
+  `auth::destroy_session` / `destroy_user_sessions` closes that user's
+  sockets with 4001 automatically.
+* **Private data:** pending reviews are visible only to their author —
+  sync a review when it is submitted, not while pending. Notifications go
+  to `user:{recipient}` (`sync_model(Notification, id, ..)`; marking a
+  thread done → `sync_delete(&user_scope(uid), Notification, id)`).
+* **Timeline events** (`issue_events.data`) are mapped to the client
+  shape by key: `label: {id, name, color}`, `assignee_id`,
+  `requested_reviewer_id`, `milestone: {title}`, `rename: {from, to}`,
+  `state_reason`, and the `commit_id` column. Store new events in that form.
+* `X-Client-Tx` is captured automatically: every action written while
+  handling a request carries the header's tx (request-scoped context set
+  by `bgh_sync::http_middleware`), the response gets `X-Bgh-Sync-Id`, and
+  mutations are idempotent per `(user, tx)` for 24 h. Nothing to do in
+  handlers.
+* Raw `tx.sync(scope, model, id, action, &data)` still works for models
+  outside the list above; don't use it for listed models.
+
+Tests: assert the recorded action with
+`SELECT model, model_id, action::text, data FROM sync_actions` — `data`
+must equal the row `GET /_bgh/sync/bootstrap` returns (see
+`crates/bgh-sync/tests/bootstrap.rs::tx_helpers_record_bootstrap_shapes`).
 
 ## 9. Background jobs
 
@@ -214,6 +291,12 @@ pub async fn reindex_repo(state: AppState, job: ReindexRepo) -> anyhow::Result<(
 Handlers must be idempotent and tolerate deleted rows (return `Ok(())`).
 Errors retry with backoff; panics and timeouts (10 min) count as failures.
 Example: `bgh_repos::jobs::post_receive`.
+
+Long-running services (listeners on other ports, e.g. the SSH server)
+register with `reg.service("name", |state, shutdown| async move { ... })`;
+`bgh serve` starts them (`registry::spawn_services`) and cancels
+`shutdown` on exit. The test harness does **not** start services; tests
+start what they need (e.g. `bgh_repos::ssh::spawn(state, "127.0.0.1:0", token)`).
 
 ## 10. Events
 

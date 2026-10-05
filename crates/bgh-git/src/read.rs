@@ -76,12 +76,23 @@ fn oid(sha: &str) -> GitResult<ObjectId> {
 impl GitRepo {
     pub fn open(path: &Path, max_blob_size: u64) -> GitResult<Self> {
         let repo = gix::open_opts(path, gix::open::Options::isolated()).map_err(GitError::gix)?;
-        Ok(Self {
+        Ok(Self::from_gix(repo, path, max_blob_size))
+    }
+
+    /// Open through the process-wide handle cache (see [`crate::cache`]).
+    pub fn open_cached(path: &Path, max_blob_size: u64) -> GitResult<Self> {
+        let repo = crate::cache::get_or_open(path)?;
+        Ok(Self::from_gix(repo, path, max_blob_size))
+    }
+
+    fn from_gix(mut repo: gix::Repository, path: &Path, max_blob_size: u64) -> Self {
+        repo.object_cache_size_if_unset(4 * 1024 * 1024);
+        Self {
             repo,
             path: path.to_path_buf(),
             max_blob_size,
             git_bin: "git".into(),
-        })
+        }
     }
 
     /// Override the git binary used for CLI fallbacks.
@@ -113,10 +124,20 @@ impl GitRepo {
                 gix::refs::TargetRef::Object(id) => id.to_hex().to_string(),
                 gix::refs::TargetRef::Symbolic(_) => continue,
             };
-            let peeled = r
-                .peel_to_id()
-                .map(|id| id.detach().to_string())
-                .unwrap_or_else(|_| target.clone());
+            // Avoid `peel_to_id` (it stats packed-refs per call): use the
+            // packed-refs peel cache, branches point at commits, and only
+            // loose annotated tags need an object read.
+            let peeled = match r.inner.peeled {
+                Some(p) => p.to_string(),
+                None if name.starts_with("refs/heads/") => target.clone(),
+                None => match self.header(&target)? {
+                    Some(("tag", _)) => r
+                        .peel_to_id()
+                        .map(|id| id.detach().to_string())
+                        .unwrap_or_else(|_| target.clone()),
+                    _ => target.clone(),
+                },
+            };
             out.push(RefInfo {
                 name,
                 target,
@@ -298,6 +319,50 @@ impl GitRepo {
         })
     }
 
+    /// Split `{ref}/{path}` where the ref itself may contain slashes
+    /// (`feature/x/src/lib.rs`): a full commit SHA, `HEAD`, or the shortest
+    /// prefix naming a branch, then a tag (also `refs/...` names), then an
+    /// abbreviated SHA. Returns `(ref, commit sha, path)`.
+    pub fn split_ref_path(&self, spec: &str) -> GitResult<(String, String, String)> {
+        let spec = spec.trim_matches('/');
+        let parts: Vec<&str> = spec.split('/').collect();
+        let rest = |i: usize| parts[i..].join("/");
+        if parts.is_empty() || parts[0].is_empty() {
+            return Err(GitError::NotFound("empty ref".into()));
+        }
+        if crate::is_sha(parts[0]) || parts[0] == "HEAD" {
+            let commit = self.resolve_commit(parts[0])?;
+            return Ok((parts[0].to_string(), commit, rest(1)));
+        }
+        for i in 1..=parts.len() {
+            let cand = parts[..i].join("/");
+            if !crate::is_valid_ref_name(&cand) {
+                continue;
+            }
+            let mut names = vec![format!("refs/heads/{cand}"), format!("refs/tags/{cand}")];
+            if cand.starts_with("refs/") {
+                names.insert(0, cand.clone());
+            }
+            for full in names {
+                if self.find_ref(&full)?.is_some() {
+                    let commit = self.resolve_commit(&full)?;
+                    return Ok((cand, commit, rest(i)));
+                }
+            }
+        }
+        let first = parts[0];
+        if first.len() >= 4 && first.bytes().all(|b| b.is_ascii_hexdigit()) {
+            let commit = self.resolve_commit(first)?;
+            return Ok((first.to_string(), commit, rest(1)));
+        }
+        Err(GitError::NotFound(format!("ref in {spec:?}")))
+    }
+
+    /// The git binary used for CLI fallbacks.
+    pub fn git_bin(&self) -> &str {
+        &self.git_bin
+    }
+
     // ----- history ------------------------------------------------------------
 
     /// Commits reachable from `rev`, newest first (by committer date, like
@@ -318,6 +383,7 @@ impl GitRepo {
                 &self.git_bin,
                 &self.path,
                 &[
+                    "--literal-pathspecs",
                     "log",
                     "--format=%H",
                     &skip_arg,
@@ -390,6 +456,51 @@ impl GitRepo {
             }
         }
         Ok(out)
+    }
+
+    /// Unified diff (`git diff`) between two revisions, optionally limited
+    /// to `paths`. Both revisions are resolved to commits first, so user
+    /// input never reaches git's option parser.
+    pub fn diff(&self, base: &str, head: &str, paths: &[&str]) -> GitResult<String> {
+        let base = self.resolve_commit(base)?;
+        let head = self.resolve_commit(head)?;
+        let mut args = vec![
+            "--literal-pathspecs",
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            base.as_str(),
+            head.as_str(),
+            "--",
+        ];
+        args.extend(paths.iter().copied());
+        let out = cmd::run_blocking(&self.git_bin, &self.path, &args)?;
+        Ok(String::from_utf8_lossy(&out).into_owned())
+    }
+
+    /// Commit SHAs reachable from `include` but not from any of `exclude`
+    /// (`git rev-list include ^exclude...`), newest first, at most `limit`.
+    pub fn rev_list(
+        &self,
+        include: &str,
+        exclude: &[&str],
+        limit: usize,
+    ) -> GitResult<Vec<String>> {
+        let include = self.resolve_commit(include)?;
+        let mut excluded = Vec::new();
+        for e in exclude {
+            excluded.push(format!("^{}", self.resolve_commit(e)?));
+        }
+        let max_arg = format!("--max-count={limit}");
+        let mut args = vec!["rev-list", max_arg.as_str(), include.as_str()];
+        args.extend(excluded.iter().map(String::as_str));
+        let out = cmd::run_blocking(&self.git_bin, &self.path, &args)?;
+        Ok(String::from_utf8_lossy(&out)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect())
     }
 
     /// Whether `ancestor` is reachable from `descendant`.

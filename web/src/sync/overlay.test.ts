@@ -17,6 +17,15 @@ describe('applyPatch', () => {
   });
 });
 
+describe('object patches', () => {
+  it('shallow-merges keys and removes null ones', () => {
+    const row = { id: 1, values: { a: 1, b: 'x' } };
+    expect(applyPatch(row, { values: { $merge: { b: null, c: 3 } } })).toEqual({ id: 1, values: { a: 1, c: 3 } });
+    expect(row.values).toEqual({ a: 1, b: 'x' });
+    expect(applyPatch({ id: 1 }, { m: { $merge: { k: 'v' } } })).toEqual({ id: 1, m: { k: 'v' } });
+  });
+});
+
 describe('applyOps', () => {
   it('applies insert/update/delete in order', () => {
     const insert = ops.insert('label', { id: -1, repoId: 1, name: 'x', color: 'ffffff', description: null });

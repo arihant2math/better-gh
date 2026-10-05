@@ -7,6 +7,7 @@ use chrono::{DateTime as ChronoDateTime, SecondsFormat, Utc};
 macro_rules! string_scalar {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
+        #[allow(clippy::upper_case_acronyms)] // GitHub's scalar names
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub struct $name(pub String);
 
@@ -51,20 +52,8 @@ string_scalar!(
     GitObjectID
 );
 string_scalar!(
-    /// A fully qualified reference name (e.g. `refs/heads/main`).
-    GitRefname
-);
-string_scalar!(
     /// Git SSH string
     GitSSHRemote
-);
-string_scalar!(
-    /// A (potentially binary) string encoded using base64.
-    Base64String
-);
-string_scalar!(
-    /// An ISO-8601 encoded date string.
-    Date
 );
 string_scalar!(
     /// A string containing a Git timestamp.

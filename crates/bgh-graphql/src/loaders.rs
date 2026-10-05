@@ -724,11 +724,11 @@ impl Rollup {
                 any_pending = true;
                 continue;
             }
-            match c.conclusion.as_deref() {
-                Some(
-                    "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure",
-                ) => any_fail = true,
-                _ => {}
+            if let Some(
+                "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure",
+            ) = c.conclusion.as_deref()
+            {
+                any_fail = true;
             }
         }
         if any_error {
@@ -848,7 +848,6 @@ pub struct AssetRow {
     pub id: i64,
     pub release_id: i64,
     pub name: String,
-    pub label: Option<String>,
     pub content_type: String,
     pub size: i64,
     pub download_count: i64,
@@ -865,7 +864,7 @@ impl Loader<i64> for ReleaseAssetsLoader {
 
     async fn load(&self, keys: &[i64]) -> LResult<i64, Self::Value> {
         let rows: Vec<AssetRow> = sqlx::query_as(
-            "SELECT id, release_id, name, label, content_type, size, download_count, uploader_id,
+            "SELECT id, release_id, name, content_type, size, download_count, uploader_id,
                     created_at, updated_at
                FROM release_assets WHERE release_id = ANY($1) ORDER BY release_id, id",
         )

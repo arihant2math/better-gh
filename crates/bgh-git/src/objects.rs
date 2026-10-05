@@ -1,12 +1,12 @@
 //! Owned representations of git objects, parsed from raw object bytes.
 
 use chrono::{DateTime, TimeZone, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{GitError, GitResult};
 
 /// Author / committer / tagger identity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Signature {
     pub name: String,
     pub email: String,
@@ -55,7 +55,7 @@ fn parse_tz(tz: &str) -> Option<i32> {
 }
 
 /// A commit.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Commit {
     pub sha: String,
     pub tree: String,
@@ -129,7 +129,7 @@ impl Commit {
 }
 
 /// An annotated tag.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tag {
     pub sha: String,
     /// Target object SHA.
@@ -175,7 +175,7 @@ impl Tag {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TreeEntryKind {
     Blob,
@@ -208,7 +208,7 @@ impl TreeEntryKind {
 }
 
 /// One entry of a tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TreeEntry {
     pub name: String,
     /// Six-digit octal mode as GitHub reports it (`100644`, `040000`, ...).

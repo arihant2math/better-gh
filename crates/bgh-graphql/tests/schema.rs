@@ -72,7 +72,7 @@ async fn get_allows_queries_not_mutations() {
     res.assert_status(200);
     assert_eq!(res.json()["data"]["viewer"]["login"], "alice");
     let res = app
-        .get("/api/graphql?query=mutation%20%7B%20noop%20%7D")
+        .get("/api/graphql?query=mutation%20%7B%20addStar(input%3A%7BstarrableId%3A%22x%22%7D)%20%7B%20clientMutationId%20%7D%20%7D")
         .auth(&alice)
         .send()
         .await;

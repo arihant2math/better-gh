@@ -46,10 +46,6 @@ pub fn not_found(message: impl Into<String>) -> async_graphql::Error {
     err("NOT_FOUND", message)
 }
 
-pub fn unprocessable(message: impl Into<String>) -> async_graphql::Error {
-    err("UNPROCESSABLE", message)
-}
-
 /// Map a REST-layer error onto a GraphQL error.
 pub fn api_err(e: ApiError) -> async_graphql::Error {
     let ty = match &e {

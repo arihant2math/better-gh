@@ -1,0 +1,26 @@
+[package]
+name = "bgh-wiki"
+description = "Git-backed repository wikis: pages, history, smart-HTTP transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bgh-core.workspace = true
+bgh-git.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+bgh-core = { workspace = true, features = ["testing"] }
+bgh-server = { workspace = true, features = ["testing"] }
+tokio.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

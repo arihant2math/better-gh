@@ -11,16 +11,29 @@
 //! This crate knows nothing about users or permissions; `bgh-repos` mounts
 //! the HTTP routes and performs authorization.
 
+pub mod archive;
+pub mod blame;
+pub mod cache;
 mod cmd;
+pub mod highlight;
+pub mod languages;
+pub mod lastcommit;
+pub mod lfs;
+pub mod maintenance;
+pub mod merge;
 pub mod objects;
+pub mod ops;
+pub mod patch;
 pub mod pktline;
 pub mod read;
 pub mod smart_http;
 pub mod storage;
+pub mod stream;
 pub mod write;
 
 pub use bgh_core::events::{RefUpdate, ZERO_SHA};
 pub use objects::{Commit, Signature, Tag, TreeEntry, TreeEntryKind};
+pub use ops::{DiffFile, GitCli, LogFilter, LsTreeEntry, MergeOutcome, TreeEdit};
 pub use read::{Blob, GitRepo, PathLookup, RefInfo};
 pub use storage::RepoStore;
 

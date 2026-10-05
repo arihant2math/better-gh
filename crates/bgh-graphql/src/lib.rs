@@ -10,6 +10,9 @@
 //!
 //! See `docs/packages/graphql.md` for the covered surface.
 
+// GraphQL resolvers take one Rust argument per GraphQL argument.
+#![allow(clippy::too_many_arguments)]
+
 mod conn;
 mod ctx;
 mod loaders;
@@ -40,7 +43,7 @@ pub fn schema() -> &'static BghSchema {
     static SCHEMA: OnceLock<BghSchema> = OnceLock::new();
     SCHEMA.get_or_init(|| {
         Schema::build(
-            query::Query::default(),
+            query::Query,
             mutation::Mutation::default(),
             EmptySubscription,
         )
@@ -71,11 +74,7 @@ pub fn web_router() -> Router<AppState> {
 /// Register background job handlers and event listeners.
 pub fn register(_reg: &mut Registry) {}
 
-async fn post_graphql(
-    State(state): State<AppState>,
-    auth: MaybeUser,
-    body: Bytes,
-) -> Response {
+async fn post_graphql(State(state): State<AppState>, auth: MaybeUser, body: Bytes) -> Response {
     // Cookie-authenticated POSTs are CSRF-checked by the server-wide
     // middleware (bgh_core::auth::csrf_middleware).
     let request: async_graphql::Request = match serde_json::from_slice(&body) {

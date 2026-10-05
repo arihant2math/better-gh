@@ -212,7 +212,6 @@ impl Conversation {
         let l = ctx.data_unchecked::<Loaders>();
         Ok(one(&l.milestones, id).await?.map(Milestone))
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn comments(
         &self,
         ctx: &Context<'_>,

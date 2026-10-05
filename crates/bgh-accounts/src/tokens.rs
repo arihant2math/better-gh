@@ -1,5 +1,7 @@
 //! Personal access token management for the web client
-//! (`/_bgh/tokens`). Requires a browser session: tokens can't mint tokens.
+//! (`/_bgh/tokens`): classic scopes, optional expiry (`expires_in_days`).
+//! Requires a browser session: tokens can't mint tokens. OAuth app tokens
+//! are managed through `/_bgh/authorizations` instead.
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -158,7 +160,7 @@ pub async fn list_tokens(
 ) -> ApiResult<Json<Vec<TokenJson>>> {
     require_session(&auth)?;
     let rows: Vec<db::AccessToken> = sqlx::query_as(&format!(
-        "SELECT {} FROM access_tokens WHERE user_id = $1 ORDER BY id DESC",
+        "SELECT {} FROM access_tokens WHERE user_id = $1 AND kind = 'pat' ORDER BY id DESC",
         db::AccessToken::COLUMNS
     ))
     .bind(auth.user.id)
@@ -175,12 +177,13 @@ pub async fn delete_token(
 ) -> ApiResult<StatusCode> {
     require_session(&auth)?;
     let mut tx = Tx::begin(&state).await?;
-    let deleted = sqlx::query("DELETE FROM access_tokens WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(auth.user.id)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
+    let deleted =
+        sqlx::query("DELETE FROM access_tokens WHERE id = $1 AND user_id = $2 AND kind = 'pat'")
+            .bind(id)
+            .bind(auth.user.id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
     if deleted == 0 {
         return Err(ApiError::NotFound);
     }

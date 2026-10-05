@@ -115,7 +115,6 @@ impl User {
         let _ = follow_renames;
         repo::by_owner_and_name(ctx, &self.0, &name).await
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn repositories(
         &self,
         ctx: &Context<'_>,
@@ -181,7 +180,7 @@ impl User {
         order_by: Option<ProjectV2Order>,
     ) -> ProjectV2Connection {
         let _ = (first, after, query, order_by);
-        ProjectV2Connection::default()
+        ProjectV2Connection
     }
     pub async fn followers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
         let n: i64 = sqlx::query_scalar("SELECT count(*) FROM follows WHERE following_id = $1")
@@ -321,7 +320,6 @@ impl Organization {
         let _ = follow_renames;
         repo::by_owner_and_name(ctx, &self.0, &name).await
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn repositories(
         &self,
         ctx: &Context<'_>,
@@ -360,7 +358,7 @@ impl Organization {
         order_by: Option<ProjectOrder>,
     ) -> ProjectConnection {
         let _ = (first, after, states, order_by);
-        ProjectConnection::default()
+        ProjectConnection
     }
     #[graphql(name = "projectsV2")]
     pub async fn projects_v2(
@@ -371,7 +369,7 @@ impl Organization {
         order_by: Option<ProjectV2Order>,
     ) -> ProjectV2Connection {
         let _ = (first, after, query, order_by);
-        ProjectV2Connection::default()
+        ProjectV2Connection
     }
     /// Teams in this organization (visible ones).
     pub async fn teams(

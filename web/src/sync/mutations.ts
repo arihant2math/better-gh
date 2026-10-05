@@ -215,10 +215,10 @@ export function mergePull(pr: Issue, method: 'merge' | 'squash' | 'rebase' = 'me
 
 export function setDraft(pr: Issue, draft: boolean) {
   const r = repoOf(pr.repoId);
+  // GraphQL-only on GitHub; bgh exposes private endpoints (docs/packages/pulls.md).
   return commit(draft ? 'Convert to draft' : 'Ready for review', [ops.update('issue', pr.id, { draft })], {
-    method: 'PATCH',
-    path: `/api/v3/repos/${enc(r.owner)}/${enc(r.name)}/pulls/${pr.number}`,
-    body: { draft },
+    method: 'POST',
+    path: `/_bgh/repos/${enc(r.owner)}/${enc(r.name)}/pulls/${pr.number}/${draft ? 'convert_to_draft' : 'ready_for_review'}`,
   });
 }
 

@@ -354,7 +354,6 @@ impl PullOnly {
         .unwrap_or(None);
         Ok(required.map(|_| PullRequestReviewDecision::ReviewRequired))
     }
-    #[allow(clippy::too_many_arguments)]
     pub async fn reviews(
         &self,
         ctx: &Context<'_>,
@@ -712,7 +711,7 @@ fn parse_diff(numstat: &[u8], status: &[u8]) -> Vec<PullRequestChangedFile> {
             continue;
         }
         if code.starts_with('R') || code.starts_with('C') {
-            if i + 2 < st.len() + 1 && i + 2 <= st.len() - 1 {
+            if i + 2 < st.len() {
                 statuses.push((code.clone(), st[i + 2].clone()));
             }
             i += 3;
