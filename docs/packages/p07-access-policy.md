@@ -1,6 +1,11 @@
+Integration: ready
+Internal visibility, private mode and allowed visibilities (backend, web, tests); gate green on the merged tree.
+
 # P7 access-policy — status
 
-**Done.** Branch `bgh/p07-access-policy`. Scope: `docs/PHASE4_PLAN.md`
+**Done.** Branch `bgh/p07-access-policy`, merged with the latest
+integration branch, full gate green (fmt, clippy, `cargo test --workspace`,
+web typecheck/lint/test/build). Scope: `docs/PHASE4_PLAN.md`
 §P7 (no §5 quick fixes are assigned to P7). Evidence: `docs/AUDIT.md`
 ("internal visibility behaves like private", "No private mode").
 
