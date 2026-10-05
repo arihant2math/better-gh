@@ -436,12 +436,7 @@
   background: none;
   color: var(--accent, inherit);
   font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-  color: var(--accent);
-  font: inherit;
   font-style: normal;
   cursor: pointer;
+  text-decoration: underline;
 }
