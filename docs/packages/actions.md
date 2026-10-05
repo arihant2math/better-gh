@@ -47,7 +47,7 @@ Branch `bgh/actions`.
   → annotations, `stop-commands`, `save-state`), secret masking, step/job
   timeouts, cancellation. `uses`: `actions/checkout` (native, from this
   server with the job token), `actions/upload-artifact` /
-  `download-artifact` (native), `actions/cache*` (no-op, `cache-hit=false`),
+  `download-artifact` (native), `actions/cache*` (native, see p27-actions-cache.md),
   `docker://`, local `./path` and remote `owner/repo@ref` actions (fetched
   from this server first, then `BGH_ACTIONS_GITHUB_URL`) of type node,
   composite and docker (pre/post for node actions).
@@ -170,7 +170,7 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 * Reusable workflows: see `docs/packages/p16-reusable-workflows.md`.
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
-* `actions/cache` is a no-op; no cache API (`/actions/caches`).
+* Cache: see `docs/packages/p27-actions-cache.md` (native `actions/cache`, toolkit cache/results services, `/actions/caches`).
 * Fork pull requests get no secrets and a read-only token
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
