@@ -261,10 +261,30 @@ pub async fn users_repo_permissions(
 /// Apply token scopes to a raw permission:
 /// * private repos need the `repo` scope, otherwise the token sees nothing;
 /// * writes to public repos need `repo` or `public_repo`, otherwise Read.
+///
+/// Actions job tokens (`GITHUB_TOKEN`) carry a [`JOB_TOKEN_SCOPE_PREFIX`]
+/// scope: they are limited to that repository (at most Write) and see other
+/// repositories like an anonymous caller.
 pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permission) -> Permission {
     let Some(auth) = auth else {
         return raw;
     };
+    if let Some(job_repo) = job_token_repo(auth) {
+        let cap = if auth
+            .scopes
+            .as_ref()
+            .is_some_and(|s| s.iter().any(|s| s == JOB_TOKEN_READ_ONLY_SCOPE))
+        {
+            Permission::Read
+        } else {
+            Permission::Write
+        };
+        return if job_repo != repo.id {
+            public_floor(repo)
+        } else {
+            raw.min(cap)
+        };
+    }
     if auth.has_scope("repo") {
         return raw;
     }
@@ -275,6 +295,20 @@ pub fn effective(auth: Option<&AuthContext>, repo: &db::Repository, raw: Permiss
     } else {
         raw.min(Permission::Read)
     }
+}
+
+/// Scope prefix marking an Actions job token: `actions:repo:{repo_id}`.
+pub const JOB_TOKEN_SCOPE_PREFIX: &str = "actions:repo:";
+
+/// Extra scope making an Actions job token read-only (fork pull requests).
+pub const JOB_TOKEN_READ_ONLY_SCOPE: &str = "actions:read-only";
+
+/// Repository an Actions job token is restricted to, if `auth` is one.
+pub fn job_token_repo(auth: &AuthContext) -> Option<i64> {
+    auth.scopes
+        .as_ref()?
+        .iter()
+        .find_map(|s| s.strip_prefix(JOB_TOKEN_SCOPE_PREFIX)?.parse().ok())
 }
 
 /// A repository resolved for the current caller.

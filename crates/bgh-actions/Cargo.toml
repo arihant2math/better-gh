@@ -1,21 +1,49 @@
 [package]
 name = "bgh-actions"
-description = "CI: workflow parsing and runner orchestration"
+description = "CI: workflow parsing, expressions, triggering, runners, logs, artifacts, secrets"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "bgh-runner"
+path = "src/bin/bgh-runner.rs"
+
 [dependencies]
 bgh-core.workspace = true
+bgh-git.workspace = true
 axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+bytes.workspace = true
+http.workspace = true
+redis.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
 sqlx.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+rand.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+clap.workspace = true
+serde_yaml.workspace = true
+indexmap.workspace = true
+zip.workspace = true
+crypto_box.workspace = true
+chacha20poly1305.workspace = true
+reqwest.workspace = true
+async-trait.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }
 bgh-server = { workspace = true, features = ["testing"] }
-tokio.workspace = true

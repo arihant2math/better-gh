@@ -574,6 +574,8 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
             .await?
             .map(|s| vec![b.emit("check_suite", Some(action), vec![("check_suite", s)])])
             .unwrap_or_default()),
+        // bgh-actions doesn't render the run JSON yet: nothing to deliver.
+        E::WorkflowRunUpdated { workflow_run, .. } if workflow_run.is_null() => Ok(Vec::new()),
         E::WorkflowRunUpdated {
             action,
             workflow_run,

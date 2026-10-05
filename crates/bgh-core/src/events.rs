@@ -658,6 +658,14 @@ pub enum Event {
         hook_id: i64,
         actor_id: i64,
     },
+    /// Actions job lifecycle; `action` is `queued` | `in_progress` |
+    /// `completed` | `waiting` (GitHub's `workflow_job` webhook).
+    WorkflowJobUpdated {
+        repo_id: i64,
+        run_id: i64,
+        job_id: i64,
+        action: String,
+    },
 }
 
 impl Event {
@@ -767,6 +775,7 @@ impl Event {
             Self::UserAccountChanged { .. } => "user_account_changed",
             Self::OrganizationChanged { .. } => "organization_changed",
             Self::GlobalHookPing { .. } => "global_hook_ping",
+            Self::WorkflowJobUpdated { .. } => "workflow_job_updated",
         }
     }
 
@@ -860,7 +869,8 @@ impl Event {
             | Self::CheckRunUpdated { repo_id, .. }
             | Self::CheckSuiteUpdated { repo_id, .. }
             | Self::WorkflowRunUpdated { repo_id, .. }
-            | Self::ReleaseUpdated { repo_id, .. } => Some(*repo_id),
+            | Self::ReleaseUpdated { repo_id, .. }
+            | Self::WorkflowJobUpdated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -892,7 +902,9 @@ impl Event {
             | Self::CheckSuiteUpdated { actor_id, .. }
             | Self::WorkflowRunUpdated { actor_id, .. }
             | Self::CommitStatusCreated { actor_id, .. } => *actor_id,
-            Self::CheckSuiteCompleted { .. } | Self::AccessChanged { .. } => None,
+            Self::CheckSuiteCompleted { .. }
+            | Self::AccessChanged { .. }
+            | Self::WorkflowJobUpdated { .. } => None,
             Self::RepositoryCreated { actor_id, .. }
             | Self::RepositoryDeleted { actor_id, .. }
             | Self::RepositoryUpdated { actor_id, .. }

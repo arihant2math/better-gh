@@ -99,7 +99,7 @@ lettre = { version = "0.11", default-features = false, features = [
     "tokio1-rustls-tls",
     "rustls-tls",
 ] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "stream", "http2"] }
 hmac = "0.12"
 sha1 = "0.10"
 flate2 = "1"
@@ -108,6 +108,12 @@ url = "2"
 
 # search
 regex = "1"
+
+# actions
+indexmap = { version = "2", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+crypto_box = { version = "0.9", features = ["seal", "chacha20"] }
+chacha20poly1305 = "0.10"
 
 # testing
 tempfile = "3"
