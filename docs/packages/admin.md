@@ -25,7 +25,7 @@ every change writes an audit entry with the caller's IP.
 | `GET /enterprise/stats/{all,repos,hooks,pages,orgs,users,pulls,issues,milestones,gists,comments}` | GHES shapes; `total_pushes` from `site_counters` (Push event listener); gists = 0 |
 | `GET /enterprise/settings/license` | unlimited seats, `seats_used` = active users, no expiry |
 | `GET/PATCH/DELETE /enterprise/announcement` | `{announcement, expires_at, user_dismissible}` |
-| `GET /rate_limit` | any caller; 404 "Rate limiting is not enabled." when disabled |
+| `GET /rate_limit` | any caller, never counted; GitHub's shape (`resources.core/search/graphql/code_search/…`, `rate`) from `bgh_core::ratelimit::status` |
 | `GET /orgs/{org}/audit-log` | org owners (or site admins); tokens need `read:audit_log` or `admin:org`; GitHub entry shape (`@timestamp`, `_document_id`, `action`, `actor`, `org`, `repo`, `user`, flattened data); `phrase`, `include`, `after`/`before` cursors + `Link`, `order`, `per_page` |
 | `GET /enterprises/{e}/audit-log` | whole instance, includes `actor_ip` |
 
@@ -33,9 +33,12 @@ every change writes an audit entry with the caller's IP.
 
 * `GET /_bgh/site` (public): site name, active announcement, maintenance
   state, sign-up policy, sign-in methods (no secrets).
-* `GET/PATCH /_bgh/admin/settings`: all sections; PATCH merges fields per
-  section, validates the whole, secrets are returned as `********` and
-  sending the placeholder back keeps the stored value.
+* `GET/PATCH /_bgh/admin/settings`: all sections with their effective
+  values (environment defaults such as `BGH_RATE_LIMIT*` / `BGH_OIDC_*`
+  overridden by stored fields); PATCH merges fields into the stored
+  section (only the fields set are stored, so the others keep following
+  the environment), validates the whole, secrets are returned as
+  `********` and sending the placeholder back keeps the stored value.
 * `GET /_bgh/admin/audit-log`: filters `actor`, `action` (exact or
   category), `user`, `org`, `repo` (`owner/name`), `since`/`until`, `phrase`
   (GitHub syntax incl. `created:>=…`, ranges), `order`, cursor pagination
@@ -86,8 +89,15 @@ admin listing indexes.
   (`load`, `invalidate`), `check_signup`, `can_create_org`,
   `default_visibility`, `storage_limits_kb`, `check_push_quota`,
   `maintenance_middleware`, `public_info`.
-* `bgh_core::ratelimit` (new): Redis hourly-window middleware on `/api/v3`
-  (`X-RateLimit-*`, 403 when exceeded), `quota()` for `/rate_limit`.
+* `bgh_core::ratelimit`: the one API limiter (merged with accounts'):
+  `core`/`search`/`graphql` budgets, headers on every API response,
+  enforcement when `rate_limits.enabled`; `status()` for `/rate_limit`
+  (BACKEND_PATTERNS.md §10b). `rate_limits` gained the search/graphql
+  budgets; its defaults come from `BGH_RATE_LIMIT*`.
+* `bgh_core::settings`: `SiteSettings::defaults(&config)`,
+  `from_rows_with`, `apply_section`, `load_rows`; `load_uncached` takes the
+  config. `OidcProvider` gained `login_claim` and `allowed_domains` (the
+  SSO login reads only this setting).
 * `bgh_core::two_factor` (new): `enabled_at`, `disable` over `user_two_factor`.
 * `bgh_core::auth`: `resolve_request` (middleware auth resolution, cached
   for extractors), `client_ip`.
@@ -118,7 +128,7 @@ admin listing indexes.
 * **B5 notify**: deliver global hooks (`webhooks` with `repo_id IS NULL AND
   org_id IS NULL`) for `UserAccountChanged` (`user` event),
   `OrganizationChanged` (`organization`) and `GlobalHookPing` (`ping`);
-  SMTP config is `settings::load(..).smtp`.
+  the `smtp` setting is used by `bgh_core::mail`'s transport selection.
 
 ## Known gaps / TODO
 

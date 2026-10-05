@@ -48,11 +48,10 @@ Web client (`/_bgh`):
   address), own_activity_email}`; synced as `notificationSettings` in
   `user:{id}`.
 * `DELETE /_bgh/notifications/threads/{id}/read` — mark unread (204),
-  SYNC_PROTOCOL §10. Writes go through `Tx::sync`, so `X-Client-Tx`
-  echo/idempotency apply once B8's `sync::record` carries the tx.
-  `notification` sync data is exactly the §3 shape (`id, repoId,
-  subjectType, subjectId, title, reason, unread, updatedAt, lastReadAt`);
-  done threads are synced as deletes. The client model has no
+  SYNC_PROTOCOL §10. `notification` rows are recorded through the shared
+  shapes (`tx.sync_models(SyncModel::Notification, ..)`); done threads are
+  synced as deletes. Watching re-syncs the user's `viewerRepo` and the repo
+  row (`watchers`). The client model has no
   done/saved fields, so "saved" notifications are not implemented.
 * `GET/POST /_bgh/notifications/unsubscribe?token=` — signed (HMAC,
   secret in `site_settings['notify.secret']`) thread or all-email tokens;
@@ -114,8 +113,9 @@ duplicates deliveries.
 
 ## Email
 
-* `mail.send` job (any crate: `bgh_core::mail::enqueue`) → SMTP via lettre
-  (`BGH_SMTP_URL`, pooled) or the dev transport (log + `{data_dir}/mail/*.eml`).
+* Delivery is the shared `mail.send` job of `bgh_core::mail` (transport:
+  admin `smtp` setting → `BGH_SMTP_URL` → dev transport; BACKEND_PATTERNS.md
+  §10a); this crate only renders notification emails.
 * `notify.email`: per recipient, honouring settings and read access;
   GitHub-style subjects (`[o/r] Title (Issue #1)`, `Re:` for follow-ups),
   `Message-ID`/`In-Reply-To`/`References` threading, `List-ID`,
@@ -148,16 +148,18 @@ duplicates deliveries.
 * `bgh_core::markdown::mentions(text) -> Mentions { users, teams }`.
 * `bgh_core::perms::users_repo_permissions(db, repo, user_ids)` — batched
   "which of these users can read this repo".
-* `bgh_core::mail`: `Email`, `SendEmail` job (`mail.send`, handled by
-  bgh-notify), `mail::enqueue`, account templates (`verify_email`,
-  `password_reset`, `password_changed`, `org_invitation`, `repo_invitation`).
+* `bgh_core::mail`: `Email`, `SendEmail` job (`mail.send`, handler
+  `mail::send_job` registered by bgh-server), `mail::enqueue`, transport
+  selection and dev outbox, account templates (`verify_email`,
+  `password_reset`, `password_changed`, `two_factor_enabled`,
+  `org_invitation`, `repo_invitation`).
 * `Config`: `smtp_url` (`BGH_SMTP_URL`), `mail_from` (`BGH_MAIL_FROM`),
   `webhook_allowed_hosts` (`BGH_WEBHOOK_ALLOWED_HOSTS`),
   `webhook_timeout_secs` (`BGH_WEBHOOK_TIMEOUT_SECS`).
 
 ## Jobs and listeners
 
-Jobs `mail.send`, `notify.email`, `notify.deliver_webhook`; listeners
+Jobs `notify.email`, `notify.deliver_webhook`; listeners
 `notify.notifications`, `notify.webhooks`. Also additive:
 `Pagination::with_default_per_page` in bgh-core.
 

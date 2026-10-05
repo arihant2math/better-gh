@@ -454,24 +454,6 @@ pub async fn render_suites(
         .collect())
 }
 
-fn run_sync_json(r: &RunRow) -> Value {
-    json!({
-        "id": r.id, "repoId": r.repo_id, "checkSuiteId": r.check_suite_id,
-        "headSha": r.head_sha, "name": r.name, "status": r.status,
-        "conclusion": r.conclusion, "detailsUrl": r.details_url,
-        "title": r.output.get("title"), "startedAt": ts(r.started_at),
-        "completedAt": ts(r.completed_at),
-    })
-}
-
-fn suite_sync_json(s: &SuiteRow) -> Value {
-    json!({
-        "id": s.id, "repoId": s.repo_id, "headSha": s.head_sha,
-        "headBranch": s.head_branch, "appSlug": s.app_slug, "status": s.status,
-        "conclusion": s.conclusion, "latestCheckRunsCount": s.latest_check_runs_count,
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Service functions
 // ---------------------------------------------------------------------------
@@ -550,14 +532,8 @@ pub async fn ensure_suite(
     .bind(app_slug)
     .fetch_one(&mut **tx)
     .await?;
-    tx.sync(
-        &bgh_core::sync::repo_scope(repo_id),
-        "checkSuite",
-        s.id,
-        SyncAction::Insert,
-        &suite_sync_json(&s),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CheckSuite, s.id, SyncAction::Insert)
+        .await?;
     Ok((s, true))
 }
 
@@ -827,23 +803,10 @@ pub async fn create_run(
         .await?;
     }
     let suite_after = recompute_suite(&mut tx, suite.id).await?;
-    let scope = access.scope();
-    tx.sync(
-        &scope,
-        "checkRun",
-        run.id,
-        SyncAction::Insert,
-        &run_sync_json(&run),
-    )
-    .await?;
-    tx.sync(
-        &scope,
-        "checkSuite",
-        suite_after.id,
-        SyncAction::Update,
-        &suite_sync_json(&suite_after),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CheckRun, run.id, SyncAction::Insert)
+        .await?;
+    tx.sync_model(SyncModel::CheckSuite, suite_after.id, SyncAction::Update)
+        .await?;
     tx.enqueue(&ChecksChanged {
         repo_id: access.repo.id,
         sha: head_sha.clone(),
@@ -977,23 +940,10 @@ pub async fn update_run(
         .fetch_one(&mut *tx)
         .await?;
     let suite = recompute_suite(&mut tx, run.check_suite_id).await?;
-    let scope = access.scope();
-    tx.sync(
-        &scope,
-        "checkRun",
-        run.id,
-        SyncAction::Update,
-        &run_sync_json(&run),
-    )
-    .await?;
-    tx.sync(
-        &scope,
-        "checkSuite",
-        suite.id,
-        SyncAction::Update,
-        &suite_sync_json(&suite),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CheckRun, run.id, SyncAction::Update)
+        .await?;
+    tx.sync_model(SyncModel::CheckSuite, suite.id, SyncAction::Update)
+        .await?;
     tx.enqueue(&ChecksChanged {
         repo_id: access.repo.id,
         sha: run.head_sha.clone(),
@@ -1135,22 +1085,10 @@ pub async fn rerequest_run(
         .execute(&mut *tx)
         .await?;
     let suite = recompute_suite(&mut tx, run.check_suite_id).await?;
-    tx.sync(
-        &access.scope(),
-        "checkRun",
-        id,
-        SyncAction::Update,
-        &run_sync_json(&run),
-    )
-    .await?;
-    tx.sync(
-        &access.scope(),
-        "checkSuite",
-        suite.id,
-        SyncAction::Update,
-        &suite_sync_json(&suite),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CheckRun, id, SyncAction::Update)
+        .await?;
+    tx.sync_model(SyncModel::CheckSuite, suite.id, SyncAction::Update)
+        .await?;
     tx.enqueue(&ChecksChanged {
         repo_id: access.repo.id,
         sha: run.head_sha.clone(),
@@ -1397,14 +1335,8 @@ pub async fn rerequest_suite(
     .execute(&mut *tx)
     .await?;
     let suite = recompute_suite(&mut tx, id).await?;
-    tx.sync(
-        &access.scope(),
-        "checkSuite",
-        id,
-        SyncAction::Update,
-        &suite_sync_json(&suite),
-    )
-    .await?;
+    tx.sync_model(SyncModel::CheckSuite, id, SyncAction::Update)
+        .await?;
     tx.enqueue(&ChecksChanged {
         repo_id: access.repo.id,
         sha: suite.head_sha.clone(),

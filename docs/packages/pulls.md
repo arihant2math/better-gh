@@ -106,18 +106,19 @@ Statuses / checks
 
 ## Sync & events
 
-Sync rows follow `docs/SYNC_PROTOCOL.md` (scope `repo:{id}`, camelCase):
-PRs are `issue` rows with `isPr: true` and every PR field of the v1
-interface (`reviewDecision` from the latest decisive reviews / pending
-requests, `checks` aggregated from statuses + check runs on the head;
-`body` only on create/body edits) plus extensions (`mergeCommitSha`,
-`rebaseable`, `maintainerCanModify`, `autoMerge`, `reviewComments`);
-`review` (normative shape), `issueEvent` (`data` mapped to camelCase:
-`reviewerId`, `teamId`, `from`/`to`, `before`/`after`, `reviewId`,
-`commitId`, ...). Extension models (ignored by today's client):
-`reviewComment`, `reaction`, `commitStatus`, `checkRun`, `checkSuite`.
-Pending reviews are not broadcast. The `repo` row's `openPulls` is not
-re-synced by this crate (repo rows belong to bgh-repos).
+Sync rows come from the shared shapes (`bgh_core::sync::shapes`,
+recorded with `tx.sync_model` / `sync_issue` / `sync_delete`), so deltas
+equal bootstrap / partial-sync rows: PRs are `issue` rows with `isPr: true`
+and the PR fields (`reviewDecision`, `checks`, plus the §3.2 extensions
+`mergeCommitSha`, `rebaseable`, `maintainerCanModify`, `autoMerge`,
+`reviewComments`); `review`; `issueEvent` (`data` keys mapped by the shape
+SQL: `reviewerId`, `teamId`, `from`/`to`, `before`/`after`, `ref`,
+`reviewId`, `dismissalMessage`, `mergeMethod`, `commitId`); delta-only
+extension models `reviewComment` (with `reactions`; reactions re-sync the
+comment), `commitStatus`, `checkRun`, `checkSuite`. Pending reviews and
+their comments are not broadcast. Status / check changes re-sync the
+affected PRs (`checks`) from the `pulls.checks_changed` job; opening a PR
+re-syncs the repo row (`openPulls`).
 Event variants added (additive, `events.rs`):
 `PullRequestEdited`, `PullRequestReadyForReview`,
 `PullRequestConvertedToDraft`, `PullRequestReviewRequested`,

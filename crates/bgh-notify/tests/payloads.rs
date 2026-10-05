@@ -42,13 +42,12 @@ async fn issue_comment_label_and_pull_payloads() {
     let repo = app.create_repo(&alice, "hello").await;
     let repo_id = repo["id"].as_i64().unwrap();
 
-    let label_id: i64 = sqlx::query_scalar(
-        "INSERT INTO labels (repo_id, name, color) VALUES ($1, 'bug', 'd73a4a') RETURNING id",
-    )
-    .bind(repo_id)
-    .fetch_one(&app.state.db)
-    .await
-    .unwrap();
+    let label_id: i64 =
+        sqlx::query_scalar("SELECT id FROM labels WHERE repo_id = $1 AND name = 'bug'")
+            .bind(repo_id)
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
     let issue_id = insert_issue(&app, repo_id, 1, alice.id, false).await;
     exec(
         &app,

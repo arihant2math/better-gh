@@ -20,6 +20,7 @@ use axum::response::{IntoResponse, Response};
 use bgh_core::audit;
 use bgh_core::auth::{self, AuthMethod};
 use bgh_core::crypto;
+use bgh_core::mail;
 use bgh_core::prelude::*;
 use bgh_core::ratelimit;
 use redis::AsyncCommands;
@@ -590,13 +591,7 @@ pub async fn change_password(
     if let Some(email) = util::primary_email(&mut *tx, auth.user.id).await? {
         util::queue_mail(
             &mut tx,
-            &email,
-            &format!("[{}] Your password was changed", state.config.site_name),
-            format!(
-                "Hi @{},\n\nThe password of your account was just changed. If this \
-                 wasn't you, reset your password immediately.\n",
-                auth.user.login
-            ),
+            mail::templates::password_changed(&state.config.site_name, &email, &auth.user.login),
         )
         .await?;
     }
@@ -663,13 +658,12 @@ pub async fn request_reset(
     let link = state.urls.html(&format!("/password_reset/{token}"));
     util::queue_mail(
         &mut tx,
-        &to,
-        &format!("[{}] Please reset your password", state.config.site_name),
-        format!(
-            "Hi @{},\n\nWe heard that you lost your password. Use this link to reset it:\n\n\
-             {link}\n\nThe link expires in {RESET_TTL_MINUTES} minutes. If you didn't ask \
-             for this, you can ignore this email.\n",
-            user.login
+        mail::templates::password_reset(
+            &state.config.site_name,
+            &to,
+            &user.login,
+            &link,
+            RESET_TTL_MINUTES,
         ),
     )
     .await?;

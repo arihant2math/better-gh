@@ -44,10 +44,16 @@ pub enum Model {
     Review,
     IssueEvent,
     Notification,
+    // Extension models (docs/SYNC_PROTOCOL.md §3.2): streamed as deltas in
+    // `repo:{id}`, not part of the bootstrap.
+    ReviewComment,
+    CheckRun,
+    CheckSuite,
+    CommitStatus,
 }
 
 impl Model {
-    pub const ALL: [Model; 13] = [
+    pub const ALL: [Model; 17] = [
         Model::User,
         Model::Org,
         Model::Membership,
@@ -61,6 +67,10 @@ impl Model {
         Model::Review,
         Model::IssueEvent,
         Model::Notification,
+        Model::ReviewComment,
+        Model::CheckRun,
+        Model::CheckSuite,
+        Model::CommitStatus,
     ];
 
     /// Wire name (`"issueEvent"`), also stored in `sync_actions.model`.
@@ -79,6 +89,10 @@ impl Model {
             Self::Review => "review",
             Self::IssueEvent => "issueEvent",
             Self::Notification => "notification",
+            Self::ReviewComment => "reviewComment",
+            Self::CheckRun => "checkRun",
+            Self::CheckSuite => "checkSuite",
+            Self::CommitStatus => "commitStatus",
         }
     }
 
@@ -89,6 +103,14 @@ impl Model {
     /// Lazy models are not part of the bootstrap (loaded by partial sync).
     pub fn is_lazy(self) -> bool {
         matches!(self, Self::Comment | Self::Review | Self::IssueEvent)
+    }
+
+    /// Extension models: deltas only (no bootstrap or partial sync).
+    pub fn is_extension(self) -> bool {
+        matches!(
+            self,
+            Self::ReviewComment | Self::CheckRun | Self::CheckSuite | Self::CommitStatus
+        )
     }
 }
 
@@ -155,7 +177,8 @@ pub struct Row {
 
 /// Issue columns (aliases are the JSON keys; `row_to_json` is about twice
 /// as fast as `json_build_object` for wide rows). `i` = issue row, `aa`,
-/// `la`, `ra` = pre-aggregated assignees, labels, reactions.
+/// `la`, `ra` = pre-aggregated assignees, labels, reactions; `si` = parent
+/// (sub-issues), `pin` = pinned.
 const ISSUE_COLS: &str = r#"
     i.id AS "id", i.repo_id AS "repoId", i.number AS "number", i.title AS "title",
     i.state AS "state",
@@ -163,12 +186,14 @@ const ISSUE_COLS: &str = r#"
     i.author_id AS "authorId", coalesce(aa.ids, '{}') AS "assigneeIds",
     coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
     i.comments_count AS "comments", i.locked AS "locked",
-    coalesce(ra.r, '{}') AS "reactions",
+    i.active_lock_reason AS "activeLockReason", coalesce(ra.r, '{}') AS "reactions",
+    si.parent_id AS "parentId", (pin.issue_id IS NOT NULL) AS "pinned",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
     bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
 
 /// Pull request columns (`p` = pull_requests, `rq` = requested reviewers,
-/// `rd` = review decision, `ck` = combined checks).
+/// `rd` = review decision, `ck` = combined checks). The last five are
+/// protocol extensions (§3.2).
 const PR_COLS: &str = r#"
     p.draft AS "draft", p.merged AS "merged", bgh_ts(p.merged_at) AS "mergedAt",
     p.merged_by_id AS "mergedById", p.head_ref AS "headRef", p.head_repo_id AS "headRepoId",
@@ -181,7 +206,13 @@ const PR_COLS: &str = r#"
     coalesce(rq.teams, '{}') AS "requestedTeamIds",
     ck.checks AS "checks",
     p.additions AS "additions", p.deletions AS "deletions",
-    p.changed_files AS "changedFiles", p.commits AS "commits""#;
+    p.changed_files AS "changedFiles", p.commits AS "commits",
+    p.merge_commit_sha AS "mergeCommitSha", p.rebaseable AS "rebaseable",
+    p.maintainer_can_modify AS "maintainerCanModify",
+    CASE WHEN p.auto_merge IS NOT NULL THEN json_build_object(
+        'enabledById', p.auto_merge->'enabled_by_id',
+        'mergeMethod', p.auto_merge->'merge_method') END AS "autoMerge",
+    p.review_comments_count AS "reviewComments""#;
 
 /// Issue/PR select. `fi` / `fx` are the filter predicate on the issue
 /// aliases `i` / `x`. Child rows are aggregated once per set (hash joins),
@@ -205,6 +236,8 @@ fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
                       WHERE e.subject_type = 'issue' AND {fx}
                       GROUP BY e.subject_id, e.content) z
               GROUP BY z.subject_id) ra ON ra.subject_id = i.id
+  LEFT JOIN sub_issues si ON si.child_id = i.id
+  LEFT JOIN pinned_issues pin ON pin.issue_id = i.id
   LEFT JOIN pull_requests p ON p.issue_id = i.id
   LEFT JOIN (SELECT q.pull_id,
                     array_agg(q.user_id ORDER BY q.id) FILTER (WHERE q.user_id IS NOT NULL) AS users,
@@ -399,6 +432,19 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                      'from', coalesce(e.data->'rename'->'from', e.data->'from'),
                      'to', coalesce(e.data->'rename'->'to', e.data->'to'),
                      'stateReason', e.data->'state_reason',
+                     'lockReason', e.data->'lock_reason',
+                     'sourceIssueId', e.data->'source_issue_id',
+                     'sourceCommentId', e.data->'source_comment_id',
+                     'subIssueId', coalesce(e.data->'sub_issue'->'id', e.data->'sub_issue_id'),
+                     'parentIssueId', coalesce(e.data->'parent_issue'->'id', e.data->'parent_issue_id'),
+                     'fromRepository', e.data->'from_repository',
+                     'teamId', e.data->'requested_team_id',
+                     'before', e.data->'before',
+                     'after', e.data->'after',
+                     'ref', e.data->'ref',
+                     'reviewId', e.data->'dismissed_review'->'review_id',
+                     'dismissalMessage', e.data->'dismissed_review'->'dismissal_message',
+                     'mergeMethod', e.data->'merge_method',
                      'commitId', e.commit_id)),
                  'createdAt', bgh_ts(e.created_at))::text AS j
                FROM issue_events e WHERE {}",
@@ -416,6 +462,61 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'lastReadAt', bgh_ts(n.last_read_at))::text AS j
                FROM notifications n WHERE {} AND NOT n.done",
             col("n", filter, &[("ids", "id"), ("users", "user_id")])?
+        ),
+        Model::ReviewComment => format!(
+            "SELECT 'repo:' || c.repo_id AS scope, c.id, json_build_object(
+                 'id', c.id, 'repoId', c.repo_id, 'issueId', c.pull_id, 'reviewId', c.review_id,
+                 'inReplyToId', c.in_reply_to_id, 'authorId', c.user_id, 'body', c.body,
+                 'path', c.path, 'commitId', c.commit_id, 'originalCommitId', c.original_commit_id,
+                 'subjectType', c.subject_type, 'side', c.side, 'startSide', c.start_side,
+                 'line', c.line, 'originalLine', c.original_line, 'startLine', c.start_line,
+                 'originalStartLine', c.original_start_line, 'position', c.position,
+                 'originalPosition', c.original_position,
+                 'outdated', (c.subject_type = 'line' AND c.position IS NULL),
+                 'resolvedAt', bgh_ts(c.resolved_at), 'resolvedById', c.resolved_by_id,
+                 'reactions', coalesce((SELECT json_object_agg(x.content, x.n) FROM
+                                          (SELECT content, count(*) AS n FROM reactions
+                                            WHERE subject_type = 'pull_request_review_comment'
+                                              AND subject_id = c.id
+                                            GROUP BY content) x), '{{}}'),
+                 'createdAt', bgh_ts(c.created_at), 'updatedAt', bgh_ts(c.updated_at))::text AS j
+               FROM pr_review_comments c
+              WHERE {} AND NOT EXISTS (SELECT 1 FROM pr_reviews v
+                                        WHERE v.id = c.review_id AND v.state = 'PENDING'
+                                          AND v.user_id IS DISTINCT FROM $2)",
+            col(
+                "c",
+                filter,
+                &[("ids", "id"), ("repos", "repo_id"), ("issues", "pull_id")]
+            )?
+        ),
+        Model::CheckRun => format!(
+            "SELECT 'repo:' || r.repo_id AS scope, r.id, json_build_object(
+                 'id', r.id, 'repoId', r.repo_id, 'checkSuiteId', r.check_suite_id,
+                 'headSha', r.head_sha, 'name', r.name, 'status', r.status,
+                 'conclusion', r.conclusion, 'detailsUrl', r.details_url,
+                 'title', r.output->'title', 'startedAt', bgh_ts(r.started_at),
+                 'completedAt', bgh_ts(r.completed_at))::text AS j
+               FROM check_runs r WHERE {}",
+            col("r", filter, &[("ids", "id"), ("repos", "repo_id")])?
+        ),
+        Model::CheckSuite => format!(
+            "SELECT 'repo:' || s.repo_id AS scope, s.id, json_build_object(
+                 'id', s.id, 'repoId', s.repo_id, 'headSha', s.head_sha,
+                 'headBranch', s.head_branch, 'appSlug', s.app_slug, 'status', s.status,
+                 'conclusion', s.conclusion,
+                 'latestCheckRunsCount', s.latest_check_runs_count)::text AS j
+               FROM check_suites s WHERE {}",
+            col("s", filter, &[("ids", "id"), ("repos", "repo_id")])?
+        ),
+        Model::CommitStatus => format!(
+            "SELECT 'repo:' || cs.repo_id AS scope, cs.id, json_build_object(
+                 'id', cs.id, 'repoId', cs.repo_id, 'sha', cs.sha, 'state', cs.state,
+                 'context', cs.context, 'description', cs.description,
+                 'targetUrl', cs.target_url, 'creatorId', cs.creator_id,
+                 'createdAt', bgh_ts(cs.created_at))::text AS j
+               FROM commit_statuses cs WHERE {}",
+            col("cs", filter, &[("ids", "id"), ("repos", "repo_id")])?
         ),
         Model::ViewerRepo => return None,
     })
@@ -570,7 +671,14 @@ pub fn referenced_users(model: &str, data: &Value, out: &mut BTreeSet<i64>) {
     if model == Model::User.name() {
         return;
     }
-    for key in ["authorId", "userId", "actorId", "mergedById"] {
+    for key in [
+        "authorId",
+        "userId",
+        "actorId",
+        "mergedById",
+        "creatorId",
+        "resolvedById",
+    ] {
         if let Some(id) = data.get(key).and_then(Value::as_i64) {
             out.insert(id);
         }

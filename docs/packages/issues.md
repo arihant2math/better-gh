@@ -48,9 +48,9 @@ Media types: `application/vnd.github.{raw,text,html,full}+json` select
 * Counters in the same transaction: `issues.comments_count`,
   `repositories.open_issues_count` (issues + PRs, like GitHub), milestone
   `open_issues`/`closed_issues` (recomputed for affected milestones).
-* Default labels (GitHub's 9) are created by the `issues.default_labels`
-  listener on `RepositoryCreated` (not for forks); adding unknown labels to an
-  issue creates them (like GitHub).
+* Default labels (GitHub's 9, `bgh_core::labels::DEFAULT_LABELS`) are
+  created by bgh-repos inside the repository-creation transaction (not for
+  forks); adding unknown labels to an issue creates them (like GitHub).
 * Mentions/cross-references (`bgh_core::markdown::extract_references`,
   ignores code): on create/edit of bodies and comments, only newly added
   references count. Mentioned users who can read the repo get
@@ -74,28 +74,24 @@ Media types: `application/vnd.github.{raw,text,html,full}+json` select
 
 ## Sync
 
-Every write records sync actions in `repo:{id}` in the same transaction,
-using the compact camelCase shapes of `docs/SYNC_PROTOCOL.md`: `issue`
-(lazy `body` only on insert / body edits; `reactions` counts), `label`,
-`milestone`, `comment` (with `authorAssociation`, `reactions`),
-`issueEvent`, and partial `repo` updates `{id, openIssues}` (issues only)
-when the open-issue count changes. Reactions have no model of their own: the
-reacted issue/comment row is re-synced. Transfers send `D` in the old scope
-and `I` (issue + comments) in the new one.
+Every write records sync actions in `repo:{id}` through the shared shape
+helpers (`tx.sync_model` / `sync_issue` / `sync_models` / `sync_delete`,
+BACKEND_PATTERNS.md §8a), so deltas equal the bootstrap / partial-sync rows:
+`issue` (lazy `body` only on insert / body edits), `label`, `milestone`,
+`comment`, `issueEvent`, and the `repo` row when its open counts change.
+Reactions have no model of their own: the reacted issue/comment row is
+re-synced. Label / milestone deletes re-sync the affected issues, then
+record the delete. Transfers send `D` in the old scope and `I` (issue +
+comments) in the new one.
 
-Shape builders live in `bgh_issues::json` (`label_sync_json`,
-`milestone_sync_json`, `comment_sync_json`, `event_sync_json`) and
-`bgh_issues::service` (`issue_sync_json`, `sync_comment`,
-`sync_repo_open_issues`); swap them for B8's shared helpers (`bgh/sync`)
-once those land on the integration branch.
-
-Additive protocol changes made here (documented in `SYNC_PROTOCOL.md` and
-`web/src/sync/models.ts`): `Issue.activeLockReason?`, `Issue.parentId?`,
-`Issue.pinned?`, `stateReason` may be `duplicate`; extra `IssueEvent` types
-(`mentioned`, `subscribed`, `cross-referenced`, `pinned`, `unpinned`,
-`transferred`, `sub_issue_*`, `parent_issue_*`) and data keys (`lockReason`,
-`sourceIssueId`, `sourceCommentId`, `subIssueId`, `parentIssueId`,
-`fromRepository`).
+Protocol extensions made here (SYNC_PROTOCOL.md §3 / §3.2,
+`web/src/sync/models.ts`): `Issue.activeLockReason`, `Issue.parentId`,
+`Issue.pinned`; extra `IssueEvent` types (`mentioned`, `subscribed`,
+`cross-referenced`, `pinned`, `unpinned`, `transferred`, `sub_issue_*`,
+`parent_issue_*`) and data keys (`lockReason`, `sourceIssueId`,
+`sourceCommentId`, `subIssueId`, `parentIssueId`, `fromRepository`), all
+rendered by `bgh_core::sync::shapes`. `stateReason` `duplicate` is sent as
+`not_planned` (protocol server note).
 
 ## Database (migration `0300_issues.sql`)
 

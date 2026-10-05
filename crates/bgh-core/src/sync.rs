@@ -136,6 +136,77 @@ pub async fn record_with_tx(
     })
 }
 
+/// A sync action collected by [`crate::db::Tx`], written at commit by
+/// [`record_all`].
+#[derive(Debug, Clone)]
+pub struct PendingSync {
+    pub scope: String,
+    pub model: String,
+    pub model_id: i64,
+    pub action: SyncAction,
+    pub data: Value,
+    /// `X-Client-Tx` of the request (captured when recorded).
+    pub tx: Option<Uuid>,
+}
+
+/// Append `pending` to `sync_actions` in order, in one statement taking the
+/// [`SYNC_LOCK`] (held until commit: call it right before committing).
+pub async fn record_all(
+    conn: &mut PgConnection,
+    pending: Vec<PendingSync>,
+) -> Result<Vec<SyncRecord>, sqlx::Error> {
+    if pending.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut scopes = Vec::with_capacity(pending.len());
+    let mut models = Vec::with_capacity(pending.len());
+    let mut ids = Vec::with_capacity(pending.len());
+    let mut actions = Vec::with_capacity(pending.len());
+    let mut data = Vec::with_capacity(pending.len());
+    let mut txs = Vec::with_capacity(pending.len());
+    for p in &pending {
+        scopes.push(p.scope.as_str());
+        models.push(p.model.as_str());
+        ids.push(p.model_id);
+        actions.push(p.action.code());
+        data.push(&p.data);
+        txs.push(p.tx);
+    }
+    // Rows are inserted in `o` order, so identity values follow it.
+    let mut new_ids: Vec<i64> = sqlx::query_scalar(
+        "INSERT INTO sync_actions (scope, model, model_id, action, data, tx)
+         SELECT u.s, u.m, u.i, u.a, u.d, u.t
+           FROM (SELECT pg_advisory_xact_lock($7)) l,
+                unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::jsonb[], $6::uuid[])
+                    WITH ORDINALITY AS u(s, m, i, a, d, t, o)
+          ORDER BY u.o
+         RETURNING id",
+    )
+    .bind(&scopes)
+    .bind(&models)
+    .bind(&ids)
+    .bind(&actions)
+    .bind(&data)
+    .bind(&txs)
+    .bind(SYNC_LOCK)
+    .fetch_all(conn)
+    .await?;
+    new_ids.sort_unstable();
+    Ok(pending
+        .into_iter()
+        .zip(new_ids)
+        .map(|(p, id)| SyncRecord {
+            id,
+            scope: p.scope,
+            model: p.model,
+            model_id: p.model_id,
+            action: p.action,
+            data: p.data,
+            tx: p.tx,
+        })
+        .collect())
+}
+
 /// Channel suffix for access/sign-out notifications to the sync hubs
 /// (`{prefix}sync:!access`; `!` can't start a scope).
 pub const ACCESS_CHANNEL: &str = "sync:!access";
