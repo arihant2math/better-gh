@@ -135,6 +135,7 @@ export type OrgPatch = Partial<
     | 'members_can_fork_private_repositories'
     | 'members_can_create_teams'
     | 'web_commit_signoff_required'
+    | 'two_factor_requirement_enabled'
   >
 >;
 
@@ -541,3 +542,20 @@ export const ORG_HOOK_EVENTS: { name: string; description: string }[] = [
   { name: 'team_add', description: 'Repository added to a team.' },
   { name: 'watch', description: 'User starts watching a repository.' },
 ];
+
+// ------------------------------------------------------------------ two-factor requirement (P36)
+
+export interface NoTwoFactorAccount {
+  login: string;
+  avatar_url: string;
+}
+
+/** Members and outside collaborators without 2FA (removed when the requirement is turned on). */
+export async function listWithoutTwoFactor(org: string): Promise<{ members: NoTwoFactorAccount[]; collaborators: NoTwoFactorAccount[] }> {
+  const q = qs({ filter: '2fa_disabled', per_page: 100 });
+  const [members, collaborators] = await Promise.all([
+    fetchAll<NoTwoFactorAccount>(orgPath(org, 'members') + q, 1000),
+    fetchAll<NoTwoFactorAccount>(orgPath(org, 'outside_collaborators') + q, 1000),
+  ]);
+  return { members, collaborators };
+}

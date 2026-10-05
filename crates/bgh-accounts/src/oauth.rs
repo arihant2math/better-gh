@@ -221,6 +221,7 @@ pub async fn create_app(
     Json(body): Json<AppBody>,
 ) -> ApiResult<(StatusCode, Json<AppJson>)> {
     util::require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     validate_app(&body, true)?;
     let secret = new_client_secret();
     let mut tx = Tx::begin(&state).await?;
@@ -321,6 +322,7 @@ pub async fn regenerate_secret(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<AppJson>> {
     util::require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     my_app(&state, auth.user.id, id).await?;
     let secret = new_client_secret();
     let app: OauthApp = sqlx::query_as(&format!(

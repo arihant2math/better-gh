@@ -5,8 +5,10 @@
 mod common;
 
 mod access_policy;
+mod moderation;
 mod mutations;
 mod projects;
 mod queries;
+mod rulesets;
 mod schema;
 mod signatures;

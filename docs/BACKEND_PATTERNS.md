@@ -148,7 +148,14 @@ never shown). Map unique-index races explicitly:
 * `node_id`: `bgh_core::node_id::encode(NodeType::Issue, id)`.
 * Markdown bodies (`body_html`, rendered views):
   `bgh_core::markdown::render(text, &RenderContext::new(&state.config.base_url).with_repo(owner, repo))`
-  — GFM + sanitization + `@mention`/`#123`/SHA links.
+  — GFM + sanitization + `@mention`/`#123`/`GH-123`/SHA links, gemoji,
+  math markers, lazy images and camo-proxied external images. For issue,
+  PR, comment, release and commit-comment bodies also pass the repo's
+  autolinks: `.with_autolinks(&rules)` with rules from
+  `markdown::load_autolinks(&db, &repo_ids)` (batched) or
+  `markdown::repo_autolinks(&db, repo_id)`. The web client renders the same
+  Markdown (`web/src/ui/markdown/render.ts`); keep both in parity via the
+  corpus in `testdata/markdown/` (see its README).
 
 ## 7. Pagination
 

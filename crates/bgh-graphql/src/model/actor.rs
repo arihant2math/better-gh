@@ -317,6 +317,26 @@ impl Organization {
             .as_deref()
             == Some("admin"))
     }
+    #[allow(clippy::too_many_arguments)]
+    pub async fn rulesets(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+        #[graphql(default = true)] include_parents: bool,
+        targets: Option<Vec<super::ruleset::RepositoryRulesetTarget>>,
+    ) -> GResult<super::ruleset::RepositoryRulesetConnection> {
+        let _ = include_parents;
+        super::ruleset::org_rulesets(
+            ctx,
+            self,
+            ConnArgs::new(first, last, after, before),
+            targets,
+        )
+        .await
+    }
     pub async fn viewer_can_create_repositories(&self, ctx: &Context<'_>) -> GResult<bool> {
         let Some(v) = gql(ctx).viewer_id() else {
             return Ok(false);

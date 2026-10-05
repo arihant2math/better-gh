@@ -1258,6 +1258,15 @@ export function installRepoSettingsMocks(server: MockServer): void {
     return ok(S(server).autolinks.get(repo.id)!);
   });
 
+  // Rules for the web Markdown renderer (crates/bgh-repos/src/autolinks.rs `rules`).
+  server.route('GET', '/_bgh/repos/:owner/:repo/autolinks', (ctx) => {
+    const repo = server.repo(param(ctx, 1), param(ctx, 2));
+    if (!repo || (repo.private && !t.viewerRepo.get(repo.id))) return notFound();
+    ensureSeed(server, repo);
+    const rules = (S(server).autolinks.get(repo.id) ?? []).map(({ key_prefix, url_template, is_alphanumeric }) => ({ key_prefix, url_template, is_alphanumeric }));
+    return ok(rules.sort((a, b) => b.key_prefix.length - a.key_prefix.length));
+  });
+
   server.route('POST', '/api/v3/repos/:owner/:repo/autolinks', (ctx) => {
     const repo = access(ctx);
     if (isResp(repo)) return repo;

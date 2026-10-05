@@ -69,14 +69,15 @@ class Session {
    * Sign in. Resolves to `{ twoFactorToken }` when the account needs a
    * second factor (then call `verifyTwoFactor`), else `null`.
    */
-  async login(login: string, password: string): Promise<{ twoFactorToken: string } | null> {
+  async login(login: string, password: string): Promise<{ twoFactorToken: string; methods: string[] } | null> {
     try {
       const boot = await api.post<BootData>('/_bgh/auth/login', { login, password });
       this.adopt(boot);
       return null;
     } catch (e) {
-      const body = e instanceof ApiError && e.status === 401 ? (e.body as { twoFactorRequired?: boolean; twoFactorToken?: string } | null) : null;
-      if (body?.twoFactorRequired && body.twoFactorToken) return { twoFactorToken: body.twoFactorToken };
+      const body =
+        e instanceof ApiError && e.status === 401 ? (e.body as { twoFactorRequired?: boolean; twoFactorToken?: string; twoFactorMethods?: string[] } | null) : null;
+      if (body?.twoFactorRequired && body.twoFactorToken) return { twoFactorToken: body.twoFactorToken, methods: body.twoFactorMethods ?? ['totp', 'recovery_code'] };
       throw e;
     }
   }
@@ -114,7 +115,7 @@ class Session {
 
   /** Use fresh boot data (sign-in responses): updates CSRF + user and starts sync. */
   /** Patch the signed-in user's display fields (after profile / avatar edits). */
-  updateUser(patch: Partial<Pick<BootUser, 'name' | 'avatarUrl' | 'login'>>): void {
+  updateUser(patch: Partial<Pick<BootUser, 'name' | 'avatarUrl' | 'login' | 'twoFactorSetupRequired'>>): void {
     if (!this.user) return;
     this.user = { ...this.user, ...patch };
     setBoot({ ...getBoot(), user: this.user });

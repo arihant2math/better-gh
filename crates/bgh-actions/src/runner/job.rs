@@ -172,6 +172,11 @@ pub(super) enum PostKind {
         entrypoint: Option<String>,
         args: Vec<String>,
     },
+    /// Native `actions/cache` save.
+    CacheSave {
+        paths: Vec<String>,
+        key: String,
+    },
 }
 
 /// Everything about the step currently executing.
@@ -426,6 +431,9 @@ pub(super) async fn run(
     if !spec.token.is_empty() {
         masker.add(&spec.token);
         masker.add(&basic_auth(&spec.token));
+    }
+    if !spec.runtime_token.is_empty() {
+        masker.add(&spec.runtime_token);
     }
     let logger = Arc::new(Logger::new(backend.clone(), spec.job_id, masker.clone()));
 
@@ -726,8 +734,8 @@ impl JobRunner {
     fn runner_context(&self) -> Value {
         json!({
             "name": self.cfg.name,
-            "os": "Linux",
-            "arch": "X64",
+            "os": self.cfg.os,
+            "arch": self.cfg.arch,
             "temp": self.paths.guest_temp(),
             "tool_cache": self.paths.guest("_tool"),
             "workspace": self.paths.guest_runner_workspace(),
@@ -790,6 +798,7 @@ impl JobRunner {
             self.paths.guest("_temp/_github_workflow/event.json"),
         );
         e.insert("GITHUB_WORKSPACE".into(), self.paths.guest_workspace());
+        self.add_runtime_env(&mut e);
         e.insert("GITHUB_ACTION".into(), action_name.to_string());
         if let Some(p) = &scope.action_path {
             e.insert("GITHUB_ACTION_PATH".into(), p.clone());
@@ -803,8 +812,8 @@ impl JobRunner {
         e.insert("GITHUB_STEP_SUMMARY".into(), files.guest[F_SUMMARY].clone());
         e.insert("GITHUB_STATE".into(), files.guest[F_STATE].clone());
         e.insert("RUNNER_NAME".into(), self.cfg.name.clone());
-        e.insert("RUNNER_OS".into(), "Linux".into());
-        e.insert("RUNNER_ARCH".into(), "X64".into());
+        e.insert("RUNNER_OS".into(), self.cfg.os.clone());
+        e.insert("RUNNER_ARCH".into(), self.cfg.arch.clone());
         e.insert("RUNNER_TEMP".into(), self.paths.guest_temp());
         e.insert("RUNNER_TOOL_CACHE".into(), self.paths.guest("_tool"));
         e.insert(
@@ -1548,6 +1557,10 @@ impl JobRunner {
         }
         let mut body = match &post.kind {
             PostKind::Node { script } => self.run_node(&post_scope, &run, script, &extra).await,
+            PostKind::CacheSave { paths, key } => {
+                self.cache_post_save(&post_scope, &run, paths, key, &post.state)
+                    .await
+            }
             PostKind::Docker {
                 image,
                 entrypoint,

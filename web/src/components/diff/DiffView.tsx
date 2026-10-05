@@ -1,11 +1,40 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, cx } from '../../ui/Button';
-import { ChevronDownIcon, ChevronRightIcon, CommentIcon, FileDirectoryFillIcon, FileIcon, PlusIcon } from '../../ui/icons';
+import type { CommitAnnotation } from '../../api/types';
+import { Link } from '../../router';
+import { toast } from '../../ui/Toast';
+import {
+  AlertIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CommentIcon,
+  CopyIcon,
+  EyeIcon,
+  FileCodeIcon,
+  FileDirectoryFillIcon,
+  FileIcon,
+  FoldDownIcon,
+  FoldUpIcon,
+  InfoIcon,
+  PencilIcon,
+  PlusIcon,
+  UnfoldIcon,
+  XCircleIcon,
+} from '../../ui/icons';
 import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
 import styles from './DiffViewer.module.css';
+import type { ExpandDir, GapControls } from './expand';
+import { isGenerated, isMarkdown, lineHtml, type FileHighlight } from './highlight';
 import { splitHunk, type DiffHunk, type DiffLine } from './parseDiff';
+import { useDiffExtras, type DiffExtras, type DiffSource } from './useDiffExtras';
+
+export type { DiffSource } from './useDiffExtras';
+
+// Rendered (Markdown) and image diffs load on demand, never with the diff itself.
+const RichDiff = lazy(() => import('./RichDiff'));
+const BinaryDiff = lazy(() => import('./BinaryDiff'));
 
 export type Side = 'LEFT' | 'RIGHT';
 
@@ -73,6 +102,12 @@ export interface DiffViewProps {
   /** Scroll to this file (changes of `nonce` re-scroll). */
   jumpTo?: { path: string; nonce: number } | null;
   emptyText?: string;
+  /**
+   * Where the two sides live: enables syntax highlighting, context
+   * expansion, image and rendered diffs, file actions (view / edit / copy
+   * path) and, with `source.annotations`, inline check-run annotations.
+   */
+  source?: DiffSource;
 }
 
 type Row =
@@ -80,7 +115,10 @@ type Row =
   | { k: 'extra'; f: number; anchor: string }
   | { k: 'loading'; f: number }
   | { k: 'unavailable'; f: number }
-  | { k: 'hunk'; f: number; hunk: DiffHunk }
+  | { k: 'hunk'; f: number; h: number; hunk: DiffHunk; gap: number | null; ctl: GapControls | null }
+  | { k: 'tail'; f: number; gap: number; ctl: GapControls }
+  | { k: 'annot'; f: number; line: number }
+  | { k: 'rich'; f: number }
   | { k: 'line'; f: number; h: number; line: DiffLine }
   | { k: 'pair'; f: number; h: number; left: DiffLine | null; right: DiffLine | null }
   | { k: 'end'; f: number }
@@ -108,45 +146,58 @@ function numOn(l: DiffLine | null | undefined, side: Side): number | undefined {
   return l.type === 'del' ? undefined : l.newNo;
 }
 
-export function buildRows(files: readonly DiffFileEntry[], mode: 'unified' | 'split', collapsed: ReadonlySet<string>, annotations?: DiffAnnotations, pendingFiles = 0): Row[] {
+/** What `buildRows` needs from the diff extras (P37). */
+export type RowExtras = Pick<DiffExtras, 'shown' | 'rich' | 'annotations'>;
+
+export function buildRows(files: readonly DiffFileEntry[], mode: 'unified' | 'split', collapsed: ReadonlySet<string>, annotations?: DiffAnnotations, pendingFiles = 0, extras?: RowExtras): Row[] {
   const out: Row[] = [];
   files.forEach((file, f) => {
     out.push({ k: 'file', f });
     if (collapsed.has(file.path)) return;
     const anchors = new Set(annotations?.anchors(file.path) ?? []);
     if (anchors.delete('file')) out.push({ k: 'extra', f, anchor: 'file' });
-    if (file.hunks === undefined) out.push({ k: 'loading', f });
+    const checks = new Set(extras?.annotations(file.path)?.keys() ?? []);
+    if (extras?.rich.has(file.path) && file.hunks !== undefined) out.push({ k: 'rich', f });
+    else if (file.hunks === undefined) out.push({ k: 'loading', f });
     else if (file.hunks === null || file.binary) out.push({ k: 'unavailable', f });
     else {
-      const flush = (keys: string[]) => {
+      const flush = (keys: string[], rn: number | undefined) => {
         for (const a of keys) {
           if (anchors.delete(a)) out.push({ k: 'extra', f, anchor: a });
         }
+        if (rn != null && checks.delete(rn)) out.push({ k: 'annot', f, line: rn });
       };
-      file.hunks.forEach((hunk, h) => {
-        out.push({ k: 'hunk', f, hunk });
+      const shown = extras?.shown(file);
+      const hunks = shown?.hunks ?? file.hunks;
+      hunks.forEach((hunk, h) => {
+        const gap = shown ? shown.hunks[h]!.gapAbove : null;
+        const ctl = gap != null ? (shown?.controls.get(gap) ?? null) : null;
+        out.push({ k: 'hunk', f, h, hunk, gap, ctl: ctl && ctl.hidden > 0 ? ctl : null });
         if (mode === 'unified') {
           for (const line of hunk.lines) {
             out.push({ k: 'line', f, h, line });
-            if (anchors.size) flush(lineAnchors(line));
+            if (anchors.size || checks.size) flush(lineAnchors(line), numOn(line, 'RIGHT'));
           }
         } else {
           for (const { left, right } of splitHunk(hunk)) {
             out.push({ k: 'pair', f, h, left: left?.line ?? null, right: right?.line ?? null });
-            if (anchors.size) {
+            if (anchors.size || checks.size) {
               const keys: string[] = [];
               const ln = numOn(left?.line, 'LEFT');
               const rn = numOn(right?.line, 'RIGHT');
               if (ln != null) keys.push(`L${ln}`);
               if (rn != null) keys.push(`R${rn}`);
-              flush(keys);
+              flush(keys, rn);
             }
           }
         }
       });
+      const tailCtl = shown?.tail ? shown.controls.get(shown.tail.index) : undefined;
+      if (shown?.tail && tailCtl && tailCtl.hidden > 0) out.push({ k: 'tail', f, gap: shown.tail.index, ctl: tailCtl });
     }
     // Anchors not on a visible line (e.g. outside the hunks) go last.
     for (const a of anchors) out.push({ k: 'extra', f, anchor: a });
+    for (const n of [...checks].sort((a, b) => a - b)) out.push({ k: 'annot', f, line: n });
     out.push({ k: 'end', f });
   });
   if (pendingFiles > 0) out.push({ k: 'more' });
@@ -166,6 +217,12 @@ function rowKey(r: Row, files: readonly DiffFileEntry[], i: number): string {
       return `x:${p}:${r.anchor}`;
     case 'hunk':
       return `h:${p}:${r.hunk.header}:${i}`;
+    case 'tail':
+      return `t:${p}`;
+    case 'annot':
+      return `a:${p}:${r.line}`;
+    case 'rich':
+      return `r:${p}`;
     case 'line':
       return `l:${p}:${r.line.oldNo ?? ''}:${r.line.newNo ?? ''}:${r.line.type}:${i}`;
     case 'pair':
@@ -194,11 +251,12 @@ interface Drag {
 export function DiffView(props: DiffViewProps) {
   const { files, mode = 'unified', collapsed, annotations, tree = true, keyboard = false } = props;
   const hasFooter = props.footer != null;
+  const extras = useDiffExtras(props.source);
   const rows = useMemo(() => {
-    const out = buildRows(files, mode, collapsed, annotations, props.pendingFiles);
+    const out = buildRows(files, mode, collapsed, annotations, props.pendingFiles, extras);
     if (hasFooter) out.push({ k: 'footer' });
     return out;
-  }, [files, mode, collapsed, annotations, props.pendingFiles, hasFooter]);
+  }, [files, mode, collapsed, annotations, props.pendingFiles, hasFooter, extras]);
   const [cursor, setCursor] = useState<number>(-1);
   const [jump, setJump] = useState<{ index: number; nonce: number } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -346,6 +404,7 @@ export function DiffView(props: DiffViewProps) {
   const treeRoot = useMemo(() => (tree ? buildTree(files) : null), [files, tree]);
   const activePath = files[currentFile()]?.path;
   const commentable = !!annotations?.onSelect;
+  const hl = (path: string): FileHighlight | undefined => extras?.highlight(path);
 
   return (
     <div className={cx(styles.viewer, !tree && styles.noTree)}>
@@ -384,6 +443,7 @@ export function DiffView(props: DiffViewProps) {
               return (
                 <FileHeader
                   file={file}
+                  extras={extras}
                   collapsed={collapsed.has(file.path)}
                   viewed={props.isViewed?.(file.path)}
                   comments={annotations?.commentCount?.(file.path) ?? 0}
@@ -398,6 +458,12 @@ export function DiffView(props: DiffViewProps) {
             case 'loading':
               return <LoadingFile path={file.path} onNeed={props.onNeedFile} />;
             case 'unavailable':
+              if (file.binary && extras && file.status !== 'renamed')
+                return (
+                  <Suspense fallback={<div className={styles.binary}>Binary file not shown.</div>}>
+                    <BinaryDiff file={file} source={extras.source} />
+                  </Suspense>
+                );
               return (
                 <div className={styles.binary}>
                   {file.binary ? 'Binary file not shown.' : (file.unavailable ?? 'This diff is not available.')}
@@ -410,12 +476,37 @@ export function DiffView(props: DiffViewProps) {
               );
             case 'hunk':
               return (
-                <div className={cx(styles.hunk, mode === 'split' && styles.hunkSplit)}>
-                  <span className={styles.num} />
-                  {mode === 'unified' && <span className={styles.num} />}
+                <div className={cx(styles.hunk, mode === 'split' && styles.hunkSplit, r.ctl && styles.hunkExpandable)}>
+                  {r.ctl && extras ? (
+                    <Expander ctl={r.ctl} busy={extras.busy.has(`${file.path}:${r.gap}`)} onExpand={(dir) => extras.expand(file, r.gap!, dir)} />
+                  ) : (
+                    <span className={styles.num} />
+                  )}
+                  {mode === 'unified' && !r.ctl && <span className={styles.num} />}
                   <span className={styles.code}>{r.hunk.header}</span>
                 </div>
               );
+            case 'tail':
+              return (
+                <div className={cx(styles.hunk, mode === 'split' && styles.hunkSplit, styles.hunkExpandable)}>
+                  {extras && <Expander ctl={r.ctl} busy={extras.busy.has(`${file.path}:${r.gap}`)} onExpand={(dir) => extras.expand(file, r.gap, dir)} />}
+                  <span className={styles.code} />
+                </div>
+              );
+            case 'annot':
+              return <CheckAnnotations items={extras?.annotations(file.path)?.get(r.line) ?? []} />;
+            case 'rich':
+              return extras ? (
+                <Suspense
+                  fallback={
+                    <div className={styles.binary}>
+                      <Spinner size={14} /> Loading rendered diff…
+                    </div>
+                  }
+                >
+                  <RichDiff file={file} source={extras.source} />
+                </Suspense>
+              ) : null;
             case 'line': {
               const l = r.line;
               const t = lineTarget(l);
@@ -423,6 +514,7 @@ export function DiffView(props: DiffViewProps) {
               return (
                 <UnifiedLine
                   line={l}
+                  html={lineHtml(l, hl(file.path))}
                   selected={selected}
                   active={active}
                   commentable={commentable && !!t && canSide(t.side)}
@@ -442,6 +534,8 @@ export function DiffView(props: DiffViewProps) {
                 <SplitLine
                   left={r.left}
                   right={r.right}
+                  leftHtml={lineHtml(r.left, hl(file.path))}
+                  rightHtml={lineHtml(r.right, hl(file.path))}
                   leftSelected={inSel(liveSel, file.path, 'LEFT', ln)}
                   rightSelected={inSel(liveSel, file.path, 'RIGHT', rn)}
                   active={active}
@@ -461,13 +555,14 @@ export function DiffView(props: DiffViewProps) {
           }
         }}
       />
-      {files.length === 0 && !props.pendingFiles && <div className={styles.empty}>{props.emptyText ?? 'No changes.'}</div>}
+      {files.length === 0 && !props.pendingFiles && <div className={styles.emptyState}>{props.emptyText ?? 'No changes.'}</div>}
     </div>
   );
 }
 
 const FileHeader = memo(function FileHeader({
   file,
+  extras,
   collapsed,
   viewed,
   comments,
@@ -477,6 +572,7 @@ const FileHeader = memo(function FileHeader({
   active,
 }: {
   file: DiffFileEntry;
+  extras?: DiffExtras;
   collapsed: boolean;
   viewed?: boolean;
   comments: number;
@@ -486,6 +582,13 @@ const FileHeader = memo(function FileHeader({
   active: boolean;
 }) {
   const status = file.status === 'removed' ? 'deleted' : file.status;
+  // Highlighting is fetched per file once its header is rendered (i.e. scrolled near).
+  const ensure = extras?.ensureHighlight;
+  const ready = Array.isArray(file.hunks);
+  useEffect(() => {
+    if (ensure && ready && !collapsed) ensure(file);
+  }, [ensure, ready, collapsed, file]);
+  const generated = isGenerated(file.path);
   return (
     <div className={cx(styles.fileHeader, collapsed && styles.fileHeaderCollapsed, active && styles.fileActive)} data-path={file.path}>
       <button type="button" className={styles.collapse} aria-expanded={!collapsed} aria-label={collapsed ? 'Expand file' : 'Collapse file'} onClick={onToggle}>
@@ -498,11 +601,17 @@ const FileHeader = memo(function FileHeader({
         {status === 'renamed' && file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
       </span>
       {status !== 'modified' && <span className={cx(styles.status, styles[status])}>{status}</span>}
+      {generated && (
+        <span className={styles.generated} title="Generated files are collapsed by default">
+          Generated
+        </span>
+      )}
       {comments > 0 && (
         <span className={styles.commentCount} title={`${comments} comment${comments === 1 ? '' : 's'}`}>
           <CommentIcon size={14} /> {comments}
         </span>
       )}
+      {extras && <FileActions file={file} extras={extras} />}
       {actions}
       {onViewed && (
         <label className={cx(styles.viewed, viewed && styles.viewedOn)}>
@@ -520,6 +629,7 @@ function Marker({ type }: { type: DiffLine['type'] }) {
 
 const UnifiedLine = memo(function UnifiedLine({
   line: l,
+  html,
   selected,
   active,
   commentable,
@@ -528,6 +638,7 @@ const UnifiedLine = memo(function UnifiedLine({
   onClick,
 }: {
   line: DiffLine;
+  html?: string;
   selected: boolean;
   active: boolean;
   commentable: boolean;
@@ -550,7 +661,7 @@ const UnifiedLine = memo(function UnifiedLine({
           </button>
         )}
         {l.type === 'meta' ? l.text : <Marker type={l.type} />}
-        {l.type !== 'meta' && l.text}
+        {l.type !== 'meta' && <Code text={l.text} html={html} />}
       </span>
     </div>
   );
@@ -559,6 +670,8 @@ const UnifiedLine = memo(function UnifiedLine({
 const SplitLine = memo(function SplitLine({
   left,
   right,
+  leftHtml,
+  rightHtml,
   leftSelected,
   rightSelected,
   active,
@@ -570,6 +683,8 @@ const SplitLine = memo(function SplitLine({
 }: {
   left: DiffLine | null;
   right: DiffLine | null;
+  leftHtml?: string;
+  rightHtml?: string;
   leftSelected: boolean;
   rightSelected: boolean;
   active: boolean;
@@ -579,7 +694,7 @@ const SplitLine = memo(function SplitLine({
   onEnter: (side: Side) => void;
   onClick: () => void;
 }) {
-  const cell = (l: DiffLine | null, side: Side, selected: boolean) => {
+  const cell = (l: DiffLine | null, side: Side, selected: boolean, html: string | undefined) => {
     const no = l ? (side === 'LEFT' ? l.oldNo : l.newNo) : undefined;
     const type = l ? (l.type === 'ctx' ? 'ctx' : l.type) : 'empty';
     const can = commentable && no != null && (!sides || sides.includes(side));
@@ -595,18 +710,128 @@ const SplitLine = memo(function SplitLine({
             </button>
           )}
           {l && <Marker type={l.type} />}
-          {l?.text}
+          {l && <Code text={l.text} html={html} />}
         </span>
       </>
     );
   };
   return (
     <div className={cx(styles.splitLine, active && styles.cursor)} onClick={onClick} role="row">
-      {cell(left, 'LEFT', leftSelected)}
-      {cell(right, 'RIGHT', rightSelected)}
+      {cell(left, 'LEFT', leftSelected, leftHtml)}
+      {cell(right, 'RIGHT', rightSelected, rightHtml)}
     </div>
   );
 });
+
+/** Line text, or the server's highlighted HTML for it (`hl-*` spans of escaped text). */
+function Code({ text, html }: { text: string; html?: string }) {
+  if (html === undefined) return <>{text}</>;
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** "Expand up / down / all" controls of a hidden range (P37). */
+function Expander({ ctl, busy, onExpand }: { ctl: GapControls; busy: boolean; onExpand: (dir: ExpandDir) => void }) {
+  const n = Number.isFinite(ctl.hidden) ? ctl.hidden : null;
+  const btn = (dir: ExpandDir, label: string, Icon: typeof UnfoldIcon) => (
+    <button type="button" className={styles.expandBtn} aria-label={label} title={label} disabled={busy} onClick={() => onExpand(dir)}>
+      <Icon size={14} />
+    </button>
+  );
+  return (
+    <span className={styles.expander}>
+      {busy ? (
+        <Spinner size={12} />
+      ) : (
+        <>
+          {ctl.down && btn('down', n != null && n <= 20 ? `Expand ${n} hidden line${n === 1 ? '' : 's'}` : 'Expand down', FoldDownIcon)}
+          {ctl.up && !(ctl.down && n != null && n <= 20) && btn('up', n != null && n <= 20 ? `Expand ${n} hidden line${n === 1 ? '' : 's'}` : 'Expand up', FoldUpIcon)}
+          {ctl.all && btn('all', `Expand all${n != null ? ` ${n} lines` : ''}`, UnfoldIcon)}
+        </>
+      )}
+    </span>
+  );
+}
+
+const LEVEL_ICON = { failure: XCircleIcon, warning: AlertIcon, notice: InfoIcon } as const;
+
+/** Check-run annotations ending on one line (P37). */
+function CheckAnnotations({ items }: { items: readonly CommitAnnotation[] }) {
+  return (
+    <div className={styles.annotations}>
+      {items.map((a, i) => {
+        const Icon = LEVEL_ICON[a.annotation_level] ?? InfoIcon;
+        return (
+          <div key={i} className={cx(styles.annotation, styles[`annotation_${a.annotation_level}`])} data-annotation-level={a.annotation_level}>
+            <Icon size={16} className={styles.annotationIcon} />
+            <div className={styles.annotationBody}>
+              <div className={styles.annotationHead}>
+                <strong>{a.check_run_name}</strong>
+                {a.title && <span> · {a.title}</span>}
+                <span className={styles.annotationLines}>
+                  {a.start_line === a.end_line ? `Line ${a.end_line}` : `Lines ${a.start_line}–${a.end_line}`}
+                </span>
+              </div>
+              <div className={styles.annotationMessage}>{a.message}</div>
+              {a.raw_details && (
+                <details>
+                  <summary>Raw details</summary>
+                  <pre>{a.raw_details}</pre>
+                </details>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** File header actions with a source: rich diff toggle, view file, edit file, copy path (P37). */
+function FileActions({ file, extras }: { file: DiffFileEntry; extras: DiffExtras }) {
+  const { source } = extras;
+  const status = file.status === 'removed' ? 'deleted' : file.status;
+  const base = `/${source.owner}/${source.repo}`;
+  const enc = file.path.split('/').map(encodeURIComponent).join('/');
+  const rich = extras.rich.has(file.path);
+  return (
+    <span className={styles.fileActions}>
+      {isMarkdown(file.path) && status !== 'deleted' && !file.binary && (
+        <span className={styles.richToggle} role="group" aria-label="Diff display">
+          <button type="button" aria-pressed={!rich} title="Display the source diff" onClick={() => rich && extras.toggleRich(file.path)}>
+            <FileCodeIcon size={14} />
+          </button>
+          <button type="button" aria-pressed={rich} title="Display the rich diff" onClick={() => !rich && extras.toggleRich(file.path)}>
+            <FileIcon size={14} />
+          </button>
+        </span>
+      )}
+      <button
+        type="button"
+        className={styles.fileAction}
+        aria-label="Copy file path"
+        title="Copy file path"
+        onClick={() =>
+          void navigator.clipboard?.writeText(file.path).then(
+            () => toast({ kind: 'success', title: 'Copied path' }),
+            () => toast({ kind: 'error', title: 'Couldn’t copy' }),
+          )
+        }
+      >
+        <CopyIcon size={14} />
+      </button>
+      {status !== 'deleted' && (
+        <Link className={styles.fileAction} to={`${base}/blob/${source.newRef}/${enc}`} aria-label="View file" title={`View file @ ${source.newRef.slice(0, 7)}`}>
+          <EyeIcon size={14} />
+        </Link>
+      )}
+      {status !== 'deleted' && source.editRef && !file.binary && (
+        <Link className={styles.fileAction} to={`${base}/edit/${source.editRef.split('/').map(encodeURIComponent).join('/')}/${enc}`} aria-label="Edit file" title={`Edit file on ${source.editRef}`}>
+          <PencilIcon size={14} />
+        </Link>
+      )}
+    </span>
+  );
+}
 
 function LoadingFile({ path, onNeed }: { path: string; onNeed?: (path: string) => void }) {
   useEffect(() => {

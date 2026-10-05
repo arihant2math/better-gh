@@ -211,7 +211,7 @@ where
                 .await
                 .map_err(|e| internal(&e))?;
             let pusher_id = authz.user.as_ref().map(|u| u.user.id);
-            let actor = match (&authz.user, rules.is_empty()) {
+            let actor = match (&authz.user, rules.is_unruled()) {
                 (_, true) => None,
                 (Some(u), false) => Some(
                     protection::Actor::load(state, access, &u.user)

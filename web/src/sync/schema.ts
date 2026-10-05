@@ -61,7 +61,7 @@ export const SCHEMA: SchemaMap = {
     scope: repoScope,
     indexes: ['repoId', 'assigneeIds', 'authorId'],
     keys: { number: (i) => `${i.repoId}#${i.number}` },
-    lazyFields: ['body'],
+    lazyFields: ['body', 'bodyEditedAt'],
     cascade: [
       { model: 'comment', field: 'issueId' },
       { model: 'review', field: 'issueId' },
@@ -69,6 +69,7 @@ export const SCHEMA: SchemaMap = {
       // The DB cascades project items of a deleted issue without a delta.
       { model: 'projectItem', field: 'issueId' },
       { model: 'reviewComment', field: 'issueId' },
+      { model: 'viewedFile', field: 'issueId' },
     ],
   },
   comment: { scope: repoScope, indexes: ['issueId'], lazy: true },
@@ -96,9 +97,11 @@ export const SCHEMA: SchemaMap = {
   checkSuite: { scope: repoScope, indexes: ['headSha'], lazy: true },
   checkRun: { scope: repoScope, indexes: ['headSha', 'checkSuiteId'], lazy: true },
   commitStatus: { scope: repoScope, indexes: ['sha'], lazy: true },
+  // The viewer's "Viewed" PR files (lazy, loaded with the PR).
+  viewedFile: { scope: viewerScope, indexes: ['issueId'], lazy: true },
 };
 
 export const MODEL_NAMES = Object.keys(SCHEMA) as ModelName[];
 
 /** Bump when the client-side persisted shape changes; old IndexedDB data is discarded. */
-export const CLIENT_SCHEMA_VERSION = 2;
+export const CLIENT_SCHEMA_VERSION = 3;

@@ -167,8 +167,10 @@ immediately), `Tooltip`, `Dialog` (native modal), `TabNav` (links) / `Tabs`
 (buttons), `Counter`, `Tag`, `LabelPill` (any GitHub color, both themes),
 `ColorDot`, `StateIcon` / `StateBadge` (issue/PR state), `Avatar` /
 `AvatarStack`, `Kbd`, `Spinner`, `Skeleton`, `EmptyState`, `Box`,
-`toast()`, `VirtualList`, `Markdown` (GFM, sanitized, `#123`/`@user`
-links; lazy chunk), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
+`toast()`, `VirtualList`, `Markdown` (GFM, sanitized, server-parity
+references/autolinks/emoji/alerts/footnotes, `onSourceChange` for editable
+task lists; lazy chunk, highlighting/math/Mermaid/camo applied by
+`ui/markdown/enhance.ts`), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
 names there).
 
 Search/filter inputs with GitHub qualifier autocomplete (`is:`, `label:`,
@@ -233,6 +235,7 @@ npm run build && npx vite preview &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/screenshots.mjs http://localhost:4173 /tmp/shots
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimistic writes, rollback, reload, keyboard
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/rulesets-smoke.mjs   # rulesets UI (repo + org) in mock mode
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/moderation-smoke.mjs # hide comments, edit history, delete issue (mock mode)
 # site admin + org settings against a real backend (see the script header)
 BGH_BACKEND=http://localhost:3000 npx vite --port 5174 &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/admin-smoke.mjs http://localhost:5174 /tmp/admin-shots

@@ -96,7 +96,9 @@ function prefetchPackages(p: Params) {
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
 const JobPage = () => import('../pages/actions/JobPage');
+const CachesPage = () => import('../pages/actions/caches/CachesPage');
 const ActionsSettingsPage = () => import('../pages/actions/settings/ActionsSettingsPage');
+const OrgRunnerGroupsPage = () => import('../pages/actions/settings/OrgRunnerGroupsPage');
 
 function prefetchActions(p: Params) {
   void import('../pages/actions/data').then((m) => m.prefetchActions(p));
@@ -194,6 +196,7 @@ export function registerRoutes(): void {
     { path: '/site-admin/imports/:id', layout: AdminLayout, load: () => import('../pages/admin/ImportDetailPage'), title: (p) => `Import #${p.id} · Site admin` },
     { path: '/site-admin/maintenance', layout: AdminLayout, load: () => import('../pages/admin/GitMaintenancePage'), title: () => 'Git maintenance · Site admin' },
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
+    { path: '/site-admin/actions/runners', layout: AdminLayout, load: () => import('../pages/admin/RunnersPage'), title: () => 'Runners · Site admin' },
     // Organization settings.
     { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
     { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
@@ -207,6 +210,7 @@ export function registerRoutes(): void {
       title: (p) => `Outside collaborators · ${p.org}`,
     },
     { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
+    { path: '/organizations/:org/settings/security', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecurityPage'), title: (p) => `Authentication security · ${p.org}` },
     { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
     { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
     { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportPage'), title: (p) => `Import · ${p.org}` },
@@ -218,6 +222,8 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/installations/*', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `Installed GitHub Apps · ${p.org}` },
     { path: '/apps/:slug', load: AppPage, title: (p) => `${p.slug} · GitHub Apps` },
     { path: '/apps/:slug/installations/new', load: AppPage, title: (p) => `Install ${p.slug}` },
+    { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
+    { path: '/organizations/:org/settings/issue-types', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgIssueTypesPage'), title: (p) => `Issue types · ${p.org}` },
     { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
@@ -248,6 +254,8 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/secrets/actions', load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.org}` },
     { path: '/organizations/:org/settings/variables/actions', load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.org}` },
     { path: '/organizations/:org/settings/actions/runners', load: ActionsSettingsPage, title: (p) => `Runners · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups', load: OrgRunnerGroupsPage, title: (p) => `Runner groups · ${p.org}` },
+    { path: '/organizations/:org/settings/actions/runner-groups/:id', load: OrgRunnerGroupsPage, title: (p) => `Runner group · ${p.org}` },
     {
       path: '/:owner/:repo',
       layout: RepoLayout,
@@ -353,6 +361,7 @@ export function registerRoutes(): void {
     { path: '/:owner/:repo/actions/runs/:run', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/attempts/:attempt', layout: RepoLayout, load: RunPage, prefetch: prefetchActions, title: (p) => `Run ${p.run} · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runs/:run/job/:job', layout: RepoLayout, load: JobPage, prefetch: prefetchActions, title: (p) => `Job ${p.job} · Actions · ${p.owner}/${p.repo}` },
+    { path: '/:owner/:repo/actions/caches', layout: RepoLayout, load: CachesPage, prefetch: prefetchActions, title: (p) => `Caches · Actions · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/actions/runners', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Runners · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/secrets/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions secrets · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/variables/actions', layout: RepoLayout, load: ActionsSettingsPage, title: (p) => `Actions variables · ${p.owner}/${p.repo}` },

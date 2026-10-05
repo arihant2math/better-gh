@@ -78,6 +78,10 @@ pub struct JobSpec {
     /// when the job is acquired; shown in the "Set up job" log.
     #[serde(default)]
     pub token_permissions: IndexMap<String, String>,
+    /// `ACTIONS_RUNTIME_TOKEN` for the cache and results services (filled
+    /// in when the job is acquired; see [`crate::runtime`]).
+    #[serde(default)]
+    pub runtime_token: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -139,6 +143,16 @@ pub struct RegisterRequest {
     pub labels: Vec<String>,
     #[serde(default)]
     pub ephemeral: bool,
+    /// Host OS (`Linux`, `macOS`, `Windows`; default `Linux`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os: Option<String>,
+    /// Host architecture (`X64`, `X86`, `ARM64`, `ARM`; default `X64`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arch: Option<String>,
+    /// Runner group name (organization / site runners; default group
+    /// when unset), like `config.sh --runnergroup`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_group: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,4 +188,109 @@ pub trait Backend: Send + Sync {
         artifact_id: i64,
         dest: &Path,
     ) -> anyhow::Result<()>;
+}
+
+/// `encoded_jit_config` of `POST .../actions/runners/generate-jitconfig`.
+///
+/// Same container as GitHub's: base64 of a JSON object mapping runner
+/// config file names to base64 file contents. `.runner` carries the
+/// official runner's settings keys; `.credentials` uses the
+/// `BghRunnerToken` scheme (the runner token of this protocol) until the
+/// official runner protocol is supported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JitConfig {
+    pub runner_id: i64,
+    pub runner_name: String,
+    pub runner_group_id: i64,
+    pub runner_group_name: String,
+    /// Server base URL (`BGH_BASE_URL`).
+    pub server_url: String,
+    /// HTML URL of the runner's repository / organization / site.
+    pub github_url: String,
+    pub work_folder: String,
+    /// Secret runner token (`Authorization: RunnerToken <token>`).
+    pub token: String,
+}
+
+impl JitConfig {
+    pub fn encode(&self) -> String {
+        use base64::Engine as _;
+        let b64 = |v: &Value| base64::engine::general_purpose::STANDARD.encode(v.to_string());
+        let runner = serde_json::json!({
+            "agentId": self.runner_id,
+            "agentName": self.runner_name,
+            "poolId": self.runner_group_id,
+            "poolName": self.runner_group_name,
+            "serverUrl": self.server_url,
+            "gitHubUrl": self.github_url,
+            "workFolder": self.work_folder,
+            "ephemeral": true,
+            "disableUpdate": true,
+        });
+        let creds = serde_json::json!({
+            "scheme": "BghRunnerToken",
+            "data": {"token": self.token},
+        });
+        let files = serde_json::json!({".runner": b64(&runner), ".credentials": b64(&creds)});
+        base64::engine::general_purpose::STANDARD.encode(files.to_string())
+    }
+
+    pub fn decode(encoded: &str) -> anyhow::Result<Self> {
+        use anyhow::Context as _;
+        use base64::Engine as _;
+        let dec = |s: &str| -> anyhow::Result<Value> {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(s.trim())
+                .context("invalid base64")?;
+            serde_json::from_slice(&bytes).context("invalid JSON")
+        };
+        let files = dec(encoded).context("invalid JIT config")?;
+        let file = |name: &str| -> anyhow::Result<Value> {
+            dec(files[name]
+                .as_str()
+                .with_context(|| format!("JIT config has no {name}"))?)
+            .with_context(|| format!("invalid {name} in JIT config"))
+        };
+        let runner = file(".runner")?;
+        let creds = file(".credentials")?;
+        let s = |v: &Value, k: &str| -> anyhow::Result<String> {
+            v[k].as_str()
+                .map(str::to_string)
+                .with_context(|| format!("JIT config is missing {k}"))
+        };
+        Ok(JitConfig {
+            runner_id: runner["agentId"]
+                .as_i64()
+                .context("JIT config is missing agentId")?,
+            runner_name: s(&runner, "agentName")?,
+            runner_group_id: runner["poolId"].as_i64().unwrap_or(1),
+            runner_group_name: s(&runner, "poolName").unwrap_or_default(),
+            server_url: s(&runner, "serverUrl")?,
+            github_url: s(&runner, "gitHubUrl").unwrap_or_default(),
+            work_folder: s(&runner, "workFolder").unwrap_or_else(|_| "_work".into()),
+            token: s(&creds["data"], "token")?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod jit_tests {
+    use super::JitConfig;
+
+    #[test]
+    fn jit_config_roundtrip() {
+        let c = JitConfig {
+            runner_id: 7,
+            runner_name: "jit-1".into(),
+            runner_group_id: 3,
+            runner_group_name: "Default".into(),
+            server_url: "http://localhost:3000".into(),
+            github_url: "http://localhost:3000/acme".into(),
+            work_folder: "_work".into(),
+            token: "secret".into(),
+        };
+        let enc = c.encode();
+        assert_eq!(JitConfig::decode(&enc).unwrap(), c);
+        assert!(JitConfig::decode("bm9wZQ==").is_err());
+    }
 }

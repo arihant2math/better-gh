@@ -266,6 +266,7 @@ pub async fn create(
     Json(body): Json<AppBody>,
 ) -> ApiResult<(StatusCode, Json<AppDetail>)> {
     util::require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     validate(&body, true)?;
     let owner = match body.owner.as_deref() {
         Some(login) => util::find_account(&state, login).await?,
@@ -471,6 +472,7 @@ pub async fn create_key(
     Path(slug): Path<String>,
 ) -> ApiResult<(StatusCode, Json<KeyJson>)> {
     util::require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let app = admin_app(&state, &auth, &slug).await?;
     let key: GeneratedKey = tokio::task::spawn_blocking(bgh_core::apps::generate_key).await??;
     let mut tx = Tx::begin(&state).await?;

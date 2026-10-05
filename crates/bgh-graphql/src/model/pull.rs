@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_graphql::{Context, ID, MergedObject, Object, Union};
+use bgh_core::moderation::ContentKind;
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::prelude::*;
 
@@ -923,17 +924,43 @@ impl PullRequestReview {
     pub async fn updated_at(&self) -> DateTime {
         dt(self.0.updated_at)
     }
-    pub async fn last_edited_at(&self) -> Option<DateTime> {
-        None
+    pub async fn last_edited_at(&self, ctx: &Context<'_>) -> GResult<Option<DateTime>> {
+        super::moderation::last_edited_at(ctx, ContentKind::Review, self.0.id).await
     }
-    pub async fn includes_created_edit(&self) -> bool {
-        false
+    pub async fn includes_created_edit(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::includes_created_edit(ctx, ContentKind::Review, self.0.id).await
     }
-    pub async fn is_minimized(&self) -> bool {
-        false
+    pub async fn editor(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+        super::moderation::editor(ctx, ContentKind::Review, self.0.id).await
     }
-    pub async fn minimized_reason(&self) -> Option<String> {
-        None
+    pub async fn is_minimized(&self, ctx: &Context<'_>) -> GResult<bool> {
+        Ok(
+            super::moderation::minimized_reason(ctx, ContentKind::Review, self.0.id)
+                .await?
+                .is_some(),
+        )
+    }
+    pub async fn minimized_reason(&self, ctx: &Context<'_>) -> GResult<Option<String>> {
+        super::moderation::minimized_reason(ctx, ContentKind::Review, self.0.id).await
+    }
+    pub async fn viewer_can_minimize(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::viewer_can_minimize(ctx, self.0.repo_id).await
+    }
+    pub async fn user_content_edits(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<super::moderation::UserContentEditConnection> {
+        super::moderation::user_content_edits(
+            ctx,
+            ContentKind::Review,
+            self.0.id,
+            ConnArgs::new(first, last, after, before),
+        )
+        .await
     }
     pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.0.user_id
@@ -1072,14 +1099,43 @@ impl PullRequestReviewComment {
     pub async fn published_at(&self) -> Option<DateTime> {
         Some(dt(self.0.created_at))
     }
-    pub async fn includes_created_edit(&self) -> bool {
-        false
+    pub async fn includes_created_edit(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::includes_created_edit(ctx, ContentKind::ReviewComment, self.0.id).await
     }
-    pub async fn is_minimized(&self) -> bool {
-        false
+    pub async fn last_edited_at(&self, ctx: &Context<'_>) -> GResult<Option<DateTime>> {
+        super::moderation::last_edited_at(ctx, ContentKind::ReviewComment, self.0.id).await
     }
-    pub async fn minimized_reason(&self) -> Option<String> {
-        None
+    pub async fn editor(&self, ctx: &Context<'_>) -> GResult<Option<Actor>> {
+        super::moderation::editor(ctx, ContentKind::ReviewComment, self.0.id).await
+    }
+    pub async fn is_minimized(&self, ctx: &Context<'_>) -> GResult<bool> {
+        Ok(
+            super::moderation::minimized_reason(ctx, ContentKind::ReviewComment, self.0.id)
+                .await?
+                .is_some(),
+        )
+    }
+    pub async fn minimized_reason(&self, ctx: &Context<'_>) -> GResult<Option<String>> {
+        super::moderation::minimized_reason(ctx, ContentKind::ReviewComment, self.0.id).await
+    }
+    pub async fn viewer_can_minimize(&self, ctx: &Context<'_>) -> GResult<bool> {
+        super::moderation::viewer_can_minimize(ctx, self.0.repo_id).await
+    }
+    pub async fn user_content_edits(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<super::moderation::UserContentEditConnection> {
+        super::moderation::user_content_edits(
+            ctx,
+            ContentKind::ReviewComment,
+            self.0.id,
+            ConnArgs::new(first, last, after, before),
+        )
+        .await
     }
     pub async fn viewer_did_author(&self, ctx: &Context<'_>) -> bool {
         gql(ctx).viewer_id().is_some() && gql(ctx).viewer_id() == self.0.user_id

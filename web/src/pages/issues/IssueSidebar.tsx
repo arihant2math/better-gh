@@ -11,6 +11,7 @@ import { Avatar, ColorDot, LabelPill } from '../../ui/Badge';
 import { GearIcon, MilestoneIcon } from '../../ui/icons';
 import { SelectPanel } from '../../ui/Menu';
 import { DevelopmentSection } from './DevelopmentSection';
+import { IssueTypeSection, RelationshipsSection } from './IssueRelations';
 import styles from './IssueView.module.css';
 
 function Section({
@@ -181,7 +182,11 @@ export const IssueSidebar = observer(function IssueSidebar({ issue, repo, extra 
         footer={<Link to={`/${repo.owner}/${repo.name}/milestones`}>Manage milestones</Link>}
       />
 
+      <IssueTypeSection issue={issue} repo={repo} />
+
       <DevelopmentSection issue={issue} repo={repo} />
+
+      <RelationshipsSection issue={issue} repo={repo} />
 
       {extra}
 

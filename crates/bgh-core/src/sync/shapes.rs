@@ -50,10 +50,12 @@ pub enum Model {
     CheckRun,
     CheckSuite,
     CommitStatus,
+    /// The viewer's "Viewed" PR files (`user:{id}` scope, P38).
+    ViewedFile,
 }
 
 impl Model {
-    pub const ALL: [Model; 17] = [
+    pub const ALL: [Model; 18] = [
         Model::User,
         Model::Org,
         Model::Membership,
@@ -71,6 +73,7 @@ impl Model {
         Model::CheckRun,
         Model::CheckSuite,
         Model::CommitStatus,
+        Model::ViewedFile,
     ];
 
     /// Wire name (`"issueEvent"`), also stored in `sync_actions.model`.
@@ -93,6 +96,7 @@ impl Model {
             Self::CheckRun => "checkRun",
             Self::CheckSuite => "checkSuite",
             Self::CommitStatus => "commitStatus",
+            Self::ViewedFile => "viewedFile",
         }
     }
 
@@ -109,7 +113,11 @@ impl Model {
     pub fn is_extension(self) -> bool {
         matches!(
             self,
-            Self::ReviewComment | Self::CheckRun | Self::CheckSuite | Self::CommitStatus
+            Self::ReviewComment
+                | Self::CheckRun
+                | Self::CheckSuite
+                | Self::CommitStatus
+                | Self::ViewedFile
         )
     }
 }
@@ -178,11 +186,12 @@ pub struct Row {
 /// Issue columns (aliases are the JSON keys; `row_to_json` is about twice
 /// as fast as `json_build_object` for wide rows). `i` = issue row, `aa`,
 /// `la`, `ra` = pre-aggregated assignees, labels, reactions; `si` = parent
-/// (sub-issues), `pin` = pinned.
+/// (sub-issues), `pin` = pinned, `ity` = issue type, `dbb` / `dbk` =
+/// dependencies (blocked by / blocking).
 const ISSUE_COLS: &str = r#"
     i.id AS "id", i.repo_id AS "repoId", i.number AS "number", i.title AS "title",
     i.state AS "state",
-    CASE i.state_reason WHEN 'duplicate' THEN 'not_planned' ELSE i.state_reason END AS "stateReason",
+    i.state_reason AS "stateReason",
     i.author_id AS "authorId", coalesce(aa.ids, '{}') AS "assigneeIds",
     coalesce(la.ids, '{}') AS "labelIds", i.milestone_id AS "milestoneId",
     i.comments_count AS "comments", i.locked AS "locked",
@@ -190,7 +199,11 @@ const ISSUE_COLS: &str = r#"
     si.parent_id AS "parentId", coalesce(sc.ids, '{}') AS "subIssueIds",
     (pin.issue_id IS NOT NULL) AS "pinned", coalesce(lp.ids, '{}') AS "linkedPullIds",
     bgh_ts(i.created_at) AS "createdAt", bgh_ts(i.updated_at) AS "updatedAt",
-    bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr""#;
+    bgh_ts(i.closed_at) AS "closedAt", i.is_pull_request AS "isPr",
+    CASE WHEN ity.id IS NOT NULL THEN json_build_object(
+        'id', ity.id, 'name', ity.name, 'color', ity.color) END AS "issueType",
+    i.duplicate_of_id AS "duplicateOfId", coalesce(dbb.ids, '{}') AS "blockedByIds",
+    coalesce(dbb.open, 0) AS "openBlockedBy", coalesce(dbk.ids, '{}') AS "blockingIds""#;
 
 /// Pull request columns (`p` = pull_requests, `rq` = requested reviewers,
 /// `rd` = review decision, `ck` = combined checks). The last five are
@@ -221,7 +234,15 @@ const PR_COLS: &str = r#"
 /// the issue JSON and the PR JSON are built with `row_to_json` and spliced
 /// (`{..issue..,..pr..}`) for pull requests.
 fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
-    let body = if body { r#", i.body AS "body""# } else { "" };
+    // `bodyEditedAt` (latest edit-history entry of the body) travels with
+    // the lazy body: it only changes when the body does.
+    let body = if body {
+        r#", i.body AS "body",
+    (SELECT bgh_ts(max(ue.created_at)) FROM user_content_edits ue
+      WHERE ue.target_type = 'issue' AND ue.target_id = i.id) AS "bodyEditedAt""#
+    } else {
+        ""
+    };
     format!(
         r#"SELECT 'repo:' || i.repo_id AS scope, i.id,
        CASE WHEN p.issue_id IS NULL THEN b.j ELSE left(b.j, -1) || ',' || substr(pj.j, 2) END AS j
@@ -243,6 +264,15 @@ fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
                FROM sub_issues s JOIN issues x ON x.id = s.parent_id
               WHERE {fx} GROUP BY s.parent_id) sc ON sc.parent_id = i.id
   LEFT JOIN pinned_issues pin ON pin.issue_id = i.id
+  LEFT JOIN issue_types ity ON ity.id = i.issue_type_id
+  LEFT JOIN (SELECT d.blocked_id, array_agg(d.blocking_id ORDER BY d.created_at, d.blocking_id) AS ids,
+                    count(*) FILTER (WHERE o.state = 'open') AS open
+               FROM issue_dependencies d JOIN issues x ON x.id = d.blocked_id
+               JOIN issues o ON o.id = d.blocking_id
+              WHERE {fx} GROUP BY d.blocked_id) dbb ON dbb.blocked_id = i.id
+  LEFT JOIN (SELECT d.blocking_id, array_agg(d.blocked_id ORDER BY d.created_at, d.blocked_id) AS ids
+               FROM issue_dependencies d JOIN issues x ON x.id = d.blocking_id
+              WHERE {fx} GROUP BY d.blocking_id) dbk ON dbk.blocking_id = i.id
   LEFT JOIN (SELECT k.issue_id, array_agg(k.pull_id ORDER BY k.created_at, k.pull_id) AS ids
                FROM issue_pr_links k JOIN issues x ON x.id = k.issue_id
               WHERE {fx} GROUP BY k.issue_id) lp ON lp.issue_id = i.id
@@ -409,6 +439,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                                           (SELECT content, count(*) AS n FROM reactions
                                             WHERE subject_type = 'issue_comment' AND subject_id = c.id
                                             GROUP BY content) x), '{{}}'),
+                 'minimizedReason', c.minimized_reason,
                  'createdAt', bgh_ts(c.created_at), 'updatedAt', bgh_ts(c.updated_at))::text AS j
                FROM comments c JOIN repositories r ON r.id = c.repo_id WHERE {}",
             col(
@@ -421,7 +452,8 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
             "SELECT 'repo:' || v.repo_id AS scope, v.id, json_build_object(
                  'id', v.id, 'repoId', v.repo_id, 'issueId', v.pull_id, 'authorId', v.user_id,
                  'state', v.state, 'body', v.body, 'commitId', coalesce(v.commit_id, ''),
-                 'submittedAt', bgh_ts(v.submitted_at))::text AS j
+                 'submittedAt', bgh_ts(v.submitted_at),
+                 'minimizedReason', v.minimized_reason)::text AS j
                FROM pr_reviews v
               WHERE {} AND (v.state <> 'PENDING' OR v.user_id = $2)",
             col(
@@ -458,6 +490,20 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                      'parentIssueNumber', e.data->'parent_issue'->'number',
                      'parentIssueRepository', e.data->'parent_issue'->'repository',
                      'fromRepository', e.data->'from_repository',
+                     'issueTypeName', e.data->'issue_type'->'name',
+                     'issueTypeColor', e.data->'issue_type'->'color',
+                     'prevIssueTypeName', e.data->'prev_issue_type'->'name',
+                     'prevIssueTypeColor', e.data->'prev_issue_type'->'color',
+                     'otherIssueId', coalesce(e.data->'blocking_issue'->'id', e.data->'blocked_issue'->'id',
+                                              e.data->'canonical'->'id', e.data->'duplicate_of'->'id'),
+                     'otherIssueNumber', coalesce(e.data->'blocking_issue'->'number',
+                                                  e.data->'blocked_issue'->'number',
+                                                  e.data->'canonical'->'number',
+                                                  e.data->'duplicate_of'->'number'),
+                     'otherIssueRepository', coalesce(e.data->'blocking_issue'->'repository',
+                                                      e.data->'blocked_issue'->'repository',
+                                                      e.data->'canonical'->'repository',
+                                                      e.data->'duplicate_of'->'repository'),
                      'teamId', e.data->'requested_team_id',
                      'before', e.data->'before',
                      'after', e.data->'after',
@@ -500,6 +546,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                                             WHERE subject_type = 'pull_request_review_comment'
                                               AND subject_id = c.id
                                             GROUP BY content) x), '{{}}'),
+                 'minimizedReason', c.minimized_reason,
                  'createdAt', bgh_ts(c.created_at), 'updatedAt', bgh_ts(c.updated_at))::text AS j
                FROM pr_review_comments c
               WHERE {} AND NOT EXISTS (SELECT 1 FROM pr_reviews v
@@ -538,6 +585,21 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'createdAt', bgh_ts(cs.created_at))::text AS j
                FROM commit_statuses cs WHERE {}",
             col("cs", filter, &[("ids", "id"), ("repos", "repo_id")])?
+        ),
+        // Private to its user: with a viewer only their rows (the PR page's
+        // `/sync`), without one (recording a delta) any row.
+        Model::ViewedFile => format!(
+            "SELECT 'user:' || vf.user_id AS scope, vf.id, json_build_object(
+                 'id', vf.id, 'repoId', vf.repo_id, 'issueId', vf.pull_id,
+                 'userId', vf.user_id, 'path', vf.path, 'blobSha', vf.blob_sha,
+                 'updatedAt', bgh_ts(vf.updated_at))::text AS j
+               FROM pull_viewed_files vf
+              WHERE {} AND ($2::bigint IS NULL OR vf.user_id = $2)",
+            col(
+                "vf",
+                filter,
+                &[("ids", "id"), ("issues", "pull_id"), ("users", "user_id")]
+            )?
         ),
         Model::ViewerRepo => return None,
     })

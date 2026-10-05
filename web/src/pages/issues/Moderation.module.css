@@ -1,0 +1,76 @@
+.history {
+  width: 300px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.historyHeader {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.historyEmpty {
+  padding: 10px 12px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.historyList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.historyItem {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.historyItem:hover,
+.historyItem:focus-visible {
+  background: var(--bg-hover);
+}
+
+.deletedTag {
+  margin-left: auto;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+}
+
+.revisionBody {
+  min-width: min(560px, 80vw);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.deletedNote,
+.hint {
+  margin: 0 0 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.reasons {
+  display: grid;
+  gap: 6px;
+}
+
+.reason {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}

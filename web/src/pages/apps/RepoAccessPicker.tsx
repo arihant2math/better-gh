@@ -1,4 +1,8 @@
-/** "All repositories" / "Only select repositories" with a repository picker. */
+/**
+ * "All repositories" / "Only select repositories" with a repository picker.
+ * `publicOption` adds a leading "Public repositories (read-only)" choice
+ * (fine-grained personal access tokens); `mode` is then also `'public'`.
+ */
 import { useMemo, useState } from 'react';
 import { listAccountRepos, type SimpleUser } from '../../api/apps';
 import { useResource } from '../../api/cache';
@@ -20,7 +24,17 @@ export interface RepoSelection {
   repos: PickedRepo[];
 }
 
-export function RepoAccessPicker({ account, value, onChange }: { account: SimpleUser; value: RepoSelection; onChange: (v: RepoSelection) => void }) {
+export function RepoAccessPicker<S extends { mode: string; repos: PickedRepo[] } = RepoSelection>({
+  account,
+  value,
+  onChange,
+  publicOption,
+}: {
+  account: SimpleUser;
+  value: S;
+  onChange: (v: S) => void;
+  publicOption?: { label: string; description: string };
+}) {
   const me = session.user?.login ?? '';
   const res = useResource(value.mode === 'selected' ? `apps:repos:${account.login}` : null, () => listAccountRepos(account, me));
   const [q, setQ] = useState('');
@@ -35,8 +49,9 @@ export function RepoAccessPicker({ account, value, onChange }: { account: Simple
       <RadioCards
         aria-label="Repository access"
         value={value.mode}
-        onChange={(mode) => onChange({ ...value, mode })}
+        onChange={(mode) => onChange({ ...value, mode } as S)}
         options={[
+          ...(publicOption ? [{ value: 'public', ...publicOption }] : []),
           { value: 'all', label: 'All repositories', description: `Applies to all current and future repositories owned by ${account.login}.` },
           { value: 'selected', label: 'Only select repositories', description: 'Select at least one repository.' },
         ]}

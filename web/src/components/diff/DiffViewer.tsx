@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DiffView, type DiffAnnotations, type DiffFileEntry } from './DiffView';
+import { DiffView, type DiffAnnotations, type DiffFileEntry, type DiffSource } from './DiffView';
 import { parseDiff, type DiffFile } from './parseDiff';
 
 export function toEntries(files: DiffFile[]): DiffFileEntry[] {
@@ -29,6 +29,7 @@ export function DiffViewer({
   keyboard = false,
   annotations,
   footer,
+  source,
 }: {
   diff: string | DiffFile[];
   showTree?: boolean;
@@ -36,6 +37,8 @@ export function DiffViewer({
   keyboard?: boolean;
   annotations?: DiffAnnotations;
   footer?: ReactNode;
+  /** Enables highlighting, context expansion, image/rich diffs and file actions. */
+  source?: DiffSource;
 }) {
   const files = useMemo(() => toEntries(typeof diff === 'string' ? parseDiff(diff) : diff), [diff]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -55,6 +58,7 @@ export function DiffViewer({
       keyboard={keyboard}
       annotations={annotations}
       footer={footer}
+      source={source}
       collapsed={collapsed}
       onToggleCollapsed={(p) => setCollapsed((c) => toggle(c, p))}
       isViewed={isViewed}

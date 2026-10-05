@@ -121,7 +121,7 @@ export function setMilestone(issue: Issue, milestoneId: ID | null) {
   });
 }
 
-export function createIssue(repo: Repo, input: { title: string; body?: string; labelIds?: ID[]; assigneeIds?: ID[]; milestoneId?: ID | null }) {
+export function createIssue(repo: Repo, input: { title: string; body?: string; labelIds?: ID[]; assigneeIds?: ID[]; milestoneId?: ID | null; template?: string }) {
   const now = nowIso();
   const row: Issue = {
     id: tempId(),
@@ -151,6 +151,8 @@ export function createIssue(repo: Repo, input: { title: string; body?: string; l
       labels: (input.labelIds ?? []).map((id) => store().get('label', id)?.name).filter(Boolean),
       assignees: logins(input.assigneeIds ?? []),
       ...(input.milestoneId != null ? { milestone: store().get('milestone', input.milestoneId)?.number } : {}),
+      // The server applies the template's `type:` (P41).
+      ...(input.template ? { template: input.template } : {}),
     },
   });
 }

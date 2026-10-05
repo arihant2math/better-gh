@@ -244,6 +244,8 @@
 
 .filter {
   width: 220px;
+  min-width: 120px;
+  flex-shrink: 1;
 }
 
 .toggle {
@@ -323,4 +325,118 @@
   background: color-mix(in srgb, currentColor 22%, transparent);
   color: inherit;
   font-size: var(--fs-xs);
+}
+
+/* P38: commit suggestions dialog, commit range picker */
+.commitForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(480px, 80vw);
+}
+
+.rangeButton {
+  flex-shrink: 0;
+  max-width: 220px;
+}
+
+.rangeLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rangePanel {
+  width: min(420px, 90vw);
+  max-height: 420px;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.rangeItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rangeItem:hover,
+.rangeItem:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.rangeItem[aria-selected='true'] {
+  font-weight: 600;
+}
+
+.rangeItemMain {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rangeSep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-subtle);
+}
+
+.rangeHint {
+  padding: 4px 12px 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.rangeBanner {
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+/* Moderation (P42): "edited ▾" revisions button, hidden comments. */
+.editedButton {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.editedButton:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.minimizedNote {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  font-style: italic;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent, inherit);
+  font: inherit;
+  font-style: normal;
+  cursor: pointer;
+  text-decoration: underline;
 }

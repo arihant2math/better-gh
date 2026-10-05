@@ -28,6 +28,13 @@ Branch `bgh/actions`.
   `BGH_ACTIONS_MAX_JOBS` jobs at once through `server::LocalBackend`.
 * External runners: `bgh-runner register --url … --token <registration token>`
   then `bgh-runner run` (HTTP long-poll, `Authorization: RunnerToken`).
+  Registration reports the host OS/arch (`RUNNER_OS` Linux/Windows/macOS,
+  `RUNNER_ARCH` X86/X64/ARM/ARM64; system labels `self-hosted, <os>,
+  <arch>`, lower-cased) and an optional `--runner-group`. `bgh-runner run
+  --jitconfig <encoded_jit_config>` runs one job as a JIT runner. Ephemeral
+  runners take one job and are deleted when it completes. Runner groups
+  (org and site) restrict runners to repositories / organizations, public
+  repositories and a workflow allowlist (P29, `docs/packages/p29-runners.md`).
 * Executors: `docker` (job container = `container:` or
   `BGH_ACTIONS_DEFAULT_IMAGE`, services on a per-job network with aliases,
   job dir bind-mounted at `/__w`) and `shell` (host, explicit only); `auto`
@@ -40,7 +47,7 @@ Branch `bgh/actions`.
   → annotations, `stop-commands`, `save-state`), secret masking, step/job
   timeouts, cancellation. `uses`: `actions/checkout` (native, from this
   server with the job token), `actions/upload-artifact` /
-  `download-artifact` (native), `actions/cache*` (no-op, `cache-hit=false`),
+  `download-artifact` (native), `actions/cache*` (native, see p27-actions-cache.md),
   `docker://`, local `./path` and remote `owner/repo@ref` actions (fetched
   from this server first, then `BGH_ACTIONS_GITHUB_URL`) of type node,
   composite and docker (pre/post for node actions).
@@ -89,7 +96,9 @@ REST (`/api/v3`, GitHub shapes, wrapped lists `{total_count, <key>}` + `Link`):
 * Runners: repo and org — `GET …/actions/runners`, `GET …/runners/downloads`
   (`[]`), `POST …/registration-token`, `POST …/remove-token`, `GET|DELETE
   …/runners/{id}`, labels `GET|POST|PUT|DELETE …/{id}/labels`, `DELETE
-  …/{id}/labels/{name}`.
+  …/{id}/labels/{name}`, `POST …/runners/generate-jitconfig`; org runner
+  groups `/orgs/{org}/actions/runner-groups[/{id}[/repositories|/runners]]`.
+  Site: `/_bgh/admin/actions/{runners,queue,runner-groups}` (site admins).
 
 Web (`/_bgh/actions`): runner protocol (`register`, `self`, `acquire`,
 `jobs/{id}/logs|steps|complete|artifacts…`), `download/{token}`,
@@ -161,12 +170,12 @@ Sync models: `workflow_run`, `workflow_job` (scope `repo:{id}`).
 * Reusable workflows: see `docs/packages/p16-reusable-workflows.md`.
 * Environments: no protection rules / required reviewers / deployment
   branch policies; no deployments API (`environment.url` ignored).
-* `actions/cache` is a no-op; no cache API (`/actions/caches`).
+* Cache: see `docs/packages/p27-actions-cache.md` (native `actions/cache`, toolkit cache/results services, `/actions/caches`).
 * Fork pull requests get no secrets and a read-only token
   (`actions:read-only` scope), but there is no "require approval for fork
   PRs" policy yet.
 * Log/artifact files of deleted repositories are not swept (rows cascade).
-* Usage/billing, OIDC tokens, runner groups, JIT config not implemented.
+* Usage/billing, OIDC tokens not implemented.
 * Runner: upload-artifact ignores `overwrite`/`compression-level`/`pattern`;
   checkout ignores `submodules`/`lfs`; masking does not cover encoded forms
   of secrets; docker actions ignore `pre-entrypoint`; `docker login` for

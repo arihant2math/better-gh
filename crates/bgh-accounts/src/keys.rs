@@ -197,6 +197,7 @@ pub async fn create_ssh(
     Json(body): Json<CreateSshKeyBody>,
 ) -> ApiResult<(StatusCode, Json<SshKey>)> {
     auth.require_scope("write:public_key")?;
+    bgh_core::sudo::require(&state, &auth).await?;
     if body.key.trim().is_empty() {
         return Err(ApiError::invalid_field(FieldError::missing_field(
             "PublicKey",
@@ -422,6 +423,7 @@ pub async fn create_gpg(
     Json(body): Json<CreateGpgKeyBody>,
 ) -> ApiResult<(StatusCode, Json<GpgKey>)> {
     auth.require_scope("write:gpg_key")?;
+    bgh_core::sudo::require(&state, &auth).await?;
     if body.armored_public_key.trim().is_empty() {
         return Err(ApiError::invalid_field(FieldError::missing_field(
             "GpgKey",

@@ -370,7 +370,7 @@ export interface SiteSettings {
     search_unauthenticated_per_minute: number;
     graphql_per_hour: number;
   };
-  auth_providers: { password_login: boolean; password_login_admin_exempt: boolean; oidc: OidcProvider[]; ldap: LdapSettings };
+  auth_providers: { password_login: boolean; password_login_admin_exempt: boolean; oidc: OidcProvider[]; ldap: LdapSettings; /** Every account must use 2FA (P36). */ require_2fa?: boolean };
   smtp: { enabled: boolean; host: string; port: number; username: string | null; password: string | null; from: string; tls: 'none' | 'starttls' | 'tls' };
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   git_maintenance: GitMaintenanceSettings;
@@ -381,6 +381,8 @@ export interface SiteSettings {
   actions: { default_workflow_permissions: 'read' | 'write'; can_approve_pull_request_reviews: boolean };
   /** Access policy: private mode, anonymous directory, allowed visibilities. */
   privacy: { private_mode: boolean; allow_anonymous_directory: boolean; allowed_visibilities: Visibility[] };
+  /** Rendered Markdown: proxy external images through `/_bgh/camo`. */
+  markdown: { image_proxy: boolean };
 }
 
 export interface RetentionSettings {

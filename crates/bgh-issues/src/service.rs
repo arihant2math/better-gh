@@ -326,6 +326,8 @@ pub async fn set_state_with(
     }
     if !issue.is_pull_request {
         sync_repo_open_issues(tx, repo_id).await?;
+        // Dependents show how many of their blockers are open.
+        crate::dependencies::sync_dependents(tx, issue_id).await?;
     }
     Ok(true)
 }

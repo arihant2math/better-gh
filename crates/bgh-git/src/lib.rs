@@ -26,6 +26,7 @@ pub mod objects;
 pub mod ops;
 pub mod patch;
 pub mod pktline;
+pub mod pushed;
 pub mod read;
 pub mod signing;
 pub mod smart_http;
@@ -36,6 +37,7 @@ pub mod write;
 pub use bgh_core::events::{RefUpdate, ZERO_SHA};
 pub use objects::{Commit, Signature, Tag, TreeEntry, TreeEntryKind};
 pub use ops::{DiffFile, GitCli, LogFilter, LsTreeEntry, MergeOutcome, TreeEdit};
+pub use pushed::{ChangedFile, PushedCommit};
 pub use read::{Blob, GitRepo, PathLookup, RefInfo};
 pub use storage::RepoStore;
 

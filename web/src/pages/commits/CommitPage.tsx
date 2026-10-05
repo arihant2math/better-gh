@@ -1,9 +1,11 @@
 import { observer } from 'mobx-react-lite';
+import { useMemo } from 'react';
 import { peek, prefetch, useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { codeKeys, getCommit, getCommitDiff, getCommitStatuses, type GitPerson, type RestCommitDetail } from '../../api/code';
 import { isSha } from '../../api/endpoints';
 import type { RestUser } from '../../api/types';
+import type { DiffSource } from '../../components/diff/DiffView';
 import { DiffViewer } from '../../components/diff/DiffViewer';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -72,7 +74,7 @@ function CommitView({ repo, refName }: { repo: Repo; refName: string }) {
     <div className={styles.commitPage}>
       {commit.data ? <CommitHeader repo={repo} c={commit.data} /> : <HeaderSkeleton />}
       {commit.data && <Stats c={commit.data} />}
-      <Diff repo={repo} refName={refName} sha={sha} />
+      <Diff repo={repo} refName={refName} sha={sha} parent={commit.data?.parents.length === 1 ? commit.data.parents[0]!.sha : undefined} />
     </div>
   );
 }
@@ -165,8 +167,10 @@ function Stats({ c }: { c: RestCommitDetail }) {
 }
 
 /** The diff with inline commit comments; the general comment thread follows the last file. */
-function Diff({ repo, refName, sha }: { repo: Repo; refName: string; sha: string | undefined }) {
+function Diff({ repo, refName, sha, parent }: { repo: Repo; refName: string; sha: string | undefined; parent?: string }) {
   const annotations = useCommitCommentAnnotations(repo, sha);
+  // Highlighting, context expansion and image diffs (single-parent commits only).
+  const source = useMemo<DiffSource | undefined>(() => (sha && parent ? { owner: repo.owner, repo: repo.name, oldRef: parent, newRef: sha } : undefined), [repo.owner, repo.name, sha, parent]);
   const thread = <CommitCommentThread repo={repo} sha={sha} />;
   const { data, error } = useResource<string>(codeKeys.commitDiff(repo.owner, repo.name, refName), () => getCommitDiff(repo.owner, repo.name, refName), {
     immutable: isSha(refName),
@@ -197,7 +201,7 @@ function Diff({ repo, refName, sha }: { repo: Repo; refName: string; sha: string
   }
   return (
     <div className={styles.diff}>
-      <DiffViewer diff={data} annotations={annotations} footer={thread} />
+      <DiffViewer diff={data} annotations={annotations} footer={thread} source={source} />
     </div>
   );
 }

@@ -178,6 +178,7 @@ const Editor = observer(function Editor({ repo, template, query }: { repo: Repo;
       labelIds: triage ? labelIds : [],
       assigneeIds: triage ? assigneeIds : [],
       milestoneId: triage ? milestoneId : null,
+      template: template?.filename,
     });
     // The row is already in the list (optimistic); open it once it has a number.
     navigate(listPath);

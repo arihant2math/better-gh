@@ -7,6 +7,7 @@
 //! | `tree[/{ref}[/{path}]]` | directory listing (+ README, cached last commits) |
 //! | `tree-commits/{ref}[/{path}]` | last commit per entry |
 //! | `blob/{ref}/{path}` | file view: highlighted lines, image/binary/LFS detection |
+//! | `blob-lines/{commitish}?path=&start=&end=&hl=1` | lines of a file at a commit, or at the merge base of `a...b` (diff context expansion / highlighting) |
 //! | `blame/{ref}/{path}` | blame (JSON, or NDJSON stream when `Accept: application/x-ndjson`) |
 //! | `history/{ref}[/{path}]` | commits touching a path |
 //! | `readme/{ref}[/{dir}]` | rendered README of a directory |
@@ -27,6 +28,7 @@
 pub mod blame;
 pub mod blob;
 pub mod history;
+pub mod lines;
 pub mod overview;
 pub mod readme;
 pub mod refs;
@@ -56,6 +58,7 @@ pub(crate) const SHORT_TTL_SECS: u32 = 30;
 pub fn web_router() -> Router<AppState> {
     Router::new()
         .route("/_bgh/render/blob/{owner}/{repo}/{sha}", get(render::blob))
+        .route("/_bgh/render/code", axum::routing::post(render::code))
         .route("/_bgh/repos/{owner}/{repo}/refs", get(refs::list))
         .route("/_bgh/repos/{owner}/{repo}/tree", get(tree::root))
         .route("/_bgh/repos/{owner}/{repo}/tree/{*spec}", get(tree::get))
@@ -64,6 +67,10 @@ pub fn web_router() -> Router<AppState> {
             get(tree::last_commits),
         )
         .route("/_bgh/repos/{owner}/{repo}/blob/{*spec}", get(blob::get))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/blob-lines/{spec}",
+            get(lines::get),
+        )
         .route("/_bgh/repos/{owner}/{repo}/blame/{*spec}", get(blame::get))
         .route("/_bgh/repos/{owner}/{repo}/history", get(history::root))
         .route(

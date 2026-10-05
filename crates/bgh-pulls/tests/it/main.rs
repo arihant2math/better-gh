@@ -5,10 +5,12 @@
 mod common;
 
 mod checks;
+mod diffview;
 mod governance;
 mod merge;
 mod pulls;
 mod rest_compat;
+mod review_flow;
 mod reviews;
 mod signatures;
 mod web_client;

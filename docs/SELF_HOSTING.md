@@ -80,7 +80,8 @@ docker run -d --name bgh -p 3000:3000 -p 2222:2222 -v bgh-data:/data \
 
 ## Install (binary + systemd)
 
-Build a release binary with the web client embedded:
+Build a release binary with the web client embedded (needs `pkg-config`
+and the OpenSSL headers, e.g. `libssl-dev`, for WebAuthn):
 
 ```sh
 (cd web && npm ci && npm run build)       # -> web/dist
@@ -304,6 +305,22 @@ runner. Plan for that:
   OAuth tokens need the `workflow` scope for that (git push over HTTP and
   the contents API); SSH keys and browser sessions are full credentials.
 
+**Cache and toolkit services.** Jobs get `ACTIONS_RUNTIME_TOKEN` (a JWT
+valid only while the job runs), `ACTIONS_CACHE_URL` /
+`ACTIONS_RUNTIME_URL` (`<base>/_bgh/actions/runtime/`) and
+`ACTIONS_RESULTS_URL` (`<base>/`), so `actions/cache` (handled natively),
+`setup-node`/`setup-go`/… `cache:` inputs and actions built on
+`@actions/cache` work. Runners and job containers must reach
+`BGH_BASE_URL` for this. Archives live in `BGH_DATA_DIR/actions/caches/`
+(regenerable; may be excluded from backups). Each repository keeps up to
+`BGH_ACTIONS_CACHE_SIZE_LIMIT_GB` (default 10, repository admins may lower
+it with `PATCH /repos/{o}/{r}/actions/cache/usage-policy`); least recently
+used entries are evicted beyond it, and entries unused for
+`BGH_ACTIONS_CACHE_RETENTION_DAYS` (default 7) are deleted. Note that
+`@actions/artifact` v2 (`upload-artifact@v4` run as JavaScript) refuses to
+run against hosts it considers GHES; the native `upload-artifact` /
+`download-artifact` handling covers those actions.
+
 ## Backup and restore
 
 What to back up:
@@ -314,6 +331,13 @@ What to back up:
 3. Your configuration (`/etc/bgh/bgh.env` or `.env`).
 
 Redis holds only caches and pub/sub and needs no backup.
+
+The server key (`BGH_ACTIONS_SECRET_KEY`, or `actions/server.key` in the
+data directory) encrypts Actions secrets, mirror credentials and users'
+TOTP two-factor secrets: restoring the database without it locks every
+account with an authenticator app out (site admins can disable 2FA per
+user). WebAuthn security keys and passkeys are bound to the host of
+`BGH_BASE_URL`; changing the domain invalidates them.
 
 Take the database dump **first**, then copy the data directory. Git
 maintenance (the scheduled `repos.maintenance` service and the admin gc)

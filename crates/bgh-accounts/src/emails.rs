@@ -137,6 +137,7 @@ pub async fn add(
     Json(body): Json<Value>,
 ) -> ApiResult<(StatusCode, Json<Vec<Email>>)> {
     auth.require_scope("user")?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let emails = parse_emails(body)?;
     if let Some(bad) = emails.iter().find(|e| !validate::is_valid_email(e)) {
         return Err(ApiError::invalid_field(FieldError::custom(
@@ -189,6 +190,7 @@ pub async fn remove(
     Json(body): Json<Value>,
 ) -> ApiResult<StatusCode> {
     auth.require_scope("user")?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let emails: Vec<String> = parse_emails(body)?
         .into_iter()
         .map(|e| e.to_lowercase())
@@ -378,6 +380,7 @@ pub async fn set_primary(
     Path(email): Path<String>,
 ) -> ApiResult<Json<Vec<Email>>> {
     util::require_session(&auth)?;
+    bgh_core::sudo::require(&state, &auth).await?;
     let mut tx = Tx::begin(&state).await?;
     let row: EmailRow = sqlx::query_as(&format!(
         "SELECT {} FROM user_emails WHERE user_id = $1 AND lower(email) = lower($2) FOR UPDATE",

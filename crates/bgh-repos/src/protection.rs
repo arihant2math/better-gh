@@ -24,6 +24,8 @@ use bgh_core::events::RefUpdate;
 use bgh_core::perms::{Permission, RepoAccess};
 use bgh_core::prelude::*;
 use bgh_git::smart_http::{HookVerdict, ObjectCheck, PushPolicy, QuarantineEnv};
+
+use crate::rule_eval;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
@@ -76,11 +78,14 @@ impl ProtectionRow {
     }
 }
 
-/// `repo_rulesets` row.
+/// `repo_rulesets` row: a repository ruleset, or an organization ruleset
+/// (`org_id` set, `repo_id` 0) applying to the repositories its
+/// `repository_name` / `repository_id` conditions select.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RulesetRow {
     pub id: i64,
     pub repo_id: i64,
+    pub org_id: Option<i64>,
     pub name: String,
     pub target: String,
     pub enforcement: String,
@@ -93,11 +98,54 @@ pub struct RulesetRow {
 }
 
 impl RulesetRow {
-    pub const COLUMNS: &'static str = "id, repo_id, name, target, enforcement, conditions, \
-        rules, bypass_actors, created_by_id, created_at, updated_at";
+    pub const COLUMNS: &'static str = "id, coalesce(repo_id, 0) AS repo_id, org_id, name, \
+        target, enforcement, conditions, rules, bypass_actors, created_by_id, created_at, \
+        updated_at";
 
-    /// Whether the ruleset's conditions select `refname`.
+    /// `Organization` or `Repository`.
+    pub fn source_type(&self) -> &'static str {
+        if self.org_id.is_some() {
+            "Organization"
+        } else {
+            "Repository"
+        }
+    }
+
+    /// Whether an organization ruleset's conditions select `repo`
+    /// (`repository_name` include/exclude fnmatch patterns or `~ALL`,
+    /// or `repository_id.repository_ids`). Repository rulesets select
+    /// only their own repository.
+    pub fn applies_to_repo(&self, repo: &db::Repository) -> bool {
+        if self.org_id.is_none() {
+            return self.repo_id == repo.id;
+        }
+        let c = &self.conditions;
+        if let Some(ids) = c["repository_id"]["repository_ids"].as_array() {
+            return ids.iter().any(|v| v.as_i64() == Some(repo.id));
+        }
+        let names = &c["repository_name"];
+        if !names.is_object() {
+            return false;
+        }
+        let name = repo.name.to_ascii_lowercase();
+        let matches = |p: &str| p == "~ALL" || pattern_matches(&p.to_ascii_lowercase(), &name);
+        let list = |k: &str| -> Vec<String> {
+            names[k]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        };
+        list("include").iter().any(|p| matches(p)) && !list("exclude").iter().any(|p| matches(p))
+    }
+
+    /// Whether the ruleset's conditions select `refname`. Push rulesets
+    /// apply to every ref.
     pub fn applies_to(&self, refname: &str, default_branch: &str) -> bool {
+        if self.target == "push" {
+            return true;
+        }
         let prefix = if self.target == "tag" {
             "refs/tags/"
         } else {
@@ -199,7 +247,12 @@ pub fn pattern_matches(pattern: &str, name: &str) -> bool {
 pub struct RepoRules {
     pub repo_id: i64,
     pub protections: Vec<ProtectionRow>,
+    /// Active rulesets of the repository and of its organization (those
+    /// selecting the repository).
     pub rulesets: Vec<RulesetRow>,
+    /// Rulesets in `evaluate` mode: evaluated and recorded in rule
+    /// suites, never enforced.
+    pub evaluate: Vec<RulesetRow>,
     pub default_branch: String,
 }
 
@@ -213,23 +266,44 @@ impl RepoRules {
         .bind(repo.id)
         .fetch_all(db)
         .await?;
-        let rulesets = sqlx::query_as(&format!(
-            "SELECT {} FROM repo_rulesets WHERE repo_id = $1 AND enforcement = 'active' ORDER BY id",
+        let all: Vec<RulesetRow> = sqlx::query_as(&format!(
+            "SELECT {} FROM repo_rulesets
+              WHERE (repo_id = $1 OR org_id = $2) AND enforcement IN ('active', 'evaluate')
+              ORDER BY id",
             RulesetRow::COLUMNS
         ))
         .bind(repo.id)
+        .bind(repo.owner_id)
         .fetch_all(db)
         .await?;
+        let (rulesets, evaluate) = all
+            .into_iter()
+            .filter(|r| r.applies_to_repo(repo))
+            .partition(|r| r.enforcement == "active");
         Ok(Self {
             repo_id: repo.id,
             protections,
             rulesets,
+            evaluate,
             default_branch: repo.default_branch.clone(),
         })
     }
 
+    /// No classic rule and no active ruleset (`evaluate` rulesets aside).
     pub fn is_empty(&self) -> bool {
         self.protections.is_empty() && self.rulesets.is_empty()
+    }
+
+    /// Nothing at all to evaluate on a push (classic, active or evaluate).
+    pub fn is_unruled(&self) -> bool {
+        self.is_empty() && self.evaluate.is_empty()
+    }
+
+    /// `evaluate` rulesets selecting `refname`.
+    pub fn evaluate_for<'a>(&'a self, refname: &'a str) -> impl Iterator<Item = &'a RulesetRow> {
+        self.evaluate
+            .iter()
+            .filter(move |r| r.applies_to(refname, &self.default_branch))
     }
 
     /// The classic rule protecting `branch`: an exact name beats patterns,
@@ -246,8 +320,20 @@ impl RepoRules {
             })
     }
 
-    /// Active rulesets selecting `refname`.
+    /// Active branch / tag rulesets selecting `refname` (push rulesets,
+    /// which only restrict pushed content, are left out: see
+    /// [`Self::push_rulesets_for`]).
     pub fn rulesets_for<'a>(&'a self, refname: &'a str) -> impl Iterator<Item = &'a RulesetRow> {
+        self.push_rulesets_for(refname)
+            .filter(|r| r.target != "push")
+    }
+
+    /// Every active ruleset evaluated on a push to `refname`, push
+    /// rulesets included.
+    pub fn push_rulesets_for<'a>(
+        &'a self,
+        refname: &'a str,
+    ) -> impl Iterator<Item = &'a RulesetRow> {
         self.rulesets
             .iter()
             .filter(move |r| r.applies_to(refname, &self.default_branch))
@@ -262,6 +348,10 @@ pub struct Actor {
     /// Teams the user belongs to, including parents of those teams.
     pub team_ids: Vec<i64>,
     pub org_admin: bool,
+    /// Pushing with a deploy key (`DeployKey` bypass actors).
+    pub deploy_key: bool,
+    /// Acting as a GitHub App / integration (`Integration` bypass actors).
+    pub integration_id: Option<i64>,
 }
 
 impl Actor {
@@ -300,6 +390,8 @@ impl Actor {
             permission,
             team_ids,
             org_admin,
+            deploy_key: false,
+            integration_id: None,
         })
     }
 
@@ -311,6 +403,8 @@ impl Actor {
             permission: access.permission,
             team_ids: Vec::new(),
             org_admin: false,
+            deploy_key: true,
+            integration_id: None,
         }
     }
 
@@ -331,7 +425,9 @@ impl Actor {
             }
             Some("OrganizationAdmin") => self.org_admin,
             Some("Team") => id.is_some_and(|t| self.team_ids.contains(&t)),
-            Some("User") => id == Some(self.user_id),
+            Some("User") => self.user_id != 0 && id == Some(self.user_id),
+            Some("DeployKey") => self.deploy_key,
+            Some("Integration") => id.is_some() && id == self.integration_id,
             _ => false,
         }
     }
@@ -353,6 +449,23 @@ impl Actor {
         };
         has("users", self.user_id) || self.team_ids.iter().any(|t| has("teams", *t))
     }
+}
+
+/// The GitHub App acting through `auth` (app JWT or installation token),
+/// matched by `Integration` bypass actors.
+pub async fn integration_of(state: &AppState, auth: &AuthContext) -> ApiResult<Option<i64>> {
+    if let Some(app) = bgh_core::apps::jwt_app_id(auth) {
+        return Ok(Some(app));
+    }
+    let Some(installation) = bgh_core::apps::installation_id(auth) else {
+        return Ok(None);
+    };
+    Ok(
+        sqlx::query_scalar("SELECT app_id FROM app_installations WHERE id = $1")
+            .bind(installation)
+            .fetch_optional(&state.db)
+            .await?,
+    )
 }
 
 /// Checks an allowed update still needs (objects / statuses).
@@ -527,29 +640,42 @@ fn status_reason(missing: &[String]) -> String {
     declined(&format!("Required status check {list} is expected."))
 }
 
-/// Authorize a git push: rule checks per update, required status checks in
-/// the database, and the hook policy for object checks.
+/// Authorize a git push: classic rule checks per update and required
+/// status checks in the database, the hook policy for object checks, and
+/// ruleset evaluation ([`crate::rule_eval`]): ref rules now, object rules
+/// from the `pre-receive` hook ([`PushPolicy::object_check`]). Ruleset
+/// violations are reported in GitHub's `GH013` format, and every update
+/// selected by a ruleset is recorded as a rule suite.
 pub async fn authorize_push(
     state: &AppState,
     rules: &RepoRules,
     actor: &Actor,
     updates: &[RefUpdate],
 ) -> Result<PushPolicy, String> {
+    let internal = |_| "internal error checking repository rules".to_string();
     let mut policy = PushPolicy::default();
     let mut signed = Vec::new();
     for u in updates {
-        let needs = check_update(rules, actor, u)?;
-        if needs.signatures || needs.signatures_ruleset {
+        let mut needs = Needs::default();
+        if let Some(branch) = u.branch()
+            && let Some(p) = rules.protection_for(branch)
+        {
+            needs = check_classic(p, actor, u)?;
+        }
+        if u.is_create() || u.is_delete() {
+            needs.fast_forward = false;
+        }
+        if needs.signatures {
             signed.push(SignedRef {
                 update: u.clone(),
-                ruleset: needs.signatures_ruleset,
+                ruleset: false,
             });
         }
         if !needs.status_contexts.is_empty() {
             let missing =
                 missing_status_checks(state, rules.repo_id, &u.new, &needs.status_contexts)
                     .await
-                    .map_err(|_| "internal error checking statuses".to_string())?;
+                    .map_err(internal)?;
             if !missing.is_empty() {
                 return Err(status_reason(&missing));
             }
@@ -561,15 +687,151 @@ pub async fn authorize_push(
             policy.linear_history.push(u.refname.clone());
         }
     }
+    if !rule_eval::any_ruleset(rules, updates) {
+        return Ok(with_classic_signatures(
+            state,
+            rules.repo_id,
+            signed,
+            policy,
+        ));
+    }
+
+    let mut ref_evals = Vec::with_capacity(updates.len());
+    for u in updates {
+        ref_evals.push(
+            rule_eval::ref_evals(state, rules, actor, u)
+                .await
+                .map_err(internal)?,
+        );
+    }
+    let suites = |evals: Vec<Vec<rule_eval::Eval>>| -> Vec<rule_eval::SuiteRecord> {
+        updates
+            .iter()
+            .zip(evals)
+            .filter(|(u, _)| rule_eval::any_ruleset(rules, std::slice::from_ref(*u)))
+            .map(|(u, evals)| rule_eval::SuiteRecord {
+                repo_id: rules.repo_id,
+                actor_id: Some(actor.user_id),
+                refname: u.refname.clone(),
+                before_sha: u.old.clone(),
+                after_sha: u.new.clone(),
+                evals,
+            })
+            .collect()
+    };
+    if ref_evals.iter().flatten().any(rule_eval::Eval::blocks) {
+        let url = rules_url(state, rules.repo_id).await;
+        let mut lines = Vec::new();
+        for (u, evals) in updates.iter().zip(&ref_evals) {
+            lines.extend(rule_eval::gh013_lines(&url, &u.refname, evals));
+        }
+        rule_eval::record_all(&state.db, &suites(ref_evals)).await;
+        return Err(format!(
+            "push declined due to repository rule violations\n{}",
+            lines.join("\n")
+        ));
+    }
+    if !rule_eval::needs_objects(rules, updates) {
+        rule_eval::record_all(&state.db, &suites(ref_evals)).await;
+        return Ok(with_classic_signatures(
+            state,
+            rules.repo_id,
+            signed,
+            policy,
+        ));
+    }
+
+    let records = std::sync::Arc::new(suites(ref_evals));
+    let (outer_state, repo_id) = (state.clone(), rules.repo_id);
+    let (state, rules, actor) = (state.clone(), rules.clone(), actor.clone());
+    policy.object_check = Some(ObjectCheck::new(move |env: QuarantineEnv| {
+        let (state, rules, actor, records) =
+            (state.clone(), rules.clone(), actor.clone(), records.clone());
+        async move {
+            let git = match crate::store(&state).cli(rules.repo_id) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(error = %e, "rulesets: opening the repository failed");
+                    return HookVerdict {
+                        accept: false,
+                        lines: vec!["error: internal error checking repository rules".into()],
+                    };
+                }
+            };
+            let envs = env.envs();
+            let mut records = (*records).clone();
+            for s in &mut records {
+                let u = RefUpdate {
+                    old: s.before_sha.clone(),
+                    new: s.after_sha.clone(),
+                    refname: s.refname.clone(),
+                };
+                s.evals
+                    .extend(rule_eval::object_evals(&git, &envs, &rules, &actor, &u).await);
+                s.evals.extend(
+                    rule_eval::signature_evals(&state, &git, &envs, &rules, &actor, &u).await,
+                );
+            }
+            let mut lines = Vec::new();
+            if records
+                .iter()
+                .flat_map(|s| &s.evals)
+                .any(rule_eval::Eval::blocks)
+            {
+                let url = rules_url(&state, rules.repo_id).await;
+                for s in &records {
+                    lines.extend(rule_eval::gh013_lines(&url, &s.refname, &s.evals));
+                }
+            }
+            rule_eval::record_all(&state.db, &records).await;
+            HookVerdict {
+                accept: lines.is_empty(),
+                lines,
+            }
+        }
+    }));
+    Ok(with_classic_signatures(
+        &outer_state,
+        repo_id,
+        signed,
+        policy,
+    ))
+}
+
+/// `{html}/{owner}/{repo}/rules` (the "Review all repository rules" link).
+async fn rules_url(state: &AppState, repo_id: i64) -> String {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT u.login, r.name FROM repositories r JOIN users u ON u.id = r.owner_id
+          WHERE r.id = $1",
+    )
+    .bind(repo_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+    match row {
+        Some((owner, name)) => format!("{}/rules", state.urls.repo_html(&owner, &name)),
+        None => state.urls.html("/"),
+    }
+}
+
+/// Install the classic `required_signatures` check (`signed`) on
+/// `policy`, after any object check already there (rulesets).
+fn with_classic_signatures(
+    state: &AppState,
+    repo_id: i64,
+    signed: Vec<SignedRef>,
+    mut policy: PushPolicy,
+) -> PushPolicy {
     if !signed.is_empty() {
         policy.object_check = Some(signature_check(
             state.clone(),
-            rules.repo_id,
+            repo_id,
             signed,
             policy.object_check.take(),
         ));
     }
-    Ok(policy)
+    policy
 }
 
 /// A pushed ref update whose new commits must be signed.
@@ -589,7 +851,7 @@ pub const SIGNATURES_REQUIRED: &str = "Commits must have verified signatures.";
 /// Commits introduced by `u` without a verified signature (`envs`: the
 /// quarantined objects of a push). `Err(())` when there are too many to
 /// check.
-async fn unverified_pushed(
+pub(crate) async fn unverified_pushed(
     state: &AppState,
     git: &bgh_git::GitCli,
     u: &RefUpdate,
@@ -776,6 +1038,8 @@ pub fn check_push_by(
         permission: access.permission,
         team_ids: vec![],
         org_admin: false,
+        deploy_key: pusher_id.is_none(),
+        integration_id: None,
     };
     for u in updates {
         check_update(rules, &actor, u)?;

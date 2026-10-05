@@ -7,6 +7,7 @@ pub mod apps;
 pub mod avatars;
 pub mod boot;
 pub mod emails;
+pub mod fine_grained;
 pub mod gpg;
 pub mod group_sync;
 pub mod json;
@@ -14,8 +15,10 @@ pub mod keys;
 pub mod ldap;
 pub mod meta;
 pub mod oauth;
+pub mod org_two_factor;
 pub mod orgs;
 pub mod root;
+pub mod security;
 pub mod session;
 pub mod social;
 pub mod sso;
@@ -26,6 +29,7 @@ pub mod twofa;
 pub mod users;
 pub mod util;
 pub mod validate;
+pub mod webauthn;
 
 use axum::Router;
 use axum::routing::{delete, get, patch, post, put};
@@ -167,6 +171,31 @@ pub fn router() -> Router<AppState> {
         .route(
             "/orgs/{org}/installations",
             get(apps::install::org_installations),
+        )
+        // fine-grained personal access tokens (P47)
+        .route(
+            "/orgs/{org}/personal-access-token-requests",
+            get(fine_grained::list_requests).post(fine_grained::review_requests),
+        )
+        .route(
+            "/orgs/{org}/personal-access-token-requests/{pat_request_id}",
+            post(fine_grained::review_request),
+        )
+        .route(
+            "/orgs/{org}/personal-access-token-requests/{pat_request_id}/repositories",
+            get(fine_grained::request_repositories),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens",
+            get(fine_grained::list_grants).post(fine_grained::revoke_grants),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens/{pat_id}",
+            post(fine_grained::revoke_grant),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens/{pat_id}/repositories",
+            get(fine_grained::grant_repositories),
         )
         // organizations
         .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
@@ -313,6 +342,38 @@ pub fn web_router() -> Router<AppState> {
             "/_bgh/user/two_factor/recovery_codes",
             post(twofa::regenerate),
         )
+        // WebAuthn security keys / passkeys, sudo mode (P36)
+        .route("/_bgh/user/webauthn", get(webauthn::list))
+        .route(
+            "/_bgh/user/webauthn/registrations",
+            post(webauthn::start_registration),
+        )
+        .route(
+            "/_bgh/user/webauthn/registrations/{id}",
+            post(webauthn::finish_registration),
+        )
+        .route(
+            "/_bgh/user/webauthn/{id}",
+            patch(webauthn::rename).delete(webauthn::delete),
+        )
+        .route(
+            "/_bgh/auth/login/passkey/challenge",
+            post(webauthn::passkey_challenge),
+        )
+        .route("/_bgh/auth/login/passkey", post(webauthn::passkey_login))
+        .route(
+            "/_bgh/auth/2fa/webauthn/challenge",
+            post(webauthn::two_factor_challenge),
+        )
+        .route("/_bgh/auth/2fa/webauthn", post(webauthn::two_factor_login))
+        .route(
+            "/_bgh/sudo",
+            get(security::sudo_status).post(security::sudo),
+        )
+        .route(
+            "/_bgh/sudo/webauthn/challenge",
+            post(security::sudo_challenge),
+        )
         .route("/_bgh/emails/verify", post(emails::verify))
         .route(
             "/_bgh/user/emails/{email}/verification",
@@ -327,6 +388,26 @@ pub fn web_router() -> Router<AppState> {
             post(tokens::create_token).get(tokens::list_tokens),
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
+        .route(
+            "/_bgh/fine-grained-tokens",
+            get(fine_grained::list).post(fine_grained::create),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/owners",
+            get(fine_grained::owners),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/permissions",
+            get(fine_grained::permissions),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/{id}",
+            get(fine_grained::get).delete(fine_grained::delete),
+        )
+        .route(
+            "/_bgh/orgs/{org}/pat-policy",
+            get(fine_grained::get_policy).patch(fine_grained::update_policy),
+        )
         .route("/_bgh/orgs", post(orgs::web_create_org))
         .route(
             "/_bgh/orgs/{org}/invitation",
@@ -424,13 +505,15 @@ pub fn web_router() -> Router<AppState> {
 }
 
 /// Background work: LDAP sync jobs and the periodic `accounts.ldap_sync`
-/// service; also installs the LDAP password directory
-/// (`bgh_core::auth::check_password`). Account mail is queued as the shared
-/// `mail.send` job of `bgh_core::mail`.
+/// service (also installs the LDAP password directory,
+/// `bgh_core::auth::check_password`), and the `accounts.security` service
+/// (PAT expiry reminders, legacy TOTP secret encryption). Account mail is
+/// queued as the shared `mail.send` job of `bgh_core::mail`.
 pub fn register(reg: &mut Registry) {
     ldap::install();
     reg.job(ldap::sync::sync_all_job);
     reg.job(ldap::sync::sync_user_job);
     reg.job(ldap::sync::sync_team_job);
     reg.service("accounts.ldap_sync", ldap::sync::service);
+    reg.service("accounts.security", security::service);
 }

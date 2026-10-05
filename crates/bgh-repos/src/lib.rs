@@ -37,17 +37,21 @@ pub mod licenses;
 pub mod maintenance;
 pub mod media;
 pub mod mirrors;
+pub mod org_rulesets;
 pub mod protection;
 pub mod protection_api;
 pub mod refs;
 pub mod repos;
 pub mod repositories;
+pub mod rule_eval;
+pub mod rule_suites;
 pub mod rulesets;
 pub mod settings;
 pub mod signatures;
 pub mod ssh;
 pub mod stars;
 pub mod stats;
+pub mod tag_protection;
 pub mod traffic;
 pub mod watching;
 pub mod workflow_scope;
@@ -99,6 +103,9 @@ pub fn router() -> Router<AppState> {
         .merge(branches::routes())
         .merge(protection_api::routes())
         .merge(rulesets::routes())
+        .merge(org_rulesets::routes())
+        .merge(rule_suites::routes())
+        .merge(tag_protection::routes())
         .merge(download::api_router())
         .merge(licenses::routes())
         .merge(gitignore::routes())
@@ -123,6 +130,7 @@ pub fn web_router() -> Router<AppState> {
         .merge(import::web_routes())
         .merge(mirrors::web_routes())
         .merge(traffic::web_routes())
+        .merge(autolinks::web_routes())
         .route("/web-flow.gpg", get(signatures::web_flow_gpg))
         .route(
             "/_bgh/repos/{owner}/{repo}/commit-signatures",

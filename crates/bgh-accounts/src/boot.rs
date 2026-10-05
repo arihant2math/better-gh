@@ -33,6 +33,10 @@ pub struct BootUser {
     pub login: String,
     pub name: Option<String>,
     pub avatar_url: String,
+    /// The site requires 2FA (`auth_providers.require_2fa`) and this user
+    /// has none: the client sends them to set it up.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub two_factor_setup_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +65,7 @@ pub fn boot_for(state: &AppState, user: Option<&db::User>, session_token: Option
             login: u.login.clone(),
             name: u.name.clone(),
             avatar_url: state.urls.avatar(u.id, u.avatar_url.as_deref()),
+            two_factor_setup_required: false,
         }),
         csrf: match (user, session_token) {
             (Some(_), Some(t)) => auth::csrf_token(t),
@@ -73,6 +78,16 @@ pub fn boot_for(state: &AppState, user: Option<&db::User>, session_token: Option
         },
         ts: chrono::Utc::now().into(),
     }
+}
+
+/// Flag users the site's 2FA requirement applies to.
+pub async fn apply_policy(state: &AppState, mut boot: Boot) -> Boot {
+    if let Some(user) = boot.user.as_mut() {
+        user.two_factor_setup_required = crate::security::two_factor_setup_required(state, user.id)
+            .await
+            .unwrap_or(false);
+    }
+    boot
 }
 
 /// Boot data for a request (from its session cookie only).
@@ -93,7 +108,7 @@ pub async fn boot_json(state: &AppState, headers: &HeaderMap) -> Boot {
         }
         None => None,
     };
-    boot_for(state, user.as_ref(), token.as_deref())
+    apply_policy(state, boot_for(state, user.as_ref(), token.as_deref())).await
 }
 
 /// `<script>` tag for `index.html`; the JSON is escaped so it can't close
@@ -121,7 +136,7 @@ pub async fn get_boot(State(state): State<AppState>, headers: HeaderMap) -> Resp
 }
 
 /// Create a session and answer with boot JSON + cookie.
-async fn signed_in(
+pub async fn signed_in(
     state: &AppState,
     client: &ClientInfo,
     user: &db::User,
@@ -134,7 +149,7 @@ async fn signed_in(
         Some(&client.ip),
     )
     .await?;
-    let boot = boot_for(state, Some(user), Some(&token));
+    let boot = apply_policy(state, boot_for(state, Some(user), Some(&token))).await;
     let mut resp = no_store((status, Json(boot)).into_response());
     resp.headers_mut().insert(
         header::SET_COOKIE,
@@ -164,6 +179,7 @@ pub async fn login(
                             "message": "Two-factor authentication required.",
                             "twoFactorRequired": true,
                             "twoFactorToken": token,
+                            "twoFactorMethods": crate::security::second_factor_methods(&state, &token).await?,
                         })),
                     )
                         .into_response();
@@ -249,6 +265,7 @@ mod tests {
                 login: "a".into(),
                 name: Some("</script><b>&".into()),
                 avatar_url: String::new(),
+                two_factor_setup_required: false,
             }),
             csrf: "x".into(),
             config: BootConfig {

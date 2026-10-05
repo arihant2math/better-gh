@@ -1,12 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import type { SettingsScope } from '../../../api/actions';
-import { Link, useLocation, useParams } from '../../../router';
+import { useLocation, useParams } from '../../../router';
 import { store } from '../../../sync';
 import { repoByName } from '../../../sync/selectors';
 import { EmptyState } from '../../../ui/EmptyState';
-import { ArrowLeftIcon, CodeIcon, LockIcon, OrganizationIcon, RocketIcon, ServerIcon, type Icon } from '../../../ui/icons';
+import { CodeIcon, LockIcon, OrganizationIcon, RocketIcon, ServerIcon } from '../../../ui/icons';
 import { ConfigList, OrgItemsForRepo } from './ConfigItems';
 import { EnvironmentGroups, Environments } from './Environments';
+import { ActionsNav, orgNavItems, type NavItem } from './nav';
 import { Runners } from './Runners';
 import styles from './Settings.module.css';
 
@@ -34,37 +35,12 @@ function sectionOf(pathname: string): SectionId {
   return 'runners';
 }
 
-interface NavItem {
-  id: SectionId;
-  label: string;
-  icon: Icon;
-  to: string;
-}
-
 export default function ActionsSettingsPage() {
   const params = useParams<{ owner?: string; repo?: string; org?: string }>();
   const { pathname } = useLocation();
   const section = sectionOf(pathname);
   if (params.org) return <OrgSettings org={params.org} section={section} />;
   return <RepoSettings owner={params.owner ?? ''} repo={params.repo ?? ''} section={section} />;
-}
-
-function Nav({ items, current, back }: { items: NavItem[]; current: SectionId; back: { to: string; label: string } }) {
-  return (
-    <nav className={styles.nav} aria-label="Actions settings">
-      <Link to={back.to} className={styles.backLink}>
-        <ArrowLeftIcon size={16} />
-        {back.label}
-      </Link>
-      <div className={styles.navHeading}>Actions</div>
-      {items.map((it) => (
-        <Link key={it.id} to={it.to} className={styles.navItem} aria-current={it.id === current ? 'page' : undefined}>
-          <it.icon size={16} />
-          {it.label}
-        </Link>
-      ))}
-    </nav>
-  );
 }
 
 const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { owner: string; repo: string; section: SectionId }) {
@@ -109,7 +85,7 @@ const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { 
 
   return (
     <div className={styles.page}>
-      <Nav items={items} current={section} back={{ to: `${base}/actions`, label: 'Back to Actions' }} />
+      <ActionsNav items={items} current={section} back={{ to: `${base}/actions`, label: 'Back to Actions' }} />
       <div className={styles.content}>
         <header className={styles.header}>
           <h1 className={styles.title}>{TITLES[section]}</h1>
@@ -125,16 +101,11 @@ const RepoSettings = observer(function RepoSettings({ owner, repo, section }: { 
 
 function OrgSettings({ org, section: raw }: { org: string; section: SectionId }) {
   const section = raw === 'environments' ? 'runners' : raw;
-  const base = `/organizations/${encodeURIComponent(org)}/settings`;
   const scope: SettingsScope = { kind: 'org', org };
-  const items: NavItem[] = [
-    { id: 'secrets', label: 'Secrets', icon: LockIcon, to: `${base}/secrets/actions` },
-    { id: 'variables', label: 'Variables', icon: CodeIcon, to: `${base}/variables/actions` },
-    { id: 'runners', label: 'Runners', icon: ServerIcon, to: `${base}/actions/runners` },
-  ];
+  const items = orgNavItems(org);
   return (
     <div className={styles.page}>
-      <Nav items={items} current={section} back={{ to: `/${org}`, label: org }} />
+      <ActionsNav items={items} current={section} back={{ to: `/${org}`, label: org }} />
       <div className={styles.content}>
         <header className={styles.header}>
           <div className={styles.orgCrumb}>

@@ -1,5 +1,5 @@
 Integration: ready
-Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (8448855).
+Commit/tag signature verification (GPG + SSH), SSH signing keys API/UI, web-flow signing of server commits, required_signatures on push/merge/ref API, Verified badges; gate green after merging the integration branch (c783bac, with P23).
 
 # P25 — Commit and tag signature verification, SSH signing keys, required_signatures, web-flow signing
 
@@ -68,17 +68,16 @@ live from the owner's verified e-mails.
 
 ### required_signatures
 
-* Push (`bgh_repos::protection`): `Needs.signatures` (classic) /
-  `signatures_ruleset`; `authorize_push` installs an `ObjectCheck`
-  (`signature_check`) that lists the commits each protected update
-  introduces (`old..new`, or `new --not --all` for a new ref) from the
-  quarantine and rejects with GitHub's report: classic `GH006: Protected
-  branch update failed for <ref>.` / `Commits must have verified
-  signatures.`; ruleset `GH013: Repository rule violations found for
-  <ref>.` / `- Commits must have verified signatures.` / `Found N
-  violations:` + SHAs. Admins bypass classic unless `enforce_admins`;
-  ruleset bypass actors apply. The check composes with any other object
-  check (it runs after it).
+* Push: rulesets go through P23's `rule_eval`: `required_signatures` is
+  an object-phase rule (`OBJECT_RULES`), evaluated by
+  `rule_eval::signature_evals` inside P23's quarantine `ObjectCheck`, so
+  GH013 reporting (`- Commits must have verified signatures.` + the
+  unverified SHAs), bypass actors, `evaluate` mode and rule suites all come
+  from P23's machinery. Classic protection (`Needs.signatures`, admins
+  bypass unless `enforce_admins`) adds `signature_check`, which runs after
+  any ruleset object check and reports GH006 (`with_classic_signatures` in
+  `authorize_push`). Commits checked: `old..new`, or `new --not --all` for
+  a new ref.
 * API ref updates (`verify_needs`, used by the refs API and others): 422
   `Commits must have verified signatures.`; contents API commits pass
   because they are web-flow signed.
@@ -126,18 +125,13 @@ live from the owner's verified e-mails.
 * `bgh-git`: `signing.rs` (new); `objects::{Commit,Tag}::payload`;
   `RepoStore::signer`, `storage::web_flow_signer`; `GitCli::{signer,
   without_signing, cat_objects_with, pushed_commits}`; commit-tree paths
-  sign. **`smart_http.rs`: P23's `ObjectCheck` / `QuarantineEnv` /
-  `HookVerdict` / `BGH_CHECK_DIR` callback, multi-line rejection report and
-  hook executable check ported verbatim from `bgh/p23-rulesets`** (P23 has
-  not landed; identical hunks should merge cleanly — if P23 changed them
-  since, keep P23's version: P25 only uses `ObjectCheck::new`,
-  `HookVerdict`, `QuarantineEnv::envs` and `PushPolicy::object_check`).
-* `bgh-repos/src/protection.rs`: `Needs::{signatures,
-  signatures_ruleset}`, `SignedRef`, `signature_check`,
-  `SIGNATURES_REQUIRED`; `authorize_push` sets `policy.object_check`
-  wrapping any existing one. **When P23 lands**, its `authorize_push`
-  also sets `object_check`; the merge must keep both (wrap P23's check:
-  `signature_check(.., policy.object_check.take())` after P23 sets it).
+  sign (test merges excepted).
+* `bgh-repos/src/protection.rs` (on top of P23): `Needs::{signatures,
+  signatures_ruleset}` (the latter for API updates via `check_update`),
+  `SignedRef`, `signature_check`, `with_classic_signatures`,
+  `unverified_pushed`, `SIGNATURES_REQUIRED`. `rule_eval.rs`:
+  `required_signatures` in `OBJECT_RULES` + `signature_evals`, called next
+  to `object_evals` in P23's object check.
 * `bgh-pulls/src/protection.rs`: `Facts::unverified_commits`, blocker in
   `evaluate_source` (the P25 hook comment).
 * `bgh-graphql`: `model/git.rs` `GitSignature` fields,
@@ -166,7 +160,7 @@ live from the owner's verified e-mails.
   scopes, pagination, public list.
 * `bgh-graphql` `tests/it/signatures.rs`: `Commit.signature`.
 
-## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at 8448855)
+## Gate (after merging `origin/claude/sleepy-cray-9jj0t3` at c783bac)
 
 `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -D
 warnings`, `cargo test --workspace` (1067 passed, 13 ignored), web

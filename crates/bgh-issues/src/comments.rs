@@ -265,6 +265,16 @@ pub async fn update(
     .bind(text)
     .fetch_one(&mut *tx)
     .await?;
+    bgh_core::moderation::record_edit(
+        &mut tx,
+        c.repo_id,
+        bgh_core::moderation::ContentKind::Comment,
+        c.id,
+        auth.user.id,
+        &old.body,
+        text,
+    )
+    .await?;
     service::sync_comment(&mut tx, c.id, SyncAction::Update).await?;
     refs::process(
         &mut tx,

@@ -1,0 +1,55 @@
+.ownerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.ownerRow select {
+  width: auto;
+  min-width: 220px;
+}
+
+.ownerInfo {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.daysInput {
+  width: 96px;
+}
+
+.heading {
+  margin: 0 0 4px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.fixed {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.summary {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+.summary ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
