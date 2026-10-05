@@ -134,12 +134,13 @@ pub async fn create_status(
     .await?;
     tx.sync(
         &bgh_core::sync::repo_scope(repo_id),
-        "commit_status",
+        "commitStatus",
         row.id,
         SyncAction::Insert,
-        &json!({"id": row.id, "sha": row.sha, "state": row.state, "context": row.context,
-                "description": row.description, "target_url": row.target_url,
-                "creator_id": row.creator_id, "created_at": Timestamp::from(row.created_at)}),
+        &json!({"id": row.id, "repoId": repo_id, "sha": row.sha, "state": row.state,
+                "context": row.context, "description": row.description,
+                "targetUrl": row.target_url, "creatorId": row.creator_id,
+                "createdAt": Timestamp::from(row.created_at)}),
     )
     .await?;
     tx.enqueue(&ChecksChanged {

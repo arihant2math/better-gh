@@ -82,18 +82,17 @@ pub async fn render(
         .collect())
 }
 
+/// Compact client row (model `review`, `docs/SYNC_PROTOCOL.md` §3).
 pub fn sync_json(r: &Review) -> Value {
     json!({
         "id": r.id,
-        "pull_id": r.pull_id,
-        "user_id": r.user_id,
-        "body": r.body,
+        "repoId": r.repo_id,
+        "issueId": r.pull_id,
+        "authorId": r.user_id,
         "state": r.state,
-        "commit_id": r.commit_id,
-        "submitted_at": ts(r.submitted_at),
-        "dismissed_at": ts(r.dismissed_at),
-        "created_at": Timestamp::from(r.created_at),
-        "updated_at": Timestamp::from(r.updated_at),
+        "body": r.body,
+        "commitId": r.commit_id,
+        "submittedAt": ts(r.submitted_at),
     })
 }
 
@@ -193,7 +192,7 @@ async fn on_submitted(
     for c in &comments {
         tx.sync(
             &access.scope(),
-            "review_comment",
+            "reviewComment",
             c.id,
             SyncAction::Insert,
             &comments::sync_json(c),

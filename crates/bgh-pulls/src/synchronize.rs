@@ -283,7 +283,7 @@ pub async fn synchronize(state: &AppState, pull_id: i64, actor_id: Option<i64>) 
         .await?;
         tx.sync(
             &scope,
-            "review_comment",
+            "reviewComment",
             row.id,
             SyncAction::Update,
             &crate::comments::sync_json(&row),

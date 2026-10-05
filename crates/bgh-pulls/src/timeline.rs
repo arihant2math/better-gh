@@ -16,7 +16,45 @@
 //! | `auto_merge_enabled` / `auto_merge_disabled` | `{"merge_method"}` / `{"reason"}` |
 
 use bgh_core::prelude::*;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
+
+/// `issueEvent.data` in the sync protocol's camelCase vocabulary.
+fn client_data(data: &Value, commit_id: Option<&str>) -> Value {
+    let mut out = Map::new();
+    let get = |k: &str| data.get(k).cloned();
+    if let Some(v) = get("requested_reviewer_id") {
+        out.insert("reviewerId".into(), v);
+    }
+    if let Some(v) = get("requested_team_id") {
+        out.insert("teamId".into(), v);
+    }
+    if let Some(r) = data.get("rename") {
+        out.insert("from".into(), r.get("from").cloned().unwrap_or(Value::Null));
+        out.insert("to".into(), r.get("to").cloned().unwrap_or(Value::Null));
+    }
+    for k in ["from", "to", "before", "after", "ref"] {
+        if let Some(v) = get(k) {
+            out.insert(k.into(), v);
+        }
+    }
+    if let Some(d) = data.get("dismissed_review") {
+        out.insert(
+            "reviewId".into(),
+            d.get("review_id").cloned().unwrap_or(Value::Null),
+        );
+        out.insert(
+            "dismissalMessage".into(),
+            d.get("dismissal_message").cloned().unwrap_or(Value::Null),
+        );
+    }
+    if let Some(v) = get("merge_method") {
+        out.insert("mergeMethod".into(), v);
+    }
+    if let Some(c) = commit_id {
+        out.insert("commitId".into(), json!(c));
+    }
+    Value::Object(out)
+}
 
 /// Insert a timeline event and record its sync action (model `issue_event`).
 pub async fn record(
@@ -42,17 +80,17 @@ pub async fn record(
     .await?;
     tx.sync(
         &bgh_core::sync::repo_scope(repo_id),
-        "issue_event",
+        "issueEvent",
         id,
         SyncAction::Insert,
         &json!({
             "id": id,
-            "issue_id": issue_id,
-            "actor_id": actor_id,
+            "repoId": repo_id,
+            "issueId": issue_id,
+            "actorId": actor_id,
             "event": event,
-            "commit_id": commit_id,
-            "data": data,
-            "created_at": Timestamp::from(created_at),
+            "data": client_data(&data, commit_id),
+            "createdAt": Timestamp::from(created_at),
         }),
     )
     .await?;
