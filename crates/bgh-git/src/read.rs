@@ -414,6 +414,30 @@ impl GitRepo {
         Ok(String::from_utf8_lossy(&out).into_owned())
     }
 
+    /// Commit SHAs reachable from `include` but not from any of `exclude`
+    /// (`git rev-list include ^exclude...`), newest first, at most `limit`.
+    pub fn rev_list(
+        &self,
+        include: &str,
+        exclude: &[&str],
+        limit: usize,
+    ) -> GitResult<Vec<String>> {
+        let include = self.resolve_commit(include)?;
+        let mut excluded = Vec::new();
+        for e in exclude {
+            excluded.push(format!("^{}", self.resolve_commit(e)?));
+        }
+        let max_arg = format!("--max-count={limit}");
+        let mut args = vec!["rev-list", max_arg.as_str(), include.as_str()];
+        args.extend(excluded.iter().map(String::as_str));
+        let out = cmd::run_blocking(&self.git_bin, &self.path, &args)?;
+        Ok(String::from_utf8_lossy(&out)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect())
+    }
+
     /// Whether `ancestor` is reachable from `descendant`.
     pub fn is_ancestor(&self, ancestor: &str, descendant: &str) -> GitResult<bool> {
         let mut stack = vec![descendant.to_string()];

@@ -497,11 +497,19 @@ dependencies = [
  "anyhow",
  "axum",
  "bgh-core",
+ "bgh-git",
  "bgh-server",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
+ "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -536,11 +544,20 @@ dependencies = [
  "anyhow",
  "axum",
  "bgh-core",
+ "bgh-git",
  "bgh-server",
+ "bytes",
+ "chrono",
+ "futures",
+ "hex",
+ "regex",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
+ "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -3384,6 +3401,18 @@ checksum = "60dc65c0ff1a7ae1294b0c67b9f14baf70b644404010370171787bfac1038fc0"
 dependencies = [
  "libredox",
  "thiserror",
+]
+
+[[package]]
+name = "regex"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]

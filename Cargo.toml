@@ -106,6 +106,9 @@ flate2 = "1"
 crc32fast = "1"
 url = "2"
 
+# search
+regex = "1"
+
 # testing
 tempfile = "3"
 

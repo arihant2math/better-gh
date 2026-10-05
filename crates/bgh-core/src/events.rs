@@ -599,6 +599,7 @@ pub enum Event {
         release_id: i64,
         actor_id: i64,
         release: serde_json::Value,
+        tag_name: String,
     },
     /// `action`: `created` | `completed` | `rerequested` | `requested_action`.
     CheckRunUpdated {
@@ -626,6 +627,11 @@ pub enum Event {
         workflow_run: serde_json::Value,
         /// GitHub REST JSON of the workflow (`workflow` key), if available.
         workflow: Option<serde_json::Value>,
+    },
+    ReleaseUpdated {
+        repo_id: i64,
+        release_id: i64,
+        actor_id: i64,
     },
 }
 
@@ -732,6 +738,7 @@ impl Event {
             Self::CheckRunUpdated { .. } => "check_run_updated",
             Self::CheckSuiteUpdated { .. } => "check_suite_updated",
             Self::WorkflowRunUpdated { .. } => "workflow_run_updated",
+            Self::ReleaseUpdated { .. } => "release_updated",
         }
     }
 
@@ -824,7 +831,8 @@ impl Event {
             | Self::ReleaseDeleted { repo_id, .. }
             | Self::CheckRunUpdated { repo_id, .. }
             | Self::CheckSuiteUpdated { repo_id, .. }
-            | Self::WorkflowRunUpdated { repo_id, .. } => Some(*repo_id),
+            | Self::WorkflowRunUpdated { repo_id, .. }
+            | Self::ReleaseUpdated { repo_id, .. } => Some(*repo_id),
             Self::OrgMemberAdded { .. }
             | Self::OrgMemberRemoved { .. }
             | Self::OrgMemberInvited { .. }
@@ -936,7 +944,8 @@ impl Event {
             | Self::CollaboratorRemoved { actor_id, .. }
             | Self::ReleaseCreated { actor_id, .. }
             | Self::ReleaseEdited { actor_id, .. }
-            | Self::ReleaseDeleted { actor_id, .. } => Some(*actor_id),
+            | Self::ReleaseDeleted { actor_id, .. }
+            | Self::ReleaseUpdated { actor_id, .. } => Some(*actor_id),
         }
     }
 }
