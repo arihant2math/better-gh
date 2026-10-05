@@ -10,14 +10,11 @@
 //! ```
 //! Configuration comes from environment variables (see `bgh_core::config`).
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use bgh_core::Config;
-use bgh_core::registry::{Registry, spawn_listeners, spawn_services};
+use bgh_core::registry::Registry;
 use bgh_core::state::AppState;
 use clap::{Parser, Subcommand};
-use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
 #[command(name = "bgh", version, about = "Better GitHub server")]
@@ -244,7 +241,6 @@ async fn healthcheck(config: &Config, timeout: u64) -> anyhow::Result<()> {
 
 async fn serve(config: Config) -> anyhow::Result<()> {
     let listen = config.listen_addr;
-    let workers = config.job_workers;
     std::fs::create_dir_all(config.repos_dir())
         .with_context(|| format!("creating {}", config.repos_dir().display()))?;
     let state = AppState::connect(config).await?;
@@ -254,40 +250,12 @@ async fn serve(config: Config) -> anyhow::Result<()> {
 
     let mut registry = Registry::new();
     bgh_server::register(&mut registry);
-    let shutdown = CancellationToken::new();
-
-    let listeners = spawn_listeners(&state, &registry.listeners, shutdown.clone());
-    let services = spawn_services(&state, &registry.services, shutdown.clone());
-    let worker_task = tokio::spawn(bgh_core::jobs::run_workers(
-        state.clone(),
-        Arc::new(registry.jobs.clone()),
-        workers,
-        shutdown.clone(),
-    ));
-
     let app = bgh_server::app(state.clone());
     let listener = tokio::net::TcpListener::bind(listen)
         .await
         .with_context(|| format!("binding {listen}"))?;
     tracing::info!(addr = %listen, base_url = %state.config.base_url, "listening");
-
-    let http_shutdown = shutdown.clone();
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(async move {
-        wait_for_signal().await;
-        tracing::info!("shutting down");
-        http_shutdown.cancel();
-    })
-    .await?;
-
-    shutdown.cancel();
-    let _ = worker_task.await;
-    for l in listeners.into_iter().chain(services) {
-        let _ = l.await;
-    }
+    bgh_server::serve(state, registry, app, listener, wait_for_signal()).await?;
     tracing::info!("bye");
     Ok(())
 }

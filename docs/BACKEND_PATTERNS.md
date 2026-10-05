@@ -325,8 +325,24 @@ reg.on_event("notify.subscriptions", |state, event: Arc<Event>| async move {
 });
 ```
 
-Listeners run in-process, in order, one task per listener; for durable
-side effects (webhooks, email) enqueue a job from the listener.
+Listeners are durable consumers of the transactional outbox
+(`bgh_core::outbox`): `tx.emit` writes the event in your transaction,
+each listener processes events in commit order from its own cursor, and
+one process consumes a listener at a time. Delivery is **at-least-once**
+(a crash mid-batch redelivers), so handlers must be idempotent:
+
+* upserts / `ON CONFLICT DO NOTHING` writes are fine as they are;
+* rows that would duplicate (deliveries, activity, counters, jobs that
+  start work) are keyed by `bgh_core::events::effect_key()` under a unique
+  index, or guarded by `events::claim_effect(&mut tx)` in the same
+  transaction (returns false on redelivery: skip the effect).
+
+A failing handler is retried 3 times, then the event is skipped (logged).
+Slow or external side effects (HTTP, email) still go through a job.
+Listener names key their cursors: don't rename one casually (a new name
+starts at the current head). `state.events.emit(..)` outside a `Tx` is
+persisted asynchronously; prefer `tx.emit`. `state.events.subscribe()` is an
+ephemeral in-process broadcast (tests, live views) that may drop events.
 
 ## 10a. Mail
 
@@ -439,6 +455,9 @@ Requests: `app.get/post/patch/put/delete(path)` then `.auth(&user)`,
 `.body(bytes)`, `.send().await` → `TestResponse` (`status()`,
 `assert_status(n)`, `json()`, `json_as::<T>()`, `header(name)`, `text()`).
 Also: `app.drain_jobs().await` (run queued jobs now),
+`app.settle_events().await` (wait until every listener processed all
+events emitted so far), `app.stop_listeners().await` /
+`app.start_listeners().await`,
 `app.state.events.subscribe()` (assert emitted events), `app.state.db`
 (direct SQL setup/asserts), `app.url(path)` / `app.git_remote(&user, owner,
 repo)` for the real TCP listener. Custom config:

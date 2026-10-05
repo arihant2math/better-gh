@@ -1,17 +1,21 @@
-//! Typed domain events and the in-process event bus.
+//! Typed domain events and the event bus.
 //!
-//! Events are emitted **after commit** (use [`crate::db::Tx::emit`]) and
-//! delivered to listeners registered via
-//! [`crate::registry::Registry::on_event`]. Delivery is in-process and
-//! best-effort; listeners that need durability should enqueue a job.
+//! Events are queued with [`crate::db::Tx::emit`], written to the
+//! transactional outbox (`event_outbox`) in the same transaction, and
+//! delivered after commit to listeners registered via
+//! [`crate::registry::Registry::on_event`]. Delivery is durable and
+//! **at-least-once** (see [`crate::outbox`]): each listener has a cursor,
+//! survives restarts and lag, and must be idempotent ([`effect_key`]).
 //!
 //! Events carry ids, not full objects: listeners load what they need.
 //! Add variants freely (the enum is `#[non_exhaustive]`).
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use sqlx::PgPool;
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 /// A ref change from a push or API write. `old`/`new` are hex SHAs; the zero
 /// SHA (`000…0`) denotes creation / deletion.
@@ -1026,10 +1030,30 @@ impl Event {
     }
 }
 
-/// In-process broadcast bus. Cheap to clone.
+/// The event bus. Cheap to clone.
+///
+/// Durable delivery goes through the outbox ([`crate::outbox`]): events
+/// committed by [`crate::db::Tx`] are already in `event_outbox`; events
+/// passed to [`EventBus::emit`] directly are appended by a background
+/// writer (in order). Committed events are also broadcast in-process to
+/// ephemeral [`EventBus::subscribe`]rs (tests, live views), which may lag
+/// and drop; durable listeners never see the broadcast.
 #[derive(Clone)]
 pub struct EventBus {
+    inner: Arc<BusInner>,
+}
+
+struct BusInner {
     tx: broadcast::Sender<Arc<Event>>,
+    /// Bumped whenever new outbox rows may be visible (wakes consumers).
+    wake: watch::Sender<u64>,
+    db: Option<PgPool>,
+    writer: OnceLock<mpsc::UnboundedSender<WriterMsg>>,
+}
+
+enum WriterMsg {
+    Event(Event),
+    Flush(oneshot::Sender<()>),
 }
 
 impl Default for EventBus {
@@ -1039,21 +1063,230 @@ impl Default for EventBus {
 }
 
 impl EventBus {
+    /// A bus without a database: [`Self::emit`] only broadcasts in-process.
     pub fn new() -> Self {
-        let (tx, _) = broadcast::channel(4096);
-        Self { tx }
+        Self::build(None)
     }
 
-    /// Publish an event. Only call after the producing transaction committed.
+    /// A bus whose direct [`Self::emit`]s are appended to the outbox in `db`.
+    pub fn durable(db: PgPool) -> Self {
+        Self::build(Some(db))
+    }
+
+    fn build(db: Option<PgPool>) -> Self {
+        let (tx, _) = broadcast::channel(4096);
+        let (wake, _) = watch::channel(0);
+        Self {
+            inner: Arc::new(BusInner {
+                tx,
+                wake,
+                db,
+                writer: OnceLock::new(),
+            }),
+        }
+    }
+
+    /// Publish an event outside a [`crate::db::Tx`]. Prefer `tx.emit`, which
+    /// writes the outbox row atomically with the change; this appends it
+    /// asynchronously (in call order; [`Self::flush`] waits for it).
     pub fn emit(&self, event: Event) {
         tracing::debug!(event = event.name(), "event");
         // No receivers is fine.
-        let _ = self.tx.send(Arc::new(event));
+        let _ = self.inner.tx.send(Arc::new(event.clone()));
+        if let Some(writer) = self.writer() {
+            let _ = writer.send(WriterMsg::Event(event));
+        }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<Arc<Event>> {
-        self.tx.subscribe()
+    /// Wait until every event passed to [`Self::emit`] so far is in the
+    /// outbox (or was given up on after a database error).
+    pub async fn flush(&self) {
+        let Some(writer) = self.inner.writer.get() else {
+            return;
+        };
+        let (done, wait) = oneshot::channel();
+        if writer.send(WriterMsg::Flush(done)).is_ok() {
+            let _ = wait.await;
+        }
     }
+
+    /// Called by [`crate::db::Tx::commit`] once events written to the
+    /// outbox in that transaction are committed: broadcast them in-process
+    /// and wake the consumers.
+    pub(crate) fn committed(&self, events: Vec<Event>) {
+        if events.is_empty() {
+            return;
+        }
+        for event in events {
+            tracing::debug!(event = event.name(), "event");
+            let _ = self.inner.tx.send(Arc::new(event));
+        }
+        self.wake();
+    }
+
+    /// Ephemeral in-process subscription (best effort: a slow receiver
+    /// lags and loses events). Durable consumers use `reg.on_event`.
+    pub fn subscribe(&self) -> broadcast::Receiver<Arc<Event>> {
+        self.inner.tx.subscribe()
+    }
+
+    /// Wake durable consumers (new outbox rows may be visible).
+    pub fn wake(&self) {
+        self.inner.wake.send_modify(|n| *n = n.wrapping_add(1));
+    }
+
+    /// A receiver that changes whenever [`Self::wake`] is called.
+    pub fn wake_receiver(&self) -> watch::Receiver<u64> {
+        self.inner.wake.subscribe()
+    }
+
+    /// Whether direct emits reach the outbox.
+    pub fn is_durable(&self) -> bool {
+        self.inner.db.is_some()
+    }
+
+    fn writer(&self) -> Option<&mpsc::UnboundedSender<WriterMsg>> {
+        let db = self.inner.db.as_ref()?;
+        if let Some(w) = self.inner.writer.get() {
+            return Some(w);
+        }
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("EventBus::emit outside a tokio runtime: event not persisted");
+            return None;
+        };
+        Some(self.inner.writer.get_or_init(|| {
+            let (tx, rx) = mpsc::unbounded_channel();
+            // The writer holds only a weak reference so the bus (and its
+            // pool) can be dropped; it exits once every sender is gone.
+            handle.spawn(run_writer(db.clone(), Arc::downgrade(&self.inner), rx));
+            tx
+        }))
+    }
+}
+
+/// Appends directly emitted events to the outbox, batching whatever is
+/// queued, retrying database errors a few times.
+async fn run_writer(
+    db: PgPool,
+    bus: std::sync::Weak<BusInner>,
+    mut rx: mpsc::UnboundedReceiver<WriterMsg>,
+) {
+    let mut batch: Vec<Event> = Vec::new();
+    let mut flushes: Vec<oneshot::Sender<()>> = Vec::new();
+    while let Some(msg) = rx.recv().await {
+        let mut next = Some(msg);
+        while let Some(msg) = next.take() {
+            match msg {
+                WriterMsg::Event(e) => batch.push(e),
+                WriterMsg::Flush(done) => flushes.push(done),
+            }
+            if batch.len() < 1000 {
+                next = rx.try_recv().ok();
+            }
+        }
+        if !batch.is_empty() {
+            let mut attempt = 0;
+            loop {
+                attempt += 1;
+                match append_standalone(&db, &batch).await {
+                    Ok(()) => break,
+                    Err(err) if attempt < 5 => {
+                        tracing::warn!(?err, attempt, "event outbox write failed; retrying");
+                        tokio::time::sleep(std::time::Duration::from_millis(100 << attempt)).await;
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, lost = batch.len(), "event outbox write failed");
+                        break;
+                    }
+                }
+            }
+            batch.clear();
+            if let Some(bus) = bus.upgrade() {
+                bus.wake.send_modify(|n| *n = n.wrapping_add(1));
+            }
+        }
+        for done in flushes.drain(..) {
+            let _ = done.send(());
+        }
+    }
+}
+
+async fn append_standalone(db: &PgPool, events: &[Event]) -> Result<(), sqlx::Error> {
+    let mut tx = db.begin().await?;
+    crate::outbox::append(&mut tx, events).await?;
+    tx.commit().await
+}
+
+tokio::task_local! {
+    static CURRENT: EventContext;
+}
+
+/// Identity of the outbox event a durable listener is handling.
+struct EventContext {
+    listener: &'static str,
+    id: i64,
+    seq: AtomicI32,
+}
+
+/// Outbox id of the event the current listener invocation is handling
+/// (`None` outside a durable listener, e.g. a handler called directly).
+pub fn current_event_id() -> Option<i64> {
+    CURRENT.try_with(|c| c.id).ok()
+}
+
+/// Idempotency key for the next side effect of the current listener
+/// invocation: `(event id, n)` where `n` counts calls within this
+/// invocation (0, 1, ...). Delivery is at-least-once, so a handler that
+/// writes rows should store this key under a unique index and skip the
+/// write on conflict; a deterministic handler produces the same keys on
+/// redelivery.
+pub fn effect_key() -> Option<(i64, i32)> {
+    CURRENT
+        .try_with(|c| (c.id, c.seq.fetch_add(1, Ordering::Relaxed)))
+        .ok()
+}
+
+/// Claim the next side effect of the current listener invocation (see
+/// [`effect_key`]) in `conn`'s transaction: false if this listener already
+/// performed it for this event (a redelivery), in which case skip the
+/// effect. Always true outside a durable listener.
+pub async fn claim_effect(conn: &mut sqlx::PgConnection) -> Result<bool, sqlx::Error> {
+    let Ok(listener) = CURRENT.try_with(|c| c.listener) else {
+        return Ok(true);
+    };
+    let Some((event_id, seq)) = effect_key() else {
+        return Ok(true);
+    };
+    let inserted = sqlx::query(
+        "INSERT INTO event_receipts (listener, event_id, seq) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(listener)
+    .bind(event_id)
+    .bind(seq)
+    .execute(conn)
+    .await?
+    .rows_affected();
+    Ok(inserted == 1)
+}
+
+/// Run `fut` as listener `listener` handling outbox event `id` (what the
+/// durable consumer does; also lets tests replay a delivery).
+pub async fn with_listener_event<F: std::future::Future>(
+    listener: &'static str,
+    id: i64,
+    fut: F,
+) -> F::Output {
+    CURRENT
+        .scope(
+            EventContext {
+                listener,
+                id,
+                seq: AtomicI32::new(0),
+            },
+            fut,
+        )
+        .await
 }
 
 #[cfg(test)]

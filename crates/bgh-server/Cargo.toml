@@ -46,6 +46,7 @@ tower-http.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 bytes.workspace = true
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -65,3 +66,4 @@ bgh-core = { workspace = true, features = ["testing"] }
 futures.workspace = true
 tokio.workspace = true
 tempfile.workspace = true
+uuid.workspace = true

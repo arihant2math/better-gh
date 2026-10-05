@@ -85,7 +85,8 @@ impl Tx {
         &self.state
     }
 
-    /// Queue a domain event, emitted after commit.
+    /// Queue a domain event: written to the outbox at commit (atomically
+    /// with the transaction), delivered to listeners after it.
     pub fn emit(&mut self, event: Event) {
         self.events.push(event);
     }
@@ -95,8 +96,8 @@ impl Tx {
         jobs::enqueue_job(&mut *self.tx, job).await
     }
 
-    /// Write the pending sync actions, commit, then publish them and emit
-    /// events.
+    /// Write the pending sync actions and outbox events, commit, then
+    /// publish the sync actions and wake event consumers.
     pub async fn commit(self) -> Result<(), sqlx::Error> {
         let Self {
             mut tx,
@@ -105,11 +106,10 @@ impl Tx {
             events,
         } = self;
         let records = sync::record_all(&mut tx, sync).await?;
+        crate::outbox::append(&mut tx, &events).await?;
         tx.commit().await?;
         sync::notify(&state, &records).await;
-        for event in events {
-            state.events.emit(event);
-        }
+        state.events.committed(events);
         Ok(())
     }
 
