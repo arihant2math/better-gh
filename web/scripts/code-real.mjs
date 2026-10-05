@@ -25,11 +25,12 @@ const RUNS = Number(process.env.RUNS ?? 7);
 mkdirSync(out, { recursive: true });
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => m.type() === 'error' && !/favicon|404 \(Not Found\)/.test(m.text()) && errors.push(m.text()));
+// External avatar hosts are unreachable from the sandbox; ignore those network errors.
+page.on('console', (m) => m.type() === 'error' && !/favicon|404 \(Not Found\)|ERR_TUNNEL|ERR_CERT|ERR_NAME/.test(m.text()) && errors.push(m.text()));
 
 const checks = [];
 const check = async (name, fn) => {
@@ -121,7 +122,8 @@ await check('commits list (grouped by day, virtualized)', async () => {
 await check('single commit page with diff', async () => {
   const href = await page.locator('a[href*="/commit/"]').first().getAttribute('href');
   await nav(href);
-  await page.getByText(/changed files? with/).waitFor({ timeout: 20000 });
+  await page.getByText(/^Showing/).waitFor({ timeout: 20000 });
+  await page.locator('text=changed file').first().waitFor({ timeout: 20000 });
   await shot('08-commit');
 });
 
@@ -162,23 +164,47 @@ const timings = { 'tree→file (cold)': [], 'tree→file (warm)': [], 'file→bl
 const files = await (await page.request.get(`${base}/_bgh/repos/${repo}/tree/master/${dir}`)).json();
 const blobs = files.entries.filter((e) => e.type === 'blob' && /\.rs$/.test(e.name)).slice(0, RUNS);
 
+/** Time from `trigger()` (in page) until `selector` is in the DOM and painted (next frame). */
+async function measure(selector, trigger) {
+  return page.evaluate(
+    ({ selector, trigger }) =>
+      new Promise((resolve) => {
+        const t0 = performance.now();
+        const done = () => requestAnimationFrame(() => resolve(performance.now() - t0));
+        const obs = new MutationObserver(() => {
+          if (document.querySelector(selector)) {
+            obs.disconnect();
+            done();
+          }
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+        // eslint-disable-next-line no-new-func
+        new Function(trigger)();
+        if (document.querySelector(selector)) {
+          obs.disconnect();
+          done();
+        }
+      }),
+    { selector, trigger },
+  );
+}
+
 async function treeToFile(entry) {
   await nav(`/${repo}/tree/master/${dir}`);
   const link = page.getByRole('list', { name: 'Files' }).getByRole('link', { name: entry.name, exact: true });
   await link.waitFor();
+  await page.locator('[data-line]').first().waitFor({ state: 'detached' }).catch(() => {});
   await link.hover();
-  await page.waitForTimeout(120); // human hover → click delay
-  const t0 = await page.evaluate(() => performance.now());
-  await link.click();
+  await page.waitForTimeout(150); // human hover → click delay (prefetch window)
+  const ms = await measure('[data-line="1"]', `[...document.querySelectorAll('[role=list][aria-label=Files] a')].find((a) => a.textContent === ${JSON.stringify(entry.name)}).click()`);
   await page.locator('[data-line="1"]').waitFor({ timeout: 20000 });
-  return (await page.evaluate(() => performance.now())) - t0;
+  return ms;
 }
 
 async function fileToBlame() {
-  const t0 = await page.evaluate(() => performance.now());
-  await page.keyboard.press('b');
+  const ms = await measure('[data-age]', `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', bubbles: true }))`);
   await page.locator('[data-age]').first().waitFor({ timeout: 20000 });
-  return (await page.evaluate(() => performance.now())) - t0;
+  return ms;
 }
 
 for (const e of blobs) {
