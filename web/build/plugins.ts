@@ -41,6 +41,8 @@ export function bghServiceWorker(): Plugin {
       const precache = Object.keys(bundle)
         .filter((f) => /\.(js|css)$/.test(f) || /inter-latin-wght-normal.*\.woff2$/.test(f))
         .filter((f) => f.startsWith('assets/'))
+        // The mock backend is dev/demo-only: fetched on demand, never precached.
+        .filter((f) => !/\/mock-[\w-]+\.js$/.test(f))
         .sort()
         .map((f) => `/${f}`);
       const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);

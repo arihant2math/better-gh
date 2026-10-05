@@ -49,9 +49,10 @@ async function main() {
   );
 
   if (import.meta.env.PROD && 'serviceWorker' in navigator && !mock) {
-    window.addEventListener('load', () => {
-      void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
-    });
+    // Register after load so precaching never competes with first paint.
+    const register = () => void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+    if (document.readyState === 'complete') register();
+    else window.addEventListener('load', register, { once: true });
   }
 }
 
