@@ -193,7 +193,7 @@ pub async fn middleware(State(state): State<AppState>, mut req: Request, next: N
             return next.run(req).await;
         }
     };
-    if rl.exceeded() {
+    if rl.exceeded() && !not_counted {
         let who = match &auth {
             Some(a) => format!("user ID {}", a.user.id),
             None => ip,
