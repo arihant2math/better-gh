@@ -4,7 +4,12 @@ Branch `bgh/p08-actions-security`. Migration `2000_actions_token_permissions.sql
 (range 2000–2099).
 
 **Status:** complete (scope and acceptance of PHASE4_PLAN.md §P8); see
-"Deviations" and "Known gaps".
+"Deviations" and "Known gaps". Self-integrated into
+`claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build,
+`scripts/actions-e2e.sh`, `scripts/api-smoke.sh`, `scripts/gh-compat.sh`).
+Admin "Actions" settings section verified with Playwright (default read,
+switch to write, saved and persisted after reload).
 
 ## Runner isolation
 
