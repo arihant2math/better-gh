@@ -127,6 +127,12 @@ Audit: `integration.create|update|destroy|generate_private_key|remove_private_ke
   `perms::effective` installation branch; `ratelimit::caller_key`
   installation/app buckets; `node_id::NodeType::Integration`;
   `models::api` re-exports `Integration`, `Installation`.
+* `bgh-core::token_permissions` (P8): `TokenPermissions::of` returns the
+  map of installation tokens too (so the middleware, git transport and
+  GraphQL guard apply to them), `classify` maps `/installation/*` to
+  metadata, and reads of repositories an installation token doesn't cover
+  pass through to `perms::effective` (`apps::covers_repo_named`).
+  Installation tokens also store their map in `access_tokens.permissions`.
 * `bgh-repos`: `apps::check_git` in `git_http::git_access` and LFS access.
 * `bgh-server`: mounts `bgh_core::apps::middleware`.
 * Workspace deps: `rsa` (0.9, `sha2`, `pem`; already in the lockfile) and
