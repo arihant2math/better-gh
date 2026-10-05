@@ -92,36 +92,7 @@ fn full(state: &AppState, access: &RepoAccess, r: &RulesetRow, can_bypass: &str)
 /// `"always"`, `"pull_requests_only"` or `"never"` for `actor` (mirrors
 /// the bypass evaluation of the rules engine).
 fn bypass_mode(r: &RulesetRow, actor: Option<&Actor>) -> &'static str {
-    let Some(actor) = actor else { return "never" };
-    let mut best = "never";
-    for b in r.bypass_actors.as_array().into_iter().flatten() {
-        let id = b["actor_id"].as_i64();
-        let hit = match b["actor_type"].as_str() {
-            Some("RepositoryRole") => {
-                let role = match id {
-                    Some(1) => Permission::Read,
-                    Some(2) => Permission::Maintain,
-                    Some(3) => Permission::Triage,
-                    Some(4) => Permission::Write,
-                    Some(5) => Permission::Admin,
-                    _ => continue,
-                };
-                actor.permission >= role
-            }
-            Some("OrganizationAdmin") => actor.org_admin,
-            Some("Team") => id.is_some_and(|t| actor.team_ids.contains(&t)),
-            Some("User") => id == Some(actor.user_id),
-            _ => false,
-        };
-        if hit {
-            if b["bypass_mode"].as_str() == Some("pull_request") {
-                best = "pull_requests_only";
-            } else {
-                return "always";
-            }
-        }
-    }
-    best
+    actor.map_or("never", |a| r.bypass_mode(a))
 }
 
 async fn load_actor(

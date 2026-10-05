@@ -19,6 +19,7 @@ use crate::model::{self, PULL_FROM, Pull};
 use crate::protection::{self, Rules};
 use crate::pulls::load_pull;
 use crate::timeline;
+use bgh_repos::protection::Actor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -194,9 +195,14 @@ pub async fn perform_merge(
         // stored state but merge onto the real tip below.
         tracing::debug!(pull = pull.id(), "base moved since last sync");
     }
+    let actor = Actor::for_user(state, repo_owner, merger.id, permission).await?;
+    if rules.restricts(&actor) {
+        return Err(not_allowed("You're not authorized to push to this branch."));
+    }
     let ev = protection::evaluate(state, repo, pull, &rules).await?;
-    if !ev.blockers.is_empty() && !bypasses(&rules, permission) {
-        return Err(not_allowed(ev.blockers[0].clone()));
+    let blocking = ev.unbypassed(&rules, &actor);
+    if !blocking.is_empty() {
+        return Err(not_allowed(protection::violation_message(&blocking)));
     }
 
     let head_owner = match pull.pr.head_repo_id {

@@ -46,6 +46,8 @@ export interface PullRequirements {
   mergeable_state: string;
   protected: boolean;
   blockers: string[];
+  /** Unmet requirements with their source (classic rule or ruleset). */
+  requirements?: { message: string; source: string; source_type: 'branch_protection' | 'ruleset' }[];
   approvals: number;
   required_approvals: number;
   changes_requested: boolean;
