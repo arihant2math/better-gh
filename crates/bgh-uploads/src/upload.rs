@@ -1,4 +1,4 @@
-//! `POST /_bgh/uploads?repository_id=&owner_id=&name=`: store one
+//! `POST /_bgh/uploads?repository_id=&repository=&owner_id=&name=`: store one
 //! attachment. The body is `multipart/form-data` (a `file` part, or the
 //! first part with a file name) or the raw content with `?name=`.
 
@@ -16,6 +16,8 @@ use crate::storage::{self, SpoolError};
 #[derive(Debug, Default, Deserialize)]
 pub struct UploadParams {
     pub repository_id: Option<i64>,
+    /// `owner/name`, as an alternative to `repository_id`.
+    pub repository: Option<String>,
     pub owner_id: Option<i64>,
     pub name: Option<String>,
 }
@@ -32,14 +34,21 @@ async fn resolve_target(
     auth: &AuthContext,
     params: &UploadParams,
 ) -> ApiResult<(i64, Option<i64>)> {
-    if let Some(repo_id) = params.repository_id {
+    let access = if let Some(repo_id) = params.repository_id {
         let repo = db::Repository::find(&state.db, repo_id)
             .await?
             .ok_or(ApiError::NotFound)?;
         let owner = db::User::find(&state.db, repo.owner_id)
             .await?
             .ok_or(ApiError::NotFound)?;
-        let access = RepoAccess::for_repo(state, Some(auth), repo, owner).await?;
+        Some(RepoAccess::for_repo(state, Some(auth), repo, owner).await?)
+    } else if let Some(full) = params.repository.as_deref().filter(|s| !s.is_empty()) {
+        let (owner, name) = full.split_once('/').ok_or(ApiError::NotFound)?;
+        Some(RepoAccess::load(state, Some(auth), owner, name).await?)
+    } else {
+        None
+    };
+    if let Some(access) = access {
         access.require_not_archived()?;
         return Ok((access.owner.id, Some(access.repo.id)));
     }
