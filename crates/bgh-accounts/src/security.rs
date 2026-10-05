@@ -331,7 +331,9 @@ pub async fn encrypt_legacy_totp(state: &AppState) -> ApiResult<u64> {
 /// `(id, user_id, name, expires_at, login)` of a token due for a reminder.
 type DueToken = (i64, i64, String, chrono::DateTime<chrono::Utc>, String);
 
-/// Queue the expiry reminder mails due now: 7 days before a PAT expires,
+/// Queue the expiry reminder mails due now (rows are locked, not skipped:
+/// requests touch `last_used_at` concurrently, and the service's leader
+/// lock already keeps passes from overlapping): 7 days before a PAT expires,
 /// and again 1 day before. Each reminder is sent once. Returns the number
 /// of mails queued.
 pub async fn send_expiry_reminders(state: &AppState) -> ApiResult<usize> {
@@ -356,7 +358,7 @@ pub async fn send_expiry_reminders(state: &AppState) -> ApiResult<usize> {
                  SELECT t.id FROM access_tokens t
                   WHERE t.kind = 'pat' AND t.expires_at > now() AND {window}
                     AND t.{column} IS NULL
-                  ORDER BY t.expires_at LIMIT 1000 FOR UPDATE SKIP LOCKED
+                  ORDER BY t.expires_at LIMIT 1000 FOR UPDATE
              )
              UPDATE access_tokens t SET {mark} FROM due, users u
               WHERE t.id = due.id AND u.id = t.user_id

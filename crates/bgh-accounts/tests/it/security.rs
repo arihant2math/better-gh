@@ -728,13 +728,19 @@ async fn token_expiry_reminders_and_header() {
             .is_none()
     );
 
-    // 7-day reminder, once.
-    assert_eq!(
-        bgh_accounts::security::send_expiry_reminders(&app.state)
-            .await
-            .unwrap(),
-        1
-    );
+    // 7-day reminder, once — even while a request holds the token row
+    // (`token_auth` touches `last_used_at` in the background).
+    let mut lock = app.state.db.begin().await.unwrap();
+    sqlx::query("SELECT id FROM access_tokens WHERE name = 'deploy' FOR UPDATE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let state = app.state.clone();
+    let pass =
+        tokio::spawn(async move { bgh_accounts::security::send_expiry_reminders(&state).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    lock.commit().await.unwrap();
+    assert_eq!(pass.await.unwrap().unwrap(), 1);
     assert_eq!(
         bgh_accounts::security::send_expiry_reminders(&app.state)
             .await
