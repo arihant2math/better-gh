@@ -118,6 +118,7 @@ interface Repo {
   fork: boolean;
   archived: boolean;
   defaultBranch: string;
+  mirrorUrl: string | null;   // upstream of a pull mirror (git writes refused)
   language: string | null;
   topics: string[];
   stars: number;
@@ -356,6 +357,10 @@ are built by the same shape loader as everything else
   `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
   conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
   state, context, description, targetUrl, creatorId, createdAt`).
+* `repoImport` (delta-only, `repo:{repoId}`): `id, repoId, status, phase,
+  error` when a repository import changes status (queued, importing,
+  complete, failed, cancelled). Progress counters are polled from
+  `GET /_bgh/repos/{o}/{r}/import`.
 * Reactions have no model: the reacted `issue`, `comment` or
   `reviewComment` row is re-sent with its `reactions` counts. (The PR
   page's `/sync` snapshot also lists per-user `Reaction` rows of review

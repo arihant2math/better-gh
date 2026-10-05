@@ -351,6 +351,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'id', r.id, 'ownerId', r.owner_id, 'owner', o.login, 'name', r.name,
                  'description', r.description, 'private', r.visibility <> 'public',
                  'fork', r.fork, 'archived', r.archived, 'defaultBranch', r.default_branch,
+                 'mirrorUrl', r.mirror_url,
                  'language', r.language, 'topics', r.topics, 'stars', r.stargazers_count,
                  'forks', r.forks_count, 'watchers', r.watchers_count,
                  'openIssues', (SELECT count(*) FROM issues x WHERE x.repo_id = r.id

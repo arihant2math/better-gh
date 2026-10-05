@@ -68,6 +68,8 @@ export interface Repo {
   pushedAt: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  /** Upstream URL of a pull mirror (read-only for git writes). */
+  mirrorUrl?: string | null;
 }
 
 export interface ViewerRepo {
