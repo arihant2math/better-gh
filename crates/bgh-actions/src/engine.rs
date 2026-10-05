@@ -967,7 +967,11 @@ async fn finish_call(
     rows: &mut [JobRow],
 ) -> anyhow::Result<()> {
     let mine: Vec<&JobRow> = rows.iter().filter(|r| scope.owns(&r.job_key)).collect();
-    let conclusion = aggregate_result(&mine);
+    let conclusion = match aggregate_result(&mine) {
+        "failure" => "failure",
+        _ if scope.cancelled => "cancelled",
+        other => other,
+    };
     let keys: Vec<String> = scope.def.jobs.keys().cloned().collect();
     let info = RunInfo {
         repo: &data.repo,
