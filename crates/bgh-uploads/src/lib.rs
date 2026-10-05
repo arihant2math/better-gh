@@ -7,7 +7,10 @@
 //! `/user-attachments/files/{id}/{name}`, with read access to the owning
 //! repository required for private ones. Blobs are content-addressed under
 //! `{data_dir}/files/attachments/`. Migrations: 1800-1899.
+//!
+//! Also the camo image proxy for rendered Markdown (P35, [`camo`]).
 
+pub mod camo;
 pub mod gc;
 pub mod model;
 pub mod policy;
@@ -35,6 +38,8 @@ pub fn web_router() -> Router<AppState> {
         )
         .route("/user-attachments/assets/{uuid}", get(serve::asset))
         .route("/user-attachments/files/{id}/{name}", get(serve::file))
+        .route("/_bgh/camo/sign", post(camo::sign))
+        .route("/_bgh/camo/{digest}/{hex_url}", get(camo::proxy))
 }
 
 pub fn register(reg: &mut Registry) {
