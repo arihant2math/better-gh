@@ -77,6 +77,8 @@ pub struct Loaders {
     pub commits: DataLoader<crate::model::git::CommitLoader>,
     pub git_empty: DataLoader<crate::model::git::EmptyLoader>,
     pub users_by_email: DataLoader<crate::model::git::UserByEmailLoader>,
+    pub repo_extra: DataLoader<RepoExtraLoader>,
+    pub pinned: DataLoader<PinnedLoader>,
 }
 
 impl Loaders {
@@ -115,6 +117,8 @@ impl Loaders {
                 crate::model::git::UserByEmailLoader(s()),
                 tokio::spawn,
             ),
+            repo_extra: DataLoader::new(RepoExtraLoader { state: s(), viewer }, tokio::spawn),
+            pinned: DataLoader::new(PinnedLoader(s()), tokio::spawn),
         }
     }
 }
@@ -937,5 +941,77 @@ impl Loader<(i64, i64)> for AssociationLoader {
                 ((r, u), a)
             })
             .collect())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-repository viewer data and counters; pinned issues
+// ---------------------------------------------------------------------------
+
+/// Watcher count plus the viewer's star / subscription for a repository.
+#[derive(Debug, Clone, Default)]
+pub struct RepoExtra {
+    pub watchers: i64,
+    pub starred: bool,
+    /// `(subscribed, ignored)` when the viewer has a watch row.
+    pub watch: Option<(bool, bool)>,
+}
+
+pub struct RepoExtraLoader {
+    pub state: AppState,
+    pub viewer: Option<i64>,
+}
+
+impl Loader<i64> for RepoExtraLoader {
+    type Value = Arc<RepoExtra>;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[i64]) -> LResult<i64, Self::Value> {
+        type Row = (i64, i64, bool, Option<bool>, Option<bool>);
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT r.id,
+                    (SELECT count(*) FROM watches w WHERE w.repo_id = r.id AND w.subscribed),
+                    EXISTS (SELECT 1 FROM stars s WHERE s.repo_id = r.id AND s.user_id = $2),
+                    v.subscribed, v.ignored
+               FROM unnest($1::bigint[]) AS r(id)
+               LEFT JOIN watches v ON v.repo_id = r.id AND v.user_id = $2",
+        )
+        .bind(keys)
+        .bind(self.viewer.unwrap_or(0))
+        .fetch_all(&self.state.db)
+        .await
+        .map_err(db_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, watchers, starred, sub, ign)| {
+                let watch = sub.map(|s| (s, ign.unwrap_or(false)));
+                (
+                    id,
+                    Arc::new(RepoExtra {
+                        watchers,
+                        starred,
+                        watch,
+                    }),
+                )
+            })
+            .collect())
+    }
+}
+
+/// Whether an issue is pinned.
+pub struct PinnedLoader(pub AppState);
+
+impl Loader<i64> for PinnedLoader {
+    type Value = bool;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[i64]) -> LResult<i64, bool> {
+        let pinned: Vec<i64> =
+            sqlx::query_scalar("SELECT issue_id FROM pinned_issues WHERE issue_id = ANY($1)")
+                .bind(keys)
+                .fetch_all(&self.0.db)
+                .await
+                .map_err(db_err)?;
+        Ok(keys.iter().map(|k| (*k, pinned.contains(k))).collect())
     }
 }

@@ -392,23 +392,8 @@ impl IssueOnly {
             .and_then(IssueStateReason::from_db)
     }
     pub async fn is_pinned(&self, ctx: &Context<'_>) -> GResult<Option<bool>> {
-        let g = gql(ctx);
-        let pinned: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'pinned_issues')",
-        )
-        .fetch_one(&g.state.db)
-        .await
-        .gql()?;
-        if !pinned {
-            return Ok(Some(false));
-        }
-        let v: bool =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pinned_issues WHERE issue_id = $1)")
-                .bind(self.i.id)
-                .fetch_one(&g.state.db)
-                .await
-                .unwrap_or(false);
-        Ok(Some(v))
+        let l = ctx.data_unchecked::<Loaders>();
+        Ok(Some(one(&l.pinned, self.i.id).await?.unwrap_or(false)))
     }
     pub async fn closed_by_pull_requests_references(
         &self,

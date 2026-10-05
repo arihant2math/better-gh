@@ -44,6 +44,10 @@ impl Repository {
     fn owner_login(&self) -> &str {
         &self.0.owner.login
     }
+    async fn extra(&self, ctx: &Context<'_>) -> GResult<Arc<crate::loaders::RepoExtra>> {
+        let l = ctx.data_unchecked::<Loaders>();
+        Ok(one(&l.repo_extra, self.rid()).await?.unwrap_or_default())
+    }
 }
 
 /// Load a repository by id for the viewer (`None` without read access).
@@ -335,13 +339,7 @@ impl Repository {
         CountOnly(self.r().stargazers_count)
     }
     pub async fn watchers(&self, ctx: &Context<'_>) -> GResult<CountOnly> {
-        let n: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM watches WHERE repo_id = $1 AND subscribed")
-                .bind(self.rid())
-                .fetch_one(&gql(ctx).state.db)
-                .await
-                .gql()?;
-        Ok(CountOnly(n))
+        Ok(CountOnly(self.extra(ctx).await?.watchers))
     }
     pub async fn forks(
         &self,
@@ -476,36 +474,19 @@ impl Repository {
         Ok(Some(emails))
     }
     pub async fn viewer_has_starred(&self, ctx: &Context<'_>) -> GResult<bool> {
-        let g = gql(ctx);
-        let Some(v) = g.viewer_id() else {
+        if gql(ctx).viewer_id().is_none() {
             return Ok(false);
-        };
-        sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM stars WHERE user_id = $1 AND repo_id = $2)",
-        )
-        .bind(v)
-        .bind(self.rid())
-        .fetch_one(&g.state.db)
-        .await
-        .gql()
+        }
+        Ok(self.extra(ctx).await?.starred)
     }
     pub async fn viewer_subscription(
         &self,
         ctx: &Context<'_>,
     ) -> GResult<Option<SubscriptionState>> {
-        let g = gql(ctx);
-        let Some(v) = g.viewer_id() else {
+        if gql(ctx).viewer_id().is_none() {
             return Ok(None);
-        };
-        let row: Option<(bool, bool)> = sqlx::query_as(
-            "SELECT subscribed, ignored FROM watches WHERE user_id = $1 AND repo_id = $2",
-        )
-        .bind(v)
-        .bind(self.rid())
-        .fetch_optional(&g.state.db)
-        .await
-        .gql()?;
-        Ok(Some(match row {
+        }
+        Ok(Some(match self.extra(ctx).await?.watch {
             Some((_, true)) => SubscriptionState::Ignored,
             Some((true, _)) => SubscriptionState::Subscribed,
             _ => SubscriptionState::Unsubscribed,
