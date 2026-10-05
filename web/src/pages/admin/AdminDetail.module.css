@@ -152,7 +152,7 @@
 
 .counts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -245,4 +245,25 @@
   margin: 0 14px 12px;
   color: var(--fg-subtle);
   font-size: var(--fs-sm);
+}
+
+.filterSelect {
+  width: auto;
+  height: var(--control-h-sm);
+  font-size: var(--fs-sm);
+}
+
+.filterSelect[data-active='true'] {
+  border-color: var(--accent);
+}
+
+.usageLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usageLine > span:first-child {
+  color: var(--fg-muted);
 }
