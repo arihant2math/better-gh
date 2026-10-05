@@ -25,7 +25,6 @@ const MAX_REFS: usize = 50;
 /// * issue references: a `cross-referenced` event on each referenced issue
 ///   the actor can read (once per source issue) and
 ///   [`Event::IssueCrossReferenced`].
-#[allow(clippy::too_many_arguments)]
 pub async fn process(
     tx: &mut Tx,
     state: &AppState,
