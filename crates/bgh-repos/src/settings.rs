@@ -515,7 +515,7 @@ pub(crate) async fn apply_transfer(
              ON CONFLICT (team_id, repo_id) DO NOTHING",
         )
         .bind(old.id)
-        .bind(&team_ids)
+        .bind(team_ids)
         .bind(new_owner.id)
         .execute(&mut *tx)
         .await?;

@@ -480,7 +480,11 @@ async fn site_admin_lists_and_restores_deleted_repositories() {
         .send()
         .await
         .assert_status(403);
-    let res = app.get("/_bgh/admin/repos/deleted").auth(&root).send().await;
+    let res = app
+        .get("/_bgh/admin/repos/deleted")
+        .auth(&root)
+        .send()
+        .await;
     res.assert_status(200);
     assert_eq!(res.json()[0]["full_name"], "alice/lost");
     let res = app

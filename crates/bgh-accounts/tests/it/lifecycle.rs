@@ -190,7 +190,9 @@ async fn deleting_your_account_leaves_ghost_content() {
         .await;
     assert_eq!(res.json()["user"]["login"], "ghost");
     let res = app
-        .get(&format!("/api/v3/repos/alice/hello/issues/comments/{comment_id}"))
+        .get(&format!(
+            "/api/v3/repos/alice/hello/issues/comments/{comment_id}"
+        ))
         .auth(&alice)
         .send()
         .await;

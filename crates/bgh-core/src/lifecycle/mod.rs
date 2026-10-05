@@ -196,7 +196,7 @@ pub async fn soft_delete_repo_in(
         .bind(repo.id)
         .fetch_all(&mut **tx)
         .await?;
-    let snap = snapshot::capture(&mut **tx, repo.id).await?;
+    let snap = snapshot::capture(tx, repo.id).await?;
     let lfs = blob_refs(&snap, "lfs_objects", "oid");
     let blobs = blob_refs(&snap, "attachments", "sha256");
     sqlx::query(
@@ -330,7 +330,7 @@ pub async fn restore_repo_in(tx: &mut Tx, id: i64) -> ApiResult<(Repository, Use
             .bind(id)
             .fetch_one(&mut **tx)
             .await?;
-    let stats = snapshot::restore(&mut **tx, &snap.0).await?;
+    let stats = snapshot::restore(tx, &snap.0).await?;
     tracing::info!(
         repo_id = id,
         inserted = stats.inserted,
