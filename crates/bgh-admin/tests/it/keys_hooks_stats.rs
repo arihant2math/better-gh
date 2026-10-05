@@ -312,6 +312,7 @@ async fn enterprise_stats() {
         repo_id,
         pusher_id: Some(alice.id),
         updates: vec![],
+        origin: None,
     }));
     for _ in 0..50 {
         let n: Option<i64> =
