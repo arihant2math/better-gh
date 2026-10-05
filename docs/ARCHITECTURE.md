@@ -144,25 +144,41 @@ add a new one.
 
 ## Sync engine (local-first)
 
+The wire protocol (bootstrap, WebSocket messages, partial sync, model shapes,
+optimistic-mutation reconciliation) is specified normatively in
+[`docs/SYNC_PROTOCOL.md`](SYNC_PROTOCOL.md); this section is a summary.
+
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
-  JSONB, created_at)` **in the same transaction** via
-  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)`. After
-  commit, call `bgh_core::sync::notify(&state, ...)` which publishes on the
-  Redis channel `sync:{scope}`.
-* Scopes: `repo:{id}` (issues, PR metadata, labels, milestones, comments,
-  reviews, branches/refs summary), `user:{id}` (notifications, prefs),
-  `org:{id}` (members, teams, projects).
-* `GET /_bgh/sync/bootstrap?scopes=...` → `{lastSyncId, models: {issue: [...],
-  label: [...], ...}}` in compact client shapes (not GitHub REST shapes).
+  JSONB, tx UUID NULL, created_at)` **in the same transaction** via
+  `bgh_core::sync::record(&mut tx, scope, model, id, action, data)`. `tx` is
+  the request's `X-Client-Tx` header (taken from the request context), so
+  the delta echoes it. `record` serializes writers with a transaction-scoped
+  advisory lock so sync ids become visible in id order. After commit, call
+  `bgh_core::sync::notify(&state, ...)` which publishes on the Redis channel
+  `sync:{scope}`.
+* Scopes: `repo:{id}` (repo, issues + PR metadata, labels, milestones,
+  comments, reviews, timeline events), `user:{id}` (notifications,
+  viewer-specific repo data: permission/starred), `org:{id}` (org,
+  memberships, teams). `data` is the compact client shape (camelCase), not
+  the GitHub REST shape.
+* `GET /_bgh/sync/bootstrap?scopes=...` → `{schemaVersion, lastSyncId,
+  userId, scopes, denied, models: {issue: [...], label: [...], ...}}`.
+  Without `scopes` the server picks the viewer's default scope set.
+* `GET /_bgh/sync/partial?model=comment,review,issueEvent&issue=ID` loads lazy
+  models (comments, reviews, timeline events, issue bodies) on demand.
 * `GET /_bgh/sync/ws` WebSocket. Client → `{"t":"sub","scopes":[...],
   "since":N}`; server replays missed actions then streams live
-  `{"t":"delta","id":N,"scope":..,"model":..,"mid":..,"a":"U","d":{...}}`.
-  Server rechecks permissions on subscribe; emits `{"t":"revoke","scope"}`.
+  `{"t":"delta","id":N,"scope":..,"model":..,"mid":..,"a":"U","d":{...},
+  "tx":..}` (or `{"t":"batch","items":[...]}`), then `{"t":"ready"}`.
+  Server rechecks permissions on subscribe; emits `{"t":"revoke","scope"}`;
+  `{"t":"rebootstrap"}` when `since` is older than the retained log.
 * Mutations go through the normal REST API with an `X-Client-Tx` header so
-  the client can reconcile its optimistic write with the echoed delta.
-* Large/cold data (file contents, diffs, comment bodies for old issues) is
-  fetched on demand and cached (immutable when keyed by SHA).
+  the client can reconcile its optimistic write with the echoed delta. The
+  server answers with `X-Bgh-Sync-Id` and treats `X-Client-Tx` as an
+  idempotency key (24 h).
+* Large/cold data (file contents, diffs, highlighted blobs) is fetched on
+  demand and cached (immutable when keyed by SHA).
 
 ## Background work
 
