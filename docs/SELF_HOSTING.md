@@ -138,6 +138,18 @@ start-up with an error naming the variable.
 | `BGH_GIT_BIN` | `git` | git executable (≥ 2.38). |
 | `BGH_MAX_BLOB_SIZE` | `10485760` (10 MiB) | Larger blobs are not loaded into memory by API/rendering code (they are still served raw and over git). |
 | `BGH_SITE_NAME` | `Better GitHub` | Instance name shown in the UI. |
+| `BGH_SMTP_URL` | unset | SMTP relay for outgoing mail (`smtps://user:pass@host:465`, `smtp://host:25?tls=required`). Unset: mail is logged and written to `{BGH_DATA_DIR}/mail/`. The admin `smtp` site setting, when enabled, takes precedence. See [Email](#email-smtp). |
+| `BGH_MAIL_FROM` | `{site name} <noreply@{host}>` | `From:` address of outgoing mail (when the `smtp` site setting doesn't set one). |
+| `BGH_TRUST_PROXY` | `false` | Take client IPs from `X-Forwarded-For` / `X-Real-IP` (audit log, anonymous rate limits). Enable only behind a reverse proxy. |
+| `BGH_RATE_LIMIT_ENABLED` | `false` | Enforce API rate limits (403 + `Retry-After` when exhausted). Budgets are always counted and reported in `X-RateLimit-*` and `GET /api/v3/rate_limit`. |
+| `BGH_RATE_LIMIT` / `BGH_RATE_LIMIT_ANONYMOUS` | `5000` / `60` | REST (`core`) requests per hour per user / per client IP. `BGH_RATE_LIMIT=0` also turns enforcement off. |
+| `BGH_RATE_LIMIT_SEARCH` / `BGH_RATE_LIMIT_SEARCH_ANONYMOUS` | `30` / `10` | Search requests per minute per user / per client IP. |
+| `BGH_RATE_LIMIT_GRAPHQL` | `5000` | GraphQL requests per hour per user (anonymous: the `core` anonymous budget). |
+| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. |
+
+Site admins can change rate limits, SMTP and sign-in providers at runtime
+(`/_bgh/admin/settings`); a field stored there overrides the variable,
+fields never set keep following it.
 
 Also read by the binary:
 
@@ -223,11 +235,18 @@ until then. Once it ships:
 
 ## Email (SMTP)
 
-**Status:** this version reads no SMTP settings and sends no email.
-Outgoing mail (notifications, password reset, email verification) is being
-built in the notify package; its configuration variables will be added to
-the [reference](#configuration-reference) above when it lands. Until then,
-password resets are done by an administrator.
+Account mail (email verification, password reset, invitations, security
+notices) and notification emails are queued as `mail.send` jobs and sent
+through, in order of precedence:
+
+1. the `smtp` site setting (host, port, TLS mode, credentials, `From:`),
+   when a site admin enabled it in the admin settings;
+2. `BGH_SMTP_URL` (with `BGH_MAIL_FROM`);
+3. otherwise the development transport: messages are logged and written to
+   `{BGH_DATA_DIR}/mail/` (`.eml`), nothing leaves the host.
+
+Failed deliveries are retried with backoff by the job queue (visible in
+the admin job inspector).
 
 ## Backup and restore
 

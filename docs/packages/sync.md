@@ -28,6 +28,15 @@ branch.
   automatically; committed ids are noted for `X-Bgh-Sync-Id`.
 * `bgh_core::sync::record` takes `pg_advisory_xact_lock(SYNC_LOCK)` in the
   same statement as the insert (one round trip) so ids commit in order.
+  `Tx` collects its actions and writes them with `sync::record_all` (one
+  statement) right before committing, so the lock is never held while a
+  transaction still takes row locks (this removed lock-order deadlocks
+  between request handlers and event listeners).
+* Extension models `reviewComment`, `checkRun`, `checkSuite`,
+  `commitStatus` (delta-only, SYNC_PROTOCOL.md §3.2) and the issue / event
+  extension fields are part of `shapes`.
+* The `sync.access` listener also turns `Event::SessionEnded` into a
+  sign-out signal (sockets of that session close with 4001).
 * `bgh_sync::http_middleware` (mounted in bgh-server for every route):
   context, `X-Bgh-Sync-Id`, idempotency per `(user, tx)` in Redis
   (`SET NX` pending marker → stored `{status, headers, body}` for 24 h;
@@ -103,12 +112,16 @@ and fast handler-side compression (the generic layer's defaults added
   `denied`, token scopes, partial sync (comment/review/issueEvent shapes,
   pending-review privacy, 404s, 422s), Tx helpers record exactly the
   bootstrap rows, gzip/br.
+* `shapes.rs`: drives the REST APIs of accounts, repos, issues, pulls and
+  notify and checks that the latest delta of every row equals its
+  bootstrap / partial-sync / shape row, for every model.
 * `ws.rs`: 4001 unauthenticated, cross-origin cookie rejected, replay →
   ready → live delta with `tx` echo and `refs`, batching, deletes,
   unsub, errors, resume from `since` and adding scopes, denied scopes,
   revoke on `AccessChanged` and on a visibility delta, rebootstrap
   (too_old/schema, 4009), lost/out-of-order publishes filled from the log,
-  one hub for many sockets, sign-out closes the session's sockets (4001),
+  one hub for many sockets, sign-out closes the session's sockets (4001)
+  (also when revoked through `DELETE /_bgh/sessions/{id}`),
   slow consumer dropped.
 * `middleware.rs`: tx recorded on every action, `X-Bgh-Sync-Id`,
   idempotent replay (incl. 4xx), per-user keys, in-flight 429.
@@ -117,10 +130,11 @@ and fast handler-side compression (the generic layer's defaults added
 
 ## Known gaps / notes for other packages
 
-* Domain crates must adopt the §8a helpers (issues, pulls, accounts,
-  notify): until they record actions, clients only see those changes on
-  rebootstrap. Derived fields (repo `openIssues`, issue `comments`,
-  `reviewDecision`, `checks`) need the owning code to re-sync the row.
+* issues, pulls, accounts, notify, admin and repos record through the §8a
+  helpers (`tests/shapes.rs` checks every model end to end); bgh-projects
+  and bgh-wiki are being converted by their package. Raw `tx.sync` remains
+  for models no client loads (`release`, `release_asset`, `workflow_run`,
+  `workflow_job`, `ruleset`, `branch_protection`, `notificationSettings`).
 * Secret teams are part of the `org:{id}` scope, so every org member
   receives them (GitHub hides them from non-members).
 * Revocation is asynchronous: deltas committed in the few milliseconds
