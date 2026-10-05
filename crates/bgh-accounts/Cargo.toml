@@ -27,8 +27,20 @@ flate2.workspace = true
 crc32fast.workspace = true
 reqwest.workspace = true
 url.workspace = true
+ldap3.workspace = true
+thiserror.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+ldap3_proto = { workspace = true, optional = true }
+futures.workspace = true
+tokio-util.workspace = true
+
+[features]
+# In-process fake LDAP server (`ldap::fake`) for tests of dependent crates.
+testing = ["dep:ldap3_proto"]
 
 [dev-dependencies]
+bgh-accounts = { path = ".", features = ["testing"] }
 base64.workspace = true
 redis.workspace = true
 sqlx.workspace = true

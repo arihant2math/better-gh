@@ -132,8 +132,9 @@ admin listing indexes.
 
 ## Known gaps / TODO
 
-* Pre-receive hook environments (`/admin/pre-receive-*`) and LDAP sync
-  (`/admin/ldap/*`) are not implemented (optional in the plan).
+* Pre-receive hook environments (`/admin/pre-receive-*`) are not
+  implemented (optional in the plan). LDAP (`/admin/ldap/*`) landed with P14
+  (`docs/packages/p14-ldap-auth.md`).
 * Audit `include=git` events are not recorded (only web events).
 * Gist stats are zero until gists exist; `total_wikis` counts repos with
   `has_wiki`.

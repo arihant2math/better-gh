@@ -127,6 +127,11 @@ tempfile = "3"
 rust-embed = { version = "8.7", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
 mime_guess = "2"
 
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
+ldap3_proto = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+
 [profile.dev]
 # Faster builds; enough debuginfo for backtraces with file:line in our code.
 debug = "line-tables-only"

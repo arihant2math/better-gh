@@ -147,7 +147,7 @@ start-up with an error naming the variable.
 | `BGH_RATE_LIMIT` / `BGH_RATE_LIMIT_ANONYMOUS` | `5000` / `60` | REST (`core`) requests per hour per user / per client IP. `BGH_RATE_LIMIT=0` also turns enforcement off. |
 | `BGH_RATE_LIMIT_SEARCH` / `BGH_RATE_LIMIT_SEARCH_ANONYMOUS` | `30` / `10` | Search requests per minute per user / per client IP. |
 | `BGH_RATE_LIMIT_GRAPHQL` | `5000` | GraphQL requests per hour per user (anonymous: the `core` anonymous budget). |
-| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. |
+| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS`, `BGH_OIDC_GROUPS_CLAIM` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. LDAP is configured in Site admin → Settings → Authentication (`auth_providers.ldap`, `bgh_accounts::ldap`). |
 
 Site admins can change rate limits, SMTP and sign-in providers at runtime
 (`/_bgh/admin/settings`); a field stored there overrides the variable,

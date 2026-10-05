@@ -7,6 +7,7 @@ mod common;
 mod accounts;
 mod auth;
 mod boot;
+mod ldap;
 mod oauth;
 mod orgs;
 mod sso_avatars_ratelimit;

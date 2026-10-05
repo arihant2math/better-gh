@@ -112,7 +112,7 @@ email domains), default repository visibility, max repository size and
 per-owner `storage_quotas` (git + LFS storage; checked on push, in the
 pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
-auth providers (password login, OIDC), SMTP, maintenance mode, and push
+auth providers (password login, OIDC, LDAP), SMTP, maintenance mode, and push
 hardening (`git`: `fsck_on_push`, `max_object_size_mb` (GH001),
 `warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`). Their defaults come from the
 environment where one exists (`SiteSettings::defaults(&config)`:
@@ -220,7 +220,15 @@ and octokit-style raw requests.
   PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry;
   OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
   Basic auth with a password is accepted for git transport only, and never
-  for accounts with two-factor authentication.
+  for accounts with two-factor authentication. Every password sign-in (web
+  and git basic auth) goes through `bgh_core::auth::check_password`: the
+  password directory (LDAP, `bgh_accounts::ldap`, configured by the
+  `auth_providers.ldap` setting) first, then built-in passwords unless
+  `auth_providers.password_login` is off (site admins exempt only with
+  `password_login_admin_exempt`); failures are throttled per login and per
+  IP (shared by web and git) and audited as `user.failed_login` with
+  `transport`. Teams can be synced from external groups
+  (`external_group_mappings`: LDAP group DNs, the OIDC groups claim).
 * API rate limits: `bgh_core::ratelimit` (see "Cross-cutting middleware").
 
 ### Migrations

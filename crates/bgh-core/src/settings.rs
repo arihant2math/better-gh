@@ -219,6 +219,11 @@ pub struct OidcProvider {
     pub login_claim: Option<String>,
     /// Lower-case email domains allowed to sign in; empty = any.
     pub allowed_domains: Vec<String>,
+    /// Claim listing the user's groups (e.g. `groups`); when set and
+    /// present in the ID token / userinfo, team memberships mapped to these
+    /// groups (`external_group_mappings`, provider `oidc:{name}`) are
+    /// synced at every sign-in.
+    pub groups_claim: Option<String>,
 }
 
 impl Default for OidcProvider {
@@ -233,6 +238,74 @@ impl Default for OidcProvider {
             auto_create_users: true,
             login_claim: None,
             allowed_domains: Vec::new(),
+            groups_claim: None,
+        }
+    }
+}
+
+/// LDAP directory authentication and sync (`bgh_accounts::ldap`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LdapSettings {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    /// `none` | `ldaps` | `starttls`.
+    pub encryption: String,
+    /// PEM certificate(s) trusted for the server (in addition to the
+    /// system roots).
+    pub ca_cert: Option<String>,
+    /// Verify the server certificate (turn off for testing only).
+    pub verify_certificate: bool,
+    /// Service account used for searches; empty = anonymous.
+    pub bind_dn: Option<String>,
+    /// Secret; never returned by the admin API (write-only).
+    pub bind_password: Option<String>,
+    /// Base DNs searched for users (in order).
+    pub user_search_bases: Vec<String>,
+    /// Attribute holding the login (`uid`, AD: `sAMAccountName`).
+    pub uid_field: String,
+    /// Extra filter ANDed into user searches, e.g. `(objectClass=person)`.
+    pub user_filter: Option<String>,
+    /// Members of this group (DN) are site administrators.
+    pub admin_group: Option<String>,
+    /// When set, only members of this group (DN) may sign in.
+    pub restricted_group: Option<String>,
+    /// Attribute mapping.
+    pub name_field: String,
+    pub email_field: String,
+    pub ssh_key_field: Option<String>,
+    pub gpg_key_field: Option<String>,
+    /// Create accounts on first successful LDAP sign-in.
+    pub jit_provisioning: bool,
+    /// Periodic user and team sync.
+    pub sync_enabled: bool,
+    pub sync_interval_hours: u32,
+}
+
+impl Default for LdapSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: String::new(),
+            port: 389,
+            encryption: "none".into(),
+            ca_cert: None,
+            verify_certificate: true,
+            bind_dn: None,
+            bind_password: None,
+            user_search_bases: Vec::new(),
+            uid_field: "uid".into(),
+            user_filter: None,
+            admin_group: None,
+            restricted_group: None,
+            name_field: "cn".into(),
+            email_field: "mail".into(),
+            ssh_key_field: None,
+            gpg_key_field: None,
+            jit_provisioning: true,
+            sync_enabled: true,
+            sync_interval_hours: 1,
         }
     }
 }
@@ -240,16 +313,24 @@ impl Default for OidcProvider {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AuthProviderSettings {
-    /// Built-in username/password login.
+    /// Built-in username/password login (web sign-in and git/LFS basic
+    /// auth with a built-in password). Tokens and directory (LDAP)
+    /// passwords are unaffected. Enforced by `auth::check_password`.
     pub password_login: bool,
+    /// With `password_login` off, site administrators may still sign in
+    /// with their built-in password (break-glass accounts).
+    pub password_login_admin_exempt: bool,
     pub oidc: Vec<OidcProvider>,
+    pub ldap: LdapSettings,
 }
 
 impl Default for AuthProviderSettings {
     fn default() -> Self {
         Self {
             password_login: true,
+            password_login_admin_exempt: false,
             oidc: Vec::new(),
+            ldap: LdapSettings::default(),
         }
     }
 }
@@ -743,6 +824,8 @@ pub fn public_info(state: &AppState, s: &SiteSettings) -> Value {
         },
         "signup_policy": s.signup.policy,
         "password_login": s.auth_providers.password_login,
+        "password_login_admin_exempt": s.auth_providers.password_login_admin_exempt,
+        "ldap": s.auth_providers.ldap.enabled,
         "oidc_providers": s.auth_providers.oidc.iter().map(|p| json!({
             "name": p.name,
             "display_name": p.display_name.clone().unwrap_or_else(|| p.name.clone()),
