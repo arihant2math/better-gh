@@ -405,7 +405,11 @@ async fn api_compat(req: Request, next: Next) -> Response {
         }
     }
     let mut resp = next.run(req).await;
-    if resp.status() == StatusCode::METHOD_NOT_ALLOWED {
+    // Only axum's empty routing 405 (handlers send GitHub-style JSON 405s,
+    // e.g. "Pull Request is not mergeable").
+    if resp.status() == StatusCode::METHOD_NOT_ALLOWED
+        && !resp.headers().contains_key(header::CONTENT_TYPE)
+    {
         resp = ApiError::NotFound.into_response();
     }
     if let Some(v) = selected {
