@@ -2,7 +2,8 @@
 //!
 //! * `GET /repos/{owner}/{repo}/forks` (`sort=newest|oldest|stargazers|watchers`)
 //! * `POST /repos/{owner}/{repo}/forks` (`organization`, `name`,
-//!   `default_branch_only`) → 202
+//!   `default_branch_only`; plus `description`, which the web fork dialog
+//!   sets like github.com's) → 202
 //! * `POST /repos/{template_owner}/{template_repo}/generate` → 201
 //!
 //! Fork storage is a `clone --bare --shared` of the parent (objects are
@@ -135,6 +136,9 @@ async fn free_name(state: &AppState, owner_id: i64, base: &str) -> ApiResult<Str
 pub struct ForkBody {
     pub organization: Option<String>,
     pub name: Option<String>,
+    /// Extension (github.com's fork form has it, the REST API doesn't):
+    /// replaces the copied description when non-empty.
+    pub description: Option<String>,
     #[serde(default)]
     pub default_branch_only: bool,
 }
@@ -224,6 +228,13 @@ pub async fn create_fork(
         _ => free_name(&state, target.id, &src.name).await?,
     };
 
+    let description = body
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map(str::to_string);
+
     let mut tx = Tx::begin(&state).await?;
     let fork: db::Repository = sqlx::query_as(&format!(
         "INSERT INTO repositories (
@@ -231,7 +242,7 @@ pub async fn create_fork(
             parent_id, source_id, has_issues, has_projects, has_wiki, has_discussions,
             allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_forking,
             language, size, pushed_at, watchers_count)
-         SELECT $1, $2, description, homepage, visibility, default_branch, true,
+         SELECT $1, $2, COALESCE($5, description), homepage, visibility, default_branch, true,
                 id, $3, false, has_projects, false, false,
                 allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_forking,
                 language, size, pushed_at, 1
@@ -243,6 +254,7 @@ pub async fn create_fork(
     .bind(&name)
     .bind(network)
     .bind(src.id)
+    .bind(description)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| match unique_violation(&e).as_deref() {
