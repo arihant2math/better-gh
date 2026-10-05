@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Actions cache (native `actions/cache`, legacy + twirp cache protocols, Azure Blob subset), twirp ArtifactService, runtime token/env, `/actions/caches` REST, caches web page.
 
 # P27 — Actions cache and toolkit runtime services: status

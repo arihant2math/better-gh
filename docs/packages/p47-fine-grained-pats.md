@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Fine-grained PATs (`bgh_pat_`), org token policies and approvals, narrow classic scopes; backend, web UI, tests, Playwright smoke.
 
 # P47 — Fine-grained PATs, org token policies, narrow classic scopes — status

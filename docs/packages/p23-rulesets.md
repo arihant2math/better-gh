@@ -1,4 +1,4 @@
-Integration: ready
+Integration: landed
 Org rulesets, push/metadata rules (GH013), evaluate mode, rule suites, tag protection, GraphQL rulesets for `gh ruleset`.
 
 # P23 — Rulesets, part 2 backend: status
