@@ -62,12 +62,44 @@ docs/                      design docs
 scripts/                   dev setup, test helpers
 ```
 
-Each domain crate exposes `pub fn router() -> axum::Router<AppState>` (and
-optionally `pub fn web_router()` for non-API routes) and is merged in
-`bgh-server`. Domain crates depend on `bgh-core` (and `bgh-git` when needed),
+Each domain crate exposes exactly three functions, all already wired into
+`bgh-server` (so feature work only edits inside its own crate):
+
+* `pub fn router() -> Router<AppState>`: REST routes with paths **relative
+  to `/api/v3`** (`.route("/repos/{owner}/{repo}/labels", ...)`); bgh-server
+  nests them under `/api/v3` (JSON 404 fallback, ETag/304, CORS,
+  `X-GitHub-Media-Type`).
+* `pub fn web_router() -> Router<AppState>`: routes with **absolute** paths
+  (`/_bgh/...`, git transport, raw/archive downloads), merged at the root.
+* `pub fn register(reg: &mut bgh_core::Registry)`: background job handlers
+  and event listeners.
+
+Domain crates depend on `bgh-core` (and `bgh-git` when needed),
 **never on each other's internals** — shared logic that two domains need
 moves into `bgh-core` (or a small `pub` service fn re-exported by the owning
-crate, depended on explicitly).
+crate, depended on explicitly; e.g. `bgh_accounts::create_user`).
+`bgh-git` depends on `bgh-core` only for config and error conversion; it
+knows nothing about users or permissions.
+
+The cookbook for feature work is `docs/BACKEND_PATTERNS.md`.
+
+## Configuration
+
+Environment variables, read by `bgh_core::Config::from_env` (defaults in
+parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
+`REDIS_URL` (`redis://127.0.0.1/`), `BGH_LISTEN` (`0.0.0.0:3000`),
+`BGH_BASE_URL` (`http://localhost:3000`, used for every generated URL),
+`BGH_DATA_DIR` (`./data`), `BGH_WEB_DIR` (`web/dist`), `BGH_SSH_PORT`
+(`2222`), `BGH_SSH_ENABLED`, `BGH_SIGNUP_ENABLED` (`true`),
+`BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
+`BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
+every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
+`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`.
+
+The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
+listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
+`bgh admin create-user --login --email --password [--site-admin]`,
+`bgh admin create-org --login --admin <user> [--name]`.
 
 ## HTTP surface
 
@@ -99,8 +131,14 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
   `If-None-Match` → 304 on GETs.
 * Media types: `application/vnd.github+json`, `.raw`, `.html`, `.diff`,
   `.patch` where GitHub supports them.
-* `node_id`: base64 of `"0{type_code}:{id}"`-style opaque id, decoded by the
-  GraphQL layer (`bgh_core::node_id`).
+* `node_id`: GitHub's legacy format, base64 of `"{len:02}:{Type}{id}"`
+  (`MDQ6VXNlcjE=` = `04:User1`), encoded/decoded by `bgh_core::node_id`
+  (`NodeType` enum; add variants as needed).
+* Static files: `web/dist/assets/*` → `Cache-Control: public,
+  max-age=31536000, immutable`; other files and the SPA fallback
+  (`index.html` for unknown non-API GET paths) → `no-cache`; `.br`/`.gz`
+  siblings are served when accepted. Unknown `/api/*` and `/_bgh/*` paths
+  get GitHub JSON 404s.
 
 Compatibility is tested with the official `gh` CLI (`GH_HOST`, GHES mode)
 and octokit-style raw requests.
@@ -120,9 +158,24 @@ and octokit-style raw requests.
 * `issue_events` / timeline items, `comments` (issue comments),
   `review_comments`, `reviews`, `reactions(subject_type, subject_id)`.
 * Permission is computed from: repo owner, collaborators, org membership +
-  base permission, team grants. `bgh_core::perms::repo_permission(user,
-  repo) -> Permission { None, Read, Triage, Write, Maintain, Admin }`
-  (cached per request).
+  base permission (`org_settings.default_repository_permission`), team
+  grants (inherited from parent teams), site admin (→ Admin), public
+  visibility (→ Read). `bgh_core::perms::repo_permission(db, user_id,
+  repo)` / batched `repo_permissions(db, user_id, &repos)` →
+  `Permission { None, Read, Triage, Write, Maintain, Admin }`. Token scopes
+  then cap it (`perms::effective`: private repos need `repo`; writes to
+  public repos need `repo` or `public_repo`). Handlers use
+  `perms::RepoAccess::load(&state, auth, owner, name)` which returns 404
+  without read access, then `access.require(Permission::Write)` (403).
+* Role names are stored as `read|triage|write|maintain|admin` everywhere
+  (`Permission::parse` also accepts GitHub's legacy `pull`/`push`).
+* Users and orgs are created through `db::NewUser::insert` /
+  `db::insert_org` (core) wrapped by validated services in bgh-accounts.
+  The first user account becomes site admin.
+* Sessions: random cookie `bgh_session` (HttpOnly, SameSite=Lax, Secure on
+  https), stored as SHA-256 in `sessions`, cached in Redis for 5 min.
+  PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry.
+  Basic auth with a password is accepted for git transport only.
 
 ### Migrations
 
@@ -144,6 +197,11 @@ add a new one.
 
 ## Sync engine (local-first)
 
+* Use `bgh_core::db::Tx` (a transaction that collects post-commit side
+  effects): `tx.sync(scope, model, id, action, &data)` records the row in
+  the transaction and publishes it after `tx.commit()`; `tx.emit(event)` and
+  `tx.enqueue(&job)` likewise. Published messages are the JSON of
+  `bgh_core::sync::SyncRecord` (`{"id","scope","model","mid","a","d"}`).
 * Every mutation of a synced model appends to `sync_actions(id BIGSERIAL,
   scope TEXT, model TEXT, model_id BIGINT, action CHAR(1) /*I,U,D*/, data
   JSONB, created_at)` **in the same transaction** via
@@ -167,22 +225,50 @@ add a new one.
 ## Background work
 
 * Job queue in Postgres (`jobs` table, `FOR UPDATE SKIP LOCKED`), worker
-  tasks spawned by `bgh-server`. `bgh_core::jobs::enqueue(&tx, kind, payload)`.
-  Job handlers are registered by domain crates. Used for: webhook delivery,
+  tasks spawned by `bgh-server` (`BGH_JOB_WORKERS`), woken by `NOTIFY
+  bgh_jobs` on commit with a 5 s poll fallback. Typed payloads implement
+  `bgh_core::jobs::JobPayload` (`KIND = "<crate>.<action>"`); enqueue with
+  `tx.enqueue(&job)` / `jobs::enqueue_job(db, &job)`; register with
+  `reg.job(handler)`. Failures retry with exponential backoff (5 s … 1 h)
+  until `MAX_ATTEMPTS`, then keep the row with `failed_at`. Handlers must be
+  idempotent. Tests run jobs deterministically with `app.drain_jobs()`. Used for: webhook delivery,
   email, post-receive processing (PR sync, mergeability), search indexing,
   repo deletion, archive generation, CI dispatch.
-* Event bus: domain events (`bgh_core::events::Event`) emitted after commit;
-  consumers: webhooks, notifications, timeline, sync.
+* Event bus: domain events (`bgh_core::events::Event`, a `#[non_exhaustive]`
+  enum carrying ids) emitted after commit via `tx.emit`; consumers register
+  `reg.on_event(name, handler)` and receive every event in order (one task
+  per listener). Delivery is in-process and best-effort: listeners that
+  must not lose work enqueue a job. Consumers: webhooks, notifications,
+  timeline, search indexing.
 
 ## Git
 
+* Storage: `bgh_git::RepoStore` (`{data_dir}/repos/{id % 256:02x}/{id}.git`,
+  bare, created with an empty template and server config: no auto-gc,
+  `uploadpack.allowFilter`, ...). Forks are `clone --bare --shared`
+  (alternates) — a source repo with forks must be repacked into them
+  before deletion (TODO). Repo deletion removes the row immediately and
+  the directory in the `repos.delete_storage` job.
 * Reads via `gix` (fast, in-process): refs, trees, blobs, commits, log.
+  gix is used for the object database and refs only; commit/tree/tag
+  bytes are parsed by `bgh_git::objects` (stable across gix releases).
+  gix is blocking: async code calls `store.read(repo_id, |r| ...)`, which
+  runs on the blocking pool. Path-filtered log shells out to `git log`.
 * Writes / complex ops via the `git` CLI (merge: `git merge-tree
   --write-tree`, commit-tree, update-ref with old-value checks).
 * Smart HTTP: spawn `git upload-pack/receive-pack --stateless-rpc`, stream
-  bodies (gzip aware). Ref updates are parsed from the receive-pack command
-  list before forwarding to enforce branch protection; post-receive work is
-  done in-process after the pack is accepted.
+  bodies (gzip aware, `Git-Protocol` → `GIT_PROTOCOL`, so protocol v2 works
+  for fetch). Protocol machinery lives in `bgh_git::smart_http`; the routes
+  (`/{owner}/{repo}[.git]/info/refs|git-upload-pack|git-receive-pack`),
+  auth and permission checks live in `bgh-repos`. Ref updates are parsed
+  from the receive-pack command list before forwarding and passed to an
+  authorize callback (branch protection: locked branches, deletions,
+  required PRs, push restrictions — force-push detection needs the objects
+  and is TODO). After git exits, refs are re-read to determine which
+  updates applied; bgh-repos then enqueues `repos.post_receive` (pushed_at,
+  size, default branch on first push, sync record, `Event::Push`) before
+  responding. All git subprocesses run with an isolated config
+  (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL=/dev/null`).
 * LFS batch API + object storage on disk.
 * Highlighted/rendered output cached in Redis keyed by blob SHA.
 
@@ -198,8 +284,14 @@ add a new one.
 
 ## Testing
 
-* `bgh_core::testing::TestApp` spins up an app against a fresh Postgres
-  database (created per test from a template DB) and a Redis db index.
+* `bgh_server::test_app().await` (feature `testing`, enabled in every
+  crate's dev-dependencies) returns a `bgh_core::testing::TestApp`: the full
+  router on a fresh Postgres database (`CREATE DATABASE … TEMPLATE
+  bgh_test_template`; the template is migrated once per process under an
+  advisory lock and rebuilt if migrations changed), a unique Redis key
+  prefix, a temp data dir, and a real `127.0.0.1` port for git CLI tests.
+  Databases are dropped when the `TestApp` drops (`BGH_TEST_KEEP_DB=1` keeps
+  them); leftovers of dead processes are cleaned up on the next run.
 * Each domain crate has integration tests in `tests/` hitting the HTTP
   router with real requests and asserting GitHub-compatible JSON.
 * `scripts/gh-compat.sh` exercises the real `gh` CLI against a running

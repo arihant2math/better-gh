@@ -1,6 +1,7 @@
 # Better GitHub — agent guide
 
-Read `docs/ARCHITECTURE.md` before changing anything. It is the source of
+Read `docs/ARCHITECTURE.md` before changing anything, and
+`docs/BACKEND_PATTERNS.md` before writing backend code. It is the source of
 truth for layout, API compatibility rules, migrations ranges, and the sync
 engine. If you must deviate, update the doc in the same commit.
 
@@ -31,7 +32,13 @@ cd web && npm install && npm run dev
   transaction (see ARCHITECTURE.md "Sync engine").
 * Keep domain crates independent; shared code goes to `bgh-core`.
 * Tests: integration tests per crate under `tests/` using
-  `bgh_core::testing::TestApp`. Run `cargo test -p <crate>`.
+  `bgh_server::test_app().await` (a `bgh_core::testing::TestApp` with a
+  fresh database). Run `cargo test -p <crate>`.
+* Domain crates expose `router()` (paths relative to `/api/v3`),
+  `web_router()` (absolute paths) and `register(&mut Registry)`; they are
+  already mounted in bgh-server, so feature work stays inside one crate.
+* Writes go through `bgh_core::db::Tx` (`tx.sync`, `tx.emit`,
+  `tx.enqueue`, then `tx.commit()`).
 * Web: TypeScript strict, `npm run lint && npm run typecheck && npm run
   build` in `web/` must pass. Respect the bundle budget in `web/README.md`.
 * Commit messages: imperative, scoped (`issues: add label endpoints`).
