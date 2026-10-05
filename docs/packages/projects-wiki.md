@@ -228,12 +228,20 @@ Details:
   `bgh_wiki::git` (a repository literally named `x.wiki` is therefore not reachable
   over git HTTP — GitHub reserves the suffix too).
 
-## Integration notes for bgh-sync (B8)
+## Sync integration
 
-`bgh-sync`'s bootstrap must call `bgh_core::sync::load_provided(conn, scope, Some(viewer))`
-for every `org:`/`user:` scope it snapshots (inside its REPEATABLE READ tx), append the
-returned models and include `user_ids` in the referenced users. Not wired yet because the
-bootstrap lives on `bgh/sync`, unmerged at the time of writing.
+* Bootstrap: `bgh-sync`'s bootstrap calls `bgh_core::sync::load_provided` for every
+  `org:`/`user:` scope it snapshots (same REPEATABLE READ tx) and adds the provided
+  models plus their referenced users (small additive edit in `crates/bgh-sync/src/bootstrap.rs`;
+  `shapes::referenced_users` also reads `creatorId`). Test: `projects_are_in_the_sync_bootstrap`
+  asserts bootstrap rows equal the recorded delta rows.
+* One builder per model: project rows (bootstrap provider and every delta) are built by the
+  same `model.rs` loaders/`sync_json`; core rows in project snapshots (issue, repo, label,
+  milestone, user) come from `bgh_core::sync::shapes::load`. `SyncModel` (`shapes::Model`) is a
+  closed enum of SQL-built core shapes, so project models use the provider hook instead of
+  `tx.sync_model`.
+* `X-Client-Tx` / `X-Bgh-Sync-Id` / idempotency come from bgh-sync's middleware (test:
+  `writes_echo_client_tx`). Wiki has no synced models.
 
 ## Known gaps / TODO
 

@@ -194,7 +194,21 @@ async fn build(
         local_chunks.push(&issue_ids);
     }
 
-    let users = referenced_users(conn, viewer, &repos, &orgs).await?;
+    // Models owned by other crates (bgh_core::sync::ScopeProvider), e.g.
+    // projects in org:/user: scopes.
+    let mut provided: Vec<(&'static str, Vec<serde_json::Value>)> = Vec::new();
+    let mut users = referenced_users(conn, viewer, &repos, &orgs).await?;
+    for scope in &access.allowed {
+        let scope = scope.to_string();
+        if scope.starts_with("repo:") {
+            continue;
+        }
+        let rows = bgh_core::sync::load_provided(conn, &scope, Some(viewer)).await?;
+        users.extend(rows.user_ids);
+        provided.extend(rows.models);
+    }
+    users.sort_unstable();
+    users.dedup();
     parts.push((
         "user",
         shapes::load_joined(conn, Model::User, Filter::Ids(&users), none)
@@ -244,6 +258,22 @@ async fn build(
         let (rows, _) =
             shapes::load_joined(conn, Model::Notification, Filter::Users(&[viewer]), none).await?;
         parts.push(("notification", rows));
+    }
+
+    let mut provided_names: Vec<&'static str> = Vec::new();
+    for (m, _) in &provided {
+        if !provided_names.contains(m) {
+            provided_names.push(m);
+        }
+    }
+    for name in provided_names {
+        let rows: Vec<String> = provided
+            .iter()
+            .filter(|(m, _)| *m == name)
+            .flat_map(|(_, rows)| rows.iter())
+            .map(serde_json::to_string)
+            .collect::<Result<_, _>>()?;
+        parts.push((name, rows.join(",")));
     }
 
     let scopes: Vec<String> = access.allowed.iter().map(ToString::to_string).collect();

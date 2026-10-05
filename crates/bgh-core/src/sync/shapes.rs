@@ -570,7 +570,7 @@ pub fn referenced_users(model: &str, data: &Value, out: &mut BTreeSet<i64>) {
     if model == Model::User.name() {
         return;
     }
-    for key in ["authorId", "userId", "actorId", "mergedById"] {
+    for key in ["authorId", "userId", "actorId", "mergedById", "creatorId"] {
         if let Some(id) = data.get(key).and_then(Value::as_i64) {
             out.insert(id);
         }
