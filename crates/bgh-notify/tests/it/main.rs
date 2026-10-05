@@ -9,5 +9,6 @@ mod coverage;
 mod email;
 mod notifications;
 mod payloads;
+mod privacy;
 mod webhooks;
 mod wiring;

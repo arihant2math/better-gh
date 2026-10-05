@@ -3,6 +3,9 @@
 //! * `GET/PUT /notifications`, `GET/PUT /repos/{owner}/{repo}/notifications`
 //! * `GET/PATCH/DELETE /notifications/threads/{id}`
 //!
+//! The lists support polling: `Last-Modified` (newest change of any of the
+//! user's threads), `If-Modified-Since` → 304 and `X-Poll-Interval`.
+//!
 //! Every change to a thread is recorded as a `notification` sync action in
 //! the owner's `user:{id}` scope (shape: `bgh_core::sync::shapes`); marking a
 //! thread done deletes it from the client store.
@@ -10,8 +13,10 @@
 use std::collections::HashMap;
 
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use bgh_core::models::api::MinimalRepository;
+use bgh_core::polling;
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use bgh_core::time::ts;
@@ -285,17 +290,53 @@ async fn page_threads(
     })
 }
 
+/// Newest change of `user_id`'s threads (optionally in one repository),
+/// any state included: the list's `Last-Modified`.
+async fn last_changed(
+    state: &AppState,
+    user_id: i64,
+    repo_id: Option<i64>,
+) -> ApiResult<Option<DateTime<Utc>>> {
+    Ok(sqlx::query_scalar(
+        "SELECT max(changed_at) FROM notifications
+          WHERE user_id = $1 AND ($2::bigint IS NULL OR repo_id = $2)",
+    )
+    .bind(user_id)
+    .bind(repo_id)
+    .fetch_one(&state.db)
+    .await?)
+}
+
+/// A polled list: `If-Modified-Since` → 304, else the page; both with
+/// `Last-Modified` and `X-Poll-Interval`.
+async fn polled_list(
+    state: &AppState,
+    auth: &AuthContext,
+    headers: &HeaderMap,
+    p: Pagination,
+    repo_id: Option<i64>,
+    params: &ListParams,
+) -> ApiResult<Response> {
+    let last = last_changed(state, auth.user.id, repo_id).await?;
+    if polling::not_modified(headers, last) {
+        return Ok(polling::not_modified_response(last));
+    }
+    let rows = list_rows(state, auth.user.id, repo_id, params, &p).await?;
+    let page = page_threads(state, auth, p, rows).await?;
+    Ok(polling::with_headers(page.into_response(), last))
+}
+
 /// `GET /notifications`
 pub async fn list(
     State(state): State<AppState>,
     auth: RequireUser,
     p: Pagination,
+    headers: HeaderMap,
     Query(params): Query<ListParams>,
-) -> ApiResult<Page<Thread>> {
+) -> ApiResult<Response> {
     require_scope(&auth)?;
     let p = p.with_default_per_page(50, 50);
-    let rows = list_rows(&state, auth.id(), None, &params, &p).await?;
-    page_threads(&state, &auth, p, rows).await
+    polled_list(&state, &auth, &headers, p, None, &params).await
 }
 
 /// `GET /repos/{owner}/{repo}/notifications`
@@ -303,14 +344,14 @@ pub async fn list_for_repo(
     State(state): State<AppState>,
     auth: RequireUser,
     p: Pagination,
+    headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
     Query(params): Query<ListParams>,
-) -> ApiResult<Page<Thread>> {
+) -> ApiResult<Response> {
     require_scope(&auth)?;
     let access = RepoAccess::load(&state, Some(&auth), &owner, &repo).await?;
     let p = p.with_default_per_page(50, 50);
-    let rows = list_rows(&state, auth.id(), Some(access.repo.id), &params, &p).await?;
-    page_threads(&state, &auth, p, rows).await
+    polled_list(&state, &auth, &headers, p, Some(access.repo.id), &params).await
 }
 
 #[derive(Debug, Default, Deserialize)]

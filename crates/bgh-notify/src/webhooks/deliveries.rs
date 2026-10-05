@@ -195,6 +195,12 @@ async fn redeliver(
     id: i64,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let d = load(state, owner, hook_id, id).await?;
+    if d.payload_raw.is_empty() {
+        // Body dropped by the retention service (`webhook_payload_days`).
+        return Err(ApiError::unprocessable(
+            "The payload of this delivery is no longer available for redelivery.",
+        ));
+    }
     let hook = load_hook(state, owner, hook_id).await?;
     let mut tx = Tx::begin(state).await?;
     let new_id: i64 = sqlx::query_scalar(
