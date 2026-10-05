@@ -69,7 +69,7 @@ async fn reads_and_updates_settings() {
         json!({"smtp": {"password": "********", "port": 465, "tls": "tls"}, "auth_providers": providers}),
     )
     .await;
-    let typed = bgh_core::settings::load_uncached(&app.state.db)
+    let typed = bgh_core::settings::load_uncached(&app.state.config, &app.state.db)
         .await
         .unwrap();
     assert_eq!(typed.smtp.password.as_deref(), Some("hunter2"));
@@ -211,7 +211,7 @@ async fn default_repository_visibility() {
         .await;
     assert_eq!(r["visibility"], "public");
 
-    let s = bgh_core::settings::load_uncached(&app.state.db)
+    let s = bgh_core::settings::load_uncached(&app.state.config, &app.state.db)
         .await
         .unwrap();
     assert!(
@@ -228,7 +228,7 @@ async fn default_repository_visibility() {
         json!({"organizations": {"creation": "admins_only"}}),
     )
     .await;
-    let s = bgh_core::settings::load_uncached(&app.state.db)
+    let s = bgh_core::settings::load_uncached(&app.state.config, &app.state.db)
         .await
         .unwrap();
     let a = bgh_core::models::db::User::find(&app.state.db, alice.id)
@@ -372,12 +372,26 @@ async fn rate_limits() {
     let admin = app.create_admin("root").await;
     let alice = app.create_user("alice").await;
 
-    // Disabled by default: no headers, /rate_limit 404.
-    let res = app.get("/api/v3/user").auth(&alice).send().await;
-    assert!(res.header("x-ratelimit-limit").is_none());
-    let res = app.get("/api/v3/rate_limit").auth(&alice).send().await;
-    res.assert_status(404);
-    assert_eq!(res.json()["message"], "Rate limiting is not enabled.");
+    // Not enforced by default, but budgets are counted and reported.
+    let res = app.get("/api/v3/user").auth(&admin).send().await;
+    res.assert_status(200);
+    assert_eq!(res.header("x-ratelimit-limit"), Some("5000"));
+    assert_eq!(res.header("x-ratelimit-used"), Some("1"));
+    let res = app.get("/api/v3/rate_limit").auth(&admin).send().await;
+    res.assert_status(200);
+    let body = res.json();
+    assert_eq!(body["resources"]["core"]["limit"], 5000);
+    assert_eq!(body["resources"]["core"]["used"], 1);
+    assert_eq!(body["resources"]["search"]["limit"], 30);
+    assert_eq!(body["resources"]["graphql"]["limit"], 5000);
+    assert_eq!(body["rate"], body["resources"]["core"]);
+    let s = app
+        .get("/_bgh/admin/settings")
+        .auth(&admin)
+        .send()
+        .await
+        .json();
+    assert_eq!(s["rate_limits"]["authenticated_per_hour"], 5000);
 
     patch_settings(
         &app,
@@ -412,7 +426,7 @@ async fn rate_limits() {
     res.assert_status(200);
     let body = res.json();
     assert_eq!(body["resources"]["core"]["limit"], 3);
-    assert_eq!(body["rate"]["used"], 4);
+    assert_eq!(body["rate"]["used"], 3, "capped at the limit");
     assert_eq!(body["rate"]["remaining"], 0);
 
     // Separate buckets per user and for anonymous IPs.

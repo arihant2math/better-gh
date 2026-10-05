@@ -184,15 +184,17 @@ bgh_core::audit::log(&mut *tx, Some(&auth.user), "label.create",
     bgh_core::audit::Target::Repo { id: access.repo.id, org_id: None }, json!({"name": name})).await?;
 tx.enqueue(&ReindexRepo { repo_id: access.repo.id }).await?;    // runs after commit
 tx.emit(Event::RepositoryUpdated { repo_id: access.repo.id, actor_id: auth.user.id });
-tx.sync_model(SyncModel::Label, label.id, SyncAction::Insert).await?; // last: see 8a
-tx.commit().await?;   // commit → publish sync deltas to Redis → emit events
+tx.sync_model(SyncModel::Label, label.id, SyncAction::Insert).await?; // see 8a
+tx.commit().await?;   // write sync actions, commit → publish deltas to Redis → emit events
 ```
 
 * Audit every security-relevant write (`audit::log`, or
   `audit::log_with_ip(.., Some(&bgh_core::auth::client_ip(&state.config, &headers, &extensions)))`
   when the request is at hand).
 * Site-wide behaviour switches come from `bgh_core::settings::load(&state)`
-  (typed, cached); never read `site_settings` directly.
+  (typed, cached); never read `site_settings` directly. A setting whose
+  default comes from the environment gets it in `SiteSettings::defaults`
+  (stored fields override it), so code reads only the effective value.
 * Every synced model change records a sync action **in the same
   transaction** — through the helpers of section 8a, never hand-built JSON.
 * Dropping a `Tx` without `commit()` rolls back and discards all side effects.
@@ -206,14 +208,18 @@ tx.commit().await?;   // commit → publish sync deltas to Redis → emit events
 The web client keeps a local copy of every *synced model* (`user`, `org`,
 `membership`, `team`, `repo`, `viewerRepo`, `label`, `milestone`, `issue`
 — PRs included —, `comment`, `review`, `issueEvent`, `notification`;
-docs/SYNC_PROTOCOL.md §3) and learns about changes only from
-`sync_actions`. **Any write that changes what one of these rows looks like
-must record it**, or clients go stale until their next bootstrap.
+docs/SYNC_PROTOCOL.md §3; plus the delta-only extensions `reviewComment`,
+`checkRun`, `checkSuite`, `commitStatus`, §3.2) and learns about changes
+only from `sync_actions`. **Any write that changes what one of these rows
+looks like must record it**, or clients go stale until their next
+bootstrap.
 
 The compact shapes are built in exactly one place,
 `bgh_core::sync::shapes` (SQL that renders rows straight from the tables).
 Bootstrap, partial sync and your deltas all use it, so you never write
-sync JSON yourself. `SyncModel` (= `shapes::Model`) is in the prelude.
+sync JSON yourself — **the rule: a delta's `d` equals the row a load
+returns**. `SyncModel` (= `shapes::Model`) is in the prelude. A new field
+or model goes into `shapes` (and SYNC_PROTOCOL.md), not into your crate.
 
 | You changed | Record (inside your `Tx`, after the writes) |
 |-------------|------------------------------------------|
@@ -231,20 +237,26 @@ that show them:
 * issue opened/closed/transferred → also `sync_model(Repo, repo_id)`
   (`openIssues`/`openPulls`) and the milestone (`openIssues`/`closedIssues`);
 * comment created/deleted → also the issue (`comments`);
+* reaction added/removed → the reacted `issue` / `comment` /
+  `reviewComment` (`reactions`; there is no reaction model);
 * label deleted (cascades `issue_labels`) → `sync_models(Issue, &affected)`
   before the delete commits, then `sync_delete` the label;
 * review submitted/dismissed, reviewer requested, check run/status
   changed → the PR's issue (`reviewDecision`, `checks`);
+* stars / watches → the repo row (`stars`, `watchers`) and the user's
+  `viewerRepo`; a direct collaborator added/changed/removed →
+  `sync_viewer_repo` + `Event::AccessChanged`;
 * org member added/removed → `sync_model(Membership, ..)` /
   `sync_delete(&org_scope, Membership, id)`, the teams whose `memberIds`
   changed, and `sync_viewer_repo` for the member's affected repos.
 
 Rules:
 
-* **Record last.** `record` takes a transaction-scoped advisory lock so
-  sync ids commit in id order (clients resume from "everything ≤ N"); it is
-  held until commit, so do the slow work first and the `tx.sync*` calls
-  right before `tx.commit()`.
+* **When to record.** The `tx.sync*` helpers load the row *at the call*
+  (inside your transaction), so call them after the writes that shape it.
+  The action itself is written at `tx.commit()` (one statement under the
+  ordering advisory lock, so sync ids commit in id order and the lock is
+  never held while you wait for row locks).
 * **Access changes:** after removing a collaborator / team grant /
   membership, changing visibility or transferring a repository, also
   `tx.emit(Event::AccessChanged { repo_id, org_id, user_id })` (any ids you
@@ -267,13 +279,14 @@ Rules:
   by `bgh_sync::http_middleware`), the response gets `X-Bgh-Sync-Id`, and
   mutations are idempotent per `(user, tx)` for 24 h. Nothing to do in
   handlers.
-* Raw `tx.sync(scope, model, id, action, &data)` still works for models
-  outside the list above; don't use it for listed models.
+* Raw `tx.sync(scope, model, id, action, &data)` is only for models no
+  client loads (e.g. `release`, `workflow_run`); never for `SyncModel`s.
 
 Tests: assert the recorded action with
 `SELECT model, model_id, action::text, data FROM sync_actions` — `data`
-must equal the row `GET /_bgh/sync/bootstrap` returns (see
-`crates/bgh-sync/tests/bootstrap.rs::tx_helpers_record_bootstrap_shapes`).
+must equal the row `GET /_bgh/sync/bootstrap` (or partial sync) returns.
+`crates/bgh-sync/tests/shapes.rs` drives every crate's API and checks
+this for every model; extend it when you add a model.
 
 ## 9. Background jobs
 
@@ -314,6 +327,44 @@ reg.on_event("notify.subscriptions", |state, event: Arc<Event>| async move {
 
 Listeners run in-process, in order, one task per listener; for durable
 side effects (webhooks, email) enqueue a job from the listener.
+
+## 10a. Mail
+
+One API (`bgh_core::mail`): build an `Email` (use `mail::templates` for
+account mail), queue it in your transaction, never send inline:
+
+```rust
+let email = bgh_core::mail::templates::verify_email(&state.config.site_name, &to, &user.login, &link, 72);
+tx.enqueue(&bgh_core::mail::SendEmail::new(email)).await?;   // job `mail.send`, sent after commit
+```
+
+The `mail.send` job (`mail::send_job`, registered by bgh-server) picks
+the transport per message: the admin `smtp` site setting when enabled →
+`BGH_SMTP_URL` → the dev transport (log + `{data_dir}/mail/*.eml` and
+`.json`). Tests: `app.drain_jobs().await` then
+`bgh_core::mail::outbox(&app.state.config).await` (structured `Email`s)
+or `outbox_raw` (RFC 5322 text, headers/MIME).
+
+## 10b. Rate limits and throttling
+
+`bgh_core::ratelimit` is mounted by bgh-server; handlers do nothing. Every
+API response carries `X-RateLimit-{Limit,Remaining,Reset,Used,Resource}`
+(budgets `core` per hour, `search` (`/search/*`) per minute, `graphql`
+per hour; per user, or per client IP when anonymous); `GET /rate_limit`
+answers in GitHub's shape and is not counted. Enforcement (403 "API rate
+limit exceeded for …" + `Retry-After`) applies when
+`settings.rate_limits.enabled` (default from `BGH_RATE_LIMIT_ENABLED`,
+off). Tests that need enforcement:
+`TestApp::spawn_with_config(factory(), |c| { c.rate_limits.enabled = true; c.rate_limits.authenticated_per_hour = 5; })`.
+
+For abuse throttling of specific actions (failed logins, 2FA attempts,
+reset mails) use the counters, keyed by what you throttle:
+
+```rust
+if ratelimit::count(&state, &format!("login:{login}")).await >= 10 { return Err(too_many()); }
+ratelimit::hit(&state, &format!("login:{login}"), 900).await?;   // count + window in seconds
+ratelimit::clear(&state, &format!("login:{login}")).await;       // e.g. after success
+```
 
 ## 11. Git
 

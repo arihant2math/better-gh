@@ -6,6 +6,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use bgh_core::audit;
 use bgh_core::error::unique_violation;
+use bgh_core::mail;
 use bgh_core::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -117,16 +118,12 @@ async fn send_verification(
         .html(&format!("/settings/emails/verify?token={token}"));
     util::queue_mail(
         tx,
-        email,
-        &format!(
-            "[{}] Please verify your email address",
-            state.config.site_name
-        ),
-        format!(
-            "Hi @{login},\n\nPlease verify {email} by opening this link:\n\n{link}\n\n\
-             The link expires in {VERIFY_TTL_HOURS} hours. If you didn't add this address, \
-             you can ignore this message.\n",
-            login = user.login
+        mail::templates::verify_email(
+            &state.config.site_name,
+            email,
+            &user.login,
+            &link,
+            VERIFY_TTL_HOURS,
         ),
     )
     .await
@@ -231,7 +228,7 @@ pub async fn remove(
     .await?
     .unwrap_or_else(|| auth.user.clone());
     if user.email.is_none() && auth.user.email.is_some() {
-        util::sync_profile(&mut tx, &state.urls, &user).await?;
+        util::sync_profile(&mut tx, &user).await?;
     }
     audit::log(
         &mut *tx,
@@ -293,7 +290,7 @@ pub async fn set_visibility(
     .bind(&public)
     .fetch_one(&mut *tx)
     .await?;
-    util::sync_profile(&mut tx, &state.urls, &user).await?;
+    util::sync_profile(&mut tx, &user).await?;
     tx.commit().await?;
     let rows = user_emails(&state, auth.user.id).await?;
     Ok(Json(rows.iter().map(Email::from).collect()))

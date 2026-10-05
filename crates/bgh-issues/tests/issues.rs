@@ -138,7 +138,10 @@ async fn create_issue_shape() {
     .fetch_one(&app.state.db)
     .await
     .unwrap();
-    assert_eq!(repo_delta, json!({"id": repo_id, "openIssues": 1}));
+    // The full repo row (same shape as the bootstrap).
+    assert_eq!(repo_delta["id"], repo_id);
+    assert_eq!(repo_delta["openIssues"], 1);
+    assert_eq!(repo_delta["openPulls"], 0);
     let ev: serde_json::Value = sqlx::query_scalar(
         "SELECT data FROM sync_actions WHERE scope = $1 AND model = 'issueEvent'
             AND data->>'event' = 'labeled' ORDER BY id LIMIT 1",
@@ -629,7 +632,6 @@ async fn cross_repository_lists() {
         json!({"name": "widgets", "private": true}),
     )
     .await;
-    wait_default_labels(&app, "acme", "widgets").await;
     private_repo(&app, &alice, "mine").await;
     repo(&app, &carol, "pub").await;
 

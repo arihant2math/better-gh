@@ -73,18 +73,17 @@ async fn create_and_get_repository() {
         .await
         .assert_status(404);
 
-    // Sync action recorded in the repo scope.
+    // Sync actions recorded in the repo scope: the default labels and the
+    // repository, in the creating transaction.
     let models: Vec<(String, String)> =
-        // (bgh-issues adds default `label` rows from an event listener.)
-        sqlx::query_as(
-            "SELECT model, action::text FROM sync_actions
-              WHERE scope = $1 AND model <> 'label' ORDER BY id",
-        )
+        sqlx::query_as("SELECT model, action::text FROM sync_actions WHERE scope = $1 ORDER BY id")
             .bind(format!("repo:{id}"))
             .fetch_all(&app.state.db)
             .await
             .unwrap();
-    assert_eq!(models, vec![("repo".to_string(), "I".to_string())]);
+    let mut expected = vec![("label".to_string(), "I".to_string()); 9];
+    expected.push(("repo".to_string(), "I".to_string()));
+    assert_eq!(models, expected);
 }
 
 #[tokio::test]

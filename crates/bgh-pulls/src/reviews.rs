@@ -8,7 +8,7 @@ use bgh_core::node_id::{self, NodeType};
 use bgh_core::prelude::*;
 use bgh_core::time::ts;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::comments::{self, LocationInput, ReviewCommentJson};
 use crate::json::{Href, associations};
@@ -81,21 +81,6 @@ pub async fn render(
         })
         .collect())
 }
-
-/// Compact client row (model `review`, `docs/SYNC_PROTOCOL.md` §3).
-pub fn sync_json(r: &Review) -> Value {
-    json!({
-        "id": r.id,
-        "repoId": r.repo_id,
-        "issueId": r.pull_id,
-        "authorId": r.user_id,
-        "state": r.state,
-        "body": r.body,
-        "commitId": r.commit_id,
-        "submittedAt": ts(r.submitted_at),
-    })
-}
-
 async fn find(state: &AppState, pull: &Pull, id: i64, viewer: Option<i64>) -> ApiResult<Review> {
     let r: Review = sqlx::query_as(&format!(
         "SELECT {} FROM pr_reviews WHERE id = $1 AND pull_id = $2",
@@ -190,14 +175,8 @@ async fn on_submitted(
         .await?;
     }
     for c in &comments {
-        tx.sync(
-            &access.scope(),
-            "reviewComment",
-            c.id,
-            SyncAction::Insert,
-            &comments::sync_json(c),
-        )
-        .await?;
+        tx.sync_model(SyncModel::ReviewComment, c.id, SyncAction::Insert)
+            .await?;
         tx.emit(Event::PullRequestReviewCommentCreated {
             repo_id: access.repo.id,
             pull_id: pull.id(),
@@ -214,14 +193,8 @@ async fn on_submitted(
         .bind(pull.id())
         .execute(&mut **tx)
         .await?;
-    tx.sync(
-        &access.scope(),
-        "review",
-        review.id,
-        SyncAction::Update,
-        &sync_json(review),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Review, review.id, SyncAction::Update)
+        .await?;
     crate::json::sync_pull(tx, &access.scope(), pull.id()).await?;
     tx.enqueue(&crate::jobs::Refresh {
         pull_id: pull.id(),
@@ -364,14 +337,8 @@ pub async fn create(
     if st == PENDING {
         // Pending reviews are private: no sync broadcast to the repo scope.
     } else {
-        tx.sync(
-            &access.scope(),
-            "review",
-            review.id,
-            SyncAction::Insert,
-            &sync_json(&review),
-        )
-        .await?;
+        tx.sync_model(SyncModel::Review, review.id, SyncAction::Insert)
+            .await?;
         on_submitted(&mut tx, &access, &pull, &review, auth.user.id).await?;
     }
     tx.commit().await?;
@@ -411,14 +378,8 @@ pub async fn update(
     .fetch_one(&mut *tx)
     .await?;
     if review.state != PENDING {
-        tx.sync(
-            &access.scope(),
-            "review",
-            id,
-            SyncAction::Update,
-            &sync_json(&review),
-        )
-        .await?;
+        tx.sync_model(SyncModel::Review, id, SyncAction::Update)
+            .await?;
         tx.emit(Event::PullRequestReviewEdited {
             repo_id: access.repo.id,
             pull_id: pull.id(),
@@ -581,14 +542,8 @@ pub async fn dismiss(
                 "dismissal_message": message}}),
     )
     .await?;
-    tx.sync(
-        &access.scope(),
-        "review",
-        id,
-        SyncAction::Update,
-        &sync_json(&review),
-    )
-    .await?;
+    tx.sync_model(SyncModel::Review, id, SyncAction::Update)
+        .await?;
     tx.enqueue(&crate::jobs::Refresh {
         pull_id: pull.id(),
         codeowners: false,

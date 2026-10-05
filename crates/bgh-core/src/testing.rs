@@ -289,8 +289,11 @@ impl TestApp {
         config.signup_enabled = true;
         config.db_max_connections = 5;
         // In-process requests have no client IP, so every anonymous request
-        // of a test shares one bucket; keep it well above GitHub's 60/h.
-        config.rate_limit_anonymous = 5000;
+        // of a test shares one bucket; keep it well above GitHub's 60/h
+        // (matters only for tests that enable enforcement).
+        config.rate_limits.unauthenticated_per_hour = 5000;
+        // Deterministic: no environment-provided SSO provider.
+        config.oidc = None;
         // Tests stand in for a reverse proxy: `X-Forwarded-For` names the
         // client (audit IPs, per-IP rate-limit buckets).
         config.trust_proxy = true;

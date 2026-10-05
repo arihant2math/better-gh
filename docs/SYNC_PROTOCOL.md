@@ -52,6 +52,9 @@ plain `BIGSERIAL` can commit id 101 before id 100, and a client replaying
 `pg_advisory_xact_lock(<SYNC_LOCK>)` before inserting into `sync_actions`, so
 writers of synced data serialize on the insert and commit order equals id
 order. (Writes that do not touch synced models are unaffected.)
+`bgh_core::db::Tx` writes a transaction's actions in one statement right
+before its commit, so the lock is never held while a transaction still
+waits for row locks.
 
 Retention: actions older than the retention window (default 7 days) may be
 pruned. The server must remember `min_retained_id`.
@@ -286,6 +289,36 @@ for deltas). A profile change (login/name/avatar) is recorded as a `user`
 action in the `user:{id}` scope **and** in each `org:{id}` scope the user is a
 member of. Clients may hold slightly stale users for outside contributors
 until the next bootstrap; that is accepted.
+
+### 3.2 Extensions (server notes)
+
+Additive keys and models; clients that don't know them ignore them. They
+are built by the same shape loader as everything else
+(`bgh_core::sync::shapes`), so deltas always equal what a load returns.
+
+* `issue` rows of pull requests also carry `mergeCommitSha` (string |
+  null), `rebaseable` (boolean | null), `maintainerCanModify` (boolean),
+  `autoMerge` (`{enabledById, mergeMethod}` | null) and `reviewComments`
+  (number). Every `issue` row carries `activeLockReason`, `parentId` and
+  `pinned` (declared optional above).
+* `issueEvent.data` may also carry `teamId` (team review requests),
+  `before`/`after` (force pushes), `ref` (head ref deleted/restored),
+  `reviewId`/`dismissalMessage` (review dismissed) and `mergeMethod`
+  (auto-merge).
+* Delta-only models in `repo:{repoId}` (not in the bootstrap or partial
+  sync): `reviewComment` (PR inline comment: `id, repoId, issueId,
+  reviewId, inReplyToId, authorId, body, path, commitId, originalCommitId,
+  subjectType, side, startSide, line, originalLine, startLine,
+  originalStartLine, position, originalPosition, outdated, resolvedAt,
+  resolvedById, reactions, createdAt, updatedAt`; comments of pending
+  reviews are never sent), `checkRun` (`id, repoId, checkSuiteId, headSha,
+  name, status, conclusion, detailsUrl, title, startedAt, completedAt`),
+  `checkSuite` (`id, repoId, headSha, headBranch, appSlug, status,
+  conclusion, latestCheckRunsCount`) and `commitStatus` (`id, repoId, sha,
+  state, context, description, targetUrl, creatorId, createdAt`).
+* Reactions have no model: the reacted `issue`, `comment` or
+  `reviewComment` row is re-sent with its `reactions` counts.
+* A `D` action's `d` is `null`.
 
 ---
 

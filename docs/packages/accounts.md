@@ -125,9 +125,12 @@ returns `X-OAuth-Scopes`.
 `GET /_bgh/sso`, `GET /_bgh/sso/{id}/login?return_to=`,
 `GET /_bgh/sso/{id}/callback`, `GET /_bgh/user/identities`,
 `DELETE /_bgh/user/identities/{id}`.
-- Configuration comes from `site_settings['auth.oidc']` (an object or an
-  array), or from the `BGH_OIDC_*` env variables for a single provider; see
-  the `sso.rs` docs.
+- Providers come from the `auth_providers.oidc` site setting (admin
+  settings; `name`, `display_name`, `issuer`, `client_id`, `client_secret`,
+  `scopes`, `auto_create_users`, `login_claim`, `allowed_domains`), whose
+  default is the single provider of the `BGH_OIDC_*` env variables
+  (`Config::oidc`); read only through `sso::providers`. See the `sso.rs`
+  docs.
 - The flow uses code + PKCE + nonce, with discovery cached in Redis.
 - Identities are linked by (provider, sub), then by verified email.
   `auto_create` and `allowed_domains` are honoured.
@@ -188,8 +191,10 @@ at most 1 MiB. `PUT|DELETE /_bgh/orgs/{org}/avatar` is for owners. An upload
 sets `avatar_url` to `/avatars/u/{id}?v={sha}`.
 
 **Rate limits**
-`GET /rate_limit` (not counted against the limit) and `GET /api/v3/` (API
-root; `gh auth login --with-token` reads `X-OAuth-Scopes` here).
+`GET /api/v3/` (API root; `gh auth login --with-token` reads
+`X-OAuth-Scopes` here). API rate limiting and `GET /rate_limit` are shared
+infrastructure (`bgh_core::ratelimit`, endpoint in bgh-admin); accounts
+uses its throttling counters for logins, 2FA, sign-ups and reset mails.
 
 ## Tables (0100_accounts.sql)
 
@@ -207,38 +212,28 @@ root; `gh auth login --with-token` reads `X-OAuth-Scopes` here).
 
 ## Sync
 
-The models follow docs/SYNC_PROTOCOL.md and live in the scope `org:{id}`:
+All rows come from the shared shapes (`tx.sync_model` / `sync_user` /
+`sync_delete`), in the scope `org:{id}`:
 
 - `org`: on create and on PATCH.
 - `membership`: id is `org_members.id`; on add, role change and removal.
-- `team`: the full row with `memberIds` and `repoIds` on every change; on
-  delete the payload is `{id}`.
+- `team`: the full row with `memberIds` and `repoIds` on every change.
 
-Profile changes record `user` in `user:{id}` and in each org scope.
-`create_org` was switched from the old `organization` and `org_member`
-model names to these.
+Profile changes record `user` in `user:{id}` and in each org scope
+(`sync_user`, also when a member joins an org).
 
 ## Shared-code changes (bgh-core / bgh-server, all additive)
 
-- `bgh_core::mail` (new): `Message`, `send`, `outbox`. It uses SMTP via
-  lettre with rustls when `BGH_SMTP_URL` is set; otherwise mail is logged
-  and written to `{data_dir}/mail/*.eml|json` (tests read the outbox). The
-  job `accounts.send_mail` delivers queued mail. B5 can reuse
-  `bgh_core::mail::send`.
-- `bgh_core::ratelimit` (new):
-  - API middleware with `X-RateLimit-*` headers and 403 when exceeded (with
-    `Retry-After`).
-  - Uses Redis fixed windows per user or per IP. The `core` resource allows
-    5000/h authenticated and 60/h anonymous; `search` allows 30/min and
-    10/min.
-  - Fails open if Redis is down, and does not count `/rate_limit`.
-  - Helpers `hit`, `count` and `clear` for throttling.
-  - Mounted on `/api/v3` in `bgh-server/src/lib.rs`.
+- Mail: account mail (verification, password reset/changed, 2FA enabled,
+  org invitations) is built with `bgh_core::mail::templates` and queued as
+  the shared `mail.send` job (`util::queue_mail`); tests read
+  `bgh_core::mail::outbox`. See BACKEND_PATTERNS.md §10a.
+- `bgh_core::ratelimit`: the shared API limiter (BACKEND_PATTERNS.md §10b)
+  plus the throttling counters `hit`, `count` and `clear` used here.
 - `Config`: `smtp_url` (`BGH_SMTP_URL`), `mail_from` (`BGH_MAIL_FROM`),
-  `rate_limit_authenticated` (`BGH_RATE_LIMIT`, 0 disables),
-  `rate_limit_anonymous` (`BGH_RATE_LIMIT_ANONYMOUS`), `trust_proxy`
+  `rate_limits` (`BGH_RATE_LIMIT*`), `oidc` (`BGH_OIDC_*`), `trust_proxy`
   (`BGH_TRUST_PROXY`), and `Config::mail_from()`. The test harness sets the
-  anonymous limit to 5000, because in-process requests share one
+  anonymous core limit to 5000, because in-process requests share one
   "unknown" IP.
 - `auth`:
   - `resolve_request` lets middleware resolve auth and cache it for the
@@ -259,8 +254,9 @@ model names to these.
   `members_can_fork_private_repositories`, and
   `members_allowed_repository_creation_type`.
 - `auth::csrf_token`, `auth::csrf_middleware` (layered in bgh-server), and
-  `Event::SessionEnded {user_id, session_id}`, which bgh-sync should
-  consume to close sockets with 4001. `TestRequest::cookie` adds the
+  `Event::SessionEnded {user_id, session_id}`, which bgh-sync consumes to
+  close that session's sockets with 4001 (session revocation in
+  `session::revoke` deletes rows directly and emits it). `TestRequest::cookie` adds the
   matching `X-CSRF-Token` automatically; use `.header("cookie", …)` to test
   rejection.
 - bgh-server `web.rs`: shell injection via
@@ -293,5 +289,7 @@ model names to these.
 - Org-level enforcement of `two_factor_requirement_enabled` is not
   implemented. The `DELETE /orgs/{org}` endpoint is left to admin (B7),
   because it needs repo storage cleanup.
-- `GET /api/v3/` (trailing slash) is mounted as an absolute web route, so it
-  has no rate-limit headers.
+- `GET /api/v3/` (trailing slash) is mounted as an absolute web route; it
+  is rate limited by `ratelimit::root_middleware`.
+- The `auth_providers.password_login` site setting is not enforced by the
+  password login endpoints yet.

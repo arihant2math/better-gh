@@ -13,7 +13,7 @@ use bgh_core::prelude::*;
 use bgh_core::time::ts;
 use bgh_core::urls::Urls;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::model::Pull;
 
@@ -584,164 +584,22 @@ pub async fn render_full(
             .remove(0),
     )
 }
-
-/// Compact client row (model `issue`, `docs/SYNC_PROTOCOL.md` §3) for a
-/// pull request: the issue fields plus the PR-only fields. `body` (lazy)
-/// is included only when `with_body`.
-pub async fn sync_json(
-    conn: &mut sqlx::PgConnection,
-    p: &Pull,
-    with_body: bool,
-) -> Result<Value, sqlx::Error> {
-    let rows: Vec<(Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT user_id, team_id FROM pr_requested_reviewers WHERE pull_id = $1 ORDER BY id",
-    )
-    .bind(p.id())
-    .fetch_all(&mut *conn)
-    .await?;
-    let users: Vec<i64> = rows.iter().filter_map(|r| r.0).collect();
-    let teams: Vec<i64> = rows.iter().filter_map(|r| r.1).collect();
-    let label_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT label_id FROM issue_labels WHERE issue_id = $1 ORDER BY label_id",
-    )
-    .bind(p.id())
-    .fetch_all(&mut *conn)
-    .await?;
-    let assignee_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT user_id FROM issue_assignees WHERE issue_id = $1 ORDER BY created_at, user_id",
-    )
-    .bind(p.id())
-    .fetch_all(&mut *conn)
-    .await?;
-    let decisions: Vec<String> = sqlx::query_scalar(
-        "SELECT state FROM (
-            SELECT DISTINCT ON (user_id) state FROM pr_reviews
-             WHERE pull_id = $1 AND user_id IS NOT NULL AND user_id IS DISTINCT FROM $2
-               AND state IN ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED')
-             ORDER BY user_id, submitted_at DESC NULLS LAST, id DESC) d",
-    )
-    .bind(p.id())
-    .bind(p.issue.author_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    let review_decision = if decisions.iter().any(|d| d == "CHANGES_REQUESTED") {
-        Some("changes_requested")
-    } else if decisions.iter().any(|d| d == "APPROVED") {
-        Some("approved")
-    } else if !users.is_empty() || !teams.is_empty() {
-        Some("review_required")
-    } else {
-        None
-    };
-    let repo_ids: Vec<i64> = std::iter::once(p.pr.repo_id)
-        .chain(p.pr.head_repo_id)
-        .collect();
-    let outcomes: Vec<String> = sqlx::query_scalar(
-        "SELECT o FROM (
-            SELECT DISTINCT ON (context) state AS o FROM commit_statuses
-             WHERE repo_id = ANY($1) AND sha = $2 ORDER BY context, id DESC) s
-         UNION ALL
-         SELECT o FROM (
-            SELECT DISTINCT ON (name) CASE WHEN status <> 'completed' THEN 'pending'
-                                           ELSE conclusion END AS o
-              FROM check_runs WHERE repo_id = ANY($1) AND head_sha = $2
-             ORDER BY name, id DESC) r",
-    )
-    .bind(&repo_ids)
-    .bind(&p.pr.head_sha)
-    .fetch_all(&mut *conn)
-    .await?;
-    let failed = |o: &str| {
-        matches!(
-            o,
-            "failure" | "error" | "timed_out" | "cancelled" | "action_required" | "stale"
-        )
-    };
-    let checks = if outcomes.is_empty() {
-        None
-    } else if outcomes.iter().any(|o| failed(o)) {
-        Some("failure")
-    } else if outcomes.iter().any(|o| o == "pending") {
-        Some("pending")
-    } else if outcomes.iter().any(|o| o == "success") {
-        Some("success")
-    } else {
-        Some("neutral")
-    };
-    let mut v = json!({
-        "id": p.id(),
-        "repoId": p.pr.repo_id,
-        "number": p.number(),
-        "title": p.issue.title,
-        "state": p.issue.state,
-        "stateReason": p.issue.state_reason,
-        "authorId": p.issue.author_id,
-        "assigneeIds": assignee_ids,
-        "labelIds": label_ids,
-        "milestoneId": p.issue.milestone_id,
-        "comments": p.issue.comments_count,
-        "locked": p.issue.locked,
-        "createdAt": Timestamp::from(p.issue.created_at),
-        "updatedAt": Timestamp::from(p.issue.updated_at),
-        "closedAt": ts(p.issue.closed_at),
-        "isPr": true,
-        "draft": p.pr.draft,
-        "merged": p.pr.merged,
-        "mergedAt": ts(p.pr.merged_at),
-        "mergedById": p.pr.merged_by_id,
-        "headRef": p.pr.head_ref,
-        "headRepoId": p.pr.head_repo_id,
-        "headSha": p.pr.head_sha,
-        "baseRef": p.pr.base_ref,
-        "baseSha": p.pr.base_sha,
-        "mergeable": p.pr.mergeable,
-        "mergeableState": p.pr.mergeable_state,
-        "reviewDecision": review_decision,
-        "requestedReviewerIds": users,
-        "requestedTeamIds": teams,
-        "checks": checks,
-        "additions": p.pr.additions,
-        "deletions": p.pr.deletions,
-        "changedFiles": p.pr.changed_files,
-        "commits": p.pr.commits,
-    });
-    // Extensions (not in the v1 TypeScript interface; ignored by older
-    // clients).
-    let auto_merge = p.pr.auto_merge.as_ref().map(
-        |a| json!({"enabledById": a.get("enabled_by_id"), "mergeMethod": a.get("merge_method")}),
-    );
-    v["mergeCommitSha"] = json!(p.pr.merge_commit_sha);
-    v["rebaseable"] = json!(p.pr.rebaseable);
-    v["maintainerCanModify"] = json!(p.pr.maintainer_can_modify);
-    v["autoMerge"] = json!(auto_merge);
-    v["reviewComments"] = json!(p.pr.review_comments_count);
-    if with_body {
-        v["body"] = json!(p.issue.body);
-    }
-    Ok(v)
+/// Re-read a PR inside `tx` and record an `issue` sync update (shape from
+/// `bgh_core::sync::shapes`; body omitted, use [`sync_pull_with_body`] when
+/// it changed). `_scope` is derived from the row; the parameter is kept for
+/// the existing callers.
+pub async fn sync_pull(tx: &mut Tx, _scope: &str, pull_id: i64) -> ApiResult<Pull> {
+    sync_pull_inner(tx, pull_id, false).await
 }
 
-/// Re-read a PR inside `tx` and record an `issue` sync update (body
-/// omitted; use [`sync_pull_with_body`] when it changed).
-pub async fn sync_pull(tx: &mut Tx, scope: &str, pull_id: i64) -> ApiResult<Pull> {
-    sync_pull_inner(tx, scope, pull_id, false).await
+pub async fn sync_pull_with_body(tx: &mut Tx, _scope: &str, pull_id: i64) -> ApiResult<Pull> {
+    sync_pull_inner(tx, pull_id, true).await
 }
 
-pub async fn sync_pull_with_body(tx: &mut Tx, scope: &str, pull_id: i64) -> ApiResult<Pull> {
-    sync_pull_inner(tx, scope, pull_id, true).await
-}
-
-async fn sync_pull_inner(
-    tx: &mut Tx,
-    scope: &str,
-    pull_id: i64,
-    with_body: bool,
-) -> ApiResult<Pull> {
+async fn sync_pull_inner(tx: &mut Tx, pull_id: i64, with_body: bool) -> ApiResult<Pull> {
     let p = crate::model::find_by_id(&mut **tx, pull_id)
         .await?
         .ok_or(ApiError::NotFound)?;
-    let data = sync_json(&mut *tx, &p, with_body).await?;
-    tx.sync(scope, "issue", p.id(), SyncAction::Update, &data)
-        .await?;
+    tx.sync_issue(p.id(), SyncAction::Update, with_body).await?;
     Ok(p)
 }

@@ -19,19 +19,14 @@ async fn client_tx_is_recorded_and_sync_id_returned() {
         .send()
         .await;
     res.assert_status(201);
-    // Default labels are added afterwards by a bgh-issues event listener (in
-    // their own transaction, no client tx): ignore those rows.
-    let max = scalar(
-        &app,
-        "SELECT max(id) FROM sync_actions WHERE model <> 'label'",
-    )
-    .await;
+    // Every action of the request (default labels, repo, viewerRepo)
+    // carries the client tx.
+    let max = scalar(&app, "SELECT max(id) FROM sync_actions").await;
     assert_eq!(res.header("x-bgh-sync-id"), Some(max.to_string().as_str()));
-    let txs: Vec<Option<Uuid>> =
-        sqlx::query_scalar("SELECT tx FROM sync_actions WHERE model <> 'label' ORDER BY id")
-            .fetch_all(&app.state.db)
-            .await
-            .unwrap();
+    let txs: Vec<Option<Uuid>> = sqlx::query_scalar("SELECT tx FROM sync_actions ORDER BY id")
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap();
     assert!(!txs.is_empty());
     assert!(txs.iter().all(|t| *t == Some(tx)), "{txs:?}");
 
