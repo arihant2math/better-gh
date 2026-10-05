@@ -38,7 +38,7 @@ export function isSudoRequired(e: unknown): boolean {
 export type SudoHandler = () => Promise<boolean>;
 let sudoHandler: SudoHandler | null = null;
 
-/** Install the sudo prompt (`app/SudoHost`). Returns an uninstall function. */
+/** Install the sudo prompt (`app/sudoPrompt`, installed by `App`). Returns an uninstall function. */
 export function setSudoHandler(handler: SudoHandler | null): () => void {
   sudoHandler = handler;
   return () => {

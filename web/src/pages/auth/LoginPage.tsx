@@ -4,7 +4,8 @@ import { api } from '../../api/client';
 import { returnTo } from '../../app/App';
 import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
-import { getBoot, isMockMode } from '../../boot';
+import { passkeySignIn, securityKeyTwoFactor, webauthnError } from '../../api/webauthn';
+import { getBoot, isMockMode, type BootData } from '../../boot';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
@@ -126,7 +127,7 @@ function Login({ search }: { search: string }) {
 
   const securityKey = async () => {
     try {
-      await session.verifySecurityKey(twoFactorToken!);
+      session.adopt(await securityKeyTwoFactor<BootData>(twoFactorToken!));
       done();
     } catch (e) {
       const status = statusOf(e);
@@ -136,7 +137,6 @@ function Login({ search }: { search: string }) {
         setNotice({ tone: status === 429 ? 'warning' : 'danger', text: messageOf(e) });
         return;
       }
-      const { webauthnError } = await import('../../api/webauthn');
       throw new Error(status ? messageOf(e) : webauthnError(e), { cause: e });
     }
   };
@@ -145,10 +145,9 @@ function Login({ search }: { search: string }) {
     setPasskeyBusy(true);
     setNotice(null);
     try {
-      await session.passkeyLogin();
+      session.adopt(await passkeySignIn<BootData>());
       done();
     } catch (e) {
-      const { webauthnError } = await import('../../api/webauthn');
       setNotice({ tone: 'danger', text: statusOf(e) ? messageOf(e) : webauthnError(e) });
     } finally {
       setPasskeyBusy(false);

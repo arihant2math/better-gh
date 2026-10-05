@@ -82,18 +82,6 @@ class Session {
     }
   }
 
-  /** Passwordless sign-in with a passkey (browser prompt). */
-  async passkeyLogin(): Promise<void> {
-    const { passkeySignIn } = await import('../api/webauthn');
-    this.adopt(await passkeySignIn<BootData>());
-  }
-
-  /** Second step of a 2FA sign-in with a security key (browser prompt). */
-  async verifySecurityKey(twoFactorToken: string): Promise<void> {
-    const { securityKeyTwoFactor } = await import('../api/webauthn');
-    this.adopt(await securityKeyTwoFactor<BootData>(twoFactorToken));
-  }
-
   /** Second step of a 2FA sign-in: TOTP or recovery code. */
   async verifyTwoFactor(twoFactorToken: string, code: string): Promise<void> {
     const boot = await api.post<BootData>('/_bgh/auth/2fa', { twoFactorToken, code });

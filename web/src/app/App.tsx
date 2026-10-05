@@ -1,11 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
+import { setSudoHandler } from '../api/client';
 import { navigate, RouterView, useLocation } from '../router';
 import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
 import { session } from './session';
 import { Shell } from './Shell';
-import { SudoHost } from './SudoHost';
 
 /**
  * Full-page screens rendered without the app shell (sign-in flows, OAuth
@@ -54,6 +54,9 @@ export const App = observer(function App() {
     if (signedIn) void session.start();
   }, [signedIn, bare, pathname, search]);
 
+  // Sensitive actions may ask to re-authenticate (sudo mode, lazy dialog).
+  useEffect(() => setSudoHandler(() => import('./sudoPrompt').then((m) => m.promptSudo())), []);
+
   // The site requires 2FA and this account has none: set it up first.
   const setupRequired = !!session.user?.twoFactorSetupRequired;
   useEffect(() => {
@@ -75,7 +78,6 @@ export const App = observer(function App() {
   return (
     <>
       {content}
-      {signedIn && <SudoHost />}
       <Toaster />
     </>
   );
