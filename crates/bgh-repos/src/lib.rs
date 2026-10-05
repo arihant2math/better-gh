@@ -102,7 +102,8 @@ pub fn web_router() -> Router<AppState> {
         .merge(lfs::web_router())
 }
 
-/// Job handlers: post-receive processing, storage cleanup, languages.
+/// Job handlers: post-receive processing, storage cleanup, languages;
+/// services: SSH and scheduled git maintenance.
 pub fn register(reg: &mut Registry) {
     reg.job(jobs::post_receive);
     reg.job(jobs::delete_storage);
@@ -110,6 +111,8 @@ pub fn register(reg: &mut Registry) {
     reg.job(lfs::gc::run);
     reg.on_event("repos.transport_cleanup", lfs::gc::on_event);
     reg.job(maintenance::pack_refs);
+    reg.job(maintenance::run_pass_job);
     reg.on_event("repos.pack_refs", maintenance::on_event);
     reg.service("ssh", ssh::service);
+    reg.service("repos.maintenance", maintenance::service);
 }

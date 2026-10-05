@@ -128,6 +128,16 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
             "at least one sign-in method must stay enabled",
         )));
     }
+    let g = &s.git_maintenance;
+    if g.prune_grace_days == 0 || g.prune_grace_days > 3650 {
+        return Err(bad("git_maintenance.prune_grace_days"));
+    }
+    if g.interval_hours == 0 || g.full_interval_days == 0 || g.archive_cache_max_age_days == 0 {
+        return Err(bad("git_maintenance"));
+    }
+    if g.loose_objects_threshold <= 0 || g.pack_count_threshold <= 1 || g.max_repos_per_pass <= 0 {
+        return Err(bad("git_maintenance"));
+    }
     for d in &s.signup.allowed_email_domains {
         if d.is_empty() || d.contains('@') || d.contains(char::is_whitespace) {
             return Err(bad("signup.allowed_email_domains"));
