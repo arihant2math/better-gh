@@ -455,6 +455,37 @@ pub fn deleted_review_comment_json(urls: &Urls, ctx: &RepoCtx, number: i64, id: 
     })
 }
 
+/// Webhook `thread` object (`pull_request_review_thread`): `node_id` and
+/// the root comment with its replies, oldest first. Threads are short, so
+/// each comment is rendered with [`review_comment`].
+pub async fn review_thread(
+    state: &AppState,
+    ctx: &RepoCtx,
+    root_id: i64,
+) -> anyhow::Result<Option<Value>> {
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM pr_review_comments
+          WHERE repo_id = $1 AND (id = $2 OR in_reply_to_id = $2) ORDER BY id",
+    )
+    .bind(ctx.repo.id)
+    .bind(root_id)
+    .fetch_all(&state.db)
+    .await?;
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let mut comments = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(c) = review_comment(state, ctx, id).await? {
+            comments.push(c);
+        }
+    }
+    Ok(Some(json!({
+        "node_id": node_id::encode(NodeType::PullRequestReviewThread, root_id),
+        "comments": comments,
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -365,6 +365,13 @@ async fn add(
                 json!({ "user": user.login, "old_permission": old, "permission": role.as_str() }),
             )
             .await?;
+            tx.emit(Event::CollaboratorEdited {
+                repo_id,
+                user_id: user.id,
+                actor_id: auth.user.id,
+                old_permission: old.clone(),
+                permission: role.as_str().to_string(),
+            });
             access_changed(&mut tx, repo_id, user.id).await?;
         }
         tx.commit().await?;
@@ -498,6 +505,11 @@ async fn remove(
             json!({ "user": user.login, "permission": old }),
         )
         .await?;
+        tx.emit(Event::CollaboratorRemoved {
+            repo_id,
+            user_id: user.id,
+            actor_id: auth.user.id,
+        });
         access_changed(&mut tx, repo_id, user.id).await?;
     }
     tx.commit().await?;

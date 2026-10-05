@@ -87,6 +87,54 @@ enum Outcome {
     Retry(String),
 }
 
+/// `meta` `deleted`: sent to a hook as it is deleted. The hook row (and
+/// with it every delivery row) is gone by the time this runs, so the job
+/// carries the target and body itself and nothing is logged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeliverMeta {
+    pub hook_id: i64,
+    pub guid: uuid::Uuid,
+    pub hook_repo_id: Option<i64>,
+    pub hook_org_id: Option<i64>,
+    pub url: String,
+    pub content_type: String,
+    pub secret: Option<String>,
+    pub insecure_ssl: bool,
+    pub payload_raw: String,
+}
+
+impl JobPayload for DeliverMeta {
+    const KIND: &'static str = "notify.deliver_meta";
+    const MAX_ATTEMPTS: i32 = 3;
+}
+
+/// Job handler for [`DeliverMeta`].
+pub async fn deliver_meta(state: AppState, job: DeliverMeta) -> anyhow::Result<()> {
+    let d = Pending {
+        // No delivery row: `record` updates nothing.
+        id: 0,
+        hook_id: job.hook_id,
+        guid: job.guid,
+        event: "meta".into(),
+        status: "pending".into(),
+        payload_raw: job.payload_raw,
+        hook_repo_id: job.hook_repo_id,
+        hook_org_id: job.hook_org_id,
+        url: job.url,
+        content_type: job.content_type,
+        secret: job.secret,
+        insecure_ssl: job.insecure_ssl,
+        active: true,
+    };
+    match attempt(&state, &d).await? {
+        Outcome::Ok | Outcome::Fatal => Ok(()),
+        Outcome::Retry(msg) => Err(anyhow::anyhow!(
+            "meta delivery for hook {} failed: {msg}",
+            d.hook_id
+        )),
+    }
+}
+
 /// Job handler.
 pub async fn deliver_webhook(state: AppState, job: DeliverWebhook) -> anyhow::Result<()> {
     let row: Option<Pending> = sqlx::query_as(

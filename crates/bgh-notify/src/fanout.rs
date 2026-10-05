@@ -875,50 +875,106 @@ pub async fn activities(state: &AppState, event: &Event) -> ApiResult<Vec<Activi
             action,
             actor_id: Some(actor),
         } if action == "completed" => {
-            let suite: Option<(Option<String>, String, Option<String>, String)> = sqlx::query_as(
-                "SELECT head_branch, head_sha, conclusion, app_slug FROM check_suites WHERE id = $1",
-            )
-            .bind(check_suite_id)
-            .fetch_optional(&state.db)
-            .await?;
-            if let (Some((branch, sha, Some(conclusion), app)), Some(repo)) =
-                (suite, load_repo(state, *repo_id).await?)
-                && matches!(
-                    conclusion.as_str(),
-                    "failure" | "timed_out" | "action_required" | "startup_failure"
-                )
-            {
-                let name = if app == "actions" {
-                    "CI".to_string()
-                } else {
-                    app
-                };
-                let title = match &branch {
-                    Some(b) => format!("{name} workflow run failed for {b} branch"),
-                    None => format!("{name} workflow run failed"),
-                };
-                let mut act = Activity::new(
-                    repo,
-                    Subject {
-                        kind: "CheckSuite",
-                        id: *check_suite_id,
-                        key: Some(sha),
-                        title,
-                    },
-                    Some(*actor),
-                );
-                act.direct.push((*actor, Reason::CiActivity));
-                act.include_actor = true;
-                act.email = Some(EmailKind::Ci {
-                    check_suite_id: *check_suite_id,
-                    conclusion,
-                });
-                out.push(act);
-            }
+            out.extend(ci_failed(state, *repo_id, *check_suite_id, Some(*actor)).await?);
+        }
+        // Suites reported through the Checks API (external CI): notify
+        // whoever pushed the commit.
+        Event::CheckSuiteCompleted {
+            repo_id,
+            check_suite_id,
+        } => {
+            out.extend(ci_failed(state, *repo_id, *check_suite_id, None).await?);
         }
         _ => {}
     }
     Ok(out)
+}
+
+/// `ci_activity` for a failed check suite, to `actor` (the user who
+/// triggered the run) or, when unknown, to whoever pushed the suite's head
+/// commit (else the author of an open pull request at that head).
+async fn ci_failed(
+    state: &AppState,
+    repo_id: i64,
+    check_suite_id: i64,
+    actor: Option<i64>,
+) -> ApiResult<Option<Activity>> {
+    let suite: Option<(Option<String>, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT head_branch, head_sha, conclusion, app_slug FROM check_suites WHERE id = $1",
+    )
+    .bind(check_suite_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((branch, sha, Some(conclusion), app)) = suite else {
+        return Ok(None);
+    };
+    if !matches!(
+        conclusion.as_str(),
+        "failure" | "timed_out" | "action_required" | "startup_failure"
+    ) {
+        return Ok(None);
+    }
+    let actor = match actor {
+        Some(a) => Some(a),
+        None => commit_pusher(state, repo_id, &sha).await?,
+    };
+    let (Some(actor), Some(repo)) = (actor, load_repo(state, repo_id).await?) else {
+        return Ok(None);
+    };
+    let name = if app == "actions" {
+        "CI".to_string()
+    } else {
+        app
+    };
+    let title = match &branch {
+        Some(b) => format!("{name} workflow run failed for {b} branch"),
+        None => format!("{name} workflow run failed"),
+    };
+    let mut act = Activity::new(
+        repo,
+        Subject {
+            kind: "CheckSuite",
+            id: check_suite_id,
+            key: Some(sha),
+            title,
+        },
+        Some(actor),
+    );
+    act.direct.push((actor, Reason::CiActivity));
+    act.include_actor = true;
+    act.email = Some(EmailKind::Ci {
+        check_suite_id,
+        conclusion,
+    });
+    Ok(Some(act))
+}
+
+/// The user who pushed `sha` to `repo_id` (latest push activity whose head
+/// it is), else the author of an open pull request with that head.
+async fn commit_pusher(state: &AppState, repo_id: i64, sha: &str) -> ApiResult<Option<i64>> {
+    let pusher: Option<i64> = sqlx::query_scalar(
+        "SELECT actor_id FROM activity_events
+          WHERE repo_id = $1 AND type = 'PushEvent' AND payload->>'head' = $2
+          ORDER BY id DESC LIMIT 1",
+    )
+    .bind(repo_id)
+    .bind(sha)
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    if pusher.is_some() {
+        return Ok(pusher);
+    }
+    Ok(sqlx::query_scalar(
+        "SELECT i.author_id FROM pull_requests p JOIN issues i ON i.id = p.issue_id
+          WHERE (p.repo_id = $1 OR p.head_repo_id = $1) AND p.head_sha = $2 AND i.state = 'open'
+          ORDER BY p.issue_id DESC LIMIT 1",
+    )
+    .bind(repo_id)
+    .bind(sha)
+    .fetch_optional(&state.db)
+    .await?
+    .flatten())
 }
 
 /// Propagate a new issue/PR title to existing notification threads.
