@@ -221,7 +221,15 @@ const PR_COLS: &str = r#"
 /// the issue JSON and the PR JSON are built with `row_to_json` and spliced
 /// (`{..issue..,..pr..}`) for pull requests.
 fn issue_sql(fi: &str, fx: &str, body: bool) -> String {
-    let body = if body { r#", i.body AS "body""# } else { "" };
+    // `bodyEditedAt` (latest edit-history entry of the body) travels with
+    // the lazy body: it only changes when the body does.
+    let body = if body {
+        r#", i.body AS "body",
+    (SELECT bgh_ts(max(ue.created_at)) FROM user_content_edits ue
+      WHERE ue.target_type = 'issue' AND ue.target_id = i.id) AS "bodyEditedAt""#
+    } else {
+        ""
+    };
     format!(
         r#"SELECT 'repo:' || i.repo_id AS scope, i.id,
        CASE WHEN p.issue_id IS NULL THEN b.j ELSE left(b.j, -1) || ',' || substr(pj.j, 2) END AS j
@@ -409,6 +417,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                                           (SELECT content, count(*) AS n FROM reactions
                                             WHERE subject_type = 'issue_comment' AND subject_id = c.id
                                             GROUP BY content) x), '{{}}'),
+                 'minimizedReason', c.minimized_reason,
                  'createdAt', bgh_ts(c.created_at), 'updatedAt', bgh_ts(c.updated_at))::text AS j
                FROM comments c JOIN repositories r ON r.id = c.repo_id WHERE {}",
             col(
@@ -421,7 +430,8 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
             "SELECT 'repo:' || v.repo_id AS scope, v.id, json_build_object(
                  'id', v.id, 'repoId', v.repo_id, 'issueId', v.pull_id, 'authorId', v.user_id,
                  'state', v.state, 'body', v.body, 'commitId', coalesce(v.commit_id, ''),
-                 'submittedAt', bgh_ts(v.submitted_at))::text AS j
+                 'submittedAt', bgh_ts(v.submitted_at),
+                 'minimizedReason', v.minimized_reason)::text AS j
                FROM pr_reviews v
               WHERE {} AND (v.state <> 'PENDING' OR v.user_id = $2)",
             col(
@@ -500,6 +510,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                                             WHERE subject_type = 'pull_request_review_comment'
                                               AND subject_id = c.id
                                             GROUP BY content) x), '{{}}'),
+                 'minimizedReason', c.minimized_reason,
                  'createdAt', bgh_ts(c.created_at), 'updatedAt', bgh_ts(c.updated_at))::text AS j
                FROM pr_review_comments c
               WHERE {} AND NOT EXISTS (SELECT 1 FROM pr_reviews v

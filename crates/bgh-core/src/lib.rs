@@ -20,6 +20,7 @@ pub mod licenses;
 pub mod mail;
 pub mod markdown;
 pub mod models;
+pub mod moderation;
 pub mod node_id;
 pub mod outbox;
 pub mod pagination;

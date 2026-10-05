@@ -55,6 +55,8 @@ pub enum NodeType {
     CommitComment,
     /// GitHub App (`Integration`).
     Integration,
+    /// An edit-history entry (P42).
+    UserContentEdit,
 }
 
 impl NodeType {
@@ -102,6 +104,7 @@ impl NodeType {
         Self::DraftIssue,
         Self::CommitComment,
         Self::Integration,
+        Self::UserContentEdit,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -149,6 +152,7 @@ impl NodeType {
             Self::DraftIssue => "DraftIssue",
             Self::CommitComment => "CommitComment",
             Self::Integration => "Integration",
+            Self::UserContentEdit => "UserContentEdit",
         }
     }
 

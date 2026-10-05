@@ -9,5 +9,6 @@ mod extras;
 mod issues;
 mod labels_milestones;
 mod links;
+mod moderation;
 mod smoke;
 mod web_client;

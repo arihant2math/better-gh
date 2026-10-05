@@ -771,6 +771,25 @@ pub async fn edit(
     .bind(&text)
     .fetch_one(&mut *tx)
     .await?;
+    // Drafts of a pending review have no public history.
+    let pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pr_reviews WHERE id = $1 AND state = 'PENDING')",
+    )
+    .bind(row.review_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !pending {
+        bgh_core::moderation::record_edit(
+            &mut tx,
+            access.repo.id,
+            bgh_core::moderation::ContentKind::ReviewComment,
+            id,
+            auth.user.id,
+            &c.body,
+            &text,
+        )
+        .await?;
+    }
     tx.sync_model(SyncModel::ReviewComment, id, SyncAction::Update)
         .await?;
     tx.emit(Event::PullRequestReviewCommentEdited {

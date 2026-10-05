@@ -487,7 +487,7 @@ pub fn graphql_mutation_need(field: &str) -> Need {
     let any = |c: &[Category]| Need::Any(c.to_vec(), Access::Write);
     match field {
         "createIssue" | "updateIssue" | "closeIssue" | "reopenIssue" | "pinIssue"
-        | "unpinIssue" | "transferIssue" => any(&[C::Issues]),
+        | "unpinIssue" | "transferIssue" | "deleteIssue" => any(&[C::Issues]),
         "addComment"
         | "updateIssueComment"
         | "deleteIssueComment"
@@ -499,7 +499,9 @@ pub fn graphql_mutation_need(field: &str) -> Need {
         | "lockLockable"
         | "unlockLockable"
         | "addReaction"
-        | "removeReaction" => any(ISSUES_OR_PULLS),
+        | "removeReaction"
+        | "minimizeComment"
+        | "unminimizeComment" => any(ISSUES_OR_PULLS),
         "createPullRequest"
         | "updatePullRequest"
         | "closePullRequest"

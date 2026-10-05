@@ -176,6 +176,7 @@ interface Issue {             // issues and pull requests share this model
   number: number;
   title: string;
   body?: string | null;       // LAZY: absent in bootstrap (section 6)
+  bodyEditedAt?: Timestamp | null; // LAZY, sent with `body`: latest body edit (edit history), null if never edited
   state: 'open' | 'closed';
   stateReason: 'completed' | 'not_planned' | 'reopened' | 'duplicate' | null;
   authorId: ID;
@@ -224,9 +225,12 @@ interface Comment {           // issue/PR conversation comment (LAZY model)
   body: string;               // markdown source; the client renders it
   authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'NONE';
   reactions?: ReactionCounts;
+  minimizedReason?: MinimizedReason | null; // hidden by a triager (P42)
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
+
+type MinimizedReason = 'spam' | 'abuse' | 'off-topic' | 'outdated' | 'duplicate' | 'resolved';
 
 interface Review {            // PR review (LAZY model)
   id: ID;
@@ -237,6 +241,7 @@ interface Review {            // PR review (LAZY model)
   body: string;
   commitId: string;
   submittedAt: Timestamp | null;
+  minimizedReason?: MinimizedReason | null;
 }
 
 interface IssueEvent {        // timeline event (LAZY model)
@@ -355,7 +360,7 @@ are built by the same shape loader as everything else
   reviewId, inReplyToId, authorId, body, path, commitId, originalCommitId,
   subjectType, side, startSide, line, originalLine, startLine,
   originalStartLine, position, originalPosition, diffHunk, outdated,
-  resolvedAt, resolvedById, reactions, createdAt, updatedAt`; comments of
+  resolvedAt, resolvedById, reactions, minimizedReason, createdAt, updatedAt`; comments of
   pending reviews are never sent; the PR page loads the current rows, incl.
   the viewer's own pending ones, from `GET /_bgh/repos/{o}/{r}/pulls/{n}/sync`,
   built from the same shapes), `checkRun` (`id, repoId, checkSuiteId, headSha,
@@ -643,6 +648,11 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | `GET /_bgh/repos/{owner}/{repo}/issues/{n}/viewer-reactions` | — | `{"issue": ["+1"], "comments": {"<comment id>": ["heart"]}}` — the viewer's own reactions (rows only carry counts) |
 | `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/reactions/{content}` | `X-Client-Tx` | `204`; removes the viewer's reaction with that content (GitHub's REST API needs the reaction id); `204` when there is none |
 | `DELETE /_bgh/repos/{owner}/{repo}/issues/comments/{id}/reactions/{content}` | `X-Client-Tx` | same for a comment |
+| `PUT\|DELETE /_bgh/repos/{owner}/{repo}/minimized/{kind}/{id}` | `X-Client-Tx`; PUT `{"reason": "spam"\|"abuse"\|"off-topic"\|"outdated"\|"duplicate"\|"resolved"}` (GraphQL classifier spellings like `OFF_TOPIC` too) | `200 {"id","minimizedReason"}`; hide / unhide a comment (triage access). `kind` = `comment`, `review`, `review_comment`, `commit_comment`. The synced row (`comment`, `review`, `reviewComment`) is re-sent |
+| `GET /_bgh/repos/{owner}/{repo}/minimized/{kind}?ids=1,2` | — | `[{"id","minimizedReason"}]` for the minimized ones among `ids` (commit comments aren't synced) |
+| `GET /_bgh/repos/{owner}/{repo}/edits/{kind}/{id}` | — | edit history, newest first: `[{"id","editor","body","previous_body","edited_at","deleted_at","deleted_by"}]` (`body` = text after the edit, `previous_body` = before; `null` once deleted). `kind` also takes `issue` (`id` = the issue's number) |
+| `DELETE /_bgh/repos/{owner}/{repo}/edits/{kind}/{id}/{edit_id}` | — | `204`; deletes that revision's text (content author or repo admin; the current revision → `422`). `edit_id` `0` deletes the original (pre-edit) text |
+| `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}` | `X-Client-Tx` | `204`; deletes an issue (repo admin; PRs → `422`). The number stays reserved: `GET /repos/{o}/{r}/issues/{n}` answers `410` afterwards; clients get a `D` for the issue |
 
 Highlight classes (`hl-*`): `k` keyword, `s` string, `c` comment, `n`
 number/constant, `t` type, `f` function/macro name, `a` attribute/tag. The

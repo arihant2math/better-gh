@@ -9,6 +9,7 @@ pub mod enums;
 pub mod git;
 pub mod issue;
 pub mod misc;
+pub mod moderation;
 pub mod project;
 pub mod pull;
 pub mod release;

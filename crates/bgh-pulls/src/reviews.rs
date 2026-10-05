@@ -378,6 +378,16 @@ pub async fn update(
     .fetch_one(&mut *tx)
     .await?;
     if review.state != PENDING {
+        bgh_core::moderation::record_edit(
+            &mut tx,
+            access.repo.id,
+            bgh_core::moderation::ContentKind::Review,
+            id,
+            auth.user.id,
+            &r.body,
+            &text,
+        )
+        .await?;
         tx.sync_model(SyncModel::Review, id, SyncAction::Update)
             .await?;
         tx.emit(Event::PullRequestReviewEdited {
