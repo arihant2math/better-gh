@@ -13,8 +13,10 @@
 
 mod cmd;
 pub mod languages;
+pub mod merge;
 pub mod objects;
 pub mod ops;
+pub mod patch;
 pub mod pktline;
 pub mod read;
 pub mod smart_http;

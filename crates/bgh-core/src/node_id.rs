@@ -40,6 +40,7 @@ pub enum NodeType {
     Notification,
     IssueEvent,
     OrganizationInvitation,
+    PullRequestReviewThread,
 }
 
 impl NodeType {
@@ -73,6 +74,7 @@ impl NodeType {
         Self::Notification,
         Self::IssueEvent,
         Self::OrganizationInvitation,
+        Self::PullRequestReviewThread,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -106,6 +108,7 @@ impl NodeType {
             Self::Notification => "Notification",
             Self::IssueEvent => "IssueEvent",
             Self::OrganizationInvitation => "OrganizationInvitation",
+            Self::PullRequestReviewThread => "PullRequestReviewThread",
         }
     }
 
