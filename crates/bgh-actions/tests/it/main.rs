@@ -7,6 +7,7 @@ mod common;
 mod deployments;
 mod e2e;
 mod reusable;
+mod runner_groups;
 mod runs;
 mod security;
 mod settings;

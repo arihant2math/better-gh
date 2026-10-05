@@ -23,6 +23,7 @@ mod insights;
 mod keys;
 mod lfs;
 mod maintenance;
+mod markdown;
 mod metadata;
 mod protection;
 mod push_hardening;
