@@ -53,8 +53,9 @@ The repository JSON's `deployments_url` now resolves.
   (`deployment, workflow: null, workflow_run: null, repository, sender`)
   and `deployment_status` created (`check_run: null, deployment,
   deployment_status, workflow: null, workflow_run: null, repository,
-  sender`). `event_names` maps both. (P10's webhook coverage test has not
-  landed on the integration branch yet; add these two when it does.)
+  sender`). `event_names` maps both; both are sampled in P10's coverage test
+  (`bgh-notify/tests/it/coverage.rs`) and removed from its
+  not-producible list.
 * `deployed` issue event (bgh-issues listener `issues.deployed`): on a
   `success` status, every PR of the repository whose `head_sha` is the
   deployed commit gets one `deployed` event per deployment (actor = the

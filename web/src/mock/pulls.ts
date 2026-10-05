@@ -147,6 +147,7 @@ function seedPull(host: PullHost, repo: Repo, pr: Issue): void {
       title: conclusion === 'failure' ? '2 tests failed' : conclusion === 'success' ? 'All good' : null,
       startedAt: status === 'queued' ? null : iso(started),
       completedAt: status === 'completed' ? iso(started + rng.int(30, 400) * 1000) : null,
+      actions: conclusion === 'failure' ? [{ label: 'Retry flaky', description: 'Re-run only the failed tests', identifier: 'retry_flaky' }] : [],
     };
   });
   suite.latestCheckRunsCount = runs.length;
@@ -514,6 +515,13 @@ export function registerPullRoutes(host: PullHost): void {
     if (!run) return notFound;
     host.put('checkRun', { ...run, status: 'queued', conclusion: null, completedAt: null, startedAt: null });
     return { status: 201, body: {} };
+  });
+
+  R('POST', '/_bgh/repos/:owner/:repo/check-runs/:id/requested-action', (ctx) => {
+    const run = t().checkRun.get(Number(ctx.m[3]));
+    if (!run) return notFound;
+    const known = (run.actions ?? []).some((a) => a.identifier === ctx.body.identifier);
+    return known ? { status: 204 } : { status: 422, body: { message: 'Validation Failed' } };
   });
 
   // ---------------------------------------------------------------- contents write (commit suggestion)

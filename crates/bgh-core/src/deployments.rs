@@ -192,23 +192,25 @@ pub async fn latest_for_sha(
     repo_id: i64,
     sha: &str,
 ) -> Result<Vec<EnvironmentDeployment>, sqlx::Error> {
-    let rows: Vec<(
-        i64,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        bool,
-        bool,
-        DateTime<Utc>,
-    )> = sqlx::query_as(
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i64,
+        environment: String,
+        state: Option<String>,
+        environment_url: Option<String>,
+        log_url: Option<String>,
+        production_environment: bool,
+        transient_environment: bool,
+        updated_at: DateTime<Utc>,
+    }
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT DISTINCT ON (lower(d.environment))
-                    d.id, d.environment, d.state, s.environment_url, s.log_url,
-                    d.production_environment, d.transient_environment, d.updated_at
-               FROM deployments d
-               LEFT JOIN deployment_statuses s ON s.id = d.latest_status_id
-              WHERE d.repo_id = $1 AND d.sha = $2
-              ORDER BY lower(d.environment), d.id DESC",
+                d.id, d.environment, d.state, s.environment_url, s.log_url,
+                d.production_environment, d.transient_environment, d.updated_at
+           FROM deployments d
+           LEFT JOIN deployment_statuses s ON s.id = d.latest_status_id
+          WHERE d.repo_id = $1 AND d.sha = $2
+          ORDER BY lower(d.environment), d.id DESC",
     )
     .bind(repo_id)
     .bind(sha)
@@ -216,19 +218,15 @@ pub async fn latest_for_sha(
     .await?;
     Ok(rows
         .into_iter()
-        .map(
-            |(id, environment, state, env_url, log_url, prod, transient, at)| {
-                EnvironmentDeployment {
-                    deployment_id: id,
-                    environment,
-                    state,
-                    environment_url: env_url.filter(|u| !u.is_empty()),
-                    log_url: log_url.filter(|u| !u.is_empty()),
-                    production_environment: prod,
-                    transient_environment: transient,
-                    updated_at: Timestamp(at),
-                }
-            },
-        )
+        .map(|r| EnvironmentDeployment {
+            deployment_id: r.id,
+            environment: r.environment,
+            state: r.state,
+            environment_url: r.environment_url.filter(|u| !u.is_empty()),
+            log_url: r.log_url.filter(|u| !u.is_empty()),
+            production_environment: r.production_environment,
+            transient_environment: r.transient_environment,
+            updated_at: Timestamp(r.updated_at),
+        })
         .collect())
 }

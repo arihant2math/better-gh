@@ -1,12 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import { useResource } from '../../api/cache';
+import { listRepoPackages, packageHref, packageKeys, packagesHref } from '../../api/packages';
 import { codeKeys, getLanguages, getLatestRelease, listContributors, type RestContributor, type RestRelease } from '../../api/code';
 import { DeploymentsSidebar } from '../deployments/DeploymentsSidebar';
 import { Link } from '../../router';
 import type { Repo } from '../../sync/models';
 import { Avatar } from '../../ui/Badge';
 import { Skeleton } from '../../ui/EmptyState';
-import { BookIcon, EyeIcon, LawIcon, LinkIcon, RepoForkedIcon, StarIcon, TagIcon } from '../../ui/icons';
+import { BookIcon, EyeIcon, LawIcon, LinkIcon, PackageIcon, RepoForkedIcon, StarIcon, TagIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import styles from './Code.module.css';
 import { useFullRepo } from './CloneMenu';
@@ -88,6 +89,8 @@ export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Rep
 
       <DeploymentsSidebar owner={owner} repo={name} sectionClass={styles.aboutSection} titleClass={styles.aboutTitle} />
 
+      <Packages owner={owner} name={name} />
+
       {contributors.data && contributors.data.length > 0 && (
         <section className={styles.aboutSection}>
           <h2 className={styles.aboutTitle}>
@@ -113,6 +116,40 @@ export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Rep
     </aside>
   );
 });
+
+/** "Packages" (container images linked to this repository); loads lazily, never blocks the page. */
+function Packages({ owner, name }: { owner: string; name: string }) {
+  const res = useResource(packageKeys.repo(owner, name), () => listRepoPackages(owner, name), { ttlMs: 60_000 });
+  // The endpoint may be unavailable (older server): hide the section rather than show an error.
+  if (res.error && !res.data) return null;
+  const pkgs = res.data?.packages;
+  return (
+    <section className={styles.aboutSection} aria-label="Packages">
+      <h2 className={styles.aboutTitle}>
+        Packages {pkgs && pkgs.length > 0 && <span className={styles.count}>{pkgs.length}</span>}
+      </h2>
+      {!pkgs ? (
+        <Skeleton width="60%" />
+      ) : pkgs.length === 0 ? (
+        <p className={styles.muted}>No packages published</p>
+      ) : (
+        <ul className={styles.packages}>
+          {pkgs.slice(0, 5).map((p) => (
+            <li key={p.id}>
+              <PackageIcon size={16} className={styles.packageIcon} />
+              <Link to={packageHref(p)}>{p.name}</Link>
+            </li>
+          ))}
+          {pkgs.length > 5 && (
+            <li>
+              <Link to={packagesHref(pkgs[0]!.owner)}>+ {pkgs.length - 5} more packages</Link>
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function Languages({ data }: { data: Record<string, number> }) {
   const total = Object.values(data).reduce((a, b) => a + b, 0) || 1;

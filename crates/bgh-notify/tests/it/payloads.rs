@@ -175,6 +175,8 @@ async fn issue_comment_label_and_pull_payloads() {
             issue_id,
             comment_id,
             actor_id: bob.id,
+            // Older producers: no snapshot → minimal object.
+            comment: serde_json::Value::Null,
         },
     )
     .await;
