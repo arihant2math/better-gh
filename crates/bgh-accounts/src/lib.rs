@@ -7,6 +7,7 @@ pub mod apps;
 pub mod avatars;
 pub mod boot;
 pub mod emails;
+pub mod fine_grained;
 pub mod gpg;
 pub mod json;
 pub mod keys;
@@ -146,6 +147,31 @@ pub fn router() -> Router<AppState> {
         .route(
             "/orgs/{org}/installations",
             get(apps::install::org_installations),
+        )
+        // fine-grained personal access tokens (P47)
+        .route(
+            "/orgs/{org}/personal-access-token-requests",
+            get(fine_grained::list_requests).post(fine_grained::review_requests),
+        )
+        .route(
+            "/orgs/{org}/personal-access-token-requests/{pat_request_id}",
+            post(fine_grained::review_request),
+        )
+        .route(
+            "/orgs/{org}/personal-access-token-requests/{pat_request_id}/repositories",
+            get(fine_grained::request_repositories),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens",
+            get(fine_grained::list_grants).post(fine_grained::revoke_grants),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens/{pat_id}",
+            post(fine_grained::revoke_grant),
+        )
+        .route(
+            "/orgs/{org}/personal-access-tokens/{pat_id}/repositories",
+            get(fine_grained::grant_repositories),
         )
         // organizations
         .route("/orgs/{org}", get(orgs::get_org).patch(orgs::update_org))
@@ -301,6 +327,26 @@ pub fn web_router() -> Router<AppState> {
             post(tokens::create_token).get(tokens::list_tokens),
         )
         .route("/_bgh/tokens/{id}", delete(tokens::delete_token))
+        .route(
+            "/_bgh/fine-grained-tokens",
+            get(fine_grained::list).post(fine_grained::create),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/owners",
+            get(fine_grained::owners),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/permissions",
+            get(fine_grained::permissions),
+        )
+        .route(
+            "/_bgh/fine-grained-tokens/{id}",
+            get(fine_grained::get).delete(fine_grained::delete),
+        )
+        .route(
+            "/_bgh/orgs/{org}/pat-policy",
+            get(fine_grained::get_policy).patch(fine_grained::update_policy),
+        )
         .route("/_bgh/orgs", post(orgs::web_create_org))
         // avatars
         .route("/avatars/u/{id}", get(avatars::serve))

@@ -19,6 +19,7 @@ feature work: [`docs/FRONTEND.md`](../docs/FRONTEND.md). Wire protocol:
 | `node scripts/screenshots.mjs [url] [dir]` | Playwright screenshots of key pages (mock mode) |
 | `node scripts/smoke.mjs [url]` | Playwright interaction smoke test (optimistic writes, rollback, reload, keyboard) |
 | `node scripts/admin-smoke.mjs [url] [dir]` | Playwright smoke test of site admin + org settings against a real backend (no mock) |
+| `node scripts/pat-smoke.mjs [url] [dir]` | Playwright smoke test of fine-grained PATs + org token policy/approval against a real backend (signs up a user, creates an org); `BGH_MOCK=1` runs it against the mock |
 
 ## Bundle budget
 

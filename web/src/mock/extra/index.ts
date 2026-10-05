@@ -9,6 +9,7 @@ import type { MockServer } from '../server';
 import { installAppsMocks } from './apps';
 import { installAuthMocks } from './auth';
 import { installDeveloperMocks } from './developer';
+import { installFineGrainedTokenMocks } from './fineGrainedTokens';
 import { installImportMocks } from './imports';
 import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
@@ -33,4 +34,5 @@ export function installExtraMocks(server: MockServer): void {
   installDeploymentMocks(server);
   installPackageMocks(server);
   installAppsMocks(server);
+  installFineGrainedTokenMocks(server);
 }

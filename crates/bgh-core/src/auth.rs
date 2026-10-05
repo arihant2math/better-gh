@@ -105,6 +105,10 @@ impl AuthContext {
     /// Whether the credential grants `scope` (always true for sessions and
     /// passwords).
     pub fn has_scope(&self, scope: &str) -> bool {
+        // Fine-grained tokens: mapped to their permissions.
+        if let Some(granted) = crate::pat::has_scope(self, scope) {
+            return granted;
+        }
         match &self.scopes {
             None => true,
             Some(granted) => granted.iter().any(|g| implied(g, scope)),
@@ -125,10 +129,16 @@ impl AuthContext {
     /// Value for the `X-OAuth-Scopes` response header (none for GitHub App
     /// credentials, whose scopes are internal).
     pub fn scopes_header(&self) -> Option<String> {
-        if crate::apps::is_integration(self) {
+        if crate::apps::is_integration(self) || crate::pat::is_fine_grained(self) {
             return None;
         }
-        self.scopes.as_ref().map(|s| s.join(", "))
+        self.scopes.as_ref().map(|s| {
+            s.iter()
+                .filter(|s| !crate::pat::is_internal_scope(s))
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
     }
 }
 
@@ -174,7 +184,10 @@ pub async fn authenticate(
 #[derive(sqlx::FromRow)]
 struct TokenRow {
     token_id: i64,
+    kind: String,
     scopes: Vec<String>,
+    /// Organizations whose token policy blocks this token (P47).
+    blocked_orgs: Option<Vec<i64>>,
     expires_at: Option<DateTime<Utc>>,
     last_used_at: Option<DateTime<Utc>>,
     #[sqlx(flatten)]
@@ -190,9 +203,11 @@ async fn token_auth(state: &AppState, token: &str) -> ApiResult<AuthContext> {
     }
     let hash = crypto::sha256_hex(token);
     let row: Option<TokenRow> = sqlx::query_as(&format!(
-        "SELECT t.id AS token_id, t.scopes, t.expires_at, t.last_used_at, {}
+        "SELECT t.id AS token_id, t.kind, t.scopes, {} AS blocked_orgs,
+                t.expires_at, t.last_used_at, {}
            FROM access_tokens t JOIN users u ON u.id = t.user_id
           WHERE t.token_hash = $1",
+        crate::pat::BLOCKED_ORGS_SQL,
         db::prefixed("u", db::User::COLUMNS)
     ))
     .bind(&hash)
@@ -217,12 +232,22 @@ async fn token_auth(state: &AppState, token: &str) -> ApiResult<AuthContext> {
                 .await;
         });
     }
+    // Fine-grained markers only count on fine-grained rows; policy blocks
+    // are computed, never stored.
+    let mut scopes: Vec<String> = row
+        .scopes
+        .into_iter()
+        .filter(|s| row.kind == "fine_grained" || !crate::pat::is_internal_scope(s))
+        .collect();
+    scopes.extend(crate::pat::blocked_scopes(
+        row.blocked_orgs.as_deref().unwrap_or_default(),
+    ));
     Ok(AuthContext {
         user: row.user,
         method: AuthMethod::Token {
             token_id: row.token_id,
         },
-        scopes: Some(row.scopes),
+        scopes: Some(scopes),
     })
 }
 
@@ -238,6 +263,7 @@ async fn basic_auth(state: &AppState, encoded: &str, opts: AuthOptions) -> ApiRe
     if secret.starts_with(crypto::PAT_PREFIX)
         || secret.starts_with(crypto::OAUTH_TOKEN_PREFIX)
         || secret.starts_with(crypto::INSTALLATION_TOKEN_PREFIX)
+        || secret.starts_with(crypto::FINE_GRAINED_PAT_PREFIX)
     {
         // Like GitHub, the username is ignored for token auth.
         return token_auth(state, secret).await;
