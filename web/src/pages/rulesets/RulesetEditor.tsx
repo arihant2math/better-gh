@@ -26,9 +26,19 @@ const ENFORCEMENT_HINT: Record<Enforcement, string> = {
 };
 
 /** `rules/new` and `rules/:id`. */
-export default observer(function RulesetEditor({ host, id, target, imported }: { host: RulesetsHost; id: number | null; target: RulesetTarget; imported: boolean }) {
+export default observer(function RulesetEditor({
+  host,
+  id,
+  target,
+  imported,
+}: {
+  host: RulesetsHost;
+  id: number | null;
+  target: RulesetTarget;
+  imported: boolean;
+}) {
   const res = useResource<Ruleset>(id === null ? null : `${scopeKey(host.scope, 'one')}${id}`, () => getRuleset(host.scope, id!));
-  const [initial] = useState<RulesetForm>(() => (id === null ? ((imported && pendingImport()) || emptyForm(target)) : emptyForm(target)));
+  const [initial] = useState<RulesetForm>(() => (id === null ? (imported && pendingImport()) || emptyForm(target) : emptyForm(target)));
   if (id === null) return <EditorForm host={host} id={null} initial={initial} imported={imported && !!pendingImport()} />;
   if (res.error) return <LoadError error={res.error} />;
   if (!res.data) return <ListSkeleton rows={8} />;
@@ -141,7 +151,13 @@ const EditorForm = observer(function EditorForm({
             <Section title="Ruleset Name">
               <FormStack>
                 <Field label="Name" htmlFor={ids.name} error={shown.name ?? server.fields.name ?? null}>
-                  <Input id={ids.name} value={f.name} autoFocus={isNew} invalid={!!(shown.name ?? server.fields.name)} onChange={(e) => set({ name: e.target.value })} />
+                  <Input
+                    id={ids.name}
+                    value={f.name}
+                    autoFocus={isNew}
+                    invalid={!!(shown.name ?? server.fields.name)}
+                    onChange={(e) => set({ name: e.target.value })}
+                  />
                 </Field>
                 <Field label="Enforcement status" htmlFor={ids.enforcement} hint={ENFORCEMENT_HINT[f.enforcement]}>
                   <Select id={ids.enforcement} value={f.enforcement} onChange={(e) => set({ enforcement: e.target.value as Enforcement })}>
@@ -154,7 +170,13 @@ const EditorForm = observer(function EditorForm({
             </Section>
 
             <Section title="Bypass list" description="Exempt roles, teams, apps or deploy keys from this ruleset.">
-              <BypassList value={f.bypass} onChange={(bypass) => set({ bypass })} orgId={host.orgId} apps={checks.data?.apps ?? []} error={shown.bypass ?? server.fields.bypass_actors} />
+              <BypassList
+                value={f.bypass}
+                onChange={(bypass) => set({ bypass })}
+                orgId={host.orgId}
+                apps={checks.data?.apps ?? []}
+                error={shown.bypass ?? server.fields.bypass_actors}
+              />
             </Section>
 
             {org && (
@@ -164,11 +186,17 @@ const EditorForm = observer(function EditorForm({
             )}
 
             {f.target !== 'push' ? (
-              <Section title={`Target ${f.target === 'tag' ? 'tags' : 'branches'}`} description={`Which ${f.target === 'tag' ? 'tags' : 'branches'} the rules apply to.`}>
+              <Section
+                title={`Target ${f.target === 'tag' ? 'tags' : 'branches'}`}
+                description={`Which ${f.target === 'tag' ? 'tags' : 'branches'} the rules apply to.`}
+              >
                 <RefTargets form={f} set={set} repo={repo} error={server.fields.conditions} />
               </Section>
             ) : (
-              <Section title="Targets" description="Push rulesets apply to every push to the repository, whatever the ref, including forks of private repositories." />
+              <Section
+                title="Targets"
+                description="Push rulesets apply to every push to the repository, whatever the ref, including forks of private repositories."
+              />
             )}
 
             <Section title={f.target === 'push' ? 'Push rules' : `${TARGET_LABEL[f.target]} rules`}>
@@ -182,7 +210,9 @@ const EditorForm = observer(function EditorForm({
               />
             </Section>
 
-            {(server.message || otherServerErrors.length > 0) && <Banner tone="danger">{[server.message, ...otherServerErrors].filter(Boolean).join(' ')}</Banner>}
+            {(server.message || otherServerErrors.length > 0) && (
+              <Banner tone="danger">{[server.message, ...otherServerErrors].filter(Boolean).join(' ')}</Banner>
+            )}
             {touched && Object.keys(errors).length > 0 && <Banner tone="danger">Fix the highlighted problems before saving.</Banner>}
             {!readOnly && (
               <ButtonRow>

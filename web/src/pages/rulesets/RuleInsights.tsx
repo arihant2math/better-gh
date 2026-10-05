@@ -12,6 +12,7 @@ import { CheckCircleIcon, GraphIcon, SkipIcon, XCircleIcon } from '../../ui/icon
 import { Field, Input, Select } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { RULE_DEF, isRuleType } from './model';
+import { Unavailable, isNotFound } from './RulesetList';
 import styles from './Rulesets.module.css';
 import type { RulesetsHost } from './RulesetsSection';
 
@@ -57,18 +58,43 @@ export default observer(function RuleInsights({ host }: { host: RulesetsHost }) 
       <PageHeader title="Rule insights" description="Every push and merge evaluated against rulesets, including rulesets in evaluate mode." />
       <div className={styles.filters} role="search">
         <Field label="Branch or tag" htmlFor={ids.ref}>
-          <Input id={ids.ref} value={ref} placeholder="All refs" onChange={(e) => setRef(e.target.value)} onBlur={applyText} onKeyDown={(e) => e.key === 'Enter' && applyText()} />
+          <Input
+            id={ids.ref}
+            value={ref}
+            placeholder="All refs"
+            onChange={(e) => setRef(e.target.value)}
+            onBlur={applyText}
+            onKeyDown={(e) => e.key === 'Enter' && applyText()}
+          />
         </Field>
         <Field label="Actor" htmlFor={ids.actor}>
-          <Input id={ids.actor} value={actor} placeholder="All actors" onChange={(e) => setActor(e.target.value)} onBlur={applyText} onKeyDown={(e) => e.key === 'Enter' && applyText()} />
+          <Input
+            id={ids.actor}
+            value={actor}
+            placeholder="All actors"
+            onChange={(e) => setActor(e.target.value)}
+            onBlur={applyText}
+            onKeyDown={(e) => e.key === 'Enter' && applyText()}
+          />
         </Field>
         {scope.kind === 'org' && (
           <Field label="Repository" htmlFor={ids.repo}>
-            <Input id={ids.repo} value={repoName} placeholder="All repositories" onChange={(e) => setRepoName(e.target.value)} onBlur={applyText} onKeyDown={(e) => e.key === 'Enter' && applyText()} />
+            <Input
+              id={ids.repo}
+              value={repoName}
+              placeholder="All repositories"
+              onChange={(e) => setRepoName(e.target.value)}
+              onBlur={applyText}
+              onKeyDown={(e) => e.key === 'Enter' && applyText()}
+            />
           </Field>
         )}
         <Field label="Result" htmlFor={ids.result}>
-          <Select id={ids.result} value={filters.rule_suite_result ?? 'all'} onChange={(e) => setQuery({ result: e.target.value === 'all' ? null : e.target.value })}>
+          <Select
+            id={ids.result}
+            value={filters.rule_suite_result ?? 'all'}
+            onChange={(e) => setQuery({ result: e.target.value === 'all' ? null : e.target.value })}
+          >
             <option value="all">All results</option>
             <option value="pass">Pass</option>
             <option value="fail">Fail</option>
@@ -84,7 +110,9 @@ export default observer(function RuleInsights({ host }: { host: RulesetsHost }) 
           </Select>
         </Field>
       </div>
-      {list.error ? (
+      {list.error && isNotFound(list.error) ? (
+        <Unavailable what="Rule insights are" />
+      ) : list.error ? (
         <ErrorState error={list.error} onRetry={() => void list.reload()} title="Could not load rule insights" />
       ) : list.items.length === 0 && list.loading ? (
         <Skeleton height={120} />
@@ -117,7 +145,9 @@ export default observer(function RuleInsights({ host }: { host: RulesetsHost }) 
                 >
                   <td>
                     <ResultLabel result={s.result} />
-                    {s.evaluation_result && s.evaluation_result !== s.result && <span className={styles.muted}> (evaluate: {RESULT_LABEL[s.evaluation_result]})</span>}
+                    {s.evaluation_result && s.evaluation_result !== s.result && (
+                      <span className={styles.muted}> (evaluate: {RESULT_LABEL[s.evaluation_result]})</span>
+                    )}
                   </td>
                   <td className={styles.mono}>{shortRef(s.ref)}</td>
                   {scope.kind === 'org' && <td>{s.repository_name}</td>}
@@ -155,11 +185,26 @@ function SuiteDetail({ host, id }: { host: RulesetsHost; id: number }) {
         items={[
           ['Result', <ResultLabel key="r" result={s.result} />],
           ...(s.evaluation_result ? ([['Evaluate-mode result', <ResultLabel key="e" result={s.evaluation_result} />]] as [string, ReactNode][]) : []),
-          ['Ref', <span key="ref" className={styles.mono}>{s.ref}</span>],
+          [
+            'Ref',
+            <span key="ref" className={styles.mono}>
+              {s.ref}
+            </span>,
+          ],
           ['Repository', s.repository_name],
           ['Actor', s.actor_name ?? '—'],
-          ['Before', <span key="b" className={styles.mono}>{s.before_sha.slice(0, 12)}</span>],
-          ['After', <span key="a" className={styles.mono}>{s.after_sha.slice(0, 12)}</span>],
+          [
+            'Before',
+            <span key="b" className={styles.mono}>
+              {s.before_sha.slice(0, 12)}
+            </span>,
+          ],
+          [
+            'After',
+            <span key="a" className={styles.mono}>
+              {s.after_sha.slice(0, 12)}
+            </span>,
+          ],
           ['Evaluated', <RelativeTime key="t" date={s.pushed_at} />],
         ]}
       />

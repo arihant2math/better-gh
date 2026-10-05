@@ -206,7 +206,8 @@ Site admin lives under `/site-admin/*` (`pages/admin`, guarded by
 `site.viewerSiteAdmin` from `app/site.ts`), org settings under
 `/organizations/:org/settings/*` (`pages/orgsettings`). App-wide
 announcement / maintenance banners come from `GET /_bgh/site` and are a lazy
-chunk loaded only while one is active. The admin UI has no mock backend:
+chunk loaded only while one is active. The admin UI has no mock backend
+(org rulesets excepted):
 verify it against a real server with `scripts/admin-smoke.mjs`.
 
 ## Performance rules
@@ -231,6 +232,7 @@ verify it against a real server with `scripts/admin-smoke.mjs`.
 npm run build && npx vite preview &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/screenshots.mjs http://localhost:4173 /tmp/shots
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke.mjs     # optimistic writes, rollback, reload, keyboard
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/rulesets-smoke.mjs   # rulesets UI (repo + org) in mock mode
 # site admin + org settings against a real backend (see the script header)
 BGH_BACKEND=http://localhost:3000 npx vite --port 5174 &
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/admin-smoke.mjs http://localhost:5174 /tmp/admin-shots

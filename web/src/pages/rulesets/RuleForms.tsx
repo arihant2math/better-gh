@@ -56,15 +56,19 @@ export function RuleForms({ form, onRules, org, errors, checks, repos }: RuleFor
         <div key={g} className={styles.rules}>
           {groups.length > 1 && <h3 className={styles.ruleGroup}>{GROUP_LABEL[g]}</h3>}
           {defs.map((d) => (
-            <RuleRow key={d.type} def={d} params={form.rules[d.type]} onChange={(p) => set(d.type, p as never)} error={errors[d.type]} checks={checks} repos={repos} />
+            <RuleRow
+              key={d.type}
+              def={d}
+              params={form.rules[d.type]}
+              onChange={(p) => set(d.type, p as never)}
+              error={errors[d.type]}
+              checks={checks}
+              repos={repos}
+            />
           ))}
         </div>
       ))}
-      {form.extraRules.length > 0 && (
-        <p className={styles.small}>
-          Also kept as is: {form.extraRules.map((r) => r.type).join(', ')} (not editable here).
-        </p>
-      )}
+      {form.extraRules.length > 0 && <p className={styles.small}>Also kept as is: {form.extraRules.map((r) => r.type).join(', ')} (not editable here).</p>}
     </div>
   );
 }
@@ -103,7 +107,21 @@ function RuleRow({
   );
 }
 
-function NumberField({ label, value, onChange, min, max, hint }: { label: string; value: number; onChange: (n: number) => void; min: number; max: number; hint?: ReactNode }) {
+function NumberField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  min: number;
+  max: number;
+  hint?: ReactNode;
+}) {
   const id = useId();
   return (
     <Field label={label} htmlFor={id} hint={hint}>
@@ -120,7 +138,17 @@ function NumberField({ label, value, onChange, min, max, hint }: { label: string
   );
 }
 
-function SelectField<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+function SelectField<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
   const id = useId();
   return (
     <Field label={label} htmlFor={id}>
@@ -208,7 +236,9 @@ function RuleParams({
                   key={m.id}
                   label={m.label}
                   checked={p.allowed_merge_methods.includes(m.id)}
-                  onChange={(v) => patch(p, { allowed_merge_methods: v ? [...p.allowed_merge_methods, m.id] : p.allowed_merge_methods.filter((x) => x !== m.id) })}
+                  onChange={(v) =>
+                    patch(p, { allowed_merge_methods: v ? [...p.allowed_merge_methods, m.id] : p.allowed_merge_methods.filter((x) => x !== m.id) })
+                  }
                 />
               ))}
             </div>
@@ -249,11 +279,28 @@ function RuleParams({
     }
     case 'max_file_path_length': {
       const p = params as RuleParamMap['max_file_path_length'];
-      return <NumberField label="Maximum path length (characters)" value={p.max_file_path_length} min={1} max={256} onChange={(n) => patch(p, { max_file_path_length: n })} />;
+      return (
+        <NumberField
+          label="Maximum path length (characters)"
+          value={p.max_file_path_length}
+          min={1}
+          max={256}
+          onChange={(n) => patch(p, { max_file_path_length: n })}
+        />
+      );
     }
     case 'max_file_size': {
       const p = params as RuleParamMap['max_file_size'];
-      return <NumberField label="Maximum file size (MB)" value={p.max_file_size} min={1} max={100} onChange={(n) => patch(p, { max_file_size: n })} hint="Between 1 and 100 MB." />;
+      return (
+        <NumberField
+          label="Maximum file size (MB)"
+          value={p.max_file_size}
+          min={1}
+          max={100}
+          onChange={(n) => patch(p, { max_file_size: n })}
+          hint="Between 1 and 100 MB."
+        />
+      );
     }
     case 'required_deployments': {
       const p = params as RuleParamMap['required_deployments'];
@@ -332,7 +379,12 @@ function PatternFields({ p, onChange, what }: { p: PatternParams; onChange: (p: 
       <Field label="Matching pattern" htmlFor={ids.pattern}>
         <Input id={ids.pattern} value={p.pattern} spellCheck={false} autoComplete="off" onChange={(e) => onChange({ ...p, pattern: e.target.value })} />
       </Field>
-      <Checkbox label="Must not match the given pattern" description={`Reject a ${what} that matches instead.`} checked={p.negate} onChange={(v) => onChange({ ...p, negate: v })} />
+      <Checkbox
+        label="Must not match the given pattern"
+        description={`Reject a ${what} that matches instead.`}
+        checked={p.negate}
+        onChange={(v) => onChange({ ...p, negate: v })}
+      />
       <Field label="Description (optional)" htmlFor={ids.name} hint="Shown to people whose push is rejected.">
         <Input id={ids.name} value={p.name} onChange={(e) => onChange({ ...p, name: e.target.value })} />
       </Field>
@@ -369,7 +421,15 @@ export function matchesMetadataPattern(p: PatternParams, value: string): boolean
   return p.negate ? !hit : hit;
 }
 
-function StatusChecks({ p, onChange, checks }: { p: RuleParamMap['required_status_checks']; onChange: (p: RuleParamMap['required_status_checks']) => void; checks: RuleFormsProps['checks'] }) {
+function StatusChecks({
+  p,
+  onChange,
+  checks,
+}: {
+  p: RuleParamMap['required_status_checks'];
+  onChange: (p: RuleParamMap['required_status_checks']) => void;
+  checks: RuleFormsProps['checks'];
+}) {
   const listId = useId();
   const inputId = useId();
   const [context, setContext] = useState('');
@@ -420,13 +480,16 @@ function StatusChecks({ p, onChange, checks }: { p: RuleParamMap['required_statu
                 }
               >
                 <option value="">Any source</option>
-                {[...checks.apps, ...(c.integration_id !== undefined && !checks.apps.some((a) => a.id === c.integration_id) ? [{ id: c.integration_id, slug: '', name: appName(c.integration_id) }] : [])].map(
-                  (a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ),
-                )}
+                {[
+                  ...checks.apps,
+                  ...(c.integration_id !== undefined && !checks.apps.some((a) => a.id === c.integration_id)
+                    ? [{ id: c.integration_id, slug: '', name: appName(c.integration_id) }]
+                    : []),
+                ].map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
               </Select>
               <IconButton
                 icon={XIcon}
@@ -484,7 +547,8 @@ function StatusChecks({ p, onChange, checks }: { p: RuleParamMap['required_statu
 }
 
 function Workflows({ p, onChange, repos }: { p: RuleParamMap['workflows']; onChange: (p: RuleParamMap['workflows']) => void; repos: OrgRepo[] }) {
-  const set = (i: number, v: Partial<RuleParamMap['workflows']['workflows'][number]>) => onChange({ ...p, workflows: p.workflows.map((w, j) => (i === j ? { ...w, ...v } : w)) });
+  const set = (i: number, v: Partial<RuleParamMap['workflows']['workflows'][number]>) =>
+    onChange({ ...p, workflows: p.workflows.map((w, j) => (i === j ? { ...w, ...v } : w)) });
   return (
     <>
       <Checkbox
@@ -497,7 +561,11 @@ function Workflows({ p, onChange, repos }: { p: RuleParamMap['workflows']; onCha
         <div className={styles.boxHead}>
           <span>Workflows that must pass</span>
           <span className={styles.spacer} />
-          <Button size="sm" leadingIcon={PlusIcon} onClick={() => onChange({ ...p, workflows: [...p.workflows, { path: '.github/workflows/', repository_id: repos[0]?.id ?? 0 }] })}>
+          <Button
+            size="sm"
+            leadingIcon={PlusIcon}
+            onClick={() => onChange({ ...p, workflows: [...p.workflows, { path: '.github/workflows/', repository_id: repos[0]?.id ?? 0 }] })}
+          >
             Add workflow
           </Button>
         </div>
@@ -548,7 +616,14 @@ function CodeScanning({ p, onChange }: { p: RuleParamMap['code_scanning']; onCha
         <Button
           size="sm"
           leadingIcon={PlusIcon}
-          onClick={() => onChange({ code_scanning_tools: [...p.code_scanning_tools, { tool: p.code_scanning_tools.length ? '' : 'CodeQL', alerts_threshold: 'errors', security_alerts_threshold: 'high_or_higher' }] })}
+          onClick={() =>
+            onChange({
+              code_scanning_tools: [
+                ...p.code_scanning_tools,
+                { tool: p.code_scanning_tools.length ? '' : 'CodeQL', alerts_threshold: 'errors', security_alerts_threshold: 'high_or_higher' },
+              ],
+            })
+          }
         >
           Add tool
         </Button>
@@ -559,20 +634,33 @@ function CodeScanning({ p, onChange }: { p: RuleParamMap['code_scanning']; onCha
         p.code_scanning_tools.map((t, i) => (
           <div key={i} className={styles.boxRow}>
             <Input aria-label="Tool" className={styles.grow} value={t.tool} onChange={(e) => set(i, { tool: e.target.value })} />
-            <Select aria-label="Alerts threshold" value={t.alerts_threshold} onChange={(e) => set(i, { alerts_threshold: e.target.value as Tool['alerts_threshold'] })}>
+            <Select
+              aria-label="Alerts threshold"
+              value={t.alerts_threshold}
+              onChange={(e) => set(i, { alerts_threshold: e.target.value as Tool['alerts_threshold'] })}
+            >
               <option value="none">Alerts: none</option>
               <option value="errors">Alerts: errors</option>
               <option value="errors_and_warnings">Alerts: errors and warnings</option>
               <option value="all">Alerts: all</option>
             </Select>
-            <Select aria-label="Security alerts threshold" value={t.security_alerts_threshold} onChange={(e) => set(i, { security_alerts_threshold: e.target.value as Tool['security_alerts_threshold'] })}>
+            <Select
+              aria-label="Security alerts threshold"
+              value={t.security_alerts_threshold}
+              onChange={(e) => set(i, { security_alerts_threshold: e.target.value as Tool['security_alerts_threshold'] })}
+            >
               <option value="none">Security: none</option>
               <option value="critical">Security: critical</option>
               <option value="high_or_higher">Security: high or higher</option>
               <option value="medium_or_higher">Security: medium or higher</option>
               <option value="all">Security: all</option>
             </Select>
-            <IconButton icon={XIcon} size="sm" label="Remove tool" onClick={() => onChange({ code_scanning_tools: p.code_scanning_tools.filter((_, j) => j !== i) })} />
+            <IconButton
+              icon={XIcon}
+              size="sm"
+              label="Remove tool"
+              onClick={() => onChange({ code_scanning_tools: p.code_scanning_tools.filter((_, j) => j !== i) })}
+            />
           </div>
         ))
       )}

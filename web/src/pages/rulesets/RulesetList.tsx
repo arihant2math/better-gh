@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
 import { invalidate } from '../../api/cache';
+import { ApiError } from '../../api/client';
 import { deleteRuleset, getRuleset, listRulesets, scopeKey, type Ruleset, type RulesetTarget } from '../../api/rulesets';
 import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, downloadText, errorMessage } from '../../components/settings/kit';
 import { Link, navigate } from '../../router';
@@ -91,9 +92,17 @@ export const RulesetList = observer(function RulesetList({ host }: { host: Rules
           )
         }
       />
-      {list.error ? <LoadError error={list.error} /> : null}
+      {list.error ? (
+        isNotFound(list.error) ? (
+          <Unavailable what={scope.kind === 'org' ? 'Organization rulesets are' : 'Rulesets are'} />
+        ) : (
+          <LoadError error={list.error} />
+        )
+      ) : null}
       {!list.data ? (
-        list.error ? null : <ListSkeleton rows={3} />
+        list.error ? null : (
+          <ListSkeleton rows={3} />
+        )
       ) : list.data.length === 0 ? (
         <EmptyState icon={ShieldLockIcon} title="You haven't created any rulesets">
           Define whether collaborators can delete or force push and set requirements for any pushes, such as passing status checks or a linear commit history.
@@ -118,7 +127,16 @@ export const RulesetList = observer(function RulesetList({ host }: { host: Rules
                     {!own(r) && <>· Managed by {r.source}</>}
                   </span>
                 }
-                actions={<RowActions r={r} own={own(r)} readOnly={!!host.readOnly} onEdit={() => navigate(href)} onExport={() => void exportOne(r)} onDelete={() => setDeleting(r)} />}
+                actions={
+                  <RowActions
+                    r={r}
+                    own={own(r)}
+                    readOnly={!!host.readOnly}
+                    onEdit={() => navigate(href)}
+                    onExport={() => void exportOne(r)}
+                    onDelete={() => setDeleting(r)}
+                  />
+                }
               />
             );
           })}
@@ -146,7 +164,21 @@ export const RulesetList = observer(function RulesetList({ host }: { host: Rules
   );
 });
 
-function RowActions({ r, own, readOnly, onEdit, onExport, onDelete }: { r: Ruleset; own: boolean; readOnly: boolean; onEdit: () => void; onExport: () => void; onDelete: () => void }) {
+function RowActions({
+  r,
+  own,
+  readOnly,
+  onEdit,
+  onExport,
+  onDelete,
+}: {
+  r: Ruleset;
+  own: boolean;
+  readOnly: boolean;
+  onEdit: () => void;
+  onExport: () => void;
+  onDelete: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const items: MenuEntry[] = [
@@ -160,5 +192,16 @@ function RowActions({ r, own, readOnly, onEdit, onExport, onDelete }: { r: Rules
       <IconButton ref={btn} icon={KebabHorizontalIcon} label={`Actions for ${r.name}`} size="sm" onClick={() => setOpen(true)} />
       <Menu open={open} onClose={() => setOpen(false)} anchor={btn} items={items} placement="bottom-end" />
     </>
+  );
+}
+
+export const isNotFound = (e: unknown) => e instanceof ApiError && e.status === 404;
+
+/** The server has no such endpoint (an older bgh-server). */
+export function Unavailable({ what }: { what: string }) {
+  return (
+    <EmptyState icon={ShieldLockIcon} title={`${what} not available`}>
+      This server does not support this part of the rulesets API yet.
+    </EmptyState>
   );
 }

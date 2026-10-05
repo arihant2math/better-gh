@@ -153,12 +153,21 @@ export const BypassList = observer(function BypassList({
                 <option value="pull_request">For pull requests only</option>
                 <option value="exempt">Exempt</option>
               </Select>
-              <IconButton icon={XIcon} size="sm" label={`Remove ${label} from the bypass list`} onClick={() => onChange(value.filter((x) => key(x) !== key(a)))} />
+              <IconButton
+                icon={XIcon}
+                size="sm"
+                label={`Remove ${label} from the bypass list`}
+                onClick={() => onChange(value.filter((x) => key(x) !== key(a)))}
+              />
             </div>
           );
         })
       )}
-      {error && <div className={styles.boxEmpty} style={{ color: 'var(--danger)' }}>{error}</div>}
+      {error && (
+        <div className={styles.boxEmpty} style={{ color: 'var(--danger)' }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 });

@@ -121,21 +121,28 @@ export function RefTargets({ form, set, repo, error }: { form: RulesetForm; set:
           </div>
         )}
         {rows.length === 0 ? (
-          <div className={styles.boxEmpty}>
-            This ruleset does not target any {noun}. Add a target so its rules apply.
-          </div>
+          <div className={styles.boxEmpty}>This ruleset does not target any {noun}. Add a target so its rules apply.</div>
         ) : (
           rows.map(([kind, p]) => (
             <div key={`${kind}:${p}`} className={styles.boxRow}>
               <span className={styles.small}>{kind === 'include' ? 'Include' : 'Exclude'}</span>
               <span className={p.startsWith('~') ? undefined : styles.mono}>{patternLabel(p, target)}</span>
               <span className={styles.spacer} />
-              <IconButton icon={XIcon} size="sm" label={`Remove ${kind === 'include' ? 'inclusion' : 'exclusion'} ${patternLabel(p, target)}`} onClick={() => remove(kind, p)} />
+              <IconButton
+                icon={XIcon}
+                size="sm"
+                label={`Remove ${kind === 'include' ? 'inclusion' : 'exclusion'} ${patternLabel(p, target)}`}
+                onClick={() => remove(kind, p)}
+              />
             </div>
           ))
         )}
       </div>
-      {error && <p className={styles.small} style={{ color: 'var(--danger)' }}>{error}</p>}
+      {error && (
+        <p className={styles.small} style={{ color: 'var(--danger)' }}>
+          {error}
+        </p>
+      )}
       {repo && rows.length > 0 && (
         <div className={styles.box} aria-label="Matching refs preview">
           <div className={styles.boxHead}>
@@ -145,7 +152,9 @@ export function RefTargets({ form, set, repo, error }: { form: RulesetForm; set:
             {refs.loading ? (
               <div className={styles.boxEmpty}>Loading {noun}…</div>
             ) : matching.length === 0 ? (
-              <div className={styles.boxEmpty}>No existing {noun} match. The rules also apply to {noun} created later that match.</div>
+              <div className={styles.boxEmpty}>
+                No existing {noun} match. The rules also apply to {noun} created later that match.
+              </div>
             ) : (
               <>
                 {matching.slice(0, PREVIEW_MAX).map((n) => (
@@ -246,7 +255,11 @@ export function RepoTargets({ form, set, org, error }: { form: RulesetForm; set:
           )}
         </div>
       )}
-      {error && <p className={styles.small} style={{ color: 'var(--danger)' }}>{error}</p>}
+      {error && (
+        <p className={styles.small} style={{ color: 'var(--danger)' }}>
+          {error}
+        </p>
+      )}
       {form.repoMode !== 'id' && form.repoMode !== 'property' && (
         <div className={styles.box} aria-label="Matching repositories preview">
           <div className={styles.boxHead}>

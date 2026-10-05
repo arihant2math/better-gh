@@ -8,7 +8,13 @@ export default observer(function RulesSettings({ repo, rest, base }: SectionProp
   const isOrg = !!store().get('org', repo.ownerId);
   return (
     <RulesetsSection
-      host={{ scope: { kind: 'repo', owner: repo.owner, repo: repo.name }, base: `${base}/rules`, orgId: isOrg ? repo.ownerId : null, repo, readOnly: repo.archived }}
+      host={{
+        scope: { kind: 'repo', owner: repo.owner, repo: repo.name },
+        base: `${base}/rules`,
+        orgId: isOrg ? repo.ownerId : null,
+        repo,
+        readOnly: repo.archived,
+      }}
       rest={rest}
     />
   );

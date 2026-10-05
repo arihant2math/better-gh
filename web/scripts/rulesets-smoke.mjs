@@ -29,7 +29,11 @@ const check = (cond, msg) => {
   if (!cond) failures++;
 };
 const shot = (name) => page.screenshot({ path: join(shots, `${name}.png`), fullPage: true });
-const visible = (loc) => loc.first().isVisible().catch(() => false);
+const visible = (loc) =>
+  loc
+    .first()
+    .isVisible()
+    .catch(() => false);
 
 // ---------------------------------------------------------------- repository rulesets
 await page.goto(`${base}/acme/api/settings/rules?mock&reset&live=0&latency=0`);
@@ -120,11 +124,28 @@ check(await visible(page.getByText('A pattern is required.')), 'client validatio
 await page.getByLabel('Name', { exact: true }).fill('Release tags');
 await page.getByLabel('Matching pattern').fill('v');
 await page.getByRole('button', { name: 'Create', exact: true }).click();
-check(await page.getByText('Validation Failed').first().waitFor({ timeout: 3000 }).then(() => true, () => false), 'server validation: duplicate name');
+check(
+  await page
+    .getByText('Validation Failed')
+    .first()
+    .waitFor({ timeout: 3000 })
+    .then(
+      () => true,
+      () => false,
+    ),
+  'server validation: duplicate name',
+);
 await shot('03-validation');
 
 // Import.
-const exported = { name: 'Imported', target: 'branch', enforcement: 'disabled', conditions: { ref_name: { include: ['refs/heads/hotfix/*'], exclude: [] } }, rules: [{ type: 'deletion' }], bypass_actors: [] };
+const exported = {
+  name: 'Imported',
+  target: 'branch',
+  enforcement: 'disabled',
+  conditions: { ref_name: { include: ['refs/heads/hotfix/*'], exclude: [] } },
+  rules: [{ type: 'deletion' }],
+  bypass_actors: [],
+};
 const file = join(shots, 'import.json');
 writeFileSync(file, JSON.stringify(exported));
 await page.goto(`${base}/acme/api/settings/rules`);
@@ -155,8 +176,18 @@ await page.keyboard.press('Escape');
 // Branches list badge. The mock keeps ruleset state in memory, so navigate client-side
 // (no reload). Add an active ruleset on the default branch through the API.
 await page.evaluate(async () => {
-  const body = { name: 'Mainline', target: 'branch', enforcement: 'active', conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } }, rules: [{ type: 'deletion' }] };
-  await window.__bghMock.fetch('/api/v3/repos/acme/api/rulesets', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+  const body = {
+    name: 'Mainline',
+    target: 'branch',
+    enforcement: 'active',
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+    rules: [{ type: 'deletion' }],
+  };
+  await window.__bghMock.fetch('/api/v3/repos/acme/api/rulesets', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  });
 });
 const go = (path) =>
   page.evaluate((p) => {
@@ -165,13 +196,20 @@ const go = (path) =>
   }, path);
 await go('/acme/api/branches');
 await page.getByRole('heading', { name: 'Branches', exact: true }).waitFor();
-await page.getByRole('link', { name: /Protected by ruleset: Mainline/ }).first().waitFor({ timeout: 5000 }).catch(() => undefined);
+await page
+  .getByRole('link', { name: /Protected by ruleset: Mainline/ })
+  .first()
+  .waitFor({ timeout: 5000 })
+  .catch(() => undefined);
 check(await visible(page.getByRole('link', { name: /Protected by ruleset: Mainline/ })), 'branches list shows the protecting ruleset');
 await shot('05-branches');
 
 // Classic protection hint links to rulesets.
 await go('/acme/api/settings/branch_protection_rules/new');
-await page.getByRole('heading', { name: 'New branch protection rule' }).waitFor().catch(() => undefined);
+await page
+  .getByRole('heading', { name: 'New branch protection rule' })
+  .waitFor()
+  .catch(() => undefined);
 check(await visible(page.getByRole('link', { name: 'Create a ruleset' })), 'classic protection hint links to rulesets');
 
 // ---------------------------------------------------------------- organization rulesets
@@ -201,8 +239,14 @@ const org = await page.evaluate(async () => {
   const one = list.find((x) => x.name === 'No large files');
   return (await window.__bghMock.fetch(`/api/v3/orgs/acme/rulesets/${one.id}`, {})).json();
 });
-check(org.target === 'push' && JSON.stringify(org.conditions) === JSON.stringify({ repository_name: { include: ['api'], exclude: [], protected: false } }), 'org push ruleset conditions');
-check(org.rules.some((r) => r.type === 'max_file_size' && r.parameters.max_file_size === 5), 'org push ruleset max_file_size');
+check(
+  org.target === 'push' && JSON.stringify(org.conditions) === JSON.stringify({ repository_name: { include: ['api'], exclude: [], protected: false } }),
+  'org push ruleset conditions',
+);
+check(
+  org.rules.some((r) => r.type === 'max_file_size' && r.parameters.max_file_size === 5),
+  'org push ruleset max_file_size',
+);
 await page.getByRole('navigation', { name: 'Rules' }).getByRole('link', { name: 'Insights' }).click();
 await page.getByLabel('Repository').waitFor();
 check(true, 'org insights has a repository filter');
