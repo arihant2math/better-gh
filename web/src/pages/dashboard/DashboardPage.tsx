@@ -10,11 +10,12 @@ import { cmp } from '../../sync/selectors';
 import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { CheckCircleIcon, ChevronDownIcon, InboxIcon, LockIcon, PulseIcon, RepoIcon, StarFillIcon } from '../../ui/icons';
+import { CheckCircleIcon, ChevronDownIcon, InboxIcon, LockIcon, OrganizationIcon, PulseIcon, RepoIcon, StarFillIcon } from '../../ui/icons';
 import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
+import { InvitationsBanner } from '../invitations/InvitationsBanner';
 import { issueHref } from '../issues/IssueRow';
 import styles from './DashboardPage.module.css';
 import { dayLabel, feedFor, groupFeed, type FeedGroup } from './feed';
@@ -223,9 +224,14 @@ export default observer(function DashboardPage() {
 
   if (s.count('repo') === 0) {
     return (
-      <EmptyState icon={RepoIcon} title="No repositories yet">
-        Create a repository or ask to be added to an organization.
-      </EmptyState>
+      <>
+        <div className={styles.emptyInvites}>
+          <InvitationsBanner />
+        </div>
+        <EmptyState icon={RepoIcon} title="No repositories yet">
+          Create a repository or ask to be added to an organization.
+        </EmptyState>
+      </>
     );
   }
 
@@ -237,6 +243,7 @@ export default observer(function DashboardPage() {
         </h1>
         <ContextSwitcher value={ctx} />
       </div>
+      <InvitationsBanner />
       <p className={styles.sub}>
         {side.assigned} open issue{side.assigned === 1 ? '' : 's'} assigned to you, {side.reviews} review request{side.reviews === 1 ? '' : 's'}
         {side.unread ? `, ${side.unread} unread notification${side.unread === 1 ? '' : 's'}` : ''}.
@@ -281,7 +288,7 @@ export default observer(function DashboardPage() {
           <div className={styles.repos}>
             {side.repos.slice(0, 12).map((r) => (
               <Link key={r.id} to={`/${r.owner}/${r.name}`} className={styles.repo}>
-                {r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
+                {r.visibility === 'internal' ? <OrganizationIcon size={14} /> : r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
                 <span className={styles.repoName}>
                   <span className={styles.repoOwner}>{r.owner}/</span>
                   {r.name}

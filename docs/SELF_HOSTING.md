@@ -150,7 +150,7 @@ start-up with an error naming the variable.
 | `BGH_ACTIONS_EXECUTOR` | `auto` | Where the built-in Actions runner runs jobs: `docker` (per-job containers), `shell` (directly on the server host, **trusted single-tenant installs only**), or `auto` (docker when `docker info` works, otherwise the built-in runner takes no jobs). See [Actions](#actions-ci). |
 | `BGH_ACTIONS_BUILTIN_RUNNER` | `true` | Run Actions jobs inside the `bgh` process (with `BGH_ACTIONS_EXECUTOR`). Set `false` when only external runners should take jobs. |
 | `BGH_ACTIONS_WORK_DIR` | `{tmp}/bgh-actions-work` | Job directories of the built-in runner. Must not be inside `BGH_DATA_DIR` (such a value is ignored with an error). |
-| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. |
+| `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS`, `BGH_OIDC_GROUPS_CLAIM` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. LDAP is configured in Site admin → Settings → Authentication (`auth_providers.ldap`, `bgh_accounts::ldap`). |
 
 Site admins can change rate limits, SMTP and sign-in providers at runtime
 (`/_bgh/admin/settings`); a field stored there overrides the variable,
@@ -376,6 +376,28 @@ docker compose start bgh
 
 After restoring onto a new host keep the same `BGH_BASE_URL` (or update it:
 URLs are generated on the fly, nothing stores the old one).
+
+## Migrating from GitHub
+
+Repositories move with their issues (original numbers), comments,
+reactions, labels, milestones, releases with assets and, for
+organizations, teams: **Site admin → Imports** or **Organization settings →
+Import**, or on the server
+
+```
+BGH_IMPORT_TOKEN=ghp_... bgh import github --repo octo-org/app --owner acme \
+    --user-map users.csv            # optional: source-login,local-login per line
+```
+
+(`--api-url https://ghe.example/api/v3` for GitHub Enterprise Server). The
+importer reaches the source over HTTPS like webhooks do: a GHES host on a
+private network must be listed in `BGH_WEBHOOK_ALLOWED_HOSTS` (or the
+`webhooks.allowed_hosts` site setting). Users are matched by verified
+email (the source's public profile email), then by the map; everyone else
+becomes a non-login *mannequin* account named `<login>-imported`. Imports
+are resumable (`bgh import resume --id N`, or Resume in the UI) and a rerun
+only adds what is new. Pull requests follow in a later release.
+Details: `docs/packages/p18-metadata-import.md`.
 
 ## Upgrades and migrations
 

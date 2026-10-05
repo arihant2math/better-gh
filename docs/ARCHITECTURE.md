@@ -43,7 +43,8 @@ crates/
   bgh-repos/               repos CRUD, collaborators, forks, stars, watching,
                            topics, contents/trees/blobs/commits/refs API,
                            branches, tags, compare, branch protection, deploy
-                           keys, git transport routes
+                           keys, git transport routes, insights (`/stats/*`,
+                           traffic, community profile, activity log)
   bgh-issues/              issues, labels, milestones, comments, reactions,
                            timeline/events, assignees, locking, templates
   bgh-pulls/               pull requests, reviews, review comments, merge,
@@ -59,6 +60,8 @@ crates/
                            deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
+  bgh-import/              metadata importer (GitHub/GHES issues, labels,
+                           milestones, releases, users/mannequins)
   bgh-server/              binary `bgh`: composes routers, serves web/dist
 migrations/                sqlx migrations (single ordered dir)
 web/                       React + TypeScript client (Vite)
@@ -116,9 +119,15 @@ email domains), default repository visibility, max repository size and
 per-owner `storage_quotas` (git + LFS storage; checked on push, in the
 pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
-auth providers (password login, OIDC), SMTP, maintenance mode, and push
+auth providers (password login, OIDC, LDAP), SMTP, maintenance mode, and push
 hardening (`git`: `fsck_on_push`, `max_object_size_mb` (GH001),
-`warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`). Their defaults come from the
+`warn_object_size_mb`, `max_push_size_mb` → `receive.maxInputSize`), and
+the access policy (`privacy`: `private_mode`, `allow_anonymous_directory`,
+`allowed_visibilities` ⊆ public/internal/private, enforced with 422 on
+repository create, PATCH, transfer, fork and template generation;
+`repositories.default_visibility` must be allowed and falls back to the
+most restrictive allowed one; `GET /users` and `GET /organizations` need
+auth unless the anonymous directory is allowed). Their defaults come from the
 environment where one exists (`SiteSettings::defaults(&config)`:
 `BGH_RATE_LIMIT*` → `rate_limits`, `BGH_OIDC_*` → `auth_providers.oidc`);
 stored fields override them field by field. SMTP is a transport choice
@@ -131,7 +140,10 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
 `bgh admin create-org --login --admin <user> [--name]`,
 `bgh admin create-token --user <login> [--scopes a,b] [--name]
-[--expires-in-days]` (prints a PAT), `bgh healthcheck` (probes `/healthz`
+[--expires-in-days]` (prints a PAT), `bgh import github --repo O/R --owner
+<login> [--api-url] [--user-map FILE] …` / `bgh import resume --id N`
+(metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
+the log), `bgh healthcheck` (probes `/healthz`
 on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
 reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
@@ -163,7 +175,16 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
 * Auth: `Authorization: token <t>` / `Bearer <t>` / Basic (user:token) ;
   session cookie for the web client. Scopes via `X-OAuth-Scopes`.
 * Headers: `X-GitHub-Media-Type`, `X-RateLimit-*`, `ETag` +
-  `If-None-Match` → 304 on GETs.
+  `If-None-Match` → 304 on GETs (`Last-Modified` from a top-level
+  `updated_at`, honoring `If-Modified-Since` when no `If-None-Match`).
+  Validators are computed for JSON bodies up to 1 MiB, or any size when
+  the request is conditional. The ETag layer sits inside the rate limiter,
+  and 304s are refunded (`ratelimit::refund`), so they are free. Every `/api/*`
+  response carries `X-GitHub-Enterprise-Version` and `X-GitHub-Request-Id`
+  (= `x-request-id`). REST rejects an unsupported `X-GitHub-Api-Version`
+  with 400 (`bgh_core::API_VERSIONS`). Scope-gated endpoints
+  (`require_scope`) send `X-Accepted-OAuth-Scopes`. A known path with the
+  wrong method gets a JSON 404, not an empty 405.
 * Media types: `application/vnd.github+json`, `.raw`, `.html`, `.diff`,
   `.patch` where GitHub supports them.
 * `node_id`: GitHub's legacy format, base64 of `"{len:02}:{Type}{id}"`
@@ -175,7 +196,20 @@ SSH: built-in SSH server (russh) on a configurable port for git only.
   siblings are served when accepted. Unknown `/api/*` and `/_bgh/*` paths
   get GitHub JSON 404s.
 
-Cross-cutting middleware: maintenance mode (`settings::maintenance_middleware`,
+Cross-cutting middleware: private mode (`privacy::private_mode_middleware`,
+`privacy.private_mode`): anonymous requests get 401 "Requires
+authentication" (API, `/_bgh`, raw/archive/avatars/downloads), 401 +
+`WWW-Authenticate: Basic` for git HTTP/LFS without credentials (requests
+with credentials reach the git handlers, which accept passwords), and a
+302 to `/login?return_to=` for HTML page loads; exempt are `/healthz`,
+`/api/v3/meta`, `/_bgh/site|boot|session|auth/*|signup|password_reset*|
+emails/verify|sso*`, the OAuth token/device-code endpoints, static assets
+and the public sign-in pages; raw/archive URLs with a download `?token=`
+pass to the handler (in private mode the tarball/zipball redirects carry
+one for every repository). The container registry (`/v2/...`) is let through
+and refuses anonymous callers itself (Bearer challenge, no anonymous
+tokens). `RepoAccess` also refuses anonymous callers in
+private mode as a second line. Maintenance mode (`settings::maintenance_middleware`,
 503 + `Retry-After` for API/`_bgh`/git requests except site admins,
 `/healthz`, `/_bgh/site`, `/_bgh/session`) and API rate limiting
 (`ratelimit::middleware` on `/api/v3`, `ratelimit::root_middleware` for
@@ -208,7 +242,11 @@ and octokit-style raw requests.
 * Permission is computed from: repo owner, collaborators, org membership +
   base permission (`org_settings.default_repository_permission`), team
   grants (inherited from parent teams), site admin (→ Admin), public
-  visibility (→ Read). `bgh_core::perms::repo_permission(db, user_id,
+  visibility (→ Read for everyone), internal visibility (→ Read for every
+  signed-in, non-suspended user, GHES semantics; JSON `private: true,
+  visibility: "internal"`; token scopes treat it like private;
+  `perms::visibility_floor`, `ReadableRepos::internal` +
+  `visibility_sql()` for search-style queries). `bgh_core::perms::repo_permission(db, user_id,
   repo)` / batched `repo_permissions(db, user_id, &repos)` →
   `Permission { None, Read, Triage, Write, Maintain, Admin }`. Token scopes
   then cap it (`perms::effective`: private repos need `repo`; writes to
@@ -230,7 +268,15 @@ and octokit-style raw requests.
   PATs: `bghp_` + 40 alphanumerics, stored as SHA-256 with scopes/expiry;
   OAuth app tokens are `bgho_…` rows of the same table (`kind = 'oauth'`).
   Basic auth with a password is accepted for git transport only, and never
-  for accounts with two-factor authentication.
+  for accounts with two-factor authentication. Every password sign-in (web
+  and git basic auth) goes through `bgh_core::auth::check_password`: the
+  password directory (LDAP, `bgh_accounts::ldap`, configured by the
+  `auth_providers.ldap` setting) first, then built-in passwords unless
+  `auth_providers.password_login` is off (site admins exempt only with
+  `password_login_admin_exempt`); failures are throttled per login and per
+  IP (shared by web and git) and audited as `user.failed_login` with
+  `transport`. Teams can be synced from external groups
+  (`external_group_mappings`: LDAP group DNs, the OIDC groups claim).
 * GitHub Apps (`bgh_core::apps`, `bgh_accounts::apps`, P17): an app
   authenticates with an RS256 JWT (`Bearer`, `iss` = app id or client id,
   ≤ 10 min) signed by one of its registered keys (only public keys are
@@ -477,6 +523,19 @@ Site-level account changes also emit `UserAccountChanged` /
   with `--prune` and are read-only (`RepoAccess::require_not_mirror`);
   fetched refs emit `Push` with `origin` `mirror`/`import` (Actions skips
   them). Details: `docs/packages/p11-import-mirrors.md`.
+* Metadata imports (`bgh-import`, `/_bgh/metadata-imports`): a GitHub/GHES
+  repository's git (through the P11 import, push origin
+  `metadata-import`, which webhooks, notifications, activity and
+  commit-keyword closing skip), settings, labels, milestones and issues
+  with **original numbers**, comments, reactions, key events, releases with
+  assets and optionally teams. Writes go through internal insert APIs
+  (`bgh_issues::import`, `bgh_releases::import`) that keep source authors
+  and timestamps and emit no domain events (sync actions only). Each object
+  commits with its `import_mappings` row (resumable, idempotent); source
+  users map by verified email, then a login map, else to a non-login
+  **mannequin** (`users.mannequin`). The source client is SSRF-pinned, uses
+  conditional requests and backs off on rate limits. Details:
+  `docs/packages/p18-metadata-import.md`.
 * Archives (`git archive`) stream while being teed into
   `{data_dir}/cache/archives/{repo}/{commit}-…`; raw files stream large
   blobs via `git cat-file` and resolve LFS pointers.

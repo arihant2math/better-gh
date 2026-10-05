@@ -24,7 +24,7 @@ use crate::models::WorkflowRow;
 use crate::workflow::{self, CronSchedule, Workflow};
 
 pub const WORKFLOWS_DIR: &str = ".github/workflows";
-const MAX_WORKFLOW_SIZE: u64 = 1024 * 1024;
+pub(crate) const MAX_WORKFLOW_SIZE: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -38,22 +38,45 @@ pub enum TriggerKind {
         action: String,
         actor_id: Option<i64>,
         before: Option<String>,
+        /// `pull_request` (with `pull_request_target`) when unset, else
+        /// `pull_request_review` / `pull_request_review_comment`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        event: Option<String>,
+        /// Payload hints ([`crate::trigger_events::Hints`]).
+        #[serde(default, skip_serializing_if = "Value::is_null")]
+        extra: Value,
     },
     Release {
         release_id: i64,
         action: String,
         actor_id: i64,
+        #[serde(default, skip_serializing_if = "Value::is_null")]
+        extra: Value,
     },
     Issue {
         issue_id: i64,
         action: String,
         actor_id: i64,
+        #[serde(default, skip_serializing_if = "Value::is_null")]
+        extra: Value,
     },
     IssueComment {
         issue_id: i64,
         comment_id: i64,
         action: String,
         actor_id: i64,
+        #[serde(default, skip_serializing_if = "Value::is_null")]
+        extra: Value,
+    },
+    /// Events evaluated against the default branch's workflows (`label`,
+    /// `milestone`, `watch`, `fork`, `public`, `gollum`, `check_run`,
+    /// `check_suite`, `workflow_run`), see [`crate::trigger_events`].
+    Repo {
+        event: String,
+        action: Option<String>,
+        actor_id: Option<i64>,
+        #[serde(default)]
+        extra: Value,
     },
 }
 
@@ -128,6 +151,7 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
                 release_id: *release_id,
                 action: "published".into(),
                 actor_id: *actor_id,
+                extra: Value::Null,
             },
         ),
         Event::IssueOpened {
@@ -163,9 +187,13 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
                 comment_id: *comment_id,
                 action: "created".into(),
                 actor_id: *actor_id,
+                extra: Value::Null,
             },
         ),
-        _ => return Ok(()),
+        other => match crate::trigger_events::map_event(other) {
+            Some(mapped) => mapped,
+            None => return Ok(()),
+        },
     };
     if !may_have_workflows(&state, repo_id, &kind).await? {
         return Ok(());
@@ -179,9 +207,14 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
     Ok(())
 }
 
-/// Dispatch events start workflows even when a job token sent them.
+/// Dispatch events start workflows even when a job token sent them, and so
+/// does `workflow_run` (GitHub bounds those chains by depth instead, see
+/// `trigger_events::MAX_WORKFLOW_RUN_DEPTH`).
 fn is_dispatch(event: &Event) -> bool {
-    matches!(event.name(), "repository_dispatch" | "workflow_dispatch")
+    matches!(
+        event.name(),
+        "repository_dispatch" | "workflow_dispatch" | "workflow_run_updated"
+    )
 }
 
 /// Cheap pre-check so repositories without workflows never get trigger
@@ -240,20 +273,28 @@ async fn may_have_workflows(
         .unwrap_or(false))
 }
 
-fn pr(pull_id: i64, action: &str, actor_id: Option<i64>, before: Option<String>) -> TriggerKind {
+pub(crate) fn pr(
+    pull_id: i64,
+    action: &str,
+    actor_id: Option<i64>,
+    before: Option<String>,
+) -> TriggerKind {
     TriggerKind::PullRequest {
         pull_id,
         action: action.into(),
         actor_id,
         before,
+        event: None,
+        extra: Value::Null,
     }
 }
 
-fn issue(issue_id: i64, action: &str, actor_id: i64) -> TriggerKind {
+pub(crate) fn issue(issue_id: i64, action: &str, actor_id: i64) -> TriggerKind {
     TriggerKind::Issue {
         issue_id,
         action: action.into(),
         actor_id,
+        extra: Value::Null,
     }
 }
 
@@ -372,7 +413,7 @@ async fn repo_and_owner(
     Ok(Some((repo, owner)))
 }
 
-async fn user(state: &AppState, id: Option<i64>) -> anyhow::Result<Option<db::User>> {
+pub(crate) async fn user(state: &AppState, id: Option<i64>) -> anyhow::Result<Option<db::User>> {
     Ok(match id {
         Some(id) => db::User::find(&state.db, id).await?,
         None => None,
@@ -507,19 +548,69 @@ pub async fn trigger_job(state: AppState, job: Trigger) -> anyhow::Result<()> {
             action,
             actor_id,
             before,
-        } => on_pull_request(&state, &repo, &owner, pull_id, &action, actor_id, before).await,
+            event,
+            extra,
+        } => {
+            on_pull_request(
+                &state,
+                &repo,
+                &owner,
+                PullEvent {
+                    pull_id,
+                    event: event.as_deref().unwrap_or("pull_request"),
+                    action: &action,
+                    actor_id,
+                    before,
+                    extra: &extra,
+                },
+            )
+            .await
+        }
         TriggerKind::Release {
             release_id,
             action,
             actor_id,
-        } => on_release(&state, &repo, &owner, release_id, &action, actor_id).await,
+            extra,
+        } => on_release(&state, &repo, &owner, release_id, &action, actor_id, &extra).await,
         TriggerKind::Issue {
             issue_id,
             action,
             actor_id,
+            extra,
         } => {
+            // Issue-level changes of a pull request are `pull_request`
+            // activity on GitHub, never `issues`.
+            if crate::trigger_events::is_pull_request(&state, issue_id).await? {
+                if !crate::trigger_events::PR_ISSUE_ACTIONS.contains(&action.as_str()) {
+                    return Ok(());
+                }
+                return on_pull_request(
+                    &state,
+                    &repo,
+                    &owner,
+                    PullEvent {
+                        pull_id: issue_id,
+                        event: "pull_request",
+                        action: &action,
+                        actor_id: Some(actor_id),
+                        before: None,
+                        extra: &extra,
+                    },
+                )
+                .await;
+            }
             on_issue(
-                &state, &repo, &owner, issue_id, None, "issues", &action, actor_id,
+                &state,
+                &repo,
+                &owner,
+                IssueEvent {
+                    issue_id,
+                    comment_id: None,
+                    event: "issues",
+                    action: &action,
+                    actor_id,
+                    extra: &extra,
+                },
             )
             .await
         }
@@ -528,16 +619,37 @@ pub async fn trigger_job(state: AppState, job: Trigger) -> anyhow::Result<()> {
             comment_id,
             action,
             actor_id,
+            extra,
         } => {
             on_issue(
                 &state,
                 &repo,
                 &owner,
-                issue_id,
-                Some(comment_id),
-                "issue_comment",
-                &action,
+                IssueEvent {
+                    issue_id,
+                    comment_id: Some(comment_id),
+                    event: "issue_comment",
+                    action: &action,
+                    actor_id,
+                    extra: &extra,
+                },
+            )
+            .await
+        }
+        TriggerKind::Repo {
+            event,
+            action,
+            actor_id,
+            extra,
+        } => {
+            crate::trigger_events::on_repo_event(
+                &state,
+                &repo,
+                &owner,
+                &event,
+                action.as_deref(),
                 actor_id,
+                &extra,
             )
             .await
         }
@@ -618,18 +730,106 @@ async fn on_push(
             .await?;
         }
     }
+    on_create_delete(state, repo, owner, pusher.as_ref(), updates).await
+}
+
+/// `create` / `delete` for branch and tag creations and deletions. Like
+/// GitHub, `create` is not fired when a push creates more than three tags.
+async fn on_create_delete(
+    state: &AppState,
+    repo: &db::Repository,
+    owner: &db::User,
+    pusher: Option<&db::User>,
+    updates: &[RefUpdate],
+) -> anyhow::Result<()> {
+    let created_tags = updates
+        .iter()
+        .filter(|u| u.is_create() && u.tag().is_some())
+        .count();
+    for u in updates {
+        let (name, ref_type) = match (u.branch(), u.tag()) {
+            (Some(b), _) => (b, "branch"),
+            (_, Some(t)) => (t, "tag"),
+            _ => continue,
+        };
+        let mut payload = json!({
+            "ref": name,
+            "ref_type": ref_type,
+            "pusher_type": "user",
+            "repository": context::repo_payload(state, repo, owner),
+            "sender": context::sender_payload(state, pusher),
+        });
+        if u.is_delete() {
+            let Some((git_ref, sha)) = default_head(state, repo).await else {
+                continue;
+            };
+            run_default_branch_event(
+                state,
+                repo,
+                owner,
+                "delete",
+                "",
+                &git_ref,
+                &sha,
+                pusher.map(|p| p.id),
+                payload,
+            )
+            .await?;
+        } else if u.is_create() && !(ref_type == "tag" && created_tags > 3) {
+            payload["master_branch"] = json!(repo.default_branch);
+            payload["description"] = json!(repo.description);
+            // `create` runs the workflows of the created ref.
+            run_default_branch_event(
+                state,
+                repo,
+                owner,
+                "create",
+                "",
+                &u.refname,
+                &u.new,
+                pusher.map(|p| p.id),
+                payload,
+            )
+            .await?;
+        }
+    }
     Ok(())
+}
+
+/// A pull request activity to evaluate.
+pub(crate) struct PullEvent<'a> {
+    pub pull_id: i64,
+    /// `pull_request`, `pull_request_review` or `pull_request_review_comment`.
+    pub event: &'a str,
+    pub action: &'a str,
+    pub actor_id: Option<i64>,
+    pub before: Option<String>,
+    pub extra: &'a Value,
+}
+
+/// The site identity that commits PR test merges (same as bgh-pulls, so
+/// both compute the same `refs/pull/{n}/merge` sha).
+fn site_committer(state: &AppState) -> bgh_git::write::Identity {
+    bgh_git::write::Identity::new(
+        state.config.site_name.clone(),
+        format!("noreply@{}", state.config.hostname()),
+    )
 }
 
 async fn on_pull_request(
     state: &AppState,
     repo: &db::Repository,
     owner: &db::User,
-    pull_id: i64,
-    action: &str,
-    actor_id: Option<i64>,
-    before: Option<String>,
+    ev: PullEvent<'_>,
 ) -> anyhow::Result<()> {
+    let PullEvent {
+        pull_id,
+        event,
+        action,
+        actor_id,
+        before,
+        extra,
+    } = ev;
     let Some((issue, pr, pr_json)) =
         context::pull_request_payload(state, repo, owner, pull_id).await?
     else {
@@ -648,42 +848,77 @@ async fn on_pull_request(
         payload["before"] = json!(before);
         payload["after"] = json!(pr.head_sha);
     }
+    crate::trigger_events::apply_hints(state, repo, owner, extra, &mut payload).await?;
     let head_repo_id = pr.head_repo_id.unwrap_or(repo.id);
-    let changed = changed_paths(state, head_repo_id, Some(&pr.base_sha), &pr.head_sha, true).await;
+    let review_event = event != "pull_request";
+    let changed = if review_event {
+        None
+    } else {
+        changed_paths(state, head_repo_id, Some(&pr.base_sha), &pr.head_sha, true).await
+    };
 
-    // pull_request: workflows from the PR head, run on the merge ref.
-    let head_files = load_workflows(state, head_repo_id, &pr.head_sha)
-        .await
-        .unwrap_or_default();
-    for f in head_files {
-        let Ok(d) = &f.def else { continue };
-        if !d
-            .on
-            .matches_pull_request("pull_request", action, &pr.base_ref, changed.as_deref())
-            || workflow_disabled(state, repo.id, &f.path).await?
-        {
-            continue;
-        }
-        engine::create_run(
-            state,
-            NewRun {
-                repo: repo.clone(),
-                owner: owner.clone(),
-                path: f.path,
-                yaml: f.yaml,
-                def: f.def,
-                event: "pull_request".into(),
-                git_ref: format!("refs/pull/{}/merge", issue.number),
-                head_branch: Some(pr.head_ref.clone()),
-                head_sha: pr.head_sha.clone(),
-                head_repo_id: Some(head_repo_id),
-                actor_id,
-                payload: payload.clone(),
-                inputs: None,
-                pull_request_ids: vec![issue.id],
-            },
+    // pull_request (and the review events): workflows from the PR head, run
+    // on the test merge commit `refs/pull/{n}/merge`. A conflicting PR has
+    // no merge commit and doesn't run them (as on GitHub).
+    let merge_ref = format!("refs/pull/{}/merge", issue.number);
+    let merge_sha = if let (true, Some(sha)) = (pr.merged, &pr.merge_commit_sha) {
+        // A merged PR: the real merge commit.
+        Some(sha.clone())
+    } else {
+        bgh_git::merge::test_merge(
+            &store(state),
+            repo.id,
+            &merge_ref,
+            &pr.base_sha,
+            &pr.head_sha,
+            &site_committer(state),
         )
-        .await?;
+        .await
+        .map_err(|err| tracing::warn!(%err, pull_id, "test merge failed"))
+        .ok()
+        .flatten()
+    };
+    if let Some(merge_sha) = merge_sha {
+        // GITHUB_SHA of the runs (see `context::run_sha`); the runs and
+        // their check suites stay on the PR head commit.
+        payload["pull_request"]["merge_commit_sha"] = json!(merge_sha);
+        let head_files = load_workflows(state, head_repo_id, &pr.head_sha)
+            .await
+            .unwrap_or_default();
+        for f in head_files {
+            let Ok(d) = &f.def else { continue };
+            let matches = if review_event {
+                d.on.matches_activity(event, action)
+            } else {
+                d.on.matches_pull_request(event, action, &pr.base_ref, changed.as_deref())
+            };
+            if !matches || workflow_disabled(state, repo.id, &f.path).await? {
+                continue;
+            }
+            engine::create_run(
+                state,
+                NewRun {
+                    repo: repo.clone(),
+                    owner: owner.clone(),
+                    path: f.path,
+                    yaml: f.yaml,
+                    def: f.def,
+                    event: event.into(),
+                    git_ref: merge_ref.clone(),
+                    head_branch: Some(pr.head_ref.clone()),
+                    head_sha: pr.head_sha.clone(),
+                    head_repo_id: Some(head_repo_id),
+                    actor_id,
+                    payload: payload.clone(),
+                    inputs: None,
+                    pull_request_ids: vec![issue.id],
+                },
+            )
+            .await?;
+        }
+    }
+    if review_event {
+        return Ok(());
     }
 
     // pull_request_target: workflows from the base branch, run on it.
@@ -738,7 +973,10 @@ async fn on_pull_request(
 }
 
 /// Default branch ref and head sha.
-async fn default_head(state: &AppState, repo: &db::Repository) -> Option<(String, String)> {
+pub(crate) async fn default_head(
+    state: &AppState,
+    repo: &db::Repository,
+) -> Option<(String, String)> {
     let r = format!("refs/heads/{}", repo.default_branch);
     let r2 = r.clone();
     let sha = store(state)
@@ -751,7 +989,7 @@ async fn default_head(state: &AppState, repo: &db::Repository) -> Option<(String
 
 /// Runs for events evaluated against the default branch's workflows.
 #[allow(clippy::too_many_arguments)]
-async fn run_default_branch_event(
+pub(crate) async fn run_default_branch_event(
     state: &AppState,
     repo: &db::Repository,
     owner: &db::User,
@@ -762,39 +1000,69 @@ async fn run_default_branch_event(
     actor_id: Option<i64>,
     payload: Value,
 ) -> anyhow::Result<()> {
+    run_default_branch_matching(
+        state,
+        repo,
+        owner,
+        event,
+        git_ref,
+        sha,
+        actor_id,
+        payload,
+        |d| d.on.matches_activity(event, action),
+    )
+    .await
+    .map(drop)
+}
+
+/// Runs of the workflows at `sha` accepted by `matches` (`git_ref` is the
+/// run's `GITHUB_REF`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_default_branch_matching(
+    state: &AppState,
+    repo: &db::Repository,
+    owner: &db::User,
+    event: &str,
+    git_ref: &str,
+    sha: &str,
+    actor_id: Option<i64>,
+    payload: Value,
+    matches: impl Fn(&Workflow) -> bool,
+) -> anyhow::Result<Vec<i64>> {
     let files = load_workflows(state, repo.id, sha)
         .await
         .unwrap_or_default();
+    let mut created = Vec::new();
     for f in files {
         let Ok(d) = &f.def else { continue };
-        if !d.on.matches_activity(event, action)
-            || workflow_disabled(state, repo.id, &f.path).await?
-        {
+        if !matches(d) || workflow_disabled(state, repo.id, &f.path).await? {
             continue;
         }
         let branch = context::ref_name(git_ref).0.to_string();
-        engine::create_run(
-            state,
-            NewRun {
-                repo: repo.clone(),
-                owner: owner.clone(),
-                path: f.path,
-                yaml: f.yaml,
-                def: f.def,
-                event: event.into(),
-                git_ref: git_ref.into(),
-                head_branch: Some(branch),
-                head_sha: sha.into(),
-                head_repo_id: Some(repo.id),
-                actor_id,
-                payload: payload.clone(),
-                inputs: None,
-                pull_request_ids: vec![],
-            },
-        )
-        .await?;
+        created.push(
+            engine::create_run(
+                state,
+                NewRun {
+                    repo: repo.clone(),
+                    owner: owner.clone(),
+                    path: f.path,
+                    yaml: f.yaml,
+                    def: f.def,
+                    event: event.into(),
+                    git_ref: git_ref.into(),
+                    head_branch: Some(branch),
+                    head_sha: sha.into(),
+                    head_repo_id: Some(repo.id),
+                    actor_id,
+                    payload: payload.clone(),
+                    inputs: None,
+                    pull_request_ids: vec![],
+                },
+            )
+            .await?,
+        );
     }
-    Ok(())
+    Ok(created)
 }
 
 async fn on_release(
@@ -804,6 +1072,7 @@ async fn on_release(
     release_id: i64,
     action: &str,
     actor_id: i64,
+    extra: &Value,
 ) -> anyhow::Result<()> {
     #[derive(sqlx::FromRow)]
     struct Rel {
@@ -820,9 +1089,41 @@ async fn on_release(
     .bind(release_id)
     .fetch_optional(&state.db)
     .await?;
-    let Some(rel) = rel else { return Ok(()) };
-    let tag_ref = format!("refs/tags/{}", rel.tag_name);
-    let sha = {
+    // A deleted release is gone from the table: use the event's snapshot.
+    let (release, tag_name, draft) = match rel {
+        Some(rel) => (
+            json!({
+                "id": release_id,
+                "tag_name": rel.tag_name,
+                "name": rel.name,
+                "body": rel.body,
+                "draft": rel.draft,
+                "prerelease": rel.prerelease,
+                "target_commitish": rel.target_commitish,
+                "html_url": state.urls.html(&format!("/{}/{}/releases/tag/{}", owner.login, repo.name, rel.tag_name)),
+            }),
+            rel.tag_name,
+            rel.draft,
+        ),
+        None => match extra.get("release") {
+            Some(r) if r.is_object() => (
+                r.clone(),
+                r["tag_name"].as_str().unwrap_or_default().to_string(),
+                r["draft"].as_bool().unwrap_or(false),
+            ),
+            _ => return Ok(()),
+        },
+    };
+    // GitHub: drafts don't trigger created / edited / deleted.
+    if draft && matches!(action, "created" | "edited" | "deleted") {
+        return Ok(());
+    }
+    // Workflows from the tagged commit; a missing tag (draft, deleted) falls
+    // back to the default branch.
+    let tag_ref = format!("refs/tags/{tag_name}");
+    let sha = if tag_name.is_empty() {
+        None
+    } else {
         let r = tag_ref.clone();
         store(state)
             .read(repo.id, move |g| Ok(g.resolve_commit(&r).ok()))
@@ -830,30 +1131,30 @@ async fn on_release(
             .ok()
             .flatten()
     };
-    let Some(sha) = sha else { return Ok(()) };
-    let actor = user(state, Some(actor_id)).await?;
-    let payload = json!({
-        "action": action,
-        "release": {
-            "id": release_id,
-            "tag_name": rel.tag_name,
-            "name": rel.name,
-            "body": rel.body,
-            "draft": rel.draft,
-            "prerelease": rel.prerelease,
-            "target_commitish": rel.target_commitish,
-            "html_url": state.urls.html(&format!("/{}/{}/releases/tag/{}", owner.login, repo.name, rel.tag_name)),
+    let (git_ref, sha) = match sha {
+        Some(sha) => (tag_ref, sha),
+        None => match default_head(state, repo).await {
+            Some(h) => h,
+            None => return Ok(()),
         },
+    };
+    let actor = user(state, Some(actor_id)).await?;
+    let mut payload = json!({
+        "action": action,
+        "release": release,
         "repository": context::repo_payload(state, repo, owner),
         "sender": context::sender_payload(state, actor.as_ref()),
     });
+    if let Some(changes) = extra.get("changes").filter(|c| c.is_object()) {
+        payload["changes"] = changes.clone();
+    }
     run_default_branch_event(
         state,
         repo,
         owner,
         "release",
         action,
-        &tag_ref,
+        &git_ref,
         &sha,
         Some(actor_id),
         payload,
@@ -861,17 +1162,31 @@ async fn on_release(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+/// An issue or issue comment activity to evaluate.
+pub(crate) struct IssueEvent<'a> {
+    pub issue_id: i64,
+    pub comment_id: Option<i64>,
+    /// `issues` or `issue_comment`.
+    pub event: &'a str,
+    pub action: &'a str,
+    pub actor_id: i64,
+    pub extra: &'a Value,
+}
+
 async fn on_issue(
     state: &AppState,
     repo: &db::Repository,
     owner: &db::User,
-    issue_id: i64,
-    comment_id: Option<i64>,
-    event: &str,
-    action: &str,
-    actor_id: i64,
+    ev: IssueEvent<'_>,
 ) -> anyhow::Result<()> {
+    let IssueEvent {
+        issue_id,
+        comment_id,
+        event,
+        action,
+        actor_id,
+        extra,
+    } = ev;
     let Some((git_ref, sha)) = default_head(state, repo).await else {
         return Ok(());
     };
@@ -882,27 +1197,38 @@ async fn on_issue(
     .bind(issue_id)
     .fetch_optional(&state.db)
     .await?;
-    let Some(issue) = issue else { return Ok(()) };
     let actor = user(state, Some(actor_id)).await?;
-    let author = user(state, issue.author_id).await?;
-    let mut issue_json = json!({
-        "id": issue.id,
-        "number": issue.number,
-        "title": issue.title,
-        "body": issue.body,
-        "state": issue.state,
-        "user": context::sender_payload(state, author.as_ref()),
-        "html_url": state.urls.issue_html(&owner.login, &repo.name, issue.number),
-        "url": state.urls.issue(&owner.login, &repo.name, issue.number),
-        "created_at": bgh_core::time::Timestamp(issue.created_at),
-        "updated_at": bgh_core::time::Timestamp(issue.updated_at),
-    });
-    if issue.is_pull_request {
-        issue_json["pull_request"] = json!({
-            "url": state.urls.pull(&owner.login, &repo.name, issue.number),
-            "html_url": state.urls.pull_html(&owner.login, &repo.name, issue.number),
-        });
-    }
+    let issue_json = match issue {
+        Some(issue) => {
+            let author = user(state, issue.author_id).await?;
+            let mut issue_json = json!({
+                "id": issue.id,
+                "number": issue.number,
+                "title": issue.title,
+                "body": issue.body,
+                "state": issue.state,
+                "locked": issue.locked,
+                "user": context::sender_payload(state, author.as_ref()),
+                "html_url": state.urls.issue_html(&owner.login, &repo.name, issue.number),
+                "url": state.urls.issue(&owner.login, &repo.name, issue.number),
+                "created_at": bgh_core::time::Timestamp(issue.created_at),
+                "updated_at": bgh_core::time::Timestamp(issue.updated_at),
+            });
+            if issue.is_pull_request {
+                issue_json["pull_request"] = json!({
+                    "url": state.urls.pull(&owner.login, &repo.name, issue.number),
+                    "html_url": state.urls.pull_html(&owner.login, &repo.name, issue.number),
+                });
+            }
+            issue_json
+        }
+        // Deleted issues: the event's snapshot.
+        None => match extra.get("issue") {
+            Some(i) if i.is_object() => i.clone(),
+            _ => return Ok(()),
+        },
+    };
+    let number = issue_json["number"].as_i64().unwrap_or_default();
     let mut payload = json!({
         "action": action,
         "issue": issue_json,
@@ -924,10 +1250,16 @@ async fn on_issue(
                 "body": c.body,
                 "user": context::sender_payload(state, cu.as_ref()),
                 "created_at": bgh_core::time::Timestamp(c.created_at),
-                "html_url": state.urls.issue_comment_html(&owner.login, &repo.name, issue.number, c.id),
+                "updated_at": bgh_core::time::Timestamp(c.updated_at),
+                "html_url": state.urls.issue_comment_html(&owner.login, &repo.name, number, c.id),
             });
+        } else if let Some(c) = extra.get("comment").filter(|c| c.is_object()) {
+            payload["comment"] = c.clone();
+        } else {
+            return Ok(());
         }
     }
+    crate::trigger_events::apply_hints(state, repo, owner, extra, &mut payload).await?;
     run_default_branch_event(
         state,
         repo,

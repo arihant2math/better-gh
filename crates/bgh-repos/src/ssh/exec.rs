@@ -179,7 +179,7 @@ where
             &store,
             repo_id,
             protocol.as_deref(),
-            channel_reader(rx),
+            crate::traffic::observe_clone(state, repo_id, principal.visitor(), channel_reader(rx)),
             out,
             err,
         )

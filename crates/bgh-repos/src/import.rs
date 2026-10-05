@@ -379,12 +379,15 @@ pub struct ImportRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Git step of a metadata import (P18): fetched refs emit `Push` with
+    /// origin [`PushEvent::ORIGIN_METADATA_IMPORT`].
+    pub quiet: bool,
 }
 
 impl ImportRow {
     pub const COLUMNS: &'static str = "id, repo_id, source_url, enc_credentials, mirror, \
         include_lfs, status, phase, objects_received, objects_total, bytes_received, \
-        lfs_received, lfs_total, error, attempts, creator_id, created_at, updated_at, completed_at";
+        lfs_received, lfs_total, error, attempts, creator_id, created_at, updated_at, completed_at, quiet";
 
     async fn for_repo(db: impl sqlx::PgExecutor<'_>, repo_id: i64) -> ApiResult<Option<Self>> {
         Ok(sqlx::query_as(&format!(
@@ -509,6 +512,9 @@ pub struct NewImport {
     pub mirror: bool,
     pub include_lfs: bool,
     pub interval_minutes: i32,
+    /// Metadata import (P18): no webhooks/notifications/activity for the
+    /// fetched refs.
+    pub quiet: bool,
 }
 
 /// Default name for a repository imported from `url`.
@@ -595,6 +601,7 @@ pub async fn create_import(
             mirror: body.mirror,
             include_lfs: body.include_lfs,
             interval_minutes: interval,
+            quiet: false,
         }),
     )
     .await?;
@@ -621,8 +628,8 @@ pub(crate) async fn record(
     import: NewImport,
 ) -> ApiResult<db::Repository> {
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO repo_imports (repo_id, source_url, enc_credentials, mirror, include_lfs, creator_id)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        "INSERT INTO repo_imports (repo_id, source_url, enc_credentials, mirror, include_lfs, creator_id, quiet)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
     )
     .bind(repo.id)
     .bind(&import.source_url)
@@ -630,6 +637,7 @@ pub(crate) async fn record(
     .bind(import.mirror)
     .bind(import.include_lfs)
     .bind(auth.user.id)
+    .bind(import.quiet)
     .fetch_one(&mut **tx)
     .await?;
     if import.mirror {
@@ -1112,6 +1120,8 @@ async fn import_git(
     shared.lock().expect("progress").progress.phase = "finishing".into();
     let origin = if row.mirror {
         PushEvent::ORIGIN_MIRROR
+    } else if row.quiet {
+        PushEvent::ORIGIN_METADATA_IMPORT
     } else {
         PushEvent::ORIGIN_IMPORT
     };

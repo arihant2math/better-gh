@@ -13,6 +13,7 @@ import {
   KeyAsteriskIcon,
   KeyIcon,
   MailIcon,
+  OrganizationIcon,
   PaintbrushIcon,
   PersonIcon,
   PlugIcon,
@@ -45,6 +46,7 @@ export const SETTINGS_NAV: { group?: string; items: SettingsNavItem[] }[] = [
       { id: 'sessions', label: 'Sessions', icon: DeviceDesktopIcon },
       { id: 'keys', label: 'SSH and GPG keys', icon: KeyIcon },
       { id: 'blocked', label: 'Blocked users', icon: BlockedIcon },
+      { id: 'organizations', label: 'Organizations', icon: OrganizationIcon },
     ],
   },
   {

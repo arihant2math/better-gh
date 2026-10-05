@@ -531,3 +531,75 @@ async fn storage_quotas_block_pushes() {
         .await
         .assert_status(422);
 }
+
+#[tokio::test]
+async fn privacy_settings_are_validated() {
+    let app = bgh_server::test_app().await;
+    let admin = app.create_admin("root").await;
+    let s = app
+        .get("/_bgh/admin/settings")
+        .auth(&admin)
+        .send()
+        .await
+        .json();
+    assert_eq!(
+        s["privacy"],
+        json!({
+            "private_mode": false,
+            "allow_anonymous_directory": true,
+            "allowed_visibilities": ["public", "internal", "private"],
+        })
+    );
+    let bad = |body: Value| {
+        let app = &app;
+        let admin = &admin;
+        async move {
+            let res = app
+                .patch("/_bgh/admin/settings")
+                .auth(admin)
+                .json(&body)
+                .send()
+                .await;
+            res.assert_status(422);
+            res.json()
+        }
+    };
+    // The default visibility (public) must stay allowed.
+    let e = bad(json!({"privacy": {"allowed_visibilities": ["private"]}})).await;
+    assert_eq!(e["errors"][0]["field"], "repositories.default_visibility");
+    bad(json!({"privacy": {"allowed_visibilities": []}})).await;
+    bad(json!({"privacy": {"allowed_visibilities": ["secret"]}})).await;
+    bad(json!({"privacy": {"private_mode": "yes"}})).await;
+    // Both together are fine.
+    let s = patch_settings(
+        &app,
+        &admin,
+        json!({
+            "repositories": {"default_visibility": "private"},
+            "privacy": {"allowed_visibilities": ["private", "internal"], "private_mode": true},
+        }),
+    )
+    .await;
+    assert_eq!(
+        s["privacy"]["allowed_visibilities"],
+        json!(["private", "internal"])
+    );
+    assert_eq!(s["privacy"]["private_mode"], true);
+    // Changing the default to a disallowed one is refused too.
+    bad(json!({"repositories": {"default_visibility": "public"}})).await;
+    // Private mode is in effect right away (the admin is signed in).
+    app.get("/api/v3/meta").send().await.assert_status(200);
+    app.get("/api/v3/users").send().await.assert_status(401);
+    app.get("/api/v3/users")
+        .auth(&admin)
+        .send()
+        .await
+        .assert_status(200);
+    let audit: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_log WHERE action = 'business.update_settings'",
+    )
+    .fetch_one(&app.state.db)
+    .await
+    .unwrap();
+    assert!(audit >= 1);
+}

@@ -350,6 +350,7 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
             "SELECT 'repo:' || r.id AS scope, r.id, json_build_object(
                  'id', r.id, 'ownerId', r.owner_id, 'owner', o.login, 'name', r.name,
                  'description', r.description, 'private', r.visibility <> 'public',
+                 'visibility', r.visibility,
                  'fork', r.fork, 'archived', r.archived, 'defaultBranch', r.default_branch,
                  'mirrorUrl', r.mirror_url,
                  'language', r.language, 'topics', r.topics, 'stars', r.stargazers_count,
@@ -479,7 +480,8 @@ fn select_sql(model: Model, filter: &Filter<'_>, opts: Opts) -> Option<String> {
                  'subjectId', n.subject_id, 'title', n.subject_title, 'reason', n.reason,
                  'unread', n.unread, 'updatedAt', bgh_ts(n.updated_at),
                  'lastReadAt', bgh_ts(n.last_read_at))::text AS j
-               FROM notifications n WHERE {} AND NOT n.done",
+               FROM notifications n WHERE {} AND NOT n.done
+                AND bgh_can_read_repo(n.user_id, n.repo_id)",
             col("n", filter, &[("ids", "id"), ("users", "user_id")])?
         ),
         Model::ReviewComment => format!(

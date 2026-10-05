@@ -1,8 +1,10 @@
 //! REST endpoints under `/repos/{owner}/{repo}/actions/*`,
 //! `/orgs/{org}/actions/*` and `/repos/{owner}/{repo}/environments/*`.
 
+pub mod access;
 pub mod artifacts;
 pub mod deployments;
+pub mod dispatches;
 pub mod environments;
 pub mod runners;
 pub mod runs;

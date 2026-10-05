@@ -20,37 +20,26 @@ pub struct License {
 }
 
 impl License {
+    /// From a stored `license_spdx_id`, using the vendored license data
+    /// (`bgh_core::licenses`); `NOASSERTION` is GitHub's `other`.
     pub fn from_spdx(spdx: &str) -> Self {
-        let (name, nickname) = match spdx {
-            "MIT" => ("MIT License", None),
-            "Apache-2.0" => ("Apache License 2.0", None),
-            "GPL-2.0" => ("GNU General Public License v2.0", Some("GNU GPLv2")),
-            "GPL-3.0" => ("GNU General Public License v3.0", Some("GNU GPLv3")),
-            "AGPL-3.0" => ("GNU Affero General Public License v3.0", Some("GNU AGPLv3")),
-            "LGPL-2.1" => (
-                "GNU Lesser General Public License v2.1",
-                Some("GNU LGPLv2.1"),
-            ),
-            "LGPL-3.0" => ("GNU Lesser General Public License v3.0", Some("GNU LGPLv3")),
-            "BSD-2-Clause" => ("BSD 2-Clause \"Simplified\" License", None),
-            "BSD-3-Clause" => ("BSD 3-Clause \"New\" or \"Revised\" License", None),
-            "MPL-2.0" => ("Mozilla Public License 2.0", None),
-            "Unlicense" => ("The Unlicense", None),
-            other => (other, None),
+        let known = bgh_core::licenses::by_spdx(spdx);
+        let key = match known {
+            Some(l) => l.key.clone(),
+            None if spdx == bgh_core::licenses::NOASSERTION => "other".into(),
+            None => spdx.to_lowercase(),
         };
         Self {
-            key: spdx.to_lowercase(),
-            name: name.to_string(),
-            nickname: nickname.map(str::to_string),
+            name: match known {
+                Some(l) => l.name.clone(),
+                None if key == "other" => "Other".into(),
+                None => spdx.to_string(),
+            },
+            nickname: known.and_then(|l| l.nickname.clone()),
             spdx_id: Some(spdx.to_string()),
-            url: Some(URI(format!(
-                "http://choosealicense.com/licenses/{}/",
-                spdx.to_lowercase()
-            ))),
-            id: ID(bgh_core::node_id::encode_str(
-                bgh_core::node_id::NodeType::Blob,
-                &format!("license:{}", spdx.to_lowercase()),
-            )),
+            url: known.map(|l| URI(format!("http://choosealicense.com/licenses/{}/", l.key))),
+            id: ID(bgh_core::licenses::node_id(&key)),
+            key,
         }
     }
 }

@@ -23,6 +23,11 @@ fn redact(mut v: Value) -> Value {
     {
         *p = json!(REDACTED);
     }
+    if let Some(p) = v.pointer_mut("/auth_providers/ldap/bind_password")
+        && !p.is_null()
+    {
+        *p = json!(REDACTED);
+    }
     if let Some(list) = v
         .pointer_mut("/auth_providers/oidc")
         .and_then(Value::as_array_mut)
@@ -47,6 +52,16 @@ fn keep_secrets(section: &str, new: &mut Value, old: &Value) {
             }
         }
         "auth_providers" => {
+            if let Some(ldap) = new.get_mut("ldap").and_then(Value::as_object_mut)
+                && ldap.get("bind_password").and_then(Value::as_str) == Some(REDACTED)
+            {
+                ldap.insert(
+                    "bind_password".into(),
+                    old.pointer("/ldap/bind_password")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+            }
             let old_list = old
                 .get("oidc")
                 .and_then(Value::as_array)
@@ -140,7 +155,28 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
             return Err(bad("auth_providers.oidc.client_id"));
         }
     }
-    if !s.auth_providers.password_login && s.auth_providers.oidc.is_empty() {
+    let l = &s.auth_providers.ldap;
+    if l.enabled {
+        if l.host.trim().is_empty() || l.host.contains(char::is_whitespace) {
+            return Err(bad("auth_providers.ldap.host"));
+        }
+        if l.port == 0 {
+            return Err(bad("auth_providers.ldap.port"));
+        }
+        if l.user_search_bases.iter().all(|b| b.trim().is_empty()) {
+            return Err(bad("auth_providers.ldap.user_search_bases"));
+        }
+        if l.uid_field.trim().is_empty() {
+            return Err(bad("auth_providers.ldap.uid_field"));
+        }
+    }
+    if !matches!(l.encryption.as_str(), "none" | "ldaps" | "starttls") {
+        return Err(bad("auth_providers.ldap.encryption"));
+    }
+    if l.sync_interval_hours == 0 {
+        return Err(bad("auth_providers.ldap.sync_interval_hours"));
+    }
+    if !s.auth_providers.password_login && s.auth_providers.oidc.is_empty() && !l.enabled {
         return Err(ApiError::invalid_field(FieldError::custom(
             "SiteSettings",
             "auth_providers",
@@ -157,10 +193,34 @@ fn validate(s: &SiteSettings) -> ApiResult<()> {
     if g.loose_objects_threshold <= 0 || g.pack_count_threshold <= 1 || g.max_repos_per_pass <= 0 {
         return Err(bad("git_maintenance"));
     }
+    let r = &s.retention;
+    if [
+        r.notifications_days,
+        r.webhook_payload_days,
+        r.webhook_delivery_days,
+        r.activity_days,
+    ]
+    .iter()
+    .any(|d| *d > 36_500)
+    {
+        return Err(bad("retention"));
+    }
     for d in &s.signup.allowed_email_domains {
         if d.is_empty() || d.contains('@') || d.contains(char::is_whitespace) {
             return Err(bad("signup.allowed_email_domains"));
         }
+    }
+    if let Err(msg) = s.validate_policy() {
+        let field = if msg.starts_with("repositories.") {
+            "repositories.default_visibility"
+        } else {
+            "privacy.allowed_visibilities"
+        };
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            field,
+            msg,
+        )));
     }
     Ok(())
 }

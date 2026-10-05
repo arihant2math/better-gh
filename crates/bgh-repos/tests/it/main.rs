@@ -5,11 +5,13 @@
 mod common;
 mod gitwork;
 
+mod access_policy;
 mod api;
 mod bench;
 mod branches;
 mod browse;
 mod collaborators;
+mod commit_comments;
 mod commits;
 mod contents;
 mod download;
@@ -17,9 +19,11 @@ mod forks;
 mod git_transport;
 mod gitdb;
 mod import;
+mod insights;
 mod keys;
 mod lfs;
 mod maintenance;
+mod metadata;
 mod org_rulesets;
 mod protection;
 mod push_hardening;

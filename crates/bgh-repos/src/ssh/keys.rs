@@ -76,6 +76,14 @@ impl Principal {
             Self::Deploy(_) => "deploy key".into(),
         }
     }
+
+    /// Traffic visitor key (`crate::traffic`): the user, or the deploy key.
+    pub fn visitor(&self) -> String {
+        match self {
+            Self::User { ctx, .. } => format!("u:{}", ctx.user.id),
+            Self::Deploy(keys) => format!("dk:{}", keys.first().map_or(0, |k| k.id)),
+        }
+    }
 }
 
 #[derive(sqlx::FromRow)]

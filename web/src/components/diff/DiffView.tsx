@@ -43,6 +43,8 @@ export interface DiffAnnotations {
   selection?: LineSelection | null;
   /** Count of comments per file for the header badge. */
   commentCount?(path: string): number;
+  /** Sides that accept new comments (default both; commit comments are RIGHT only). */
+  sides?: readonly Side[];
 }
 
 export interface DiffViewProps {
@@ -58,6 +60,8 @@ export interface DiffViewProps {
   annotations?: DiffAnnotations;
   /** Rendered above the rows (inside the scroller). */
   header?: ReactNode;
+  /** Rendered after the last file (inside the scroller), e.g. a commit's comment thread. */
+  footer?: ReactNode;
   /** Extra controls in each file header (before "Viewed"). */
   fileActions?(file: DiffFileEntry): ReactNode;
   /** Number of files still being listed (rendered as a trailing placeholder). */
@@ -80,7 +84,8 @@ type Row =
   | { k: 'line'; f: number; h: number; line: DiffLine }
   | { k: 'pair'; f: number; h: number; left: DiffLine | null; right: DiffLine | null }
   | { k: 'end'; f: number }
-  | { k: 'more' };
+  | { k: 'more' }
+  | { k: 'footer' };
 
 /** Comment anchors of a unified line (context lines answer to both sides). */
 function lineAnchors(l: DiffLine): string[] {
@@ -149,7 +154,7 @@ export function buildRows(files: readonly DiffFileEntry[], mode: 'unified' | 'sp
 }
 
 function rowKey(r: Row, files: readonly DiffFileEntry[], i: number): string {
-  if (r.k === 'more') return 'more';
+  if (r.k === 'more' || r.k === 'footer') return r.k;
   const p = files[r.f]!.path;
   switch (r.k) {
     case 'file':
@@ -188,7 +193,12 @@ interface Drag {
  */
 export function DiffView(props: DiffViewProps) {
   const { files, mode = 'unified', collapsed, annotations, tree = true, keyboard = false } = props;
-  const rows = useMemo(() => buildRows(files, mode, collapsed, annotations, props.pendingFiles), [files, mode, collapsed, annotations, props.pendingFiles]);
+  const hasFooter = props.footer != null;
+  const rows = useMemo(() => {
+    const out = buildRows(files, mode, collapsed, annotations, props.pendingFiles);
+    if (hasFooter) out.push({ k: 'footer' });
+    return out;
+  }, [files, mode, collapsed, annotations, props.pendingFiles, hasFooter]);
   const [cursor, setCursor] = useState<number>(-1);
   const [jump, setJump] = useState<{ index: number; nonce: number } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -237,7 +247,7 @@ export function DiffView(props: DiffViewProps) {
   };
   const currentFile = (): number => {
     const r = rows[Math.max(0, cursor)];
-    return r && r.k !== 'more' ? r.f : -1;
+    return r && r.k !== 'more' && r.k !== 'footer' ? r.f : -1;
   };
   const moveFile = (dir: 1 | -1) => {
     const cur = currentFile();
@@ -247,19 +257,20 @@ export function DiffView(props: DiffViewProps) {
     setCursor(i);
     setJump({ index: i, nonce: Date.now() });
   };
+  const canSide = (side: Side) => !annotations?.sides || annotations.sides.includes(side);
   const cursorTarget = (): LineSelection | null => {
     const r = rows[cursor];
-    if (!r || r.k === 'more') return null;
+    if (!r || r.k === 'more' || r.k === 'footer') return null;
     const path = files[r.f]!.path;
     if (r.k === 'line') {
       const t = lineTarget(r.line);
-      return t ? { path, side: t.side, start: t.no, end: t.no } : null;
+      return t && canSide(t.side) ? { path, side: t.side, start: t.no, end: t.no } : null;
     }
     if (r.k === 'pair') {
       const rn = numOn(r.right, 'RIGHT');
-      if (rn != null) return { path, side: 'RIGHT', start: rn, end: rn };
+      if (rn != null && canSide('RIGHT')) return { path, side: 'RIGHT', start: rn, end: rn };
       const ln = numOn(r.left, 'LEFT');
-      if (ln != null) return { path, side: 'LEFT', start: ln, end: ln };
+      if (ln != null && canSide('LEFT')) return { path, side: 'LEFT', start: ln, end: ln };
     }
     return null;
   };
@@ -364,6 +375,7 @@ export function DiffView(props: DiffViewProps) {
         scrollNonce={jump?.nonce}
         getKey={(r, i) => rowKey(r, files, i)}
         renderItem={(r, i) => {
+          if (r.k === 'footer') return props.footer;
           if (r.k === 'more') return <MoreFiles count={props.pendingFiles ?? 0} onNeed={props.onNeedMoreFiles} />;
           const file = files[r.f]!;
           const active = i === cursor;
@@ -413,7 +425,7 @@ export function DiffView(props: DiffViewProps) {
                   line={l}
                   selected={selected}
                   active={active}
-                  commentable={commentable && !!t}
+                  commentable={commentable && !!t && canSide(t.side)}
                   onDown={t ? (e) => startDrag(file.path, r.h, t.side, t.no, e) : undefined}
                   onEnter={() => {
                     const d = dragRef.current;
@@ -434,6 +446,7 @@ export function DiffView(props: DiffViewProps) {
                   rightSelected={inSel(liveSel, file.path, 'RIGHT', rn)}
                   active={active}
                   commentable={commentable}
+                  sides={annotations?.sides}
                   onDown={(side, e) => {
                     const no = side === 'LEFT' ? ln : rn;
                     if (no != null) startDrag(file.path, r.h, side, no, e);
@@ -550,6 +563,7 @@ const SplitLine = memo(function SplitLine({
   rightSelected,
   active,
   commentable,
+  sides,
   onDown,
   onEnter,
   onClick,
@@ -560,6 +574,7 @@ const SplitLine = memo(function SplitLine({
   rightSelected: boolean;
   active: boolean;
   commentable: boolean;
+  sides?: readonly Side[];
   onDown: (side: Side, e: React.MouseEvent) => void;
   onEnter: (side: Side) => void;
   onClick: () => void;
@@ -567,7 +582,7 @@ const SplitLine = memo(function SplitLine({
   const cell = (l: DiffLine | null, side: Side, selected: boolean) => {
     const no = l ? (side === 'LEFT' ? l.oldNo : l.newNo) : undefined;
     const type = l ? (l.type === 'ctx' ? 'ctx' : l.type) : 'empty';
-    const can = commentable && no != null;
+    const can = commentable && no != null && (!sides || sides.includes(side));
     return (
       <>
         <span className={cx(styles.num, styles[type], selected && styles.selected, can && styles.numClickable)} onMouseDown={can ? (e) => onDown(side, e) : undefined} onMouseEnter={() => onEnter(side)}>

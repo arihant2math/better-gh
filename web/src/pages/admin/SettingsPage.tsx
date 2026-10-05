@@ -29,8 +29,10 @@ import {
   GitSection,
   MaintenanceSection,
   OrganizationsSection,
+  PrivacySection,
   RateLimitsSection,
   RepositoriesSection,
+  RetentionSection,
   SignupSection,
   SmtpSection,
 } from './settingsSections';
@@ -193,6 +195,8 @@ export default function SettingsPage() {
         return <SignupSection value={draft.signup} onChange={update('signup')} errors={errors} />;
       case 'repositories':
         return <RepositoriesSection value={draft.repositories} onChange={update('repositories')} errors={errors} />;
+      case 'privacy':
+        return <PrivacySection value={draft.privacy} onChange={update('privacy')} errors={errors} />;
       case 'organizations':
         return <OrganizationsSection value={draft.organizations} onChange={update('organizations')} errors={errors} />;
       case 'announcement':
@@ -205,6 +209,8 @@ export default function SettingsPage() {
         return <SmtpSection value={draft.smtp} onChange={update('smtp')} errors={errors} />;
       case 'git':
         return <GitSection value={draft.git} onChange={update('git')} errors={errors} />;
+      case 'retention':
+        return <RetentionSection value={draft.retention} onChange={update('retention')} errors={errors} />;
       case 'maintenance':
         return <MaintenanceSection value={draft.maintenance} onChange={update('maintenance')} errors={errors} onEnable={enableMaintenance} />;
       case 'actions':

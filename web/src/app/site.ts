@@ -9,7 +9,30 @@ export interface PublicSiteInfo {
   maintenance: { enabled: boolean; message: string | null; scheduled_at: string | null };
   signup_policy: 'open' | 'invite' | 'closed';
   password_login: boolean;
+  /** Site admins may still use their password when `password_login` is off. */
+  password_login_admin_exempt?: boolean;
+  /** LDAP sign-in (directory passwords) is enabled. */
+  ldap?: boolean;
   oidc_providers: { name: string; display_name: string }[];
+  /** Sign-in required for everything (absent on older servers). */
+  private_mode?: boolean;
+  /** Site policy for repository visibility (absent on older servers). */
+  repository_visibilities?: { allowed: RepoVisibility[]; default_user: RepoVisibility; default_org: RepoVisibility };
+}
+
+export type RepoVisibility = 'public' | 'internal' | 'private';
+const ALL_VISIBILITIES: RepoVisibility[] = ['public', 'internal', 'private'];
+
+/**
+ * Visibilities a new repository of a user (or organization) owner may get
+ * under the site policy, and the default to preselect.
+ */
+export function visibilityPolicy(info: PublicSiteInfo | null, isOrg: boolean): { allowed: RepoVisibility[]; preferred: RepoVisibility } {
+  const policy = info?.repository_visibilities;
+  const allowed = (policy?.allowed ?? ALL_VISIBILITIES).filter((v) => isOrg || v !== 'internal');
+  const wanted = isOrg ? policy?.default_org : policy?.default_user;
+  const preferred = wanted && allowed.includes(wanted) ? wanted : allowed.includes('public') ? 'public' : (allowed[allowed.length - 1] ?? 'private');
+  return { allowed, preferred };
 }
 
 const DISMISS_KEY = 'bgh.announcement.dismissed';

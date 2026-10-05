@@ -42,6 +42,11 @@ of the server half — when in doubt, behave like it.
 | `comment`, `review`, `issueEvent` | `repo:{repoId}` | **no** (lazy) | loaded per issue via partial sync; deltas *are* streamed |
 | `viewerRepo`, `notification` | `user:{userId}` | yes | viewer-specific data |
 
+`notification` rows of repositories the user can no longer read are never
+loaded (bootstrap, partial sync or deltas; SQL `bgh_can_read_repo`), and
+threads are deleted with a `D` action when the user loses read access
+(`bgh-notify` `privacy.rs`, P21).
+
 ---
 
 ## 2. Server ordering guarantee (important for `bgh-sync`)
@@ -115,6 +120,7 @@ interface Repo {
   name: string;
   description: string | null;
   private: boolean;
+  visibility: "public" | "private" | "internal"; // `private` is true for internal too
   fork: boolean;
   archived: boolean;
   defaultBranch: string;

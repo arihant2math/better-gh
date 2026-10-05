@@ -32,6 +32,7 @@ tempfile.workspace = true
 reqwest.workspace = true
 url.workspace = true
 regex.workspace = true
+askalono.workspace = true
 
 [dev-dependencies]
 bgh-core = { workspace = true, features = ["testing"] }

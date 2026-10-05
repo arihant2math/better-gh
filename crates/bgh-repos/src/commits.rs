@@ -4,6 +4,7 @@
 //!   `since`, `until`, pagination)
 //! * `GET /repos/{o}/{r}/commits/{ref}` (files + stats; `.diff`, `.patch`,
 //!   `.sha` media types)
+//! * `GET /repos/{o}/{r}/commits/{sha}/branches-where-head`
 //! * `GET /repos/{o}/{r}/compare/{base}...{head}` (`owner:ref` and
 //!   `owner:repo:ref` for cross-fork comparisons; `.diff`/`.patch`)
 //!
@@ -32,6 +33,10 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/repos/{owner}/{repo}/commits", get(list_commits))
         .route("/repos/{owner}/{repo}/commits/{reference}", get(get_commit))
+        .route(
+            "/repos/{owner}/{repo}/commits/{reference}/branches-where-head",
+            get(crate::branches::where_head),
+        )
         .route("/repos/{owner}/{repo}/compare/{*basehead}", get(compare))
 }
 
@@ -77,7 +82,24 @@ pub async fn render_commits(
     commits: &[Commit],
 ) -> ApiResult<Vec<CommitJson>> {
     let users = users_by_email(state, commit_emails(commits)).await?;
-    Ok(commits.iter().map(|c| commit_json(r, c, &users)).collect())
+    let mut out: Vec<CommitJson> = commits.iter().map(|c| commit_json(r, c, &users)).collect();
+    let shas: Vec<&str> = commits.iter().map(|c| c.sha.as_str()).collect();
+    let counts: HashMap<String, i64> = sqlx::query_as(
+        "SELECT commit_id, count(*) FROM commit_comments
+          WHERE repo_id = $1 AND commit_id = ANY($2) GROUP BY commit_id",
+    )
+    .bind(r.id)
+    .bind(&shas)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .collect();
+    for c in &mut out {
+        if let Some(n) = counts.get(&c.sha) {
+            c.commit.comment_count = *n;
+        }
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Default, Deserialize)]

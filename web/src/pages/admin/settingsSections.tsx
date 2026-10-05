@@ -9,7 +9,9 @@ import { MailIcon, PencilIcon, PlusIcon, TrashIcon, XIcon } from '../../ui/icons
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { Tooltip } from '../../ui/Tooltip';
 import { fromLocalInput } from '../../components/admin/format';
-import { domainError, emptyOidc, oidcErrors, type Errors, type Limit, type OidcForm, type SecretForm, type SettingsForm } from './settingsForm';
+import { attempt, errorMessage } from '../../components/admin/kit';
+import { syncLdap, testLdap, type LdapTestResult, type Visibility } from './api';
+import { domainError, emptyOidc, ldapValue, oidcErrors, VISIBILITIES, type Errors, type LdapForm, type Limit, type OidcForm, type RetentionWindow, type SecretForm, type SettingsForm } from './settingsForm';
 import s from './settings.module.css';
 
 interface Props<K extends keyof SettingsForm> {
@@ -194,14 +196,32 @@ export function RepositoriesSection({ value, onChange, errors }: Props<'reposito
 }
 
 /** Switch plus megabyte input for an optional limit. */
-function LimitField({ id, toggle, label, description, value, onChange, error }: { id: string; toggle: string; label: string; description: string; value: Limit; onChange: (v: Limit) => void; error?: string }) {
+function LimitField({
+  id,
+  toggle,
+  label,
+  description,
+  value,
+  onChange,
+  error,
+  unit = 'MB',
+}: {
+  id: string;
+  toggle: string;
+  label: string;
+  description: string;
+  value: Limit;
+  onChange: (v: Limit) => void;
+  error?: string;
+  unit?: string;
+}) {
   return (
     <div>
       <Switch checked={value.on} onChange={(on) => onChange({ ...value, on })} label={toggle} description={description} />
       {value.on && (
         <div className={s.narrow} style={{ marginTop: 8 }}>
           <Field label={label} htmlFor={id} error={error}>
-            <Input id={id} inputMode="numeric" value={value.mb} trailing="MB" invalid={!!error} onChange={(e) => onChange({ ...value, mb: positiveInput(e.target.value) })} />
+            <Input id={id} inputMode="numeric" value={value.mb} trailing={unit} invalid={!!error} onChange={(e) => onChange({ ...value, mb: positiveInput(e.target.value) })} />
           </Field>
         </div>
       )}
@@ -245,6 +265,101 @@ export function GitSection({ value, onChange, errors }: Props<'git'>) {
         onChange={(max_push) => onChange({ max_push })}
         error={errors['git.max_push']}
       />
+    </div>
+  );
+}
+
+const VISIBILITY_INFO: Record<Visibility, { label: string; description: string }> = {
+  public: { label: 'Public repositories', description: 'Readable by anyone who can reach this instance (signed-in users only in private mode).' },
+  internal: { label: 'Internal repositories', description: 'Readable by every signed-in user; organizations only.' },
+  private: { label: 'Private repositories', description: 'Readable only by people given access.' },
+};
+
+export function PrivacySection({ value, onChange, errors }: Props<'privacy'>) {
+  const err = errors['privacy.allowed'];
+  const toggle = (v: Visibility, on: boolean) => onChange({ allowed: VISIBILITIES.filter((x) => (x === v ? on : value.allowed.includes(x))) });
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.private_mode}
+        onChange={(private_mode) => onChange({ private_mode })}
+        label="Private mode"
+        description="Require sign-in for every page, API call, git clone, raw file and avatar. Sign-in, sign-up and password reset stay reachable."
+      />
+      <Switch
+        checked={value.private_mode || value.anonymous_directory}
+        disabled={value.private_mode}
+        onChange={(anonymous_directory) => onChange({ anonymous_directory })}
+        label="Public user directory"
+        description="Let signed-out visitors list all users and organizations (GET /users, GET /organizations). Always off in private mode."
+      />
+      <div>
+        <div className={styles.switchLabel} style={{ marginBottom: 6 }}>
+          Allowed repository visibilities
+        </div>
+        {VISIBILITIES.map((v) => (
+          <Switch key={v} checked={value.allowed.includes(v)} onChange={(on) => toggle(v, on)} label={VISIBILITY_INFO[v].label} description={VISIBILITY_INFO[v].description} />
+        ))}
+        {err && (
+          <span className={s.providerError} role="alert">
+            {err}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const RETENTION_FIELDS: { key: RetentionWindow; toggle: string; label: string; description: string }[] = [
+  {
+    key: 'notifications_days',
+    toggle: 'Expire notifications',
+    label: 'Delete notifications older than',
+    description: 'Inbox threads without activity for this long are removed (GitHub keeps about five months).',
+  },
+  {
+    key: 'webhook_payload_days',
+    toggle: 'Drop webhook payloads',
+    label: 'Drop delivery payloads after',
+    description: 'Request and response bodies are removed; the delivery log keeps the status. Deliveries without a payload can’t be redelivered.',
+  },
+  {
+    key: 'webhook_delivery_days',
+    toggle: 'Expire webhook deliveries',
+    label: 'Delete deliveries older than',
+    description: 'Removes the whole entry from the delivery log.',
+  },
+  {
+    key: 'activity_days',
+    toggle: 'Expire activity',
+    label: 'Delete activity older than',
+    description: 'Events API and dashboard feed entries.',
+  },
+];
+
+export function RetentionSection({ value, onChange, errors }: Props<'retention'>) {
+  return (
+    <div className={s.sectionBody}>
+      <Switch
+        checked={value.enabled}
+        onChange={(enabled) => onChange({ enabled })}
+        label="Run retention hourly"
+        description="Deletes expired sessions and everything older than the windows below. Windows that are turned off keep data forever."
+      />
+      {value.enabled &&
+        RETENTION_FIELDS.map((f) => (
+          <LimitField
+            key={f.key}
+            id={`set-retention-${f.key}`}
+            toggle={f.toggle}
+            label={f.label}
+            unit="days"
+            description={f.description}
+            value={value[f.key]}
+            onChange={(v) => onChange({ [f.key]: v })}
+            error={errors[`retention.${f.key}`]}
+          />
+        ))}
     </div>
   );
 }
@@ -372,8 +487,17 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         checked={value.password_login}
         onChange={(password_login) => onChange({ password_login })}
         label="Password sign-in"
-        description="Built-in username and password login. Turn off to require single sign-on."
+        description="Built-in username and password login, on the web and for Git over HTTPS. Turn off to require LDAP or single sign-on; personal access tokens keep working."
       />
+      {!value.password_login && (
+        <Switch
+          checked={value.password_login_admin_exempt}
+          onChange={(password_login_admin_exempt) => onChange({ password_login_admin_exempt })}
+          label="Let site administrators sign in with their password"
+          description="Break-glass access when the identity provider is down. Everyone else must use LDAP or single sign-on."
+        />
+      )}
+      <LdapSection value={value.ldap} onChange={(patch) => onChange({ ldap: { ...value.ldap, ...patch } })} errors={errors} />
       <div>
         <div className={styles.switchLabel} style={{ marginBottom: 6 }}>
           OpenID Connect providers
@@ -416,6 +540,156 @@ export function AuthSection({ value, onChange, errors }: Props<'auth_providers'>
         </div>
       )}
       <OidcDialog provider={editing} all={value.oidc} onClose={() => setEditing(null)} onSave={save} />
+    </div>
+  );
+}
+
+function LdapSection({ value, onChange, errors }: { value: LdapForm; onChange: (patch: Partial<LdapForm>) => void; errors: Errors }) {
+  const e = (k: string) => errors[`auth_providers.ldap.${k}`];
+  const [testLogin, setTestLogin] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<LdapTestResult | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const text = (k: keyof LdapForm, label: string, hint?: string, placeholder?: string) => (
+    <Field label={label} htmlFor={`ldap-${k}`} error={e(k)} hint={hint}>
+      <Input
+        id={`ldap-${k}`}
+        value={value[k] as string}
+        invalid={!!e(k)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(ev) => onChange({ [k]: ev.target.value })}
+      />
+    </Field>
+  );
+  const test = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      setResult(await testLdap({ ...ldapValue(value), enabled: true }, testLogin.trim() || undefined));
+    } catch (err) {
+      setResult({ ok: false, message: errorMessage(err) });
+    } finally {
+      setTesting(false);
+    }
+  };
+  const sync = async () => {
+    setSyncing(true);
+    await attempt('LDAP sync failed', async () => {
+      const r = await syncLdap();
+      const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+      setResult({
+        ok: true,
+        message: `Synced ${plural(r.users, 'user')} (${r.suspended} suspended) and ${plural(r.teams, 'team')} (+${r.team_members_added} / −${r.team_members_removed} members).`,
+      });
+    });
+    setSyncing(false);
+  };
+  return (
+    <div className={s.ldap}>
+      <Switch
+        checked={value.enabled}
+        onChange={(enabled) => onChange({ enabled })}
+        label="LDAP"
+        description="Sign in on the web and over Git with directory credentials; accounts, keys, site administrators and mapped teams follow the directory."
+      />
+      {value.enabled && (
+        <div className={s.ldapFields}>
+          <div className={styles.formRow}>
+            {text('host', 'Host', undefined, 'ldap.example.com')}
+            {text('port', 'Port')}
+            <Field label="Encryption" htmlFor="ldap-encryption">
+              <Select
+                id="ldap-encryption"
+                value={value.encryption}
+                onChange={(ev) => {
+                  const encryption = ev.target.value as LdapForm['encryption'];
+                  const port = value.port === '389' && encryption === 'ldaps' ? '636' : value.port === '636' && encryption !== 'ldaps' ? '389' : value.port;
+                  onChange({ encryption, port });
+                }}
+              >
+                <option value="none">None</option>
+                <option value="starttls">StartTLS</option>
+                <option value="ldaps">LDAPS</option>
+              </Select>
+            </Field>
+          </div>
+          <div className={styles.formRow}>
+            {text('bind_dn', 'Bind DN', 'Service account used for searches; empty binds anonymously.', 'cn=bgh,ou=services,dc=example,dc=com')}
+            <SecretInput id="ldap-bind-password" label="Bind password" value={value.bind_password} onChange={(bind_password) => onChange({ bind_password })} hint="Write-only." />
+          </div>
+          <Field label="User search bases" htmlFor="ldap-user_search_bases" error={e('user_search_bases')} hint="One base DN per line, searched in order.">
+            <Textarea
+              id="ldap-user_search_bases"
+              rows={2}
+              value={value.user_search_bases}
+              spellCheck={false}
+              placeholder="ou=people,dc=example,dc=com"
+              onChange={(ev) => onChange({ user_search_bases: ev.target.value })}
+            />
+          </Field>
+          <div className={styles.formRow}>
+            {text('uid_field', 'User ID field', 'Holds the username (Active Directory: sAMAccountName).')}
+            {text('user_filter', 'User filter (optional)', 'ANDed into user searches.', '(objectClass=person)')}
+          </div>
+          <div className={styles.formRow}>
+            {text('admin_group', 'Administrators group (optional)', 'Members are site administrators.', 'cn=admins,ou=groups,dc=example,dc=com')}
+            {text('restricted_group', 'Restricted group (optional)', 'Only members may sign in.')}
+          </div>
+          <details className={s.ldapMore}>
+            <summary>Attribute mapping and certificates</summary>
+            <div className={styles.formRow}>
+              {text('name_field', 'Name', undefined, 'cn')}
+              {text('email_field', 'Emails', undefined, 'mail')}
+            </div>
+            <div className={styles.formRow}>
+              {text('ssh_key_field', 'SSH keys (optional)', undefined, 'sshPublicKey')}
+              {text('gpg_key_field', 'GPG keys (optional)', undefined, 'pgpKey')}
+            </div>
+            <Field label="CA certificate (optional)" htmlFor="ldap-ca" hint="PEM; trusted in addition to the system roots for LDAPS / StartTLS.">
+              <Textarea id="ldap-ca" rows={3} value={value.ca_cert} spellCheck={false} placeholder="-----BEGIN CERTIFICATE-----" onChange={(ev) => onChange({ ca_cert: ev.target.value })} />
+            </Field>
+            <Switch checked={value.verify_certificate} onChange={(verify_certificate) => onChange({ verify_certificate })} label="Verify the server certificate" description="Turn off for testing only." />
+          </details>
+          <Switch
+            checked={value.jit_provisioning}
+            onChange={(jit_provisioning) => onChange({ jit_provisioning })}
+            label="Create accounts on first sign-in"
+            description="Otherwise an administrator maps directory entries to existing accounts."
+          />
+          <Switch
+            checked={value.sync_enabled}
+            onChange={(sync_enabled) => onChange({ sync_enabled })}
+            label="Synchronize users and teams"
+            description="Suspends users disabled or removed in the directory and updates profiles, keys, administrators and mapped teams."
+          />
+          {value.sync_enabled && text('sync_interval_hours', 'Sync interval (hours)')}
+          <div className={s.ldapActions}>
+            <Input aria-label="Username to look up" value={testLogin} placeholder="Username to look up (optional)" autoComplete="off" spellCheck={false} onChange={(ev) => setTestLogin(ev.target.value)} />
+            <Button size="sm" loading={testing} onClick={() => void test()}>
+              Test connection
+            </Button>
+            <Tooltip label="Runs a full sync with the saved settings">
+              <Button size="sm" variant="ghost" loading={syncing} onClick={() => void sync()}>
+                Sync now
+              </Button>
+            </Tooltip>
+          </div>
+          {result && (
+            <div className={result.ok ? s.ldapOk : styles.formError} role="status">
+              {result.message}
+              {result.user && (
+                <span className={styles.subtle}>
+                  {' '}
+                  {result.user.name ?? result.user.uid} · {result.user.emails.join(', ') || 'no email'} · {result.user.ssh_keys} SSH key{result.user.ssh_keys === 1 ? '' : 's'}
+                  {result.user.disabled ? ' · disabled' : ''}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -509,6 +783,9 @@ function OidcDialog({ provider, all, onClose, onSave }: { provider: OidcForm | n
               />
             </Field>
           </div>
+          <Field label="Groups claim (optional)" htmlFor="oidc-groups-claim" hint="Claim listing the user's groups; teams mapped to these groups (team sync) are updated at every sign-in.">
+            <Input id="oidc-groups-claim" value={form.groups_claim} placeholder="groups" spellCheck={false} onChange={(e) => set({ groups_claim: e.target.value })} />
+          </Field>
           <Switch
             checked={form.auto_create_users}
             onChange={(auto_create_users) => set({ auto_create_users })}
