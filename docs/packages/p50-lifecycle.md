@@ -1,4 +1,4 @@
-Integration: in progress
+Integration: ready
 P50 account and repo lifecycle: self-service rename with redirects, account/org deletion, repo soft delete + restore, transfers to users with acceptance.
 
 # P50 lifecycle — status
@@ -101,6 +101,14 @@ jobs). Adapted to soft delete / 301: `bgh-admin`
 `uploads::repo_deletion_removes_attachments_and_blobs`; `bgh-wiki`
 `pages::repository_deletion_removes_wiki_storage` (storage/blobs now survive
 until the purge, which they assert).
+
+## Gate
+Full gate green after merging `claude/sleepy-cray-9jj0t3` (fmt, clippy,
+`cargo test --workspace`, web typecheck/lint/test/build: initial JS 144.9 KB
+gzip). `scripts/api-smoke.sh` 45/45. `scripts/gh-compat.sh` 69 passed, 2
+failed: `gh ruleset list/view --org`, a pre-existing script issue (since the
+P23 merge it creates `$OWNER-org` twice; the second create 422s and resets
+`FX_ORG` to empty, so those cases query org `x`). Not P50 code.
 
 ## Known gaps
 * `DELETE /user` uses password re-confirmation; P36 sudo mode was not
