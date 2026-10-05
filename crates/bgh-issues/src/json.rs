@@ -936,6 +936,8 @@ fn event_object(
         }
         // GitHub's REST shape has no extra fields (the source is web/GraphQL only).
         "connected" | "disconnected" => {}
+        // GitHub's REST `deployed` event has no extra fields.
+        "deployed" => {}
         "review_requested" | "review_request_removed" => {
             m.insert(
                 "requested_reviewer".into(),

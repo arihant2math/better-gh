@@ -55,7 +55,8 @@ crates/
   bgh-admin/               site administration, audit log
   bgh-sync/                local-first sync engine (bootstrap, WS deltas)
   bgh-graphql/             GitHub GraphQL v4 subset (for `gh` CLI, etc.)
-  bgh-actions/             CI: workflow parsing, runner orchestration
+  bgh-actions/             CI: workflow parsing, runner orchestration,
+                           deployments + statuses (`bgh_actions::deployments`)
   bgh-packages/            container registry (OCI distribution `/v2/`),
                            GitHub Packages REST, package GC
   bgh-server/              binary `bgh`: composes routers, serves web/dist
@@ -211,7 +212,12 @@ and octokit-style raw requests.
   repo)` / batched `repo_permissions(db, user_id, &repos)` →
   `Permission { None, Read, Triage, Write, Maintain, Admin }`. Token scopes
   then cap it (`perms::effective`: private repos need `repo`; writes to
-  public repos need `repo` or `public_repo`). Handlers use
+  public repos need `repo` or `public_repo`). Actions job tokens
+  (`GITHUB_TOKEN`, owned by `github-actions[bot]`, `bgh_core::bots`) are
+  limited to their repository and to a per-category permission map
+  (`bgh_core::token_permissions`: route-category table applied by a
+  middleware on every route, `contents` checked by git transport, GraphQL
+  mutations checked in the mutation guard). Handlers use
   `perms::RepoAccess::load(&state, auth, owner, name)` which returns 404
   without read access, then `access.require(Permission::Write)` (403).
 * Role names are stored as `read|triage|write|maintain|admin` everywhere

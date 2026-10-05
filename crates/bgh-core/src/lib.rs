@@ -4,9 +4,11 @@
 
 pub mod audit;
 pub mod auth;
+pub mod bots;
 pub mod config;
 pub mod crypto;
 pub mod db;
+pub mod deployments;
 pub mod error;
 pub mod events;
 pub mod extract;
@@ -27,6 +29,7 @@ pub mod ssrf;
 pub mod state;
 pub mod sync;
 pub mod time;
+pub mod token_permissions;
 pub mod two_factor;
 pub mod urls;
 pub mod views;

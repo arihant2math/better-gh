@@ -164,6 +164,12 @@ pub fn app(state: AppState) -> Router {
             (spa_files, state.clone()),
             web::spa_pages,
         ))
+        // Actions job tokens are limited to their `permissions:` (inside the
+        // sync scope so audit entries see the triggering actor).
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            bgh_core::token_permissions::middleware,
+        ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             bgh_sync::http_middleware,
