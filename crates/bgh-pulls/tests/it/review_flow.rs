@@ -133,6 +133,26 @@ async fn commit_range_diffs() {
     let res = files(app, Some(&bob), &format!("?head_sha={}", f.feature)).await;
     assert_eq!(filenames(&res.json()), ["README.md", "notes.txt"]);
 
+    // The per-file patch endpoint takes the same range.
+    let res = app
+        .get(&format!(
+            "/_bgh/repos/alice/demo/pulls/1/patch?path=src/lib.rs&base_sha={}",
+            f.feature
+        ))
+        .auth(&bob)
+        .send()
+        .await;
+    res.assert_status(200);
+    assert_eq!(res.json()["additions"], 1);
+    app.get(&format!(
+        "/_bgh/repos/alice/demo/pulls/1/patch?path=README.md&base_sha={}",
+        f.feature
+    ))
+    .auth(&bob)
+    .send()
+    .await
+    .assert_status(404);
+
     // Pagination with Link (page_with_total → next + last).
     let res = files(app, Some(&bob), "?per_page=1").await;
     res.assert_status(200);

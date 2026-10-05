@@ -1,13 +1,14 @@
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { load } from '../../api/cache';
+import { load, useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
-import { getPullFilePatch, listPullFiles } from '../../api/endpoints';
-import type { RestDiffEntry } from '../../api/types';
+import { getPullFilePatch, listPullCommits, listPullFiles } from '../../api/endpoints';
+import type { RestCommit, RestDiffEntry } from '../../api/types';
 import { DiffView, type DiffAnnotations, type DiffFileEntry, type LineSelection } from '../../components/diff/DiffView';
 import { parsePatch, type DiffHunk } from '../../components/diff/parseDiff';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
+import { store } from '../../sync';
 import { useComputed, usePullDetails } from '../../sync/hooks';
 import type { Issue, Repo } from '../../sync/models';
 import { addPendingComment, addReviewComment } from '../../sync/pullMutations';
@@ -18,6 +19,10 @@ import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, ColumnsIcon, CommentIcon, FilterIcon, RowsIcon } from '../../ui/icons';
 import { Input } from '../../ui/Input';
 import { MarkdownEditor } from '../issues/Timeline';
+import { CommitRangePicker } from './CommitRangePicker';
+import { SuggestionBatchButton } from './CommitSuggestionsDialog';
+import { formatRange, lastReviewCommit, parseRange, resolveRange } from './range';
+import { getPullRangePatch, listPullRangeFiles } from './reviewApi';
 import { ReviewButton } from './ReviewButton';
 import styles from './Review.module.css';
 import { LineSourceContext, ReviewThreadView, type LineSource } from './ReviewThread';
@@ -44,24 +49,30 @@ function writePref(key: string, v: string): void {
   }
 }
 
+/** Diff endpoints of a commit range (`null` = the whole PR, REST `/files`). */
+type FileRange = { base?: string; head?: string } | null;
+
 /**
- * Changed-file list of a PR, loaded page by page (100 files per request,
- * patches included) as the user scrolls; immutable per base/head SHA.
+ * Changed-file list of a PR (or of a commit range of it), loaded page by
+ * page (100 files per request, patches included) as the user scrolls;
+ * immutable per base/head SHA. `enabled = false` waits (range not resolved).
  */
-function usePullFiles(repo: Repo, pr: Issue) {
-  const base = `files:${repo.owner}/${repo.name}#${pr.number}@${pr.baseSha}...${pr.headSha}`;
-  const total = pr.changedFiles ?? 0;
+function usePullFiles(repo: Repo, pr: Issue, range: FileRange, enabled = true) {
+  const rangeKey = range ? `~${range.base ?? ''}..${range.head ?? pr.headSha}` : '';
+  const base = `files:${repo.owner}/${repo.name}#${pr.number}@${pr.baseSha}...${pr.headSha}${rangeKey}`;
+  const total = range ? 0 : (pr.changedFiles ?? 0);
   const [pages, setPages] = useState<{ key: string; list: RestDiffEntry[][]; error?: unknown; done: boolean }>({ key: base, list: [], done: false });
   const loading = useRef(false);
   const state = pages.key === base ? pages : { key: base, list: [], done: false };
 
   const loadNext = useCallback(() => {
-    if (loading.current) return;
+    if (loading.current || !enabled) return;
     const cur = pages.key === base ? pages : { key: base, list: [] as RestDiffEntry[][], done: false };
     if (cur.done) return;
     const page = cur.list.length + 1;
     loading.current = true;
-    load(`${base}:${page}`, () => listPullFiles(repo.owner, repo.name, pr.number, page, PAGE), { immutable: true }).then(
+    const fetchPage = () => (range ? listPullRangeFiles(repo.owner, repo.name, pr.number, page, PAGE, range.base, range.head) : listPullFiles(repo.owner, repo.name, pr.number, page, PAGE));
+    load(`${base}:${page}`, fetchPage, { immutable: true }).then(
       (list) => {
         loading.current = false;
         setPages((p) => {
@@ -75,14 +86,15 @@ function usePullFiles(repo: Repo, pr: Issue) {
         setPages((p) => ({ ...(p.key === base ? p : { key: base, list: [] }), error, done: true }));
       },
     );
-  }, [base, pages, repo.owner, repo.name, pr.number]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `range` is captured through `base`
+  }, [base, pages, enabled, repo.owner, repo.name, pr.number]);
 
   useEffect(() => {
     if (state.list.length === 0 && !state.done) loadNext();
   }, [state.list.length, state.done, loadNext]);
 
   const entries = useMemo(() => state.list.flat(), [state.list]);
-  const pending = state.done ? 0 : Math.max(total - entries.length, entries.length === 0 ? 1 : 0);
+  const pending = state.done ? 0 : range ? 1 : Math.max(total - entries.length, entries.length === 0 ? 1 : 0);
   return { entries, pending, error: state.error, loadNext, cacheKey: base };
 }
 
@@ -108,8 +120,16 @@ function anchorOf(t: ReviewThread): string {
 }
 
 export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue }) {
-  usePullDetails(pr.id);
+  const detailsLoaded = usePullDetails(pr.id);
   const query = useQuery();
+  // Commit range (P38): all changes, since the last review, one commit, a range.
+  const spec = parseRange(query.get('range'));
+  const { data: commits } = useResource<RestCommit[]>(`commits:${repo.owner}/${repo.name}#${pr.number}@${pr.headSha}`, () => listPullCommits(repo.owner, repo.name, pr.number), { immutable: true });
+  const reviewSha = useComputed(() => lastReviewCommit(store().byIndex('review', 'issueId', pr.id), store().viewerId), [pr.id]);
+  const resolved = resolveRange(spec, commits, pr.headSha, reviewSha);
+  const ranged = spec.kind !== 'all' && (resolved.base != null || resolved.head != null);
+  const fileRange: FileRange = ranged ? { base: resolved.base, head: resolved.head } : null;
+  const rangeReady = spec.kind !== 'commits' || !!commits;
   const mode: Mode = (query.get('diff') as Mode | null) ?? (readPref('bgh:diff:mode', 'unified') as Mode);
   const whitespace = query.get('w') === '1';
   const [filter, setFilter] = useState('');
@@ -120,28 +140,31 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
   const filterRef = useRef<HTMLInputElement>(null);
   const full = repoFullName(repo);
 
-  const { entries, pending, error, loadNext } = usePullFiles(repo, pr);
+  const { entries, pending, error, loadNext } = usePullFiles(repo, pr, fileRange, rangeReady);
   // Filtering needs the whole list: keep paging in the background.
   useEffect(() => {
     if ((filter || hideViewed) && pending > 0) loadNext();
   }, [filter, hideViewed, pending, entries.length, loadNext]);
-  const viewed = useViewed(pr, entries);
+  const viewed = useViewed(pr, entries, { atHead: resolved.atHead, full: !ranged && pending === 0, loaded: detailsLoaded });
 
   // Per-file patches fetched on demand: whitespace-insensitive mode, truncated or "large" files.
   const [patches, setPatches] = useState<Map<string, DiffHunk[] | null>>(() => new Map());
-  const patchKey = (path: string) => `${pr.headSha}:${whitespace ? 'w' : ''}:${path}`;
+  const rangeTag = fileRange ? `${fileRange.base ?? ''}..${fileRange.head ?? ''}` : '';
+  const patchKey = (path: string) => `${pr.headSha}${rangeTag}:${whitespace ? 'w' : ''}:${path}`;
   const requested = useRef(new Set<string>());
   const fetchPatch = useCallback(
     (path: string) => {
-      const k = `${pr.headSha}:${whitespace ? 'w' : ''}:${path}`;
+      const k = `${pr.headSha}${rangeTag}:${whitespace ? 'w' : ''}:${path}`;
       if (requested.current.has(k)) return;
       requested.current.add(k);
-      load(`patch:${repo.owner}/${repo.name}#${pr.number}@${pr.baseSha}...${k}`, () => getPullFilePatch(repo.owner, repo.name, pr.number, path, whitespace), { immutable: true }).then(
+      const fetchPatch = () => (fileRange ? getPullRangePatch(repo.owner, repo.name, pr.number, path, whitespace, fileRange.base, fileRange.head) : getPullFilePatch(repo.owner, repo.name, pr.number, path, whitespace));
+      load(`patch:${repo.owner}/${repo.name}#${pr.number}@${pr.baseSha}...${k}`, fetchPatch, { immutable: true }).then(
         (p) => setPatches((m) => new Map(m).set(k, p.patch ? parsePatch(p.patch) : p.truncated ? null : [])),
         () => setPatches((m) => new Map(m).set(k, null)),
       );
     },
-    [repo.owner, repo.name, pr.number, pr.baseSha, pr.headSha, whitespace],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `fileRange` is captured through `rangeTag`
+    [repo.owner, repo.name, pr.number, pr.baseSha, pr.headSha, whitespace, rangeTag],
   );
 
   const files = useMemo(() => {
@@ -161,7 +184,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
         return base;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- patchKey derives from the deps below
-  }, [entries, filter, hideViewed, viewed, patches, whitespace, pr.headSha]);
+  }, [entries, filter, hideViewed, viewed, patches, whitespace, pr.headSha, rangeTag]);
 
   // Collapsed: viewed files by default; explicit toggles override.
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map());
@@ -174,7 +197,11 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
     return s;
   }, [files, toggled, viewed]);
 
-  const threads = useComputed(() => threadsForPull(pr.id), [pr.id]);
+  const allThreads = useComputed(() => threadsForPull(pr.id), [pr.id]);
+  // A commit range shows the head file on the right: only RIGHT-side and
+  // file threads apply, and none when the range ends before the head.
+  const commentable = !ranged || resolved.atHead;
+  const threads = useMemo(() => (!ranged ? allThreads : commentable ? allThreads.filter((t) => anchorOf(t) === 'file' || anchorOf(t).startsWith('R')) : []), [allThreads, ranged, commentable]);
   const byFile = useMemo(() => {
     const m = new Map<string, Map<string, ReviewThread[]>>();
     for (const t of threads) {
@@ -279,6 +306,8 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
         </>
       ),
       onSelect: (sel) => {
+        // Range views: the left side is the range base, not the PR base.
+        if (ranged && (!commentable || (sel && sel.side === 'LEFT' && sel.end > 0))) return;
         setSelection(sel);
       },
       selection,
@@ -289,7 +318,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- submit/lineSource read current state
-    [byFile, selection, selAnchor, draft, hasPending, pr, full, lineSource],
+    [byFile, selection, selAnchor, draft, hasPending, pr, full, lineSource, ranged, commentable],
   );
 
   useShortcuts('Files changed', {
@@ -328,8 +357,14 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
     return <EmptyState icon={AlertIcon} title={tooLarge ? 'This diff is too large to display' : 'Couldn’t load the changed files'} />;
   }
 
+  const setRange = (next: ReturnType<typeof parseRange>) => {
+    setSelection(null);
+    setQuery({ range: formatRange(next) });
+  };
   const toolbar = (
+    <>
     <div className={styles.toolbar}>
+      <CommitRangePicker spec={spec} label={resolved.label} commits={commits} reviewSha={reviewSha} headSha={pr.headSha} onChange={setRange} />
       <Input
         ref={filterRef}
         size="sm"
@@ -361,8 +396,11 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
           <ColumnsIcon size={14} /> Split
         </button>
       </div>
+      <SuggestionBatchButton pr={pr} />
       <ReviewButton pr={pr} repo={full} />
     </div>
+    {ranged && !commentable && <div className={styles.rangeBanner}>Viewing changes of an earlier commit — comments are disabled. <button type="button" className={styles.linkButton} onClick={() => setRange({ kind: 'all' })}>Show all changes</button></div>}
+    </>
   );
 
   return (
@@ -381,7 +419,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
           setToggled((m) => new Map(m).set(p, now));
         }}
         onNeedFile={fetchPatch}
-        fileActions={(f) => (
+        fileActions={(f) => commentable && (
           <IconButton
             icon={CommentIcon}
             size="sm"

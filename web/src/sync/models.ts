@@ -508,6 +508,17 @@ export interface CommitStatus {
   createdAt: Timestamp;
 }
 
+/** A file the viewer marked "Viewed" on a PR (private, `user:{id}` scope): viewed while the diff's blob is still `blobSha`. */
+export interface ViewedFile {
+  id: ID;
+  repoId: ID;
+  issueId: ID;
+  userId: ID;
+  path: string;
+  blobSha: string;
+  updatedAt: Timestamp;
+}
+
 /** Model name → row type. Adding a synced model starts here (see docs/FRONTEND.md). */
 export interface ModelMap {
   user: User;
@@ -533,6 +544,7 @@ export interface ModelMap {
   checkSuite: CheckSuite;
   checkRun: CheckRun;
   commitStatus: CommitStatus;
+  viewedFile: ViewedFile;
 }
 
 export type ModelName = keyof ModelMap;

@@ -5,7 +5,7 @@
  * Seeded lazily per PR the first time its `/sync` is requested.
  */
 import { parseDiff } from '../components/diff/parseDiff';
-import type { CheckRun, CheckSuite, CommitStatus, ID, Issue, Reaction, Repo, Review, ReviewComment, User } from '../sync/models';
+import type { CheckRun, CheckSuite, CommitStatus, ID, Issue, Reaction, Repo, Review, ReviewComment, User, ViewedFile } from '../sync/models';
 import type { MockFile } from './content';
 import { pullDiff } from './content';
 import { Rng, fakeSha, iso } from './rng';
@@ -29,8 +29,8 @@ export interface PullResp {
 export interface PullHost {
   db: MockDb;
   route(method: string, pattern: string, handler: (ctx: PullCtx) => PullResp | Promise<PullResp>): void;
-  put<M extends 'issue' | 'review' | 'reviewComment' | 'reaction' | 'checkRun' | 'checkSuite' | 'commitStatus' | 'issueEvent'>(model: M, row: unknown): void;
-  remove(model: 'review' | 'reviewComment' | 'reaction', id: ID): void;
+  put<M extends 'issue' | 'review' | 'reviewComment' | 'reaction' | 'checkRun' | 'checkSuite' | 'commitStatus' | 'issueEvent' | 'viewedFile'>(model: M, row: unknown): void;
+  remove(model: 'review' | 'reviewComment' | 'reaction' | 'viewedFile', id: ID): void;
   nextId(): ID;
   now(): string;
   repo(owner: string, name: string): Repo | undefined;
@@ -231,6 +231,7 @@ export function registerPullRoutes(host: PullHost): void {
           checkSuite: [...t().checkSuite.values()].filter((s) => s.headSha === sha),
           checkRun: [...t().checkRun.values()].filter((s) => s.headSha === sha),
           commitStatus: [...t().commitStatus.values()].filter((s) => s.sha === sha),
+          viewedFile: viewedOf(pr),
           user: [...users].map((id) => compactUser(t().user.get(id))).filter(Boolean),
         },
       },
@@ -238,11 +239,21 @@ export function registerPullRoutes(host: PullHost): void {
   });
 
   // ---------------------------------------------------------------- files / patches
-  R('GET', '/api/v3/repos/:owner/:repo/pulls/:number/files', (ctx) => {
+  const viewedOf = (pr: Issue) => [...t().viewedFile.values()].filter((v) => v.issueId === pr.id && v.userId === viewer());
+  const fileSha = (pr: Issue, path: string) => fakeSha(`${path}:${pr.headSha}`);
+  const listFiles = (ctx: PullCtx) => {
     const r = pullOr404(ctx);
     if (isResp(r)) return r;
     const [repo, pr] = r;
-    const files = parseDiff(pullDiffText(host, repo, pr));
+    let files = parseDiff(pullDiffText(host, repo, pr));
+    // Commit ranges (P38): a deterministic subset of the PR's files.
+    const base = ctx.url.searchParams.get('base_sha');
+    const head = ctx.url.searchParams.get('head_sha');
+    if (base || head) {
+      const seed = Number.parseInt(fakeSha(`${base}..${head}`).slice(0, 6), 16);
+      const keep = files.filter((_, i) => (i + seed) % 2 === 0);
+      files = keep.length ? keep : files.slice(0, 1);
+    }
     const perPage = Number(ctx.url.searchParams.get('per_page') ?? 30);
     const page = Number(ctx.url.searchParams.get('page') ?? 1);
     const slice = files.slice((page - 1) * perPage, page * perPage);
@@ -250,7 +261,7 @@ export function registerPullRoutes(host: PullHost): void {
     return {
       status: 200,
       body: slice.map((f) => ({
-        sha: fakeSha(`${f.path}:${pr.headSha}`),
+        sha: fileSha(pr, f.path),
         filename: f.path,
         previous_filename: f.status === 'renamed' ? f.oldPath : undefined,
         status: f.status === 'deleted' ? 'removed' : f.status,
@@ -260,7 +271,54 @@ export function registerPullRoutes(host: PullHost): void {
         patch: patchOf(text, f.path),
       })),
     };
+  };
+  R('GET', '/api/v3/repos/:owner/:repo/pulls/:number/files', listFiles);
+  R('GET', '/_bgh/repos/:owner/:repo/pulls/:number/files', listFiles);
+
+  // ---------------------------------------------------------------- viewed files (P38)
+  R('PUT', '/_bgh/repos/:owner/:repo/pulls/:number/viewed', (ctx) => {
+    const r = pullOr404(ctx);
+    if (isResp(r)) return r;
+    const [repo, pr] = r;
+    const path = String(ctx.body.path ?? '');
+    if (!path) return { status: 422, body: { message: 'Validation Failed' } };
+    const blobSha = String(ctx.body.blob_sha ?? fileSha(pr, path));
+    const existing = viewedOf(pr).find((v) => v.path === path);
+    const row: ViewedFile = { id: existing?.id ?? host.nextId(), repoId: repo.id, issueId: pr.id, userId: viewer(), path, blobSha, updatedAt: host.now() };
+    host.put('viewedFile', row);
+    return { status: 200, body: { path, blob_sha: blobSha, state: 'VIEWED' } };
   });
+  R('DELETE', '/_bgh/repos/:owner/:repo/pulls/:number/viewed', (ctx) => {
+    const r = pullOr404(ctx);
+    if (isResp(r)) return r;
+    const [, pr] = r;
+    const path = ctx.url.searchParams.get('path') ?? '';
+    if (!path) return { status: 422, body: { message: 'Validation Failed' } };
+    for (const v of viewedOf(pr)) if (v.path === path) host.remove('viewedFile', v.id);
+    return { status: 204 };
+  });
+
+  // ---------------------------------------------------------------- suggestions (P38)
+  R('POST', '/_bgh/repos/:owner/:repo/pulls/:number/suggestions/apply', (ctx) => {
+    const r = pullOr404(ctx);
+    if (isResp(r)) return r;
+    const [, pr] = r;
+    const ids = ((ctx.body.comment_ids as ID[] | undefined) ?? []).map(Number);
+    const comments = ids.map((id) => t().reviewComment.get(id));
+    if (!ids.length || comments.some((c) => !c || c.issueId !== pr.id || !/```suggestion/.test(c.body))) return { status: 422, body: { message: 'Suggestion not found (pending or deleted)' } };
+    if (String(ctx.body.message ?? '').includes('fail!')) return { status: 422, body: { message: 'The head branch was updated; reload the pull request and try again' } };
+    const sha = fakeSha(`suggestions:${pr.id}:${host.now()}`);
+    const resolved: ID[] = [];
+    for (const c of comments) {
+      const root = c!.inReplyToId ? t().reviewComment.get(c!.inReplyToId)! : c!;
+      if (root.resolvedAt || resolved.includes(root.id)) continue;
+      host.put('reviewComment', { ...root, resolvedAt: host.now(), resolvedById: viewer() });
+      resolved.push(root.id);
+    }
+    host.put('issue', { ...pr, headSha: sha, commits: (pr.commits ?? 1) + 1, updatedAt: host.now() });
+    return { status: 201, body: { commit_sha: sha, resolved_thread_ids: resolved } };
+  });
+
   R('GET', '/_bgh/repos/:owner/:repo/pulls/:number/patch', (ctx) => {
     const r = pullOr404(ctx);
     if (isResp(r)) return r;
