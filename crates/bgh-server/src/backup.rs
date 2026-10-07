@@ -225,7 +225,10 @@ pub async fn backup(
     tools: &Tools,
     to: &Path,
 ) -> anyhow::Result<(PathBuf, Manifest)> {
+    // Snapshots hold credentials (the dump, actions/server.key, signing and
+    // SSH host keys): owner-only from the start.
     std::fs::create_dir_all(to).with_context(|| format!("creating {}", to.display()))?;
+    set_mode(to, Some(0o700))?;
     ensure!(
         !is_inside(to, &config.data_dir),
         "the backup directory {} must not be inside the data directory",
@@ -250,11 +253,14 @@ pub async fn backup(
     if partial.exists() {
         std::fs::remove_dir_all(&partial)?;
     }
+    std::fs::create_dir_all(&partial)?;
+    set_mode(&partial, Some(0o700))?;
     std::fs::create_dir_all(partial.join(DATA))?;
 
     // 1. Database: one consistent MVCC snapshot.
     let migration_version = applied_migration_version(db).await?;
     let dump = partial.join(DB_DUMP);
+    create_private(&dump)?;
     {
         let (pg_dump, url, dump) = (
             tools.pg_dump.clone(),
@@ -325,7 +331,7 @@ pub async fn backup(
         stats,
         entries,
     };
-    let mut f = std::fs::File::create(partial.join(MANIFEST))?;
+    let mut f = create_private(&partial.join(MANIFEST))?;
     serde_json::to_writer(&mut f, &manifest)?;
     f.sync_all()?;
     let final_path = to.join(&name);
@@ -380,6 +386,34 @@ fn set_mode(_: &Path, _: Option<u32>) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Create (or truncate) `path` with mode 0600.
+fn create_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::File::options();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    let f = opts.open(path)?;
+    set_mode(path, Some(0o600))?;
+    Ok(f)
+}
+
+/// Copy order of a directory's children: inside a bare repository, `HEAD`,
+/// `refs/` and `packed-refs` before everything else and `objects/` last, so
+/// that a push (or `git pack-refs`) during the copy cannot leave refs
+/// pointing at objects the snapshot lacks (objects are append-only within
+/// the prune grace period). Elsewhere, name order.
+fn copy_order(names: &mut [String], is_repo: bool) {
+    let rank = |n: &str| match n {
+        _ if !is_repo => 0,
+        "HEAD" => 0,
+        "refs" => 1,
+        "packed-refs" => 2,
+        "objects" => 4,
+        _ => 3,
+    };
+    names.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.cmp(b)));
+}
+
 fn to_systime(ns: i128) -> SystemTime {
     UNIX_EPOCH + Duration::from_nanos(ns.max(0) as u64)
 }
@@ -431,19 +465,23 @@ fn file_entry(path: &Path, rel: &str) -> anyhow::Result<Entry> {
 
 impl Copier {
     fn walk(&mut self, dir: &Path, rel: &str) -> anyhow::Result<()> {
-        let mut children: Vec<_> = match std::fs::read_dir(dir) {
+        let children: Vec<_> = match std::fs::read_dir(dir) {
             Ok(rd) => rd.flatten().collect(),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e).with_context(|| format!("reading {}", dir.display())),
         };
-        children.sort_by_key(|e| e.file_name());
-        for child in children {
-            let name = child.file_name().to_string_lossy().into_owned();
+        let is_repo = dir.join("HEAD").is_file() && dir.join("objects").is_dir();
+        let mut names: Vec<String> = children
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        copy_order(&mut names, is_repo);
+        for name in names {
             let rel = join_rel(rel, &name);
             if EXCLUDED.contains(&rel.as_str()) {
                 continue;
             }
-            let path = child.path();
+            let path = dir.join(&name);
             let meta = match std::fs::symlink_metadata(&path) {
                 Ok(m) => m,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -638,6 +676,18 @@ pub async fn restore(
         snapshot.display(),
         manifest.bgh_version,
         manifest.migration_version,
+    );
+
+    // Nothing is replaced unless the whole snapshot checks out.
+    let (_, report) = {
+        let (snapshot, tools) = (snapshot.clone(), tools.clone());
+        tokio::task::spawn_blocking(move || verify(&snapshot, &tools)).await??
+    };
+    ensure!(
+        report.problems.is_empty(),
+        "snapshot {} failed verification, nothing was changed: {}",
+        snapshot.display(),
+        report.problems.join("; ")
     );
 
     // Refuse to clobber live data unless asked to.
@@ -869,6 +919,21 @@ mod tests {
             "postgres://u:p@h:5432/db?sslmode=require"
         );
         assert_eq!(libpq_url("postgres://h/db").unwrap(), "postgres://h/db");
+    }
+
+    #[test]
+    fn repositories_copy_refs_before_objects() {
+        let mut names: Vec<String> = ["objects", "config", "packed-refs", "refs", "HEAD", "hooks"]
+            .map(String::from)
+            .to_vec();
+        copy_order(&mut names, true);
+        assert_eq!(
+            names,
+            ["HEAD", "refs", "packed-refs", "config", "hooks", "objects"]
+        );
+        let mut names: Vec<String> = ["objects", "HEAD", "b"].map(String::from).to_vec();
+        copy_order(&mut names, false);
+        assert_eq!(names, ["HEAD", "b", "objects"]);
     }
 
     #[test]

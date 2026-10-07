@@ -375,9 +375,19 @@ while only changed files take space; delete old snapshots with `rm -rf`
 `BGH_ACTIONS_SECRET_KEY` it is not in the snapshot: keep it with your
 configuration.
 
+A snapshot contains credentials: the database dump (password, token and
+session hashes, 2FA secrets, encrypted Actions secrets), `actions/server.key`
+(which decrypts them), the signing keys and the SSH host key. `bgh backup`
+creates the backup directory and each snapshot owner-only (0700, dump and
+manifest 0600); store and ship them off-host accordingly (encrypted at
+rest, restricted access). Inside each repository `HEAD`, `refs/` and
+`packed-refs` are copied before `objects/`, so a push during the backup
+cannot leave refs pointing at objects the snapshot lacks.
+
 `bgh backup verify` re-reads every file against the manifest checksums and
 checks that `pg_restore` can read the dump. `bgh restore` (server stopped)
-refuses snapshots taken at a newer migration than the binary knows,
+first verifies the whole snapshot the same way (also with `--force`, so a
+damaged backup never replaces anything), refuses snapshots taken at a newer migration than the binary knows,
 refuses a non-empty database or data directory unless `--force` (which
 drops the `public` schema and empties the data directory), restores the
 dump and files (rewriting forks' alternates when the data directory moved),

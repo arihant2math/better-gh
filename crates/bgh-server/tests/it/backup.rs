@@ -19,6 +19,18 @@ async fn git(args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let dest = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_tree(&e.path(), &dest);
+        } else {
+            std::fs::copy(e.path(), &dest).unwrap();
+        }
+    }
+}
+
 #[tokio::test]
 async fn backup_wipe_restore_round_trip() {
     let a = bgh_server::test_app().await;
@@ -90,6 +102,13 @@ async fn backup_wipe_restore_round_trip() {
         .nlink();
     assert_eq!(nlink, 2, "{} is shared by both snapshots", sample.path);
 
+    // Owner-only: the snapshot holds credentials.
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().mode() & 0o777;
+    assert_eq!(mode(root.path()), 0o700);
+    assert_eq!(mode(&second), 0o700);
+    assert_eq!(mode(&second.join("db.dump")), 0o600);
+    assert_eq!(mode(&second.join("manifest.json")), 0o600);
+
     let (_, report) = backup::verify(&second, &tools).unwrap();
     assert!(report.problems.is_empty(), "{:?}", report.problems);
     assert_eq!(report.files, m2.stats.files + 1);
@@ -98,6 +117,37 @@ async fn backup_wipe_restore_round_trip() {
     // Restore into another instance's (non-empty) database and data dir.
     let b = bgh_server::test_app().await;
     b.stop_listeners().await;
+    let marker = b.state.config.data_dir.join("marker");
+    std::fs::write(&marker, b"b").unwrap();
+
+    // A damaged snapshot is refused even with --force, before anything is
+    // replaced.
+    let bad = tempfile::tempdir().unwrap();
+    let bad_snap = bad.path().join("snap");
+    copy_tree(&second, &bad_snap);
+    let dump = std::fs::read(bad_snap.join("db.dump")).unwrap();
+    std::fs::write(bad_snap.join("db.dump"), &dump[..dump.len() / 2]).unwrap();
+    let err = backup::restore(
+        &b.state.config,
+        &b.state.db,
+        &tools,
+        &bad_snap,
+        &RestoreOptions {
+            force: true,
+            fsck_sample: 0,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("failed verification"), "{err}");
+    let tables: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+            .fetch_one(&b.state.db)
+            .await
+            .unwrap();
+    assert!(tables > 0, "the target database was left alone");
+    assert!(marker.exists(), "the target data dir was left alone");
+
     let opts = RestoreOptions {
         force: false,
         fsck_sample: 10,
@@ -121,6 +171,7 @@ async fn backup_wipe_restore_round_trip() {
     assert_eq!(report.snapshot, second);
     assert_eq!(report.fsck_checked.len(), 1);
     assert!(!b.state.config.data_dir.join("cache").exists());
+    assert!(!marker.exists());
 
     // Issues, git and Actions secrets came back.
     let issue = b
