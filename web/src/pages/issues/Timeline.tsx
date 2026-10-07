@@ -30,6 +30,7 @@ import {
   FileDiffIcon,
   GitCommitIcon,
   GitMergeIcon,
+  GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   IssueClosedIcon,
   IssueReopenedIcon,
@@ -58,7 +59,7 @@ import { toast } from '../../ui/Toast';
 import { DuplicatePicker, IssueTypeChip } from './IssueRelations';
 import styles from './IssueView.module.css';
 import { ReactionBar } from './Reactions';
-import { groupEvents } from './timelineGroups';
+import { groupEvents, hideMergeCloses, isReplyOnlyReview } from './timelineGroups';
 
 export { MarkdownEditor };
 
@@ -76,11 +77,12 @@ const HIDDEN_EVENTS = new Set<IssueEvent['event']>(['subscribed']);
 function buildItems(issue: Issue): Item[] {
   const raw = [
     ...commentsForIssue(issue.id).map((c) => ({ kind: 'comment' as const, at: c.createdAt, id: c.id, c })),
-    ...eventsForIssue(issue.id)
+    ...hideMergeCloses(eventsForIssue(issue.id))
       .filter((e) => !HIDDEN_EVENTS.has(e.event))
       .map((e) => ({ kind: 'event' as const, at: e.createdAt, id: e.id, e })),
     ...reviewsForIssue(issue.id)
       .filter((r) => r.submittedAt && r.state !== 'PENDING')
+      .filter((r) => !issue.isPr || !isReplyOnlyReview(r, store().byIndex('reviewComment', 'reviewId', r.id)))
       .map((r) => ({ kind: 'review' as const, at: r.submittedAt!, id: r.id, r })),
   ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : Math.abs(a.id) - Math.abs(b.id)));
   const items: Item[] = [];
@@ -149,7 +151,7 @@ export const Timeline = observer(function Timeline({
         it.kind === 'comment' ? (
           <CommentItem key={`c${it.c.id}`} comment={it.c} repo={repoFullName} issue={issue} />
         ) : it.kind === 'events' ? (
-          <EventItem key={`e${it.e[0]!.id}`} events={it.e} repo={repoFullName} />
+          <EventItem key={`e${it.e[0]!.id}`} events={it.e} repo={repoFullName} baseRef={issue.baseRef} />
         ) : (
           <ReviewItem key={`r${it.r.id}`} review={it.r} repo={repoFullName} extra={renderReview?.(it.r)} />
         ),
@@ -433,7 +435,7 @@ function closedVisual(reason: string | undefined): { icon: Icon; cls: string | u
 }
 
 /** One timeline row; `events` is a group of compatible events by one actor. */
-export const EventItem = observer(function EventItem({ events, repo }: { events: IssueEvent[]; repo: string }) {
+export const EventItem = observer(function EventItem({ events, repo, baseRef }: { events: IssueEvent[]; repo: string; baseRef?: string }) {
   const s = store();
   const event = events[0]!;
   const actor = s.get('user', event.actorId);
@@ -516,7 +518,9 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
       );
       break;
     case 'closed': {
-      const v = closedVisual(d.stateReason);
+      const onPr = !!s.get('issue', event.issueId)?.isPr;
+      // Pull requests have no close reason: GitHub says just "closed this".
+      const v = onPr ? { icon: GitPullRequestClosedIcon, cls: styles.evDanger, text: 'closed this' } : closedVisual(d.stateReason);
       icon = v.icon;
       cls = v.cls;
       if (d.stateReason === 'duplicate' && d.otherIssueNumber != null) {
@@ -556,7 +560,17 @@ export const EventItem = observer(function EventItem({ events, repo }: { events:
       cls = styles.evOpen;
       break;
     case 'merged':
-      text = <>merged commit {sha(d.commitId)}</>;
+      text = (
+        <>
+          merged commit {sha(d.commitId)}
+          {baseRef && (
+            <>
+              {' '}
+              into <code className={styles.sha}>{baseRef}</code>
+            </>
+          )}
+        </>
+      );
       cls = styles.evClosed;
       break;
     case 'referenced':
