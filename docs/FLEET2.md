@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+14:27: main 37633419003 (dc4d48a) GREEN (~12m30s); told orchestrator. #344 S-Approved, CI green on 89785ba; reviewer still reporting. #340 head 981e363 (delta reviewer merged main), delta check running.
 14:07: orchestrator HOLDS #340 for a #319×#340 interaction delta (bgh-sync, 4a3faa0..63526b2: (a) recheck targets under the delivered-advancing lock with W-gated delivery, no delivery above W to revoked sockets; (b) no deadlock or lost recheck between the requeue and the watermark/filler logic; cargo test -p bgh-sync ×5; merge dc4d48a). r1 reviewer archived → fresh adversarial reviewer started. If a non-small fix is needed → PARK for the user.
 14:06: #340 READY (r1 adversarial APPROVE on 4a3faa0; then only main merge 63526b2 = head (021164a; tests/it/main.rs mod-list conflict); CI result green run 37629534355; clean; verified). Forwarded (offered update to dc4d48a first); reviewer archived. Not parked.
 14:06: orchestrator MERGED #322 (dc4d48a); lead archived by orchestrator. Closed #328 (completed; bot-enqueue guard test pins asks 1-2; ask 3 optional) and epic #2 (all P39 sub-issues #287-#291 closed). Main run 37633419003 (dc4d48a) in progress → confirm. #344 adversarial reviewer session_01Hg32TQBWfpaRzVPzBACbJy.
