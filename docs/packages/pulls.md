@@ -174,7 +174,10 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   entry (`checks failed`) or, after `check_response_timeout_minutes`, the
   first one without green checks (`timed out`) is ejected and the group
   rebuilt (`invalidated`); a base move (`invalidated`) or an entry leaving
-  (`dequeued`) rebuilds it too.
+  (`dequeued`) rebuilds it too. Lock order: every transaction writing
+  `merge_queue_entries` locks their PRs first (`FOR UPDATE OF i, p`,
+  ascending id; `merge_queue::lock_pulls` / `model::lock`), then the
+  entries.
 * `merge_group` (P39.3): webhook `merge_group` `checks_requested` /
   `destroyed` (+ `reason`) with `merge_group {head_sha, head_ref,
   base_sha, base_ref, head_commit}` (bgh-notify). Actions runs `on:

@@ -210,9 +210,35 @@ pub async fn enqueue(
     Ok((entry, id.is_some()))
 }
 
+/// Lock the PRs `pull_ids` (`FOR UPDATE OF i, p`, ascending id) inside
+/// `tx`.
+///
+/// Lock order: every transaction that writes merge queue entries locks
+/// their PRs (issue + pull_request rows, ascending id when several) before
+/// it touches the entries. Entry writes are followed by `issue_events`
+/// inserts (FK share lock on the issue) and PR writers (close, head push,
+/// merge) update entries, so the opposite order deadlocks.
+pub(crate) async fn lock_pulls(tx: &mut Tx, pull_ids: &[i64]) -> ApiResult<()> {
+    if pull_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "SELECT i.id FROM issues i JOIN pull_requests p ON p.issue_id = i.id
+          WHERE i.id = ANY($1) ORDER BY i.id FOR UPDATE OF i, p",
+    )
+    .bind(pull_ids)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
 /// Remove `pull_id`'s active entry inside `tx` (`actor_id` None = system),
 /// recording `removed_from_merge_queue` `{"reason"}`. The caller syncs the
 /// PR (`json::sync_pull`). Returns whether an entry was removed.
+///
+/// The caller must already hold the PR lock ([`crate::model::lock`]) in
+/// `tx` (lock order, see [`lock_pulls`]): close and head push do,
+/// [`dequeue`] takes it.
 pub async fn remove_in_tx(
     tx: &mut Tx,
     repo_id: i64,
@@ -256,6 +282,10 @@ pub async fn dequeue(
     reason: &str,
 ) -> ApiResult<bool> {
     let mut tx = Tx::begin(state).await?;
+    // PR before entry (lock order, see `lock_pulls`).
+    if crate::model::lock(&mut *tx, pull_id).await?.is_none() {
+        return Ok(false);
+    }
     if !remove_in_tx(&mut tx, repo_id, pull_id, actor_id, reason).await? {
         return Ok(false);
     }
