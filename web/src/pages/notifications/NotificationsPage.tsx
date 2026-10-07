@@ -26,6 +26,7 @@ import {
 import { Menu, SelectPanel } from '../../ui/Menu';
 import { toast } from '../../ui/Toast';
 import { VirtualList } from '../../ui/VirtualList';
+import { useEvent } from '../../ui/useEvent';
 import { issueHref } from '../issues/IssueRow';
 import { markAllRead, markDone, toggleRead, toggleThreadSubscription } from './actions';
 import {
@@ -228,6 +229,12 @@ export default observer(function NotificationsPage() {
     [filter, views, rows],
   );
 
+  // Stable per-row callbacks so memoized rows skip re-rendering on cursor moves.
+  const rowSelect = useEvent((n: Notification) => setActiveId(n.id));
+  const rowToggleSelect = useEvent((n: Notification, ev: MouseEvent) => toggleSelect(n, ev));
+  const rowOpen = useEvent((n: Notification) => open(n));
+  const rowDone = useEvent((n: Notification) => done([n]));
+  const rowToggleRead = useEvent((n: Notification) => toggleRead([n]));
   return (
     <div className={styles.page}>
       <div className={styles.listPane}>
@@ -304,11 +311,11 @@ export default observer(function NotificationsPage() {
                   active={e.n.id === active?.id}
                   selected={selected.has(e.n.id)}
                   selecting={selected.size > 0}
-                  onSelect={() => setActiveId(e.n.id)}
-                  onToggleSelect={(ev: MouseEvent) => toggleSelect(e.n, ev)}
-                  onOpen={() => open(e.n)}
-                  onDone={() => done([e.n])}
-                  onToggleRead={() => toggleRead([e.n])}
+                  onSelect={rowSelect}
+                  onToggleSelect={rowToggleSelect}
+                  onOpen={rowOpen}
+                  onDone={rowDone}
+                  onToggleRead={rowToggleRead}
                 />
               )
             }

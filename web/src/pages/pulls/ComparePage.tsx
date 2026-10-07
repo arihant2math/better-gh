@@ -8,6 +8,7 @@ import { toEntries } from '../../components/diff/DiffViewer';
 import { DiffView, type DiffSource } from '../../components/diff/DiffView';
 import { parsePatch, type DiffFile } from '../../components/diff/parseDiff';
 import { Link, navigate, useParams, useQuery, setQuery } from '../../router';
+import { compareUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import { createPull } from '../../sync/pullMutations';
@@ -47,8 +48,7 @@ export default observer(function ComparePage() {
   const { base, head } = parseSpec(spec, repo.defaultBranch);
   const headOwner = head.includes(':') ? head.split(':')[0]! : repo.owner;
   const headBranch = head.includes(':') ? head.split(':').slice(1).join(':') : head;
-  const prefix = `/${repo.owner}/${repo.name}/compare`;
-  const go = (b: string, h: string) => navigate(`${prefix}/${b}...${h}${query.get('expand') ? '?expand=1' : ''}`, { replace: true });
+  const go = (b: string, h: string) => navigate(compareUrl({ owner: repo.owner, repo: repo.name }, b, h, { expand: !!query.get('expand') }), { replace: true });
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>{query.get('expand') ? 'Open a pull request' : 'Comparing changes'}</h1>

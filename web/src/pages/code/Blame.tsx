@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { Blame, BlameCommit } from '../../api/code';
 import type { BlobView } from '../../api/types';
 import { Link } from '../../router';
@@ -10,7 +10,8 @@ import { Tooltip } from '../../ui/Tooltip';
 import styles from './Code.module.css';
 import { CodeLines } from './CodeLines';
 import { useBlame } from './data';
-import { codeUrl, type CodeTarget, type LineRange } from './util';
+import { type CodeTarget, type LineRange } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 interface LineInfo {
   commit: BlameCommit | undefined;
@@ -64,6 +65,40 @@ export function BlameBody({
 }) {
   const { data, error } = useBlame(t, !!blob.lines);
   const info = useMemo(() => (data && blob.lines ? blameLines(data, blob.lines.length) : null), [data, blob.lines]);
+  const { owner, repo } = t;
+  const base = `/${owner}/${repo}`;
+  // Stable so memoized code rows don't all re-render on each selection change.
+  const gutter = useCallback(
+    (i: number) => {
+      const l = info![i]!;
+      const c = l.commit;
+      return (
+        <div className={styles.blameCell}>
+          <span className={styles.age} data-age={l.age} aria-hidden />
+          {l.first && c ? (
+            <>
+              <span className={styles.blameDate}>{c.author.date ? formatShort(c.author.date) : ''}</span>
+              <Avatar user={{ login: c.author.login ?? c.author.name, avatarUrl: c.author.avatar_url ?? '', name: c.author.name }} size={16} />
+              <Link to={`${base}/commit/${c.sha}`} className={styles.blameMsg} title={`${c.summary}\n${c.author.name} · ${c.sha.slice(0, 7)}`}>
+                {c.summary}
+              </Link>
+              {c.previous ? (
+                <Tooltip label="Blame prior to this change">
+                  <Link to={codeUrl({ owner, repo }, 'blame', c.previous.sha, c.previous.path) + `#L${l.origLine}`} className={styles.blamePrior} aria-label="Blame prior to this change">
+                    <VersionsIcon size={14} />
+                  </Link>
+                </Tooltip>
+              ) : (
+                <span className={styles.blamePrior} />
+              )}
+            </>
+          ) : null}
+        </div>
+      );
+    },
+    [info, base, owner, repo],
+  );
+  const rowClass = useCallback((i: number) => (info![i]!.first && i > 0 ? styles.blameStart : undefined), [info]);
   if (!blob.lines) return <div className={styles.notice}>Blame is not available for this file.</div>;
   if (error) return <div className={styles.notice}>Could not compute blame for this file.</div>;
   if (!info) {
@@ -75,34 +110,6 @@ export function BlameBody({
       </div>
     );
   }
-  const base = `/${t.owner}/${t.repo}`;
-  const gutter = (i: number) => {
-    const l = info[i]!;
-    const c = l.commit;
-    return (
-      <div className={styles.blameCell}>
-        <span className={styles.age} data-age={l.age} aria-hidden />
-        {l.first && c ? (
-          <>
-            <span className={styles.blameDate}>{c.author.date ? formatShort(c.author.date) : ''}</span>
-            <Avatar user={{ login: c.author.login ?? c.author.name, avatarUrl: c.author.avatar_url ?? '', name: c.author.name }} size={16} />
-            <Link to={`${base}/commit/${c.sha}`} className={styles.blameMsg} title={`${c.summary}\n${c.author.name} · ${c.sha.slice(0, 7)}`}>
-              {c.summary}
-            </Link>
-            {c.previous ? (
-              <Tooltip label="Blame prior to this change">
-                <Link to={codeUrl(t, 'blame', c.previous.sha, c.previous.path) + `#L${l.origLine}`} className={styles.blamePrior} aria-label="Blame prior to this change">
-                  <VersionsIcon size={14} />
-                </Link>
-              </Tooltip>
-            ) : (
-              <span className={styles.blamePrior} />
-            )}
-          </>
-        ) : null}
-      </div>
-    );
-  };
   return (
     <div className={styles.codeScroll}>
       <div className={styles.blameLegend}>
@@ -112,7 +119,7 @@ export function BlameBody({
         ))}
         <span>Newer</span>
       </div>
-      <CodeLines lines={blob.lines} selection={selection} onSelect={onSelect} gutter={gutter} gutterWidth={GUTTER_W} rowClass={(i) => (info[i]!.first && i > 0 ? styles.blameStart : undefined)} />
+      <CodeLines lines={blob.lines} selection={selection} onSelect={onSelect} gutter={gutter} gutterWidth={GUTTER_W} rowClass={rowClass} />
     </div>
   );
 }
