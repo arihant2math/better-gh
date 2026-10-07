@@ -411,9 +411,13 @@ optimistic-mutation reconciliation) is specified normatively in
   order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
   from `sync_actions`; a socket subscribing at hub position `L` replays
   `(since, L]` from the log and receives `> L` live. Access changes
-  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
-  `membership`/`team`/`viewerRepo` deltas, sign-outs via
-  `sync:!access`) trigger permission rechecks and `revoke`s.
+  (`Event::AccessChanged`, repo updates/deletes and sign-outs via
+  `sync:!access`; `org`/`team`/`membership`/`viewerRepo` deltas; `repo`
+  deltas only when the repo's visibility/owner differs from the hub's
+  cached key, so counter refreshes are free) trigger permission rechecks
+  and `revoke`s. Repo-level triggers check only that scope; rechecks are
+  coalesced by one worker per hub and batched per chunk of users
+  (`scopes::check_many`) with bounded pool use.
 * Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
   actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
   `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
