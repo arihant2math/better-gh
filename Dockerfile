@@ -11,6 +11,8 @@
 # See docs/SELF_HOSTING.md.
 
 ARG RUST_VERSION=1.97
+# cargo-chef image tag prefix: "latest" or a release such as "0.1.78".
+ARG CARGO_CHEF_VERSION=latest
 ARG NODE_VERSION=22
 ARG DEBIAN_RELEASE=trixie
 
@@ -24,13 +26,13 @@ COPY web/ ./
 RUN npm run build
 
 # --- rust toolchain + cargo-chef ----------------------------------------------
-FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
+# The official rust slim image with a prebuilt cargo-chef, so cold builds
+# don't compile it (#85).
+FROM lukemathwalker/cargo-chef:${CARGO_CHEF_VERSION}-rust-${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
 # OpenSSL headers: webauthn-rs (security keys / passkeys) links libssl.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install cargo-chef --locked --version ^0.1
 WORKDIR /src
 
 FROM chef AS planner
