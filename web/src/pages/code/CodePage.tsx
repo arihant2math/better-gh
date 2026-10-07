@@ -66,7 +66,7 @@ const CodeView = observer(function CodeView({ repo, t, mode }: { repo: Repo; t: 
   const switchRef = (ref: string) => navigate(codeUrl(t, mode, ref, t.path) + (mode === 'tree' ? '' : window.location.hash));
 
   useShortcuts('Code', {
-    t: { handler: () => setFinder(true), description: 'Go to file', group: 'Code' },
+    t: { handler: () => (empty ? false : setFinder(true)), description: 'Go to file', group: 'Code' },
     w: { handler: () => setPicker(true), description: 'Switch branch or tag', group: 'Code' },
     y: {
       handler: () => {

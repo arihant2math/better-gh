@@ -1,7 +1,7 @@
 /* Shared pieces of the releases pages: release card, assets, badges, helpers. */
 import { observer } from 'mobx-react-lite';
 import type { MouseEvent, ReactNode } from 'react';
-import { invalidate, prefetch, useResource } from '../../api/cache';
+import { invalidate, prefetch, useResource, type ResourceState } from '../../api/cache';
 import { codeKeys, findReleaseByTag, getLatestRelease, type RestAsset, type RestRelease } from '../../api/code';
 import { browseKeys } from '../../api/endpoints';
 import { useRefs } from '../../components/code/RefPicker';
@@ -30,8 +30,18 @@ export function useCanPush(owner: string, name: string): boolean {
   return p === 'admin' || p === 'maintain' || p === 'write';
 }
 
-export function useLatestRelease(owner: string, repo: string) {
-  return useResource(codeKeys.latestRelease(owner, repo), () => getLatestRelease(owner, repo));
+const NO_LATEST: ResourceState<RestRelease | null> = { data: null, error: undefined, loading: false };
+
+/** A repository that was never pushed has no commits, so no releases: `releases/latest` would only 404. */
+export function skipLatestRelease(repo: { pushedAt: string | null } | undefined): boolean {
+  return !!repo && !repo.pushedAt;
+}
+
+/** `releases/latest`; `data` is `null` when there is none. Call from an observer. */
+export function useLatestRelease(owner: string, repo: string): ResourceState<RestRelease | null> {
+  const skip = skipLatestRelease(repoByName(owner, repo));
+  const res = useResource(skip ? null : codeKeys.latestRelease(owner, repo), () => getLatestRelease(owner, repo));
+  return skip ? NO_LATEST : res;
 }
 
 /** Drop every cached release list/detail (+ tags, which publishing may create). */
