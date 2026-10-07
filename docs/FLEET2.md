@@ -21,6 +21,10 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 | #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | — | working |
 | #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | — | working |
 | #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | — | working |
+| CI path filters (orchestrator-started; own issue + PR) | session_01Em5rrQBMpzEpHHvsmaNzqG | — | working; give PR a reviewer |
+| CI caching analysis (read-only; files issue "CI caching analysis and recommendations") | session_011amGqNaCwcHg8XeTafyqfq | — | working; archive when issue filed |
+
+CI rule: no other ci.yml work until the path-filter PR merges; then queue the caching issue's checklist items as worker tasks.
 
 Queue: #42 bundle budget (P-High perf), #63 (check after #73), #22 web perf, #23 mobile/a11y, #65+#64 diff toolbar/header, #52+#51+#53 command palette, #68+#69 PR timeline, #76 branch names with /, #48 search clipping, then P-Medium features (#1–#31).
 
