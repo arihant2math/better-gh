@@ -32,3 +32,4 @@ C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open f
 - 21:51Z: #150 APPROVE @0818833 (=head), CI+release green; S-Approved set; sent to coordinator. Nit: pin ubuntu-24.04.
 - 21:52Z: #150 approved; owner to merge. C worker+reviewer archived. Fresh C worker for #341. ubuntu-24.04 nit noted on #46.
 - 21:54Z: #347 REQUEST_CHANGES @e5f13c0: file follow-up issues for 61 hooks-v7 warnings + 21 switch-exhaustiveness hits; relayed to B.
+- 21:55Z: #347 re-review APPROVE @e5f13c0 (=head; follow-ups #349 #350); CI green; sent to coordinator.
