@@ -50,8 +50,9 @@ other settings from the [reference](#configuration-reference) under
 
 ### The image
 
-The `Dockerfile` is multi-stage: Node builds `web/`, cargo-chef caches the
-Rust dependency build, and the runtime stage is `debian:trixie-slim` with
+The `Dockerfile` is multi-stage: Node builds `web/`, cargo-chef (the
+prebuilt `lukemathwalker/cargo-chef` image for the pinned Rust version)
+caches the Rust dependency build, and the runtime stage is `debian:trixie-slim` with
 `git`, `git-lfs`, `ca-certificates` and `tini`:
 
 * runs as the non-root user `bgh` (uid/gid 10001); `/data` is a volume
@@ -64,7 +65,8 @@ Rust dependency build, and the runtime stage is `debian:trixie-slim` with
   `docker run IMAGE migrate` or `docker run IMAGE admin create-user ...`
   work too
 
-Build arguments: `RUST_VERSION` (1.97), `NODE_VERSION` (22),
+Build arguments: `RUST_VERSION` (1.97), `CARGO_CHEF_VERSION` (`0.1.78`;
+`latest` tracks the newest cargo-chef release), `NODE_VERSION` (22),
 `DEBIAN_RELEASE` (trixie), `CARGO_FEATURES` (`embed-web`; set to `""` to
 serve the client from `BGH_WEB_DIR` instead), `CARGO_BUILD_JOBS` (cap
 parallel rustc processes on small builders; the release profile uses LTO

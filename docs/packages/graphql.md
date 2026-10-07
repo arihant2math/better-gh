@@ -15,6 +15,27 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   middleware; requests count against the shared `graphql` budget of
   `bgh_core::ratelimit` (headers set by its root middleware), which the
   `rateLimit` object reports.
+* Resource limits (`src/cost.rs`, a schema extension run after
+  validation), as on GitHub: connections selecting `nodes`/`edges` need
+  `first`/`last` (`MISSING_PAGINATION_BOUNDARIES`), at most 100
+  (`EXCESSIVE_PAGINATION`); a query may request at most 500,000 nodes
+  (product of page sizes down each connection path, summed;
+  `MAX_NODE_LIMIT_EXCEEDED`). Fragments are expanded at any depth, and
+  `nodes(ids:)` takes at most 100 ids (`ARGUMENT_LIMIT`), each multiplying
+  what is selected below it. Before parsing checks and validation (which
+  expand fragments without memoising), a document whose fragment-expanded
+  size exceeds 100,000 selections is rejected in linear time. The cost is the number of connection fetches
+  / 100, rounded, at least 1: the middleware counts 1 point, the extension
+  charges the rest (`ratelimit::charge`) and refreshes the `X-RateLimit-*`
+  headers; with enforcement on, an over-budget query is rejected with
+  `RATE_LIMITED`. `rateLimit { cost nodeCount }` report the computed
+  values (`dryRun` is accepted but still charges).
+* Pre-parse guard (`src/guard.rs`, issue #335): before async-graphql's
+  recursive parser sees it, the raw query is scanned once (strings and
+  comments skipped) and rejected with a 200 `errors[]` if it is longer
+  than 256 KiB (`MAX_QUERY_LENGTH_EXCEEDED`) or nests `{`/`(`/`[` deeper
+  than 128 (`MAX_NESTING_EXCEEDED`), so a deep query can't overflow the
+  stack. `variables` are bounded by serde_json's recursion limit (128).
 * `GET /api/v3/meta` (GHES shape, `installed_version: "3.17.0"` =
   `bgh_graphql::COMPAT_GHES_VERSION`). `gh` gates GraphQL feature detection
   on it: 3.17 = classic issue-search syntax, no classic projects.
@@ -296,7 +317,7 @@ Runs the gh-compat fixtures, then:
 * `isRequired` on checks is always false, `potentialMergeCommit` is null,
   review `reactionGroups` are empty, comment edit history (`lastEditedAt`,
   `editor`) is approximated.
-* Every GraphQL request costs 1 (`rateLimit.cost`); query depth is
-  limited (32) but there is no node-count cost model.
+* The cost model is static (page sizes requested, not items returned),
+  like GitHub's; query depth is also limited (32).
 * `deleteIssue`, `revertPullRequest`, discussions, gists and sponsorships
   are not implemented.

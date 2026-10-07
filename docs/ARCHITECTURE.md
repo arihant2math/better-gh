@@ -148,6 +148,19 @@ instead: the `smtp` setting when enabled, else `BGH_SMTP_URL`, else the
 dev transport (`bgh_core::mail`). `BGH_SIGNUP_ENABLED=false` still
 disables sign-up regardless of the setting.
 
+Email trust: only `user_emails.verified` addresses may link an SSO identity,
+receive password resets, attribute commits/signatures/CODEOWNERS, route
+notifications or match org invitations. Self-service sign-up stores its
+primary email unverified and mails a `/_bgh/emails/verify` link; only
+trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
+`email_verified` claim) pass `email_verified: true` to `db::NewUser`, after
+`emails::release_unverified` drops other accounts' unverified claims on that
+address (and unpublishes it from their profiles). An unverified primary
+can't be made public. When the sign-up policy gates on the address (`invite`
+or an `allowed_email_domains` list), `settings::check_email_gate` refuses
+sign-up (`session::create_signup`, right after `admit_signup`) and password
+sign-in (403) until the account has a verified email.
+
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
@@ -398,9 +411,13 @@ optimistic-mutation reconciliation) is specified normatively in
   order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
   from `sync_actions`; a socket subscribing at hub position `L` replays
   `(since, L]` from the log and receives `> L` live. Access changes
-  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
-  `membership`/`team`/`viewerRepo` deltas, sign-outs via
-  `sync:!access`) trigger permission rechecks and `revoke`s.
+  (`Event::AccessChanged`, repo updates/deletes and sign-outs via
+  `sync:!access`; `org`/`team`/`membership`/`viewerRepo` deltas; `repo`
+  deltas only when the repo's visibility/owner differs from the hub's
+  cached key, so counter refreshes are free) trigger permission rechecks
+  and `revoke`s. Repo-level triggers check only that scope; rechecks are
+  coalesced by one worker per hub and batched per chunk of users
+  (`scopes::check_many`) with bounded pool use.
 * Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
   actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
   `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
