@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:25: #309 fixed at 31c6e4d (prepare_request memoized size check) → adversarial security r3 reviewer session_01MFRa9BHbGdgXEv2BYjXHRV (high priority: live anonymous DoS on main). #330 fixed at f817f86 → r2 reviewer (sonnet) session_01HR71CvKVR9qWvkpXBv2G9o. The #312 r2 reviewer acknowledged; it re-runs CI after 10:00 and reviews the final head.
 09:27 (foreman4 session_01QGXdRWZfRg2trNCsoy9GjA): took over; notified the orchestrator, the authors of #312, #309, #316/#315/#322 and #319, the #330 worker, the #331 fixer, and the #312 and #315 r2 reviewers. #315 r2 APPROVE at 9a96154; head edddec1 is a main merge, but `Rust (tests)` is red only from the #331 flake (insights::stats_accepted_then_computed). Re-run after 10:00 UTC, then forward. Note: whichever of #315 and #316 lands second must update the auto_merge_waits_for_requirements_then_enqueues assertion. The #315 reviewer is still running (it hasn't reported yet). New heads to watch on pings: #330 f817f86, #316 572c20f, #322 699da9c.
 09:22: #330 REQUEST_CHANGES (pin cargo-chef, honest timing); worker told; reviewer archived. Foreman3 context is 308k, so it hands off to foreman4 now.
 09:13: #309 r2 REQUEST_CHANGES (fragment-doubling validation DoS); author told; reviewer archived. The orchestrator approved a #331 fixer: session_01HiZuw5TZdK2DU9KPyfjtRs.
