@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:14 cycle: #334 opened (#85 item 5); waiting for its worker's green ping. #316 is at fe81e13 and #322 at 62166c3; no ping from the lead yet. The #319 author is live, working on agent/241-sync-lock. #309 r3 is still running.
 10:11: orchestrator MERGED #312 (9ff4b96; closes #138 and #329); author archived. Filed #333 (P-Medium, double-@ parser mismatch, follow-up to #329/#312, unassigned).
 10:10: #312 READY (final security APPROVE on 3c826a4; then only main merge db63bc1; CI result green, run 37604045493; single sign-up gate). Forwarded; reviewer archived. Caveat sent: Fixes #329 auto-closes #329 while the double-@ case is still open, so reopen it or file a follow-up (asked the orchestrator).
 10:08: orchestrator MERGED #330 (c9b30cb); #85 item 4 done; worker archived by the orchestrator. The orchestrator confirmed that the #85 track runs to completion (user-exempt from the wind-down). Item 5 (release binary from Docker) worker session_01DZesWKyJC6cAcCoaSNf8F2, branch agent/85-release-from-docker; it also ticks item 4 on #85.
