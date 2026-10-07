@@ -7,7 +7,7 @@ This plan merges the gap audits for 8 domains (repos-git, issues-projects, pulls
 - **Process.** Follow `docs/WORKER_GUIDE.md`.
   - Work on branch `bgh/p<NN>-<slug>`, cut from `origin/claude/sleepy-cray-9jj0t3`. Merge the integration branch at least hourly. No rebase or force-push.
   - Keep `docs/packages/<slug>.md` up to date: status, endpoints, tables, shared-code changes and known gaps.
-- **Migrations.**
+- **Migrations.** *Superseded (#220): these ranges are historical; new migrations follow ARCHITECTURE.md "Migrations" (highest on `main` + 10). Out-of-order landing is not safe: it changes the order between fresh and upgraded installs.*
   - Existing files use 0001–1299. Ranges 1300 and up are free.
   - Package **Pn owns `migrations/{1200+100·n}`–`{1299+100·n}`**. For example, P1 owns 1300–1399, P22 owns 3500–3599 and P86 owns 9800–9899.
   - Use only your own range, and never edit an existing migration. Packages marked "likely unused" probably need no schema.
