@@ -18,7 +18,6 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
 
 use crate::checks;
 use crate::engine::{self, StoredJob};
@@ -632,16 +631,95 @@ pub fn artifact_path(state: &AppState, id: i64) -> PathBuf {
         .join(format!("{id}.zip"))
 }
 
-/// Store an uploaded artifact zip (already written to `tmp`) for `job`.
+/// Largest artifact accepted on any upload path.
+pub const MAX_ARTIFACT_SIZE: u64 = 10 << 30;
+
+fn size_overrides() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, u64>> {
+    static O: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, u64>>> =
+        std::sync::OnceLock::new();
+    O.get_or_init(Default::default)
+}
+
+/// The artifact upload cap for this server: [`MAX_ARTIFACT_SIZE`] unless a
+/// test lowered it with [`set_max_artifact_size_for_tests`].
+pub fn max_artifact_size(state: &AppState) -> u64 {
+    size_overrides()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&state.config.data_dir)
+        .copied()
+        .unwrap_or(MAX_ARTIFACT_SIZE)
+}
+
+/// Lower the artifact cap of one test app (keyed by its data dir) so the
+/// limit can be exercised without a 10 GiB body.
+#[doc(hidden)]
+pub fn set_max_artifact_size_for_tests(state: &AppState, max: u64) {
+    size_overrides()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(state.config.data_dir.clone(), max);
+}
+
+/// Buffer for hashing and copying artifact files.
+const FILE_BUF: usize = 256 << 10;
+
+/// `sha256:<hex>` of a file, read with a fixed buffer on the blocking pool.
+pub async fn hash_file(path: &Path) -> std::io::Result<String> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut f = std::fs::File::open(&path)?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; FILE_BUF];
+        loop {
+            match f.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => hasher.update(&buf[..n]),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
+/// Move `from` to `to`: a rename, or a copy and delete across filesystems.
+async fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    match tokio::fs::rename(from, to).await {
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            let (from, to) = (from.to_path_buf(), to.to_path_buf());
+            tokio::task::spawn_blocking(move || {
+                std::fs::copy(&from, &to)?;
+                std::fs::remove_file(&from)
+            })
+            .await
+            .map_err(std::io::Error::other)?
+        }
+        r => r,
+    }
+}
+
+/// Store an uploaded artifact zip staged at `tmp` for `job`. `tmp` is moved
+/// into place, never read into memory; `digest` (`sha256:<hex>`) is
+/// computed from the file unless the upload already hashed it.
 pub async fn store_artifact(
     state: &AppState,
     job: &JobRow,
     name: &str,
     tmp: &Path,
+    digest: Option<String>,
     retention_days: Option<i64>,
 ) -> anyhow::Result<ArtifactRow> {
-    let bytes = tokio::fs::read(tmp).await?;
-    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
+    let size = tokio::fs::metadata(tmp).await?.len();
+    let cap = max_artifact_size(state);
+    anyhow::ensure!(size <= cap, "artifact exceeds the {cap} byte limit");
+    let digest = match digest {
+        Some(d) => d,
+        None => hash_file(tmp).await?,
+    };
     let max = state.config.actions.artifact_retention_days.max(1);
     let days = retention_days.filter(|d| *d > 0).unwrap_or(max).min(max);
     let row: ArtifactRow = sqlx::query_as(&format!(
@@ -658,17 +736,16 @@ pub async fn store_artifact(
     .bind(job.run_id)
     .bind(job.id)
     .bind(name)
-    .bind(bytes.len() as i64)
+    .bind(size as i64)
     .bind(&digest)
     .bind(days as i32)
     .fetch_one(&state.db)
     .await?;
     let path = artifact_path(state, row.id);
     tokio::fs::create_dir_all(path.parent().expect("parent")).await?;
+    // Stage next to the target so the final rename is atomic.
     let part = path.with_extension("zip.part");
-    let mut f = tokio::fs::File::create(&part).await?;
-    f.write_all(&bytes).await?;
-    f.flush().await?;
+    move_file(tmp, &part).await?;
     tokio::fs::rename(&part, &path).await?;
     Ok(row)
 }
@@ -743,7 +820,7 @@ impl Backend for LocalBackend {
         let job = runner_job(&self.state, &self.runner, job_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("job {job_id} is not assigned to this runner"))?;
-        let row = store_artifact(&self.state, &job, name, zip, retention_days).await?;
+        let row = store_artifact(&self.state, &job, name, zip, None, retention_days).await?;
         Ok(ArtifactInfo {
             id: row.id,
             name: row.name,

@@ -18,6 +18,7 @@ import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizon
 import { RelativeTime } from '../../ui/RelativeTime';
 import { VirtualList } from '../../ui/VirtualList';
 import { useRefsData } from '../code/data';
+import { EmptyRepoState } from '../code/EmptyRepoState';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
 import { historyUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import { resolveTarget } from '../code/util';
@@ -160,6 +161,7 @@ function CommitList({ repo, refName, path, label }: { repo: Repo; refName: strin
     );
   }
   if (!first.data) return <SkeletonRows />;
+  if (first.data.empty) return <EmptyRepoState repo={repo} />;
   if (!rows.length) return <EmptyState icon={GitCommitIcon} title="No commits found" />;
 
   const toggle = (sha: string) =>

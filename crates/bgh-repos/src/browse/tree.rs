@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::readme::{self, Readme};
 use super::{
     CACHE_VERSION, CachedCommit, CommitSummary, Target, cache_get, cache_put, json_response,
-    precheck, resolve, summarize,
+    precheck, resolve, resolve_or_empty, summarize,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -41,6 +41,9 @@ pub struct TreeView {
     /// `tree-commits/{commit}/{path}`).
     pub last_commits: Option<BTreeMap<String, CommitSummary>>,
     pub readme: Option<Readme>,
+    /// The repository has no commits yet (no entries, no README).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub empty: bool,
 }
 
 fn kind_name(k: TreeEntryKind) -> &'static str {
@@ -91,8 +94,22 @@ async fn view(
     spec: Option<String>,
     req: HeaderMap,
 ) -> ApiResult<Response> {
-    let t = resolve(&state, auth.as_ref(), &owner, &repo, spec.as_deref()).await?;
+    let (t, empty) =
+        resolve_or_empty(&state, auth.as_ref(), &owner, &repo, spec.as_deref()).await?;
     let key = format!("tree:{}:{}", t.commit, t.path);
+    if empty {
+        let body = TreeView {
+            refname: t.refname.clone(),
+            commit: String::new(),
+            path: String::new(),
+            sha: String::new(),
+            entries: Vec::new(),
+            last_commits: None,
+            readme: None,
+            empty: true,
+        };
+        return json_response(&req, &t, &key, &body);
+    }
     if let Some(r) = precheck(&req, &t, &key) {
         return Ok(r);
     }
@@ -158,6 +175,7 @@ async fn view(
         entries,
         last_commits,
         readme,
+        empty: false,
     };
     json_response(&req, &t, &key, &body)
 }
