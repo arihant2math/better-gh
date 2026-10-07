@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:47 (foreman6 session_017wTGe7UyNPrFGMVRm5Gtxx): took over; new id sent to lead, #340 author, item 8 worker, #340 and #316 reviewers. Main runs 37622619342 (b92d546) in progress and 37622793134 (6a0a8c0) pending. NEW #342 (#85 item 8, 20f9a00) → adversarial CI reviewer session_01Vq586jEBDyXpEhtQWgikiv. #316 r4, #340 reviews still running; #322 waits on #316.
 12:46: foreman6 = session_017wTGe7UyNPrFGMVRm5Gtxx. foreman5 context ~310k → handoff to foreman6. Main runs 37622619342 (b92d546) and 37622793134 (6a0a8c0) in progress.
 12:42: orchestrator MERGED #319 (6a0a8c0; closes #245). WATCH main run for 6a0a8c0 (first run of the new bgh-sync code under nextest). Final #46 follow-ups: #319 r2 notes (retry-only test gap; not fail-closed while a recheck fails; uncapped 1 s backoff). The author stays live for #340.
 12:42: #319 READY (r2 APPROVE on 946d517; then only the main merge d92a1b4 = head; CI result green, run 37621134947; verified). Forwarded; reviewer archived. Non-blocking follow-ups for #46: the test covers only the cache-drop half; not fail-closed during a persistent recheck failure (same as main); fixed 1 s backoff.
