@@ -6,6 +6,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::Context;
 
@@ -93,6 +94,11 @@ pub struct Config {
     /// serving only `/metrics`, without a token unless `BGH_METRICS_TOKEN`
     /// is also set. Unset (default): no metrics listener.
     pub metrics_listen: Option<SocketAddr>,
+    /// `BGH_SYNC_*`: sync log retention and WebSocket origins (bgh-sync).
+    pub sync: SyncConfig,
+    /// `HOSTNAME` (default `bgh`): names this process in job worker ids and
+    /// the built-in Actions runner (`bgh-builtin-{instance_name}`).
+    pub instance_name: String,
 }
 
 impl Default for Config {
@@ -126,6 +132,8 @@ impl Default for Config {
             shutdown_timeout_secs: 30,
             metrics_token: None,
             metrics_listen: None,
+            sync: SyncConfig::default(),
+            instance_name: "bgh".into(),
         }
     }
 }
@@ -292,6 +300,10 @@ impl Config {
                         .with_context(|| format!("invalid value for BGH_METRICS_LISTEN: {v:?}"))
                 })
                 .transpose()?,
+            sync: SyncConfig::from_lookup(&get),
+            instance_name: parse("HOSTNAME")?
+                .map(|h| h.trim().to_string())
+                .unwrap_or(d.instance_name),
         })
     }
 
@@ -481,6 +493,56 @@ impl ActionsConfig {
     }
 }
 
+/// bgh-sync settings (`Config::sync`).
+#[derive(Debug, Clone)]
+pub struct SyncConfig {
+    /// `BGH_SYNC_RETENTION_HOURS` (168): sync actions older than this are
+    /// pruned by the compaction job; clients further behind rebootstrap.
+    pub retention: Duration,
+    /// `BGH_SYNC_KEEP_LATEST` (false): instead of truncating, keep the latest
+    /// action of every row (clients can always resume; the log stays bounded
+    /// by the number of rows).
+    pub keep_latest: bool,
+    /// `BGH_SYNC_COMPACT_INTERVAL_SECS` (3600, at least 60): how often
+    /// compaction runs.
+    pub compact_interval: Duration,
+    /// `BGH_SYNC_ALLOWED_ORIGINS` (empty): extra comma-separated `Origin`s
+    /// accepted for cookie-authenticated WebSockets besides `BGH_BASE_URL`
+    /// (e.g. the Vite dev server `http://localhost:5173`).
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for SyncConfig {
+    fn default() -> Self {
+        Self::from_lookup(|_| None)
+    }
+}
+
+impl SyncConfig {
+    /// Lenient: unparsable numbers fall back to the default.
+    pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
+        let num = |k: &str, d: u64| {
+            get(k)
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(d)
+        };
+        Self {
+            retention: Duration::from_secs(num("BGH_SYNC_RETENTION_HOURS", 168) * 3600),
+            keep_latest: get("BGH_SYNC_KEEP_LATEST")
+                .is_some_and(|v| matches!(v.trim(), "1" | "true" | "yes" | "on")),
+            compact_interval: Duration::from_secs(
+                num("BGH_SYNC_COMPACT_INTERVAL_SECS", 3600).max(60),
+            ),
+            allowed_origins: get("BGH_SYNC_ALLOWED_ORIGINS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().trim_end_matches('/').to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,5 +607,116 @@ mod tests {
     #[test]
     fn rejects_bad_values() {
         assert!(Config::from_lookup(|k| (k == "BGH_SSH_PORT").then(|| "x".into())).is_err());
+    }
+
+    #[test]
+    fn sync_and_instance_name() {
+        let d = Config::from_lookup(|_| None).unwrap();
+        assert_eq!(d.sync.retention, Duration::from_secs(7 * 24 * 3600));
+        assert!(!d.sync.keep_latest);
+        assert_eq!(d.sync.compact_interval, Duration::from_secs(3600));
+        assert_eq!(d.instance_name, "bgh");
+        let c = Config::from_lookup(|k| match k {
+            "BGH_SYNC_RETENTION_HOURS" => Some("2".into()),
+            "BGH_SYNC_KEEP_LATEST" => Some("true".into()),
+            "BGH_SYNC_COMPACT_INTERVAL_SECS" => Some("5".into()),
+            "BGH_SYNC_ALLOWED_ORIGINS" => Some("http://a:1/, http://b".into()),
+            "HOSTNAME" => Some("web-1".into()),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(c.sync.retention, Duration::from_secs(7200));
+        assert!(c.sync.keep_latest);
+        assert_eq!(c.sync.compact_interval, Duration::from_secs(60));
+        assert_eq!(c.sync.allowed_origins, vec!["http://a:1", "http://b"]);
+        assert_eq!(c.instance_name, "web-1");
+        let blank = Config::from_lookup(|k| (k == "HOSTNAME").then(|| " ".into())).unwrap();
+        assert_eq!(blank.instance_name, "bgh");
+    }
+
+    /// `BGH_*` variables that are not operator settings: set by the server
+    /// for its own git hooks, or used only by developers and tests.
+    const INTERNAL_ENV: &[&str] = &[
+        // pre-receive hook protocol (bgh_git::smart_http)
+        "BGH_CHECK_DIR",
+        "BGH_NO_FF_REFS",
+        "BGH_LINEAR_REFS",
+        "BGH_MAX_BLOB",
+        "BGH_WARN_BLOB",
+        "BGH_QUOTA_KB",
+        "BGH_QUOTA_MESSAGE",
+        "BGH_WORKFLOW_DENIED",
+        // tests (bgh_core::testing)
+        "BGH_TEST_KEEP_DB",
+    ];
+
+    /// Every `"BGH_…"` string literal in crate sources (not `tests/` or
+    /// unit-test modules).
+    fn env_literals() -> std::collections::BTreeMap<String, PathBuf> {
+        fn walk(dir: &std::path::Path, out: &mut std::collections::BTreeMap<String, PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy();
+                if path.is_dir() {
+                    if name != "tests" && name != "target" {
+                        walk(&path, out);
+                    }
+                } else if name.ends_with(".rs") {
+                    let src = std::fs::read_to_string(&path).unwrap();
+                    // Unit-test modules (like this one) don't read settings.
+                    let src = src
+                        .find("\n#[cfg(test)]\nmod ")
+                        .map_or(&src[..], |e| &src[..e]);
+                    for (i, _) in src.match_indices("\"BGH_") {
+                        let rest = &src[i + 1..];
+                        let end = rest
+                            .find(|c: char| {
+                                !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                            })
+                            .unwrap_or(rest.len());
+                        if rest[end..].starts_with('"') {
+                            out.entry(rest[..end].to_string()).or_insert(path.clone());
+                        }
+                    }
+                }
+            }
+        }
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut out = std::collections::BTreeMap::new();
+        walk(&crates, &mut out);
+        out
+    }
+
+    /// Drift guard (#226): every `BGH_*` variable the code reads is listed
+    /// in SELF_HOSTING.md "Configuration reference" as `` `NAME` ``.
+    #[test]
+    fn env_vars_are_documented() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let doc = std::fs::read_to_string(root.join("docs/SELF_HOSTING.md")).unwrap();
+        let start = doc
+            .find("\n## Configuration reference\n")
+            .expect("Configuration section");
+        let section = &doc[start..];
+        let section = &section[..section[1..].find("\n## ").map_or(section.len(), |e| e + 1)];
+        let literals = env_literals();
+        let missing: Vec<String> = literals
+            .iter()
+            .filter(|(name, _)| !INTERNAL_ENV.contains(&name.as_str()))
+            .filter(|(name, _)| !section.contains(&format!("`{name}`")))
+            .map(|(name, path)| format!("{name} ({})", path.display()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "document these in docs/SELF_HOSTING.md \"Configuration reference\" (or add them to \
+             INTERNAL_ENV if they are not settings): {missing:#?}"
+        );
+        let stale: Vec<_> = INTERNAL_ENV
+            .iter()
+            .filter(|name| !literals.contains_key(**name))
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "INTERNAL_ENV lists unused names: {stale:?}"
+        );
     }
 }

@@ -9,8 +9,6 @@ use bgh_core::state::AppState;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::config;
-
 /// Delete batch size (keeps each statement short).
 const CHUNK: i64 = 10_000;
 
@@ -125,7 +123,7 @@ pub async fn compact(
 
 /// Job handler: compact with the configured policy, then schedule the next run.
 pub async fn run_job(state: AppState, _job: Compact) -> anyhow::Result<()> {
-    let cfg = config::get();
+    let cfg = &state.config.sync;
     // Schedule first so a failing run doesn't stop the cycle.
     schedule(&state, cfg.compact_interval).await?;
     compact(&state, cfg.retention, cfg.keep_latest).await?;
@@ -172,7 +170,7 @@ pub async fn ensure_scheduled(state: &AppState) {
             return;
         }
     }
-    if let Err(err) = schedule(state, config::get().compact_interval).await {
+    if let Err(err) = schedule(state, state.config.sync.compact_interval).await {
         tracing::warn!(?err, "scheduling sync compaction");
         if let Some(done) = DONE.lock().expect("compact schedule lock").as_mut() {
             done.remove(&key);

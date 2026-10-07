@@ -153,6 +153,21 @@ start-up with an error naming the variable.
 | `BGH_ACTIONS_EXECUTOR` | `auto` | Where the built-in Actions runner runs jobs: `docker` (per-job containers), `shell` (directly on the server host, **trusted single-tenant installs only**), or `auto` (docker when `docker info` works, otherwise the built-in runner takes no jobs). See [Actions](#actions-ci). |
 | `BGH_ACTIONS_BUILTIN_RUNNER` | `true` | Run Actions jobs inside the `bgh` process (with `BGH_ACTIONS_EXECUTOR`). Set `false` when only external runners should take jobs. |
 | `BGH_ACTIONS_WORK_DIR` | `{tmp}/bgh-actions-work` | Job directories of the built-in runner. Must not be inside `BGH_DATA_DIR` (such a value is ignored with an error). |
+| `BGH_ACTIONS_ENABLED` | `true` | Trigger workflows at all. |
+| `BGH_ACTIONS_MAX_JOBS` | `2` | Concurrent jobs of the built-in runner (`0`: it takes none). |
+| `BGH_ACTIONS_DEFAULT_IMAGE` | `catthehacker/ubuntu:act-latest` | Image for jobs without `container:` under the docker executor. |
+| `BGH_ACTIONS_RUNNER_LABELS` | `self-hosted,linux,x64,ubuntu-latest,ubuntu-24.04,ubuntu-22.04` | Comma-separated labels of the built-in runner. |
+| `BGH_ACTIONS_SECRET_KEY` | generated in `{BGH_DATA_DIR}/actions/server.key` | Base64 of 32 bytes encrypting Actions secrets at rest. Set it (and back it up) when several processes share the data. |
+| `BGH_ACTIONS_ARTIFACT_RETENTION_DAYS` | `90` | Default artifact and log retention. |
+| `BGH_ACTIONS_CACHE_SIZE_LIMIT_GB` / `BGH_ACTIONS_CACHE_RETENTION_DAYS` | `10` / `7` | Default per-repository Actions cache size (LRU eviction beyond it) and idle expiry. |
+| `BGH_ACTIONS_REMOTE_ACTIONS` / `BGH_ACTIONS_GITHUB_URL` | `true` / `https://github.com` | Fetch `uses: owner/repo@ref` actions that don't exist on this server from that URL. |
+| `BGH_DOCKER_BIN` | `docker` | docker CLI used by the built-in runner. |
+| `BGH_WEBHOOK_ALLOWED_HOSTS` | empty | Comma-separated hosts, IPs or CIDR ranges webhooks may target even though they resolve to private/loopback addresses (`*`: everything). |
+| `BGH_WEBHOOK_TIMEOUT_SECS` | `10` | Per-delivery HTTP timeout of webhooks. |
+| `BGH_SYNC_RETENTION_HOURS` | `168` | Sync log entries older than this are compacted; web clients further behind reload from scratch. |
+| `BGH_SYNC_KEEP_LATEST` | `false` | Instead, keep the latest sync entry of every row (clients can always resume; the log is bounded by the row count). |
+| `BGH_SYNC_COMPACT_INTERVAL_SECS` | `3600` | Sync compaction period (at least 60). |
+| `BGH_SYNC_ALLOWED_ORIGINS` | empty | Extra comma-separated `Origin`s accepted for the web client's WebSocket besides `BGH_BASE_URL` (e.g. a dev server). |
 | `BGH_OIDC_ISSUER`, `BGH_OIDC_CLIENT_ID`, `BGH_OIDC_CLIENT_SECRET`, `BGH_OIDC_ID`, `BGH_OIDC_NAME`, `BGH_OIDC_SCOPES`, `BGH_OIDC_AUTO_CREATE`, `BGH_OIDC_LOGIN_CLAIM`, `BGH_OIDC_ALLOWED_DOMAINS`, `BGH_OIDC_GROUPS_CLAIM` | unset | One OpenID Connect sign-in provider (issuer and client id required); see `bgh_accounts::sso`. LDAP, SAML and SCIM are configured in Site admin → Settings → Authentication (`auth_providers.ldap|saml|scim`, `bgh_accounts::{ldap,saml,scim}`; the SAML SP metadata is at `/saml/metadata`). |
 
 Site admins can change rate limits, SMTP and sign-in providers at runtime
@@ -169,7 +184,15 @@ Also read by the binary:
 | `BGH_METRICS_LISTEN` | Extra listener (e.g. `127.0.0.1:9090`) serving only `/metrics`; no token needed unless `BGH_METRICS_TOKEN` is also set. Bind it to a private address. |
 | `BGH_OTLP_ENDPOINT` | OTLP/HTTP collector base URL (e.g. `http://otel-collector:4318`) for trace export; needs a binary built with `cargo build --features bgh-server/otlp`. `OTEL_SERVICE_NAME` overrides the service name (`better-github`). |
 | `BGH_ADMIN_PASSWORD` | Password for `bgh admin create-user` when `--password` is omitted (keeps it out of shell history and `ps`). |
-| `HOSTNAME` | Prefix of the worker ids that job workers record on locked jobs (default `bgh`). |
+| `HOSTNAME` | Instance name (default `bgh`): prefix of the worker ids that job workers record on locked jobs, and the built-in runner's name `bgh-builtin-{HOSTNAME}`. |
+| `BGH_PG_DUMP` / `BGH_PG_RESTORE` | `pg_dump` / `pg_restore` executables for `bgh backup` / `bgh restore`. |
+| `BGH_IMPORT_TOKEN` | Source-forge token for `bgh import` (instead of a flag). |
+
+The external runner `bgh-runner` reads `BGH_URL`,
+`BGH_RUNNER_REGISTRATION_TOKEN`, `BGH_RUNNER_CONFIG` (`.bgh-runner.json`),
+`BGH_RUNNER_EXECUTOR` (`auto`), `BGH_RUNNER_JITCONFIG`, `BGH_DOCKER`
+(`docker`) and `BGH_GIT` (`git`) as defaults for the same-named flags
+(`bgh-runner --help`).
 
 Booleans accept `1/true/yes/on` and `0/false/no/off`.
 

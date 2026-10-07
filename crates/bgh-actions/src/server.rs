@@ -54,7 +54,7 @@ pub async fn runner_by_token(state: &AppState, token: &str) -> anyhow::Result<Op
 /// Create (or refresh) the site-wide runner row of this process's built-in
 /// runner.
 pub async fn ensure_builtin_runner(state: &AppState) -> anyhow::Result<RunnerRow> {
-    let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "bgh".into());
+    let host = &state.config.instance_name;
     let name = format!("bgh-builtin-{host}");
     let token = core_crypto::random_token(40);
     let labels = &state.config.actions.runner_labels;
