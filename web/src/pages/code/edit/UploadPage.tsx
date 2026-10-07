@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useRef, useState, type DragEvent } from 'react';
 import { CommitDialog, type CommitRequest } from '../../../components/code/CommitDialog';
 import { navigate } from '../../../router';
+import { treeUrl } from '../../../components/code/urls';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
 import { Button, IconButton, cx } from '../../../ui/Button';
 import { AlertIcon, FileIcon, GitCommitIcon, UploadIcon, XIcon } from '../../../ui/icons';
@@ -101,7 +102,7 @@ export default observer(function UploadPage() {
         onProgress: (done, total, label) => setProgress({ done, total, label }),
       });
       setStaged([]);
-      finishCommit(owner, repoName, req, result, `/${owner}/${repoName}/tree/${result.branch}${dir ? `/${dir}` : ''}`);
+      finishCommit(owner, repoName, req, result, treeUrl({ owner, repo: repoName }, result.branch, dir));
     } finally {
       setProgress(null);
     }
@@ -146,7 +147,7 @@ export default observer(function UploadPage() {
           <Button
             onClick={() => {
               if (staged.length && !window.confirm('Discard the selected files?')) return;
-              navigate(`/${owner}/${repoName}/tree/${t.ref}${dir ? `/${dir}` : ''}`);
+              navigate(treeUrl({ owner, repo: repoName }, t.ref, dir));
             }}
           >
             Cancel

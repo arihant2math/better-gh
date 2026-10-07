@@ -7,6 +7,7 @@ import { browseKeys, getBlob, getTree, isSha } from '../../../api/endpoints';
 import type { BlobView } from '../../../api/types';
 import { CommitDialog, CommitError, type CommitRequest } from '../../../components/code/CommitDialog';
 import { navigate, useLocation } from '../../../router';
+import { blobUrl, parseCodeUrl, repoRefOf, treeUrl } from '../../../components/code/urls';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
 import { Button } from '../../../ui/Button';
 import { EmptyState } from '../../../ui/EmptyState';
@@ -30,8 +31,8 @@ type Target = ReturnType<typeof useEditTarget>;
 export default observer(function EditPage() {
   const { pathname } = useLocation();
   const t = useEditTarget();
-  const seg = pathname.split('/')[3];
-  const mode: Mode = seg === 'new' ? 'new' : seg === 'delete' ? 'delete' : 'edit';
+  const view = parseCodeUrl(pathname)?.view;
+  const mode: Mode = view === 'new' ? 'new' : view === 'delete' ? 'delete' : 'edit';
   if (!t.repo) {
     return (
       <div className={styles.page}>
@@ -69,7 +70,7 @@ function LoadError({ t, error }: { t: Target; error: unknown }) {
     <EmptyState
       icon={AlertIcon}
       title={missing ? 'File not found' : 'Couldn’t load this file'}
-      action={<Button onClick={() => navigate(`/${t.owner}/${t.name}/tree/${t.ref}`)}>Back to code</Button>}
+      action={<Button onClick={() => navigate(treeUrl(repoRefOf(t), t.ref))}>Back to code</Button>}
     >
       {missing ? `${t.path} doesn’t exist on ${t.ref}.` : error instanceof Error ? error.message : String(error)}
     </EmptyState>
@@ -93,7 +94,7 @@ const EditExisting = observer(function EditExisting({ t }: { t: Target }) {
       <EmptyState
         icon={FileIcon}
         title="This file can’t be edited here"
-        action={<Button onClick={() => navigate(`/${t.owner}/${t.name}/blob/${t.ref}/${t.path}`)}>View file</Button>}
+        action={<Button onClick={() => navigate(blobUrl(repoRefOf(t), t.ref, t.path))}>View file</Button>}
       >
         {b.name} is {why}.
       </EmptyState>
@@ -150,7 +151,7 @@ const FileEditor = observer(function FileEditor({ t, mode, original, eol, origin
 
   const cancel = () => {
     if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
-    navigate(mode === 'edit' ? `/${owner}/${repoName}/blob/${t.ref}/${originalPath}` : `/${owner}/${repoName}/tree/${t.ref}${initialDir ? `/${initialDir}` : ''}`);
+    navigate(mode === 'edit' ? blobUrl(repoRefOf(t), t.ref, originalPath ?? '') : treeUrl(repoRefOf(t), t.ref, initialDir));
   };
 
   useShortcuts('Editor', {
@@ -185,7 +186,7 @@ const FileEditor = observer(function FileEditor({ t, mode, original, eol, origin
           : renamed
             ? await commitFiles(owner, repoName, branch, [{ path, content }, { path: originalPath!, content: null }], req.fullMessage, { expect: baseSha ? { [originalPath!]: baseSha } : {} })
             : await writeFile(owner, repoName, branch, path, content, req.fullMessage, baseSha);
-      finishCommit(owner, repoName, req, result, `/${owner}/${repoName}/blob/${result.branch}/${path}`);
+      finishCommit(owner, repoName, req, result, blobUrl(repoRefOf(t), result.branch, path));
     } catch (e) {
       const err = classifyError(e);
       if (err.kind === 'conflict') {
@@ -353,7 +354,7 @@ const DeleteFile = observer(function DeleteFile({ t }: { t: Target }) {
       const result = await removeFile(owner, repoName, branch, t.path, b.sha, req.fullMessage);
       // Deleting the last file of a directory removes the directory too.
       const dest = parent ? await getTree(owner, repoName, result.branch, parent).then(() => parent, () => '') : '';
-      finishCommit(owner, repoName, req, result, `/${owner}/${repoName}/tree/${result.branch}${dest ? `/${dest}` : ''}`);
+      finishCommit(owner, repoName, req, result, treeUrl(repoRefOf(t), result.branch, dest));
     } catch (e) {
       const err = classifyError(e);
       if (err.kind === 'conflict') throw new CommitError(`${t.path} has changed since you opened it. Reload the page to see the latest version.`, 'conflict');
@@ -371,7 +372,7 @@ const DeleteFile = observer(function DeleteFile({ t }: { t: Target }) {
           </span>
         </div>
         <div className={styles.headerActions}>
-          <Button onClick={() => navigate(`/${owner}/${repoName}/blob/${t.ref}/${t.path}`)}>Cancel</Button>
+          <Button onClick={() => navigate(blobUrl(repoRefOf(t), t.ref, t.path))}>Cancel</Button>
           <Button variant="danger" leadingIcon={TrashIcon} disabled={!t.canPush} onClick={() => setDialog(true)}>
             Commit changes…
           </Button>
@@ -384,7 +385,7 @@ const DeleteFile = observer(function DeleteFile({ t }: { t: Target }) {
           <div className={styles.deleteName}>{fileName}</div>
           <div className={styles.muted}>{summary}</div>
         </div>
-        <Button size="sm" leadingIcon={EyeIcon} className={styles.deleteView} onClick={() => navigate(`/${owner}/${repoName}/blob/${t.ref}/${t.path}`)}>
+        <Button size="sm" leadingIcon={EyeIcon} className={styles.deleteView} onClick={() => navigate(blobUrl(repoRefOf(t), t.ref, t.path))}>
           View file
         </Button>
       </div>

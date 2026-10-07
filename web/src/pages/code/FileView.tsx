@@ -14,7 +14,8 @@ import styles from './Code.module.css';
 import { CodeLines } from './CodeLines';
 import { prefetchBlame, useBlob } from './data';
 import { LastCommitBar } from './LastCommitBar';
-import { codeUrl, copyText, formatSize, lineHash, parseLineHash, renderModes, routeLinks, setHash, useHash, type CodeTarget, type LineRange, type RenderMode } from './util';
+import { copyText, formatSize, lineHash, parseLineHash, renderModes, routeLinks, setHash, useHash, type CodeTarget, type LineRange, type RenderMode } from './util';
+import { codeUrl, historyUrl } from '../../components/code/urls';
 
 const CsvTable = lazy(() => import('./CsvTable'));
 
@@ -186,7 +187,7 @@ function FileActions({ t, blob, canPush, repo }: { t: CodeTarget; blob: BlobView
             onSelect: () => void copyText(`${window.location.origin}${codeUrl(t, 'blob', blob.commit, t.path)}${window.location.hash}`).then(() => toast({ title: 'Permalink copied' })),
           },
           { id: 'path', label: 'Copy path', icon: CopyIcon, onSelect: () => void copyText(t.path).then(() => toast({ title: 'Path copied' })) },
-          { id: 'history', label: 'View history', icon: HistoryIcon, onSelect: () => navigate(`/${t.owner}/${t.repo}/commits/${t.ref}/${t.path}`) },
+          { id: 'history', label: 'View history', icon: HistoryIcon, onSelect: () => navigate(historyUrl(t, t.ref, t.path)) },
           ...(canPush && onBranch
             ? [
                 { separator: true as const, id: 'sep' },

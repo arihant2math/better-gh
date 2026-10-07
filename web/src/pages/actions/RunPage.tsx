@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { actionsKey, artifactZipUrl, listAnnotations, type Annotation, type WorkflowJob, type WorkflowRun } from '../../api/actions';
 import { useResource } from '../../api/cache';
 import { Link, useParams } from '../../router';
+import { treeUrl, type RepoRef } from '../../components/code/urls';
 import { Avatar } from '../../ui/Badge';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, DownloadIcon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, PackageIcon, PlayIcon, XCircleFillIcon } from '../../ui/icons';
@@ -45,7 +46,7 @@ export default observer(function RunPage() {
     <RunShell data={data}>
       <div className={styles.summary}>
         {run?.status === 'waiting' && !attemptParam && <PendingDeployments owner={owner} repo={repo} runId={runId} />}
-        {run ? <SummaryCard run={run} base={data.base} /> : <Skeleton width="100%" height={72} />}
+        {run ? <SummaryCard run={run} base={data.base} at={data} /> : <Skeleton width="100%" height={72} />}
         <section className={styles.card}>
           <div className={styles.cardHead}>
             <span className={styles.cardTitle}>{graph?.workflow_name ?? run?.name ?? 'Jobs'}</span>
@@ -70,7 +71,7 @@ export default observer(function RunPage() {
   );
 });
 
-const SummaryCard = observer(function SummaryCard({ run, base }: { run: WorkflowRun; base: string }) {
+const SummaryCard = observer(function SummaryCard({ run, base, at }: { run: WorkflowRun; base: string; at: RepoRef }) {
   const pr = run.pull_requests[0];
   const running = run.status !== 'completed';
   const actor = run.triggering_actor ?? run.actor;
@@ -92,7 +93,7 @@ const SummaryCard = observer(function SummaryCard({ run, base }: { run: Workflow
             </Link>
           ) : null}
           {run.head_branch && (
-            <Link to={`${base}/tree/${encodeURIComponent(run.head_branch)}`} className={styles.ref}>
+            <Link to={treeUrl(at, run.head_branch)} className={styles.ref}>
               <GitBranchIcon size={12} /> {run.head_branch}
             </Link>
           )}

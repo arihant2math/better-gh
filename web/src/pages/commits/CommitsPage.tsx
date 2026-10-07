@@ -18,20 +18,12 @@ import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
 import { useRefsData } from '../code/data';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
+import { historyUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import { resolveTarget } from '../code/util';
 import { commitDate, groupByDay, splitMessage, type CommitListRow } from './group';
 import { CiIcon, Person, copyText, samePerson } from './parts';
 import { SignatureBadge, useSignatures, type CommitSignature } from './Signature';
 import styles from './Commits.module.css';
-
-const enc = encodeURIComponent;
-
-const encPath = (p: string) => p.split('/').map(enc).join('/');
-
-/** `/commits/{ref}/{path}` URL (a ref's slashes stay literal, as on GitHub). */
-export function commitsUrl(owner: string, repo: string, ref: string, path = ''): string {
-  return `/${owner}/${repo}/commits/${encPath(ref)}${path ? `/${encPath(path)}` : ''}`;
-}
 
 /** Commits list / file history: `/:owner/:repo/commits[/:ref/*path]`. */
 export default observer(function CommitsPage() {
@@ -59,17 +51,17 @@ function Header({ repo, refName, path }: { repo: Repo; refName: string; path: st
   const parts = path ? path.split('/') : [];
   return (
     <div className={styles.header}>
-      <RefPicker owner={repo.owner} repo={repo.name} value={refName} onSelect={(r) => navigate(commitsUrl(repo.owner, repo.name, r, path))} />
+      <RefPicker owner={repo.owner} repo={repo.name} value={refName} onSelect={(r) => navigate(historyUrl(repoRefOf(repo), r, path))} />
       {path ? (
         <h1 className={styles.title}>
           <HistoryIcon size={16} className={styles.muted} />
           <span>History for</span>
           <nav className={styles.crumbs} aria-label="Path">
-            <Link to={commitsUrl(repo.owner, repo.name, refName)}>{repo.name}</Link>
+            <Link to={historyUrl(repoRefOf(repo), refName)}>{repo.name}</Link>
             {parts.map((p, i) => (
               <span key={i}>
                 <span className={styles.sep}>/</span>
-                {i === parts.length - 1 ? <strong>{p}</strong> : <Link to={commitsUrl(repo.owner, repo.name, refName, parts.slice(0, i + 1).join('/'))}>{p}</Link>}
+                {i === parts.length - 1 ? <strong>{p}</strong> : <Link to={historyUrl(repoRefOf(repo), refName, parts.slice(0, i + 1).join('/'))}>{p}</Link>}
               </span>
             ))}
           </nav>
@@ -315,7 +307,7 @@ function CommitRow({
           </Link>
           <IconButton icon={CopyIcon} label="Copy full SHA" size="sm" onClick={() => copyText(c.sha, `Copied ${c.sha.slice(0, 7)}`)} />
         </span>
-        <Link to={`${base}/tree/${c.sha}`} className={styles.browse} aria-label="Browse repository at this point in the history" title="Browse repository at this point in the history">
+        <Link to={treeUrl(repoRefOf(repo), c.sha)} className={styles.browse} aria-label="Browse repository at this point in the history" title="Browse repository at this point in the history">
           <CodeIcon size={16} />
         </Link>
       </div>

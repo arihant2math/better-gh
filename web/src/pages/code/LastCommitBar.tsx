@@ -10,6 +10,7 @@ import { Tooltip } from '../../ui/Tooltip';
 import styles from './Code.module.css';
 import { useLastCommit } from './data';
 import type { CodeTarget } from './util';
+import { historyUrl } from '../../components/code/urls';
 
 export function CommitAuthor({ c, size = 20 }: { c: BrowseCommit; size?: number }) {
   const login = c.author.login;
@@ -48,7 +49,7 @@ export function CiIcon({ owner, repo, sha }: { owner: string; repo: string; sha:
 export function LastCommitBar({ t, path }: { t: CodeTarget; path: string }) {
   const { data } = useLastCommit(t, path);
   const c = data?.commits[0];
-  const historyUrl = `/${t.owner}/${t.repo}/commits/${t.ref}${path ? `/${path}` : ''}`;
+  const history = historyUrl(t, t.ref, path);
   return (
     <div className={styles.lastCommit}>
       {c ? (
@@ -73,7 +74,7 @@ export function LastCommitBar({ t, path }: { t: CodeTarget; path: string }) {
           <span className={styles.grow} />
         </>
       )}
-      <Link to={historyUrl} className={styles.historyLink}>
+      <Link to={history} className={styles.historyLink}>
         <HistoryIcon size={16} /> History
       </Link>
     </div>

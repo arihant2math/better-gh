@@ -9,7 +9,8 @@ import { Menu } from '../../ui/Menu';
 import { Popover } from '../../ui/Popover';
 import { toast } from '../../ui/Toast';
 import styles from './Code.module.css';
-import { codeUrl, copyText, type CodeTarget } from './util';
+import { copyText, type CodeTarget } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 type CloneTab = 'https' | 'ssh' | 'cli';
 const TAB_KEY = 'bgh:clone-tab';

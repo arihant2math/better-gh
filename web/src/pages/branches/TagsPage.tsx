@@ -5,6 +5,7 @@ import { codeKeys, listReleases, listTags, type RestRelease, type RestTag } from
 import { getHistory } from '../../api/endpoints';
 import type { History } from '../../api/types';
 import { Link, useParams } from '../../router';
+import { repoRefOf, treeUrl } from '../../components/code/urls';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
@@ -134,7 +135,7 @@ function TagRow({ repo, tag, release }: { repo: Repo; tag: RestTag; release: Res
   return (
     <div className={styles.tagRow} role="listitem">
       <div>
-        <Link to={`${base}/tree/${enc(tag.name)}`} className={styles.tagName}>
+        <Link to={treeUrl(repoRefOf(repo), tag.name)} className={styles.tagName}>
           <TagIcon size={16} />
           {tag.name}
         </Link>

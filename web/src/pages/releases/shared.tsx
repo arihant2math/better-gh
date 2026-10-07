@@ -6,6 +6,7 @@ import { codeKeys, findReleaseByTag, getLatestRelease, type RestAsset, type Rest
 import { browseKeys } from '../../api/endpoints';
 import { useRefs } from '../../components/code/RefPicker';
 import { Link, navigate, prefetch as prefetchRoute } from '../../router';
+import { treeUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
@@ -198,7 +199,7 @@ export const ReleaseMeta = observer(function ReleaseMeta({
         </Link>
       )}
       {sha ? (
-        <Link to={`/${owner}/${repo}/tree/${encodeURIComponent(release.tag_name)}`} className={cx(styles.metaItem, styles.mono)}>
+        <Link to={treeUrl({ owner, repo }, release.tag_name)} className={cx(styles.metaItem, styles.mono)}>
           <TagIcon size={14} />
           {release.tag_name}
         </Link>

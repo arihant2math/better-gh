@@ -6,6 +6,7 @@ import { browseKeys, getRefs, isSha } from '../../api/endpoints';
 import { activeBranchRulesets, type Ruleset } from '../../api/rulesets';
 import { RefPicker, refLabel } from '../../components/code/RefPicker';
 import { Link, useParams } from '../../router';
+import { repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
@@ -298,7 +299,7 @@ function BranchRow({
   return (
     <div className={styles.row} role="listitem">
       <div className={styles.nameCell}>
-        <Link to={`${base}/tree/${enc(b.name)}`} className={styles.name} title={b.name}>
+        <Link to={treeUrl(repoRefOf(repo), b.name)} className={styles.name} title={b.name}>
           {b.name}
         </Link>
         <IconButton icon={CopyIcon} label="Copy branch name" size="sm" onClick={() => copy(b.name)} />
