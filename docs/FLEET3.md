@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
-| B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | — | — |
+| B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | #347 | session_01GEmZUgjbnwUbTKfnPxQGiP (sonnet) |
 | C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 @0818833 | session_01Wq8po5orpNjMv7JimRHWxd (opus) |
 
 ## Rule (user, 21:33Z)
@@ -28,3 +28,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:34Z: adopted per-PR session rule (relayed from user via session_01GowVR33vpQmuohFCEKVRUk); lanes told to stop after current item.
 - 21:41Z: #150 all checks green on 0818833 (incl. macOS release build); worker reports at 21:44. A on #226, B on #256.
 - 21:45Z: C reported #150 green @0818833; opus reviewer spawned.
+- 21:50Z: B opened #347 (Fixes #256), green; sonnet reviewer spawned.
