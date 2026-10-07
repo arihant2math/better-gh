@@ -1,6 +1,6 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: foreman5 (see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
+Foreman: foreman5 session_01G3Ks4npv6a4V2K5s4yXtqm (since 11:17; see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
 ## HANDOFF (11:17, foreman4 session_01QGXdRWZfRg2trNCsoy9GjA → foreman5; context ~310k)
 Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow: the reviewer APPROVEs, sets S-Approved, updates the branch, then send_messages the foreman. The foreman verifies on GitHub (get_reviews, get_commits, get_check_runs) that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, approved SHA, head SHA and CI to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
@@ -16,7 +16,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #337 (#335 P-Critical GraphQL pre-parse depth/length guard, fixer session_016RmaisDuJy7A79V54oB1mV): adversarial security reviewer session_016gCE3Ek4pZduRqtPbeHwTQ on 378faba. The orchestrator wants it forwarded as soon as it's approved and green.
 - #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e; do NOT archive the lead): adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm on ee81558.
 - #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 merges and the lead retargets it to main (then re-verify CI on the retargeted head). The reviewer says whether #328 can close.
-- #338 (#85 item 6, share clippy/test deps, worker session_01BWCia78jFZoT3pq4UrYS1p): opened at 236372d, no ping yet. When it pings, start a reviewer (default model; check that cross-platform clippy coverage, `CI result` and PR wall-clock are kept).
+- #338 (#85 item 6, share clippy/test deps, worker session_01BWCia78jFZoT3pq4UrYS1p): reviewer session_01CUuf3bA1ZsrT5vcXvNCCdX (default model, adversarial CI) on 236372d since 11:18.
 - #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48, no reply yet. If it's blocked or silent, park it: a PR status comment saying what remains (the failed recheck pass drops coalesced targets; the first-subscriber race) and the session archived via the orchestrator.
 - #150: the user's own; don't touch it.
 
@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:18 (foreman5): main run 37611075666 (223214d) GREEN: Release binary (embed-web) 7m01s (cargo build 6m39s), Docker image from prebuilt 38s (build 20s) and smoke test OK; tests job 11m42s; whole run ~12m (10:59:50 to 11:11:51). Notified all 7 live sessions of the new foreman id (and pinged #319 for status again). #338 → reviewer session_01CUuf3bA1ZsrT5vcXvNCCdX.
 11:17: #337 (#335 fix) → adversarial security reviewer session_016gCE3Ek4pZduRqtPbeHwTQ. #338 (#85 item 6) opened, no ping yet. Foreman4 context is ~310k, so it hands off to foreman5.
 11:00: orchestrator MERGED #334 (223214d); #85 item 5 done; worker archived. WATCH main CI run 37611075666 (223214d): release-binary and Docker on the Ubuntu-to-trixie prebuilt path; a failure means a top-priority fix PR. #85 item 6 worker session_01BWCia78jFZoT3pq4UrYS1p, branch agent/85-share-clippy-test-deps.
 10:59: #334 READY (APPROVE on 017af62; then only main merge 1650fea; CI result green, run 37609399608; Ubuntu-to-trixie ABI checked locally). Forwarded with caveats (watch the first main Docker run; toolchain is now stable). Reviewer archived. #85 item 6 starts after the merge.
