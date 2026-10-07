@@ -3,7 +3,8 @@
 //! `issues` / `issue_comment` activity, `release` types, and the events
 //! evaluated against the default branch's workflows (`label`, `milestone`,
 //! `watch`, `fork`, `public`, `gollum`, `check_run`, `check_suite`,
-//! `workflow_run`, `repository_dispatch`).
+//! `workflow_run`, `repository_dispatch`), plus `deployment*` and
+//! `merge_group`, which read workflows at the deployed / group commit.
 //!
 //! [`map_event`] turns a domain event into a [`TriggerKind`] (called by
 //! [`crate::trigger::on_event`]); [`on_repo_event`] evaluates the
@@ -661,6 +662,29 @@ pub fn map_event(event: &Event) -> Option<(i64, TriggerKind)> {
                 json!({"check_suite_id": check_suite_id}),
             ),
         ),
+        // ----- merge_group (evaluated at the group commit) -----
+        E::MergeGroupChecksRequested {
+            repo_id,
+            actor_id,
+            head_ref,
+            head_sha,
+            base_ref,
+            base_sha,
+            ..
+        } => (
+            *repo_id,
+            repo_event(
+                "merge_group",
+                Some("checks_requested"),
+                *actor_id,
+                json!({
+                    "head_ref": head_ref,
+                    "head_sha": head_sha,
+                    "base_ref": base_ref,
+                    "base_sha": base_sha,
+                }),
+            ),
+        ),
         // ----- repository_dispatch -----
         E::RepositoryDispatch {
             repo_id,
@@ -1068,6 +1092,9 @@ pub async fn on_repo_event(
             return on_deployment(state, repo, owner, event, action, actor_id, extra, payload)
                 .await;
         }
+        "merge_group" => {
+            return on_merge_group(state, repo, owner, action, actor_id, extra, payload).await;
+        }
         _ => return Ok(()),
     }
     let Some((git_ref, sha)) = default_head(state, repo).await else {
@@ -1219,6 +1246,46 @@ async fn on_workflow_run(
     )
     .await
     .map(drop)
+}
+
+/// `merge_group`: workflows read from the merge group commit, with
+/// `GITHUB_REF` the queue's temporary `gh-readonly-queue/...` ref and
+/// `GITHUB_SHA` its commit. The runs' check suites land on that commit,
+/// which is what the merge queue evaluates the required checks on.
+#[allow(clippy::too_many_arguments)]
+async fn on_merge_group(
+    state: &AppState,
+    repo: &db::Repository,
+    owner: &db::User,
+    action: &str,
+    actor_id: Option<i64>,
+    extra: &Value,
+    mut payload: Value,
+) -> anyhow::Result<()> {
+    let field = |k: &str| extra.get(k).and_then(Value::as_str).unwrap_or_default();
+    let (head_ref, head_sha) = (field("head_ref"), field("head_sha"));
+    if head_ref.is_empty() || !bgh_git::is_sha(head_sha) {
+        return Ok(());
+    }
+    payload["merge_group"] = json!({
+        "head_sha": head_sha,
+        "head_ref": head_ref,
+        "base_sha": field("base_sha"),
+        "base_ref": field("base_ref"),
+        "head_commit": trigger::commit_payload(state, repo.id, head_sha).await,
+    });
+    trigger::run_default_branch_event(
+        state,
+        repo,
+        owner,
+        "merge_group",
+        action,
+        head_ref,
+        head_sha,
+        actor_id,
+        payload,
+    )
+    .await
 }
 
 /// `deployment` / `deployment_status`: workflows at the deployed commit,

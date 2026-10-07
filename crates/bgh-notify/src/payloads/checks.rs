@@ -134,6 +134,29 @@ fn simple_commit(c: &Commit) -> Value {
     })
 }
 
+/// Webhook `merge_group` object: the group's head (the queue's temporary
+/// `gh-readonly-queue/...` ref) and the base it was built on.
+pub(crate) async fn merge_group(
+    state: &AppState,
+    ctx: &RepoCtx,
+    head_ref: &str,
+    head_sha: &str,
+    base_ref: &str,
+    base_sha: &str,
+) -> Value {
+    let head_commit = read_commit(state, ctx.repo.id, head_sha)
+        .await
+        .map(|c| simple_commit(&c))
+        .unwrap_or(Value::Null);
+    json!({
+        "head_sha": head_sha,
+        "head_ref": head_ref,
+        "base_sha": base_sha,
+        "base_ref": base_ref,
+        "head_commit": head_commit,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Commit statuses
 // ---------------------------------------------------------------------------

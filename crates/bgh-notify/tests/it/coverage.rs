@@ -25,7 +25,6 @@ const NOT_PRODUCIBLE_YET: &[&str] = &[
     "installation_target",
     "issue_dependencies",
     "marketplace_purchase",
-    "merge_group",
     "org_block",
     "page_build",
     "personal_access_token_request",
@@ -336,6 +335,25 @@ fn samples() -> Vec<Event> {
         Event::CheckSuiteCompleted {
             repo_id: 1,
             check_suite_id: 1,
+        },
+        Event::MergeGroupChecksRequested {
+            repo_id: 1,
+            group_id: 1,
+            actor_id: Some(1),
+            head_ref: "refs/heads/gh-readonly-queue/main/pr-1-x".into(),
+            head_sha: sha.clone(),
+            base_ref: "refs/heads/main".into(),
+            base_sha: sha.clone(),
+        },
+        Event::MergeGroupDestroyed {
+            repo_id: 1,
+            group_id: 1,
+            actor_id: Some(1),
+            head_ref: "refs/heads/gh-readonly-queue/main/pr-1-x".into(),
+            head_sha: sha.clone(),
+            base_ref: "refs/heads/main".into(),
+            base_sha: sha.clone(),
+            reason: "merged".into(),
         },
         Event::CheckRunUpdated {
             repo_id: 1,
