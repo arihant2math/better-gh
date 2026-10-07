@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
 import { setSudoHandler } from '../api/client';
 import { navigate, returnTo, RouterView, useLocation } from '../router';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
 import { session } from './session';
@@ -65,7 +66,12 @@ export const App = observer(function App() {
   let content = null;
   if (bare) {
     const Page = bare.page;
-    if (bare.public || signedIn) content = <Suspense fallback={null}>{!(signedIn && bare.guestOnly) && <Page />}</Suspense>;
+    if (bare.public || signedIn)
+      content = (
+        <ErrorBoundary name="page" variant="page" resetKey={pathname}>
+          <Suspense fallback={null}>{!(signedIn && bare.guestOnly) && <Page />}</Suspense>
+        </ErrorBoundary>
+      );
   } else if (signedIn && session.started) {
     content = (
       <Shell>
