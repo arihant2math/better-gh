@@ -251,4 +251,10 @@ git('commit', '-q', '-m', `Fix README typo\n\nFixes #${created[10].number}`);
 git('push', '-q', remote, 'main');
 await sleep(1500);
 
+// Layout stress fixture (#47): the newest notification for ada, so the inbox
+// reading pane opens on a title with a long unbroken token.
+const longToken = Array(4).fill('Supercalifragilisticexpialidocious').join('_');
+await call(grace, 'POST', `${R}/issues`, { title: `${longToken}_end and then a normal tail`, body: 'Long title layout check. cc @ada' });
+await sleep(500);
+
 console.log(JSON.stringify({ base, showcase: `/acme/api/issues/${n}`, tokens: { ada, grace, linus }, login: { user: 'ada', password: 'password123' } }, null, 2));
