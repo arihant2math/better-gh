@@ -239,3 +239,60 @@ async fn check_many_matches_check() {
 async fn head_id(app: &TestApp) -> i64 {
     scalar(app, "SELECT coalesce(max(id), 0) FROM sync_actions").await
 }
+
+/// A recheck pass that fails (DB error, pool timeout) must not lose its
+/// targets: the access-key cache has already recorded the change, so no
+/// later counter delta would trigger it again (review of #319).
+#[tokio::test]
+async fn failed_recheck_is_retried() {
+    let app = bgh_server::test_app().await;
+    let ada = app.create_user("ada").await;
+    let bob = app.create_user("bob").await;
+    let repo = repo_id(&app, &ada, "r", false).await;
+    let mut ws = connect(&app, Some(&bob), "").await;
+    let _ = next(&mut ws).await;
+    subscribe(&mut ws, &[format!("repo:{repo}")], head_id(&app).await).await;
+    let hub = hub(&app).await;
+    repo_delta(&app, repo).await;
+    until_model(&mut ws, "repo").await;
+    let warm = settled(&hub).await;
+
+    // Rechecks fail while `collaborators` is missing.
+    exec(
+        &app,
+        "ALTER TABLE collaborators RENAME TO collaborators_off",
+    )
+    .await;
+    exec(
+        &app,
+        &format!("UPDATE repositories SET visibility = 'private' WHERE id = {repo}"),
+    )
+    .await;
+    repo_delta(&app, repo).await;
+    until_model(&mut ws, "repo").await;
+    while hub.recheck_stats().passes == warm.passes {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    exec(
+        &app,
+        "ALTER TABLE collaborators_off RENAME TO collaborators",
+    )
+    .await;
+
+    // A counter delta matches the cached key; the retry still revokes.
+    repo_delta(&app, repo).await;
+    let revoke = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let m = next(&mut ws).await;
+            if m["t"] == "revoke" {
+                return m;
+            }
+        }
+    })
+    .await
+    .expect("access was never revoked after the failed recheck");
+    assert_eq!(
+        revoke,
+        json!({"t": "revoke", "scope": format!("repo:{repo}"), "reason": "forbidden"})
+    );
+}

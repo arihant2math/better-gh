@@ -73,6 +73,8 @@ const FILL_PAGE: i64 = 2000;
 const RECHECK_USERS: usize = 64;
 /// Recheck chunks in flight at once (pool connections used by rechecks).
 const RECHECK_CONCURRENCY: usize = 2;
+/// Delay before retrying the targets of a failed recheck pass.
+const RECHECK_RETRY: Duration = Duration::from_secs(1);
 /// Attempts at delivering only to locally subscribed scopes before
 /// converting every record (subscriptions racing with a delivery).
 const FILTER_ATTEMPTS: usize = 3;
@@ -503,21 +505,12 @@ impl Hub {
         records: Vec<SyncRecord>,
         upto: i64,
     ) -> Result<(), sqlx::Error> {
-        let targets = {
-            let mut inner = self.lock();
-            let inner = &mut *inner;
-            let mut targets = HashSet::new();
-            for r in &records {
-                targets.extend(access_target(inner, r));
-            }
-            targets
-        };
         // Only records some local socket is subscribed to become items. A
         // socket subscribing meanwhile (its `L` = `delivered` < `upto`)
         // must still get every record of its scopes, so the check is
         // repeated under the lock that advances `delivered`.
         let mut attempt = 0;
-        loop {
+        let targets = loop {
             let filter = attempt < FILTER_ATTEMPTS;
             let (wanted, skipped): (Vec<SyncRecord>, HashSet<String>) = {
                 let inner = self.lock();
@@ -547,17 +540,40 @@ impl Hub {
                 attempt += 1;
                 continue;
             }
+            // Under the same lock as `delivered`: a socket that subscribed
+            // during the await above is matched by these targets too.
+            let mut targets = HashSet::new();
+            for r in &records {
+                targets.extend(access_target(inner, r));
+            }
             for chunk in items.chunks(delta::BATCH_SIZE as usize) {
                 let last = chunk.last().map(|i| i.id).unwrap_or(upto);
                 Self::dispatch(inner, chunk.to_vec(), last.min(upto));
             }
             Self::dispatch(inner, Vec::new(), upto);
-            break;
-        }
+            break targets;
+        };
         if !targets.is_empty() {
             self.spawn_recheck(targets);
         }
         Ok(())
+    }
+
+    /// Put back the targets of a failed pass, dropping the cached access keys
+    /// of the scopes involved.
+    fn requeue(&self, targets: Vec<Target>) {
+        {
+            let mut inner = self.lock();
+            for t in &targets {
+                if let Target::Only(s) | Target::Scope(s) | Target::UserOnly(_, s) = t {
+                    inner.repo_keys.remove(s);
+                }
+            }
+        }
+        self.rechecks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(targets);
     }
 
     /// Queue a permission recheck; the worker coalesces queued targets.
@@ -765,10 +781,18 @@ async fn recheck_worker(weak: Weak<Hub>, wake: Arc<Notify>) {
         if targets.is_empty() {
             continue;
         }
-        if let Err(err) = hub.recheck(&targets).await {
-            tracing::warn!(?err, "sync permission recheck");
-        }
+        let failed = hub.recheck(&targets).await.err();
         hub.passes.fetch_add(1, Ordering::SeqCst);
+        if let Some(err) = failed {
+            // Nothing may be lost: the access-key cache already recorded the
+            // change, so a later counter delta won't trigger it again. Forget
+            // those keys (the next delta rechecks too) and retry the targets.
+            tracing::warn!(?err, "sync permission recheck failed; retrying");
+            hub.requeue(targets);
+            drop(hub);
+            tokio::time::sleep(RECHECK_RETRY).await;
+            wake.notify_one();
+        }
     }
 }
 
