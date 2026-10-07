@@ -619,7 +619,11 @@ Content-Type: application/json
      flicker), or until `lastSyncId ≥ N`, or 30 s passed.
    * `4xx` (except 408/429) → roll back: drop the overlay (base values
      reappear), delete the tx, show the error message.
-   * `401` → pause the queue, keep txs, route to login.
+   * `401` "Sudo mode required…" (sensitive action, e.g. repo delete or
+     transfer) → hold the queue, show the sudo prompt (`TxHooks.onSudoRequired`
+     → `requestSudo()`), retry the tx once on success, roll it back on cancel
+     or a second sudo 401. Never pauses the queue or expires the session.
+   * any other `401` → pause the queue, keep txs, route to login.
    * `5xx`, `408`, `429`, network error → keep the overlay, retry with
      backoff (1 s ×2, max 60 s; honour `Retry-After`). Pending txs are
      reloaded and resent after a page reload.

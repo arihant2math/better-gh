@@ -5,7 +5,7 @@ const ORIGIN = 'https://bgh.test';
 const ret = (target: string) => returnTo(`?return_to=${encodeURIComponent(target)}`, ORIGIN);
 
 describe('return_to (open redirect)', () => {
-  it.each(['/\\x', '/\t/x', '/\n/x', '\\\\x', '//x', 'https://x', 'https://x/acme', 'javascript:alert(1)', 'data:text/html,x'])('rejects %j', (target) => {
+  it.each(['/\\x', '/\t/x', '/\n/x', '\\\\x', '//x', 'https://x', 'https://x/acme', 'javascript:alert(1)', 'data:text/html,x', '/..//evil.com', '/.//evil.com', '/a/..//evil.com', '/%2e%2e//evil.com', `${ORIGIN}//evil.com`])('rejects %j', (target) => {
     expect(sameOriginPath(target, ORIGIN)).toBeNull();
     expect(ret(target)).toBe('/');
   });
