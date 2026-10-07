@@ -27,9 +27,13 @@ else
         backend=true frontend=true ;;
       web/*)
         frontend=true ;;
+      # The image's dependency layer (cargo-chef) is keyed on the lockfile;
+      # a bump is the backend change most likely to break the image build.
+      Cargo.lock)
+        backend=true docker=true ;;
       # Rust workspace, its fixtures, and the scripts the compat job runs.
       crates/* | migrations/* | scripts/* | .cargo/* \
-        | Cargo.toml | Cargo.lock | rust-toolchain* | rustfmt.toml \
+        | Cargo.toml | rust-toolchain* | rustfmt.toml \
         | .rustfmt.toml | clippy.toml | .clippy.toml)
         backend=true ;;
       Dockerfile | .dockerignore)
@@ -38,10 +42,10 @@ else
   done
 fi
 
-# The image builds both the server and the embedded web client.
-if [[ "$backend" == true || "$frontend" == true ]]; then
-  docker=true
-fi
+# The image builds the server and the embedded web client, but the full
+# release build costs ~28 min, so PRs only run it for changes to the image
+# itself (above); ordinary backend/frontend changes are covered by the other
+# jobs and the image is still built on every push to main (`--all`).
 
 echo "backend=$backend"
 echo "frontend=$frontend"
