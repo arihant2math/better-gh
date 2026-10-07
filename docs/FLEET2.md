@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:38: #309 READY (r3 APPROVE on fb5b052; then only main merge 83dd0d6; CI result green, run 37607005921; #315 connections are cost-enforced). Forwarded; reviewer archived. ESCALATED #335 (pre-existing anonymous parser stack overflow that kills the whole process, suggested P-Critical) to the orchestrator; no fixer unless it approves one.
 10:36: the lead pinged. #316 fixed at ee81558 (prefix kept, auto_merge tests updated, main merged) → adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm. #322 fixed at 510558b (bot-enqueued groups no longer bypass the loop guard) → adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ (stacked; merges after #316 and a retarget).
 10:30: #334 (#85 item 5, Docker from the release artifact) → reviewer session_01DGtHPF8b4fgLuBRs9d6FTH (default model; glibc/arch/embed-web risks). #309 r3 APPROVE on fb5b052, but the PR is dirty against main: the author is doing a pure main merge, and the reviewer will check the delta plus cost enforcement on #315's connections. The reviewer is filing a pre-existing pest parser stack-overflow issue.
 10:14 cycle: #334 opened (#85 item 5); waiting for its worker's green ping. #316 is at fe81e13 and #322 at 62166c3; no ping from the lead yet. The #319 author is live, working on agent/241-sync-lock. #309 r3 is still running.
