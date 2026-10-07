@@ -20,7 +20,9 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   `first`/`last` (`MISSING_PAGINATION_BOUNDARIES`), at most 100
   (`EXCESSIVE_PAGINATION`); a query may request at most 500,000 nodes
   (product of page sizes down each connection path, summed;
-  `MAX_NODE_LIMIT_EXCEEDED`). The cost is the number of connection fetches
+  `MAX_NODE_LIMIT_EXCEEDED`). Fragments are expanded at any depth, and
+  `nodes(ids:)` takes at most 100 ids (`ARGUMENT_LIMIT`), each multiplying
+  what is selected below it. The cost is the number of connection fetches
   / 100, rounded, at least 1: the middleware counts 1 point, the extension
   charges the rest (`ratelimit::charge`) and refreshes the `X-RateLimit-*`
   headers; with enforcement on, an over-budget query is rejected with

@@ -166,3 +166,109 @@ async fn cost_is_enforced_against_the_budget() {
         format!("API rate limit exceeded for user ID {}.", perf.id)
     );
 }
+
+/// `F0 -> F1 -> ... -> F{depth-1}`, the last one selecting `inner` on an
+/// `IssueConnection`.
+fn fragment_chain(depth: usize, inner: &str) -> String {
+    let mut out = String::new();
+    for i in 0..depth {
+        let body = if i + 1 == depth {
+            inner.to_string()
+        } else {
+            format!("...F{}", i + 1)
+        };
+        out.push_str(&format!("fragment F{i} on IssueConnection {{ {body} }}\n"));
+    }
+    out
+}
+
+#[tokio::test]
+async fn deep_fragments_do_not_hide_connections() {
+    let app = bgh_server::test_app().await;
+    let perf = app.create_user("perf").await;
+    app.create_repo(&perf, "r1").await;
+
+    // `nodes` ten fragments down still needs pagination boundaries.
+    let q = format!(
+        r#"{{ repository(owner: "perf", name: "r1") {{ issues {{ ...F0 }} }} }}
+           {}"#,
+        fragment_chain(10, "nodes { number }")
+    );
+    let body = gql(&app, &perf, &q, json!({})).await;
+    assert_eq!(
+        body["errors"][0]["type"], "MISSING_PAGINATION_BOUNDARIES",
+        "{body:#}"
+    );
+
+    // Aliases x deep fragments are counted in full: 60 * (100 + 100 * 100)
+    // = 606,000 nodes.
+    let blocks: String = (0..60)
+        .map(|i| format!(r#"a{i}: repository(owner: "perf", name: "r1") {{ issues(first: 100) {{ ...F0 }} }} "#))
+        .collect();
+    let q = format!(
+        "{{ {blocks} }}\n{}",
+        fragment_chain(10, "nodes { participants(first: 100) { nodes { login } } }")
+    );
+    let body = gql(&app, &perf, &q, json!({})).await;
+    assert_eq!(
+        body["errors"][0]["type"], "MAX_NODE_LIMIT_EXCEEDED",
+        "{body:#}"
+    );
+    assert_eq!(
+        body["errors"][0]["message"],
+        "This query requests up to 606,000 possible nodes which exceeds the maximum limit of 500,000."
+    );
+}
+
+#[tokio::test]
+async fn nodes_ids_are_capped_and_multiplied() {
+    let app = bgh_server::test_app().await;
+    let perf = app.create_user("perf").await;
+    app.create_repo(&perf, "r1").await;
+    let d = data(
+        &app,
+        &perf,
+        r#"{ repository(owner: "perf", name: "r1") { id } }"#,
+        json!({}),
+    )
+    .await;
+    let id = d["repository"]["id"].as_str().unwrap().to_string();
+    let q = r#"query($ids: [ID!]!) { nodes(ids: $ids) { ... on Repository {
+        issues(first: 100) { nodes { participants(first: 100) { nodes { login } } } } } } }"#;
+
+    // More than 100 ids is rejected, inline or through a variable.
+    let ids = vec![id.clone(); 101];
+    let body = gql(&app, &perf, q, json!({ "ids": ids })).await;
+    let e = &body["errors"][0];
+    assert_eq!(e["type"], "ARGUMENT_LIMIT", "{body:#}");
+    assert_eq!(
+        e["message"],
+        "You may only request up to 100 ids on the `nodes` field, but 101 were given."
+    );
+    let inline = format!(
+        "{{ nodes(ids: {}) {{ id }} }}",
+        serde_json::to_string(&vec![id.clone(); 101]).unwrap()
+    );
+    let body = gql(&app, &perf, &inline, json!({})).await;
+    assert_eq!(body["errors"][0]["type"], "ARGUMENT_LIMIT", "{body:#}");
+
+    // Each id multiplies what is below it: 100 + 100 * (100 + 100 * 100)
+    // = 1,010,100 nodes.
+    let body = gql(&app, &perf, q, json!({ "ids": vec![id.clone(); 100] })).await;
+    assert_eq!(
+        body["errors"][0]["type"], "MAX_NODE_LIMIT_EXCEEDED",
+        "{body:#}"
+    );
+    assert_eq!(
+        body["errors"][0]["message"],
+        "This query requests up to 1,010,100 possible nodes which exceeds the maximum limit of 500,000."
+    );
+
+    // Within the limit it runs and reports the multiplied count:
+    // 2 + 2 * (100 + 100 * 5) = 1,202 nodes.
+    let q = r#"query($ids: [ID!]!) { nodes(ids: $ids) { ... on Repository {
+        issues(first: 100) { nodes { participants(first: 5) { totalCount } } } } }
+        rateLimit { nodeCount } }"#;
+    let d = data(&app, &perf, q, json!({ "ids": [id.clone(), id] })).await;
+    assert_eq!(d["rateLimit"]["nodeCount"], 1_202);
+}

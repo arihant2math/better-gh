@@ -13,7 +13,7 @@
 //!   root middleware already counted 1 point against the `graphql` budget;
 //!   the rest is charged here, and `rateLimit { cost nodeCount }` reports it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use async_graphql::extensions::{
@@ -22,7 +22,7 @@ use async_graphql::extensions::{
 };
 use async_graphql::parser::types::OperationType;
 use async_graphql::parser::types::{
-    DocumentOperations, ExecutableDocument, OperationDefinition, Selection, SelectionSet,
+    DocumentOperations, ExecutableDocument, Field, OperationDefinition, Selection, SelectionSet,
 };
 use async_graphql::registry::{MetaTypeName, Registry};
 use async_graphql::{
@@ -36,6 +36,9 @@ use crate::ctx::Gql;
 
 /// Most nodes one query may request.
 pub const MAX_NODES: i64 = 500_000;
+
+/// Most ids one `nodes(ids:)` lookup may take.
+pub const MAX_IDS: i64 = 100;
 
 /// Selections the walk visits at most (fragment expansion can blow up a
 /// small document).
@@ -303,14 +306,7 @@ impl Walker<'_> {
                         let name = field.name.node.as_str();
                         let mut page = None;
                         for arg in ["first", "last"] {
-                            // The argument with variables substituted.
-                            let value = field.get_argument(arg).and_then(|v| {
-                                v.node
-                                    .clone()
-                                    .into_const_with(|n| self.vars.get(&n).cloned().ok_or(()))
-                                    .ok()
-                            });
-                            let Some(Value::Number(n)) = value else {
+                            let Some(Value::Number(n)) = self.argument(field, arg) else {
                                 continue;
                             };
                             let Some(n) = n.as_i64() else { continue };
@@ -329,7 +325,9 @@ impl Walker<'_> {
                         }
                         let page = match page {
                             Some(n) => n,
-                            None if self.selects_items(&field.selection_set.node, 0) => {
+                            None if self
+                                .selects_items(&field.selection_set.node, &mut HashSet::new()) =>
+                            {
                                 return Err(error(
                                     "MISSING_PAGINATION_BOUNDARIES",
                                     format!(
@@ -340,11 +338,38 @@ impl Walker<'_> {
                                     self.path.clone(),
                                 ));
                             }
-                            // `totalCount` / `pageInfo` only.
+                            // `totalCount` / `pageInfo` only: no nodes; anything else
+                            // below still counts at the parent's multiplier.
                             None => 0,
                         };
                         self.cost.requests = self.cost.requests.saturating_add(mult);
-                        child_mult = mult.saturating_mul(page);
+                        if page > 0 {
+                            child_mult = mult.saturating_mul(page);
+                            self.cost.nodes = self.cost.nodes.saturating_add(child_mult);
+                        }
+                    } else if let Some(arg) = def.args.get("ids")
+                        && arg.ty.starts_with('[')
+                    {
+                        // `nodes(ids:)`: one lookup per id, like a page of that size.
+                        let n = match self.argument(field, "ids") {
+                            Some(Value::List(ids)) => ids.len() as i64,
+                            Some(Value::Null) | None => 0,
+                            Some(_) => 1,
+                        };
+                        if n > MAX_IDS {
+                            return Err(error(
+                                "ARGUMENT_LIMIT",
+                                format!(
+                                    "You may only request up to {MAX_IDS} ids on the `{}` \
+                                     field, but {n} were given.",
+                                    field.name.node
+                                ),
+                                Some(f.pos),
+                                self.path.clone(),
+                            ));
+                        }
+                        self.cost.requests = self.cost.requests.saturating_add(mult);
+                        child_mult = mult.saturating_mul(n);
                         self.cost.nodes = self.cost.nodes.saturating_add(child_mult);
                     }
                     let r = self.walk(&field.selection_set.node, child, child_mult);
@@ -371,20 +396,33 @@ impl Walker<'_> {
         Ok(())
     }
 
-    /// Whether a connection's selection reads `nodes` or `edges`.
-    fn selects_items(&self, set: &SelectionSet, depth: usize) -> bool {
-        depth < 8
-            && set.items.iter().any(|item| match &item.node {
-                Selection::Field(f) => matches!(f.node.name.node.as_str(), "nodes" | "edges"),
-                Selection::InlineFragment(f) => {
-                    self.selects_items(&f.node.selection_set.node, depth + 1)
-                }
-                Selection::FragmentSpread(s) => self
-                    .doc
-                    .fragments
-                    .get(&s.node.fragment_name.node)
-                    .is_some_and(|d| self.selects_items(&d.node.selection_set.node, depth + 1)),
-            })
+    /// Whether a connection's selection reads `nodes` or `edges`, through
+    /// fragments at any depth (each fragment is expanded once; validation
+    /// already rejected cycles).
+    fn selects_items(&self, set: &SelectionSet, seen: &mut HashSet<Name>) -> bool {
+        set.items.iter().any(|item| match &item.node {
+            Selection::Field(f) => matches!(f.node.name.node.as_str(), "nodes" | "edges"),
+            Selection::InlineFragment(f) => self.selects_items(&f.node.selection_set.node, seen),
+            Selection::FragmentSpread(s) => {
+                let name = &s.node.fragment_name.node;
+                seen.insert(name.clone())
+                    && self
+                        .doc
+                        .fragments
+                        .get(name)
+                        .is_some_and(|d| self.selects_items(&d.node.selection_set.node, seen))
+            }
+        })
+    }
+
+    /// The value of argument `arg` of `field`, with variables substituted.
+    fn argument(&self, field: &Field, arg: &str) -> Option<Value> {
+        field.get_argument(arg).and_then(|v| {
+            v.node
+                .clone()
+                .into_const_with(|n| self.vars.get(&n).cloned().ok_or(()))
+                .ok()
+        })
     }
 }
 

@@ -103,6 +103,17 @@ impl Query {
 
     /// Lookup nodes by a list of IDs.
     pub async fn nodes(&self, ctx: &Context<'_>, ids: Vec<ID>) -> GResult<Vec<Option<Node>>> {
+        // Also enforced by the cost walk; kept here so no path skips it.
+        if ids.len() as i64 > crate::cost::MAX_IDS {
+            return Err(crate::ctx::err(
+                "ARGUMENT_LIMIT",
+                format!(
+                    "You may only request up to {} ids on the `nodes` field, but {} were given.",
+                    crate::cost::MAX_IDS,
+                    ids.len()
+                ),
+            ));
+        }
         let mut out = Vec::with_capacity(ids.len());
         for id in &ids {
             out.push(resolve_node(ctx, id).await?);
