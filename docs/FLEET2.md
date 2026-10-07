@@ -41,6 +41,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:59: #334 READY (APPROVE on 017af62; then only main merge 1650fea; CI result green, run 37609399608; Ubuntu-to-trixie ABI checked locally). Forwarded with caveats (watch the first main Docker run; toolchain is now stable). Reviewer archived. #85 item 6 starts after the merge.
 10:48 cycle: no new reports. Asked the #319 author for status. Handoff refreshed (context 265k).
 10:38: orchestrator MERGED #309 (2a45a56); author archived. #335 APPROVED as a wind-down exception and labelled P-Critical + C-Claimed. Fixer session_016RmaisDuJy7A79V54oB1mV, branch agent/335-graphql-parse-depth; start an adversarial security reviewer when it pings.
 10:38: #309 READY (r3 APPROVE on fb5b052; then only main merge 83dd0d6; CI result green, run 37607005921; #315 connections are cost-enforced). Forwarded; reviewer archived. ESCALATED #335 (pre-existing anonymous parser stack overflow that kills the whole process, suggested P-Critical) to the orchestrator; no fixer unless it approves one.
