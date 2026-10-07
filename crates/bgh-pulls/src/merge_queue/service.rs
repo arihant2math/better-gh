@@ -27,6 +27,12 @@
 //!   first failing entry ("checks failed") or, after the deadline, the
 //!   first entry without green checks ("timed out") is ejected and the
 //!   group rebuilt.
+//! * **Merging** locks the PRs and entries, re-checks them (still queued
+//!   in this group, open, head unchanged) and moves the base while the
+//!   locks are held, cutting the prefix before the first entry that left.
+//!   A run that moved the base but failed before recording the merge is
+//!   finished by the next run: a base tip containing a prefix's last
+//!   commit marks that prefix merged without moving the base again.
 //!
 //! Kicked by enqueue / dequeue ([`super::schedule`]), check and status
 //! changes on a group commit (`jobs::checks_changed`), pushes to a queued
@@ -187,8 +193,25 @@ async fn step(state: &AppState, repo_id: i64, base: &str) -> ApiResult<bool> {
 
     if let Some(g) = live_group(&state.db, repo_id, base).await? {
         let entries = group_entries(&state.db, &g.entry_ids).await?;
-        let Some(config) = config.filter(|_| tip.as_deref() == Some(g.base_sha.as_str())) else {
-            // The base moved under the group (or lost its queue).
+        if tip.as_deref() != Some(g.base_sha.as_str()) {
+            // A run that moved the base but failed before recording the
+            // merge (crash, DB error): the base now contains a prefix of
+            // the group. Finish that merge instead of rebuilding on top.
+            if let Some(tip) = tip.as_deref()
+                && let Some(k) = landed(&store, repo_id, &entries, tip).await?
+            {
+                let landing = Landing::Landed {
+                    tip: tip.to_string(),
+                };
+                merge_prefix(state, &repo, &g, &entries, k, landing).await?;
+                return Ok(true);
+            }
+            // The base moved under the group.
+            destroy(state, repo_id, &g, &entries, "invalidated", None).await?;
+            return Ok(true);
+        }
+        let Some(config) = config else {
+            // The branch lost its queue.
             destroy(state, repo_id, &g, &entries, "invalidated", None).await?;
             return Ok(true);
         };
@@ -223,7 +246,7 @@ async fn step(state: &AppState, repo_id: i64, base: &str) -> ApiResult<bool> {
         };
         let k = green.min(config.max_entries_to_merge.max(1) as usize);
         if k > 0 {
-            merge_prefix(state, &repo, &g, &entries, k).await?;
+            merge_prefix(state, &repo, &g, &entries, k, Landing::Swap).await?;
             return Ok(true);
         }
         if let Some(i) = outcomes.iter().position(|o| *o == CheckOutcome::Failure) {
@@ -378,39 +401,145 @@ async fn remove_refs(state: &AppState, repo_id: i64, entries: &[GroupEntry]) {
     }
 }
 
+/// How [`merge_prefix`] lands its prefix on the base branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Landing {
+    /// Fast-forward the base (compare-and-swap from the group's base).
+    Swap,
+    /// An earlier run already moved the base (now at `tip`) to the
+    /// prefix's last commit but failed before recording it: only the
+    /// bookkeeping is left.
+    Landed { tip: String },
+}
+
+/// Length of the longest prefix of `entries` whose last commit is already
+/// in `tip`'s history (see [`Landing::Landed`]).
+async fn landed(
+    store: &bgh_git::RepoStore,
+    repo_id: i64,
+    entries: &[GroupEntry],
+    tip: &str,
+) -> ApiResult<Option<usize>> {
+    for (i, e) in entries.iter().enumerate().rev() {
+        let Some(sha) = e.group_sha.as_deref() else {
+            continue;
+        };
+        if sha == tip || bgh_git::merge::is_ancestor(store, repo_id, sha, tip).await? {
+            return Ok(Some(i + 1));
+        }
+    }
+    Ok(None)
+}
+
+/// A group entry and its PR as locked by [`merge_prefix`].
+#[derive(Debug, sqlx::FromRow)]
+struct LockedEntry {
+    id: i64,
+    state: String,
+    group_id: Option<i64>,
+    head_sha: String,
+    pull_open: bool,
+    pull_merged: bool,
+    pull_head_sha: String,
+}
+
+/// Why locked entry `l` can't be merged by group `g` (`None` = it can).
+fn unmergeable_reason(g: &Group, l: &LockedEntry) -> Option<&'static str> {
+    if !l.pull_open || l.pull_merged {
+        Some("closed")
+    } else if l.state != "awaiting_checks" || l.group_id != Some(g.id) {
+        Some("dequeued")
+    } else if l.pull_head_sha != l.head_sha {
+        Some("head changed")
+    } else {
+        None
+    }
+}
+
 /// Merge `entries[..k]` (green): fast-forward the base to the last one's
 /// commit and mark their PRs merged. The rest of the group stays live in
 /// a new group based on the new tip.
+///
+/// Race-free against dequeue / close / head pushes: the PRs and entries
+/// are locked (PRs first, like those writers) and re-checked before the
+/// base moves, and the base moves while the locks are held; the prefix is
+/// cut before the first entry that can no longer merge. Idempotent: a run
+/// that failed after moving the base is finished by [`Landing::Landed`].
 async fn merge_prefix(
     state: &AppState,
     repo: &db::Repository,
     g: &Group,
     entries: &[GroupEntry],
     k: usize,
+    landing: Landing,
 ) -> ApiResult<()> {
+    let store = git::store(state);
+    let base_ref = format!("refs/heads/{}", g.base_ref);
+    let mut tx = Tx::begin(state).await?;
+    let pull_ids: Vec<i64> = entries[..k].iter().map(|e| e.pull_id).collect();
+    let entry_ids: Vec<i64> = entries[..k].iter().map(|e| e.id).collect();
+    sqlx::query(
+        "SELECT i.id FROM issues i JOIN pull_requests p ON p.issue_id = i.id
+          WHERE i.id = ANY($1) ORDER BY i.id FOR UPDATE OF i, p",
+    )
+    .bind(&pull_ids)
+    .execute(&mut *tx)
+    .await?;
+    let locked: Vec<LockedEntry> = sqlx::query_as(
+        "SELECT e.id, e.state, e.group_id, e.head_sha, i.state = 'open' AS pull_open,
+                p.merged AS pull_merged, p.head_sha AS pull_head_sha
+           FROM merge_queue_entries e
+           JOIN issues i ON i.id = e.pull_id
+           JOIN pull_requests p ON p.issue_id = e.pull_id
+          WHERE e.id = ANY($1) ORDER BY e.id FOR UPDATE OF e",
+    )
+    .bind(&entry_ids)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let k = if landing == Landing::Swap {
+        // Cut the prefix before the first entry that can no longer merge.
+        let reason = |e: &GroupEntry| match locked.iter().find(|l| l.id == e.id) {
+            Some(l) => unmergeable_reason(g, l),
+            None => Some("dequeued"),
+        };
+        let cut = entries[..k]
+            .iter()
+            .position(|e| reason(e).is_some())
+            .unwrap_or(k);
+        if cut == 0 {
+            let why = reason(&entries[0]).unwrap_or("dequeued");
+            tx.rollback().await?;
+            return destroy(state, repo.id, g, entries, "dequeued", Some((0, why))).await;
+        }
+        let new_tip = entries[cut - 1].group_sha.as_deref().unwrap_or_default();
+        // Moved while the rows are locked: nothing can leave the queue
+        // between the check above and the commit below.
+        if !bgh_git::merge::compare_and_swap_ref(&store, repo.id, &base_ref, new_tip, &g.base_sha)
+            .await?
+        {
+            tx.rollback().await?;
+            return destroy(state, repo.id, g, entries, "invalidated", None).await;
+        }
+        cut
+    } else {
+        k
+    };
     let (prefix, rest) = entries.split_at(k);
     let last = &prefix[k - 1];
     let new_tip = last.group_sha.clone().unwrap_or_default();
-    let store = git::store(state);
-    let base_ref = format!("refs/heads/{}", g.base_ref);
-    if !bgh_git::merge::compare_and_swap_ref(&store, repo.id, &base_ref, &new_tip, &g.base_sha)
-        .await?
-    {
-        return destroy(state, repo.id, g, entries, "invalidated", None).await;
-    }
 
     let scope = bgh_core::sync::repo_scope(repo.id);
-    let mut tx = Tx::begin(state).await?;
     let mut prev = g.base_sha.clone();
     let mut merged: Vec<(i64, i64)> = Vec::new();
     for e in prefix {
         let sha = e.group_sha.clone().unwrap_or_default();
         let actor = e.enqueuer_id.unwrap_or(repo.owner_id);
-        sqlx::query(
+        let done = sqlx::query(
             "UPDATE pull_requests SET merged = true, merged_at = now(), merged_by_id = $2,
                     merge_commit_sha = $3, base_sha = $4, mergeable = NULL, rebaseable = NULL,
                     mergeable_state = 'unknown', auto_merge = NULL
-              WHERE issue_id = $1",
+              WHERE issue_id = $1 AND NOT merged",
         )
         .bind(e.pull_id)
         .bind(actor)
@@ -418,6 +547,21 @@ async fn merge_prefix(
         .bind(&prev)
         .execute(&mut *tx)
         .await?;
+        // Swap: every entry was checked above. Landed: the commits are in
+        // the base already, so the PR is merged even if it left the queue
+        // after the base moved.
+        sqlx::query(
+            "UPDATE merge_queue_entries SET state = 'merged', updated_at = now()
+              WHERE id = $1 AND (state = 'awaiting_checks' OR ($2 AND state <> 'merged'))",
+        )
+        .bind(e.id)
+        .bind(landing != Landing::Swap)
+        .execute(&mut *tx)
+        .await?;
+        prev = sha.clone();
+        if done.rows_affected() == 0 {
+            continue; // already merged
+        }
         let closed = sqlx::query(
             "UPDATE issues SET state = 'closed', state_reason = NULL, closed_at = now(),
                     closed_by_id = $2, updated_at = now() WHERE id = $1 AND state = 'open'",
@@ -439,12 +583,6 @@ async fn merge_prefix(
             .bind(e.pull_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query(
-            "UPDATE merge_queue_entries SET state = 'merged', updated_at = now() WHERE id = $1",
-        )
-        .bind(e.id)
-        .execute(&mut *tx)
-        .await?;
         for event in ["merged", "closed"] {
             timeline::record(
                 &mut tx,
@@ -468,7 +606,6 @@ async fn merge_prefix(
             tx.emit(ev);
         }
         merged.push((e.pull_id, actor));
-        prev = sha;
     }
     let prefix_ids: Vec<i64> = prefix.iter().map(|e| e.id).collect();
     sqlx::query(
@@ -483,7 +620,8 @@ async fn merge_prefix(
     .execute(&mut *tx)
     .await?;
     if !rest.is_empty() {
-        // The remaining refs are stacked on the merged prefix: still valid.
+        // The remaining refs are stacked on the merged prefix: still valid
+        // (entries that left the queue are dropped by the next step).
         let rest_ids: Vec<i64> = rest.iter().map(|e| e.id).collect();
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO merge_groups (repo_id, base_ref, base_sha, head_ref, head_sha, state,
@@ -501,44 +639,70 @@ async fn merge_prefix(
         .fetch_one(&mut *tx)
         .await?;
         sqlx::query(
-            "UPDATE merge_queue_entries SET group_id = $2, updated_at = now() WHERE id = ANY($1)",
+            "UPDATE merge_queue_entries SET group_id = $2, updated_at = now()
+              WHERE id = ANY($1) AND group_id = $3",
         )
         .bind(&rest_ids)
         .bind(id)
+        .bind(g.id)
         .execute(&mut *tx)
         .await?;
         for e in rest {
             pull_json::sync_pull(&mut tx, &scope, e.pull_id).await?;
         }
     }
+    let pusher_id = merged.last().map(|(_, a)| *a);
+    // pushed_at / size / Event::Push (re-syncs PRs targeting the base),
+    // atomically with the merge. A landed base that moved on since then
+    // was processed by that later push.
+    let pushed_now = match &landing {
+        Landing::Swap => true,
+        Landing::Landed { tip } => *tip == new_tip,
+    };
+    if pushed_now {
+        tx.enqueue(&bgh_repos::jobs::PostReceive {
+            repo_id: repo.id,
+            pusher_id,
+            updates: vec![RefUpdate {
+                old: g.base_sha.clone(),
+                new: new_tip,
+                refname: base_ref,
+            }],
+        })
+        .await?;
+    }
     tx.commit().await?;
     remove_refs(state, repo.id, prefix).await;
 
-    let mut updates = vec![RefUpdate {
-        old: g.base_sha.clone(),
-        new: new_tip,
-        refname: base_ref,
-    }];
+    // Head branch deletion is git work outside the transaction (best
+    // effort, with its own post-receive).
     if repo.delete_branch_on_merge {
+        let mut updates = Vec::new();
         for (pull_id, actor) in &merged {
-            if let Some(pull) = model::find_by_id(&state.db, *pull_id).await?
-                && let Some(u) =
-                    crate::merge::delete_head_branch(state, repo, &pull, *actor).await?
-            {
-                updates.push(u);
+            let deleted = match model::find_by_id(&state.db, *pull_id).await? {
+                Some(pull) => crate::merge::delete_head_branch(state, repo, &pull, *actor).await,
+                None => Ok(None),
+            };
+            match deleted {
+                Ok(Some(u)) => updates.push(u),
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(?err, repo_id = repo.id, pull_id, "merge queue: head branch");
+                }
             }
         }
+        if !updates.is_empty() {
+            bgh_core::jobs::enqueue_job(
+                &state.db,
+                &bgh_repos::jobs::PostReceive {
+                    repo_id: repo.id,
+                    pusher_id,
+                    updates,
+                },
+            )
+            .await?;
+        }
     }
-    // pushed_at / size / Event::Push (re-syncs PRs targeting the base).
-    bgh_core::jobs::enqueue_job(
-        &state.db,
-        &bgh_repos::jobs::PostReceive {
-            repo_id: repo.id,
-            pusher_id: merged.last().map(|(_, a)| *a),
-            updates,
-        },
-    )
-    .await?;
     Ok(())
 }
 
@@ -630,6 +794,21 @@ async fn build(
         .await?;
         pull_json::sync_pull(&mut tx, &scope, e.pull_id).await?;
     }
+    // Entries dequeued while building leave the batch, with every entry
+    // built on top of them (their commits contain its changes).
+    let built_ids: Vec<i64> = built.iter().map(|(e, _, _)| e.id).collect();
+    let still_queued: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM merge_queue_entries WHERE id = ANY($1) AND state = 'queued'
+          ORDER BY id FOR UPDATE",
+    )
+    .bind(&built_ids)
+    .fetch_all(&mut *tx)
+    .await?;
+    let cut = built
+        .iter()
+        .position(|(e, _, _)| !still_queued.contains(&e.id))
+        .unwrap_or(built.len());
+    let stale = built.split_off(cut);
     if let Some((_, head_ref, head_sha)) = built.last() {
         let ids: Vec<i64> = built.iter().map(|(e, _, _)| e.id).collect();
         let group_id: i64 = sqlx::query_scalar(
@@ -674,7 +853,17 @@ async fn build(
         }
     }
     tx.commit().await?;
-    Ok(!built.is_empty() || !conflicts.is_empty())
+    for (_, r, _) in &stale {
+        if let Err(err) = bgh_git::merge::remove_ref(&store, repo.id, r).await {
+            tracing::warn!(
+                ?err,
+                repo_id = repo.id,
+                r,
+                "merge queue: deleting group ref"
+            );
+        }
+    }
+    Ok(!built.is_empty() || !conflicts.is_empty() || !stale.is_empty())
 }
 
 /// Commit of entry `e` (its queued head) on `prev` per `method`; `None`

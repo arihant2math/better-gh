@@ -10,6 +10,11 @@ use crate::common::*;
 
 /// Ruleset on main: merge queue (`merge_method`) + required check `ci`.
 async fn queue_with_ci(app: &TestApp, user: &TestUser, merge_method: &str) {
+    queue_with(app, user, json!({"merge_method": merge_method})).await;
+}
+
+/// Ruleset on main: merge queue (`params`) + required check `ci`.
+async fn queue_with(app: &TestApp, user: &TestUser, params: Value) {
     app.post("/api/v3/repos/alice/demo/rulesets")
         .auth(user)
         .json(&json!({
@@ -18,7 +23,7 @@ async fn queue_with_ci(app: &TestApp, user: &TestUser, merge_method: &str) {
             "enforcement": "active",
             "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
             "rules": [
-                {"type": "merge_queue", "parameters": {"merge_method": merge_method}},
+                {"type": "merge_queue", "parameters": params},
                 {"type": "required_status_checks", "parameters": {
                     "required_status_checks": [{"context": "ci"}],
                     "strict_required_status_checks_policy": false}},
@@ -497,4 +502,171 @@ async fn dequeue_from_group_rebuilds() {
     let destroyed = outbox(app, "merge_group_destroyed").await;
     assert!(destroyed.iter().all(|d| d["reason"] == "dequeued"));
     assert_eq!(destroyed.len(), 2);
+}
+
+/// Queue `n` new PRs (`a`, `b`, ...) and build their group; returns the
+/// PR numbers and their group commits.
+async fn queued_group(app: &TestApp, f: &Fixture, n: usize) -> (Vec<i64>, Vec<String>) {
+    let mut prs = Vec::new();
+    for name in ["a", "b", "c"].into_iter().take(n) {
+        prs.push(pr_with(app, f, name, &[]).await);
+    }
+    settle(app).await;
+    for &p in &prs {
+        enqueue(app, &f.alice, p).await;
+    }
+    settle(app).await;
+    let mut shas = Vec::new();
+    for &p in &prs {
+        let r = entry(app, f.repo_id, p).await;
+        assert_eq!(r.state, "awaiting_checks", "{r:?}");
+        shas.push(r.group_sha.unwrap());
+    }
+    (prs, shas)
+}
+
+#[tokio::test]
+async fn headgreen_merges_up_to_last_green_entry() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with(
+        app,
+        &f.alice,
+        json!({"merge_method": "MERGE", "grouping_strategy": "HEADGREEN"}),
+    )
+    .await;
+    let base = tip(app, f.repo_id, "main").await.unwrap();
+    let (prs, shas) = queued_group(app, &f, 3).await;
+    // Only the head is green: a pending, b failing.
+    status(app, &f.alice, &shas[0], "pending").await;
+    status(app, &f.alice, &shas[1], "failure").await;
+    status(app, &f.alice, &shas[2], "success").await;
+    settle(app).await;
+
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[2]);
+    for (n, sha) in prs.iter().zip(&shas) {
+        let pr = pull(app, *n).await;
+        assert_eq!(pr["merged"], true, "{pr}");
+        assert_eq!(pr["merge_commit_sha"], json!(sha));
+        assert_eq!(entry(app, f.repo_id, *n).await.state, "merged");
+    }
+    let hist = history(app, f.repo_id).await;
+    assert_eq!(
+        &hist[..4],
+        [shas[2].clone(), shas[1].clone(), shas[0].clone(), base]
+    );
+}
+
+#[tokio::test]
+async fn dequeue_after_green_is_not_merged() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let (prs, shas) = queued_group(app, &f, 2).await;
+    for sha in &shas {
+        status(app, &f.alice, sha, "success").await;
+    }
+    // Dequeued after its checks passed, before the queue runs.
+    app.delete(&format!("/_bgh/repos/alice/demo/pulls/{}/queue", prs[1]))
+        .auth(&f.alice)
+        .send()
+        .await
+        .assert_status(204);
+    settle(app).await;
+
+    assert_eq!(pull(app, prs[0]).await["merged"], true);
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    let pb = pull(app, prs[1]).await;
+    assert_eq!(pb["merged"], false);
+    assert_eq!(pb["state"], "open");
+    assert_eq!(entry(app, f.repo_id, prs[1]).await.state, "removed");
+}
+
+#[tokio::test]
+async fn head_change_after_green_is_not_merged() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let base = tip(app, f.repo_id, "main").await.unwrap();
+    let (prs, shas) = queued_group(app, &f, 2).await;
+    for sha in &shas {
+        status(app, &f.alice, sha, "success").await;
+    }
+    // b's head moves (the entry is still in the group) right before the
+    // queue runs: its green group commit is for a stale head.
+    sqlx::query("UPDATE pull_requests SET head_sha = $2 WHERE issue_id = $1")
+        .bind(pull_id(app, f.repo_id, prs[1]).await)
+        .bind(&base)
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+    settle(app).await;
+
+    assert_eq!(pull(app, prs[0]).await["merged"], true);
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    let pb = pull(app, prs[1]).await;
+    assert_eq!(pb["merged"], false);
+    assert_eq!(pb["state"], "open");
+    let rb = entry(app, f.repo_id, prs[1]).await;
+    assert_eq!(rb.state, "unmergeable");
+    assert_eq!(rb.failure_reason.as_deref(), Some("head changed"));
+}
+
+#[tokio::test]
+async fn run_after_crash_finishes_landed_merge() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let base = tip(app, f.repo_id, "main").await.unwrap();
+    let (prs, shas) = queued_group(app, &f, 2).await;
+    let group = entry(app, f.repo_id, prs[0]).await.group_id;
+
+    // A run moved main to a's group commit, then failed before recording
+    // the merge.
+    bgh_git::merge::force_ref(&store(app), f.repo_id, "refs/heads/main", &shas[0])
+        .await
+        .unwrap();
+    bgh_pulls::merge_queue::service::run(&app.state, f.repo_id, "main")
+        .await
+        .unwrap();
+    settle(app).await;
+
+    let pa = pull(app, prs[0]).await;
+    assert_eq!(pa["merged"], true, "{pa}");
+    assert_eq!(pa["merge_commit_sha"], json!(shas[0]));
+    assert_eq!(entry(app, f.repo_id, prs[0]).await.state, "merged");
+    // No new commits on main; b stays in the queue at the same commit.
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    assert_eq!(
+        &history(app, f.repo_id).await[..2],
+        [shas[0].clone(), base.clone()]
+    );
+    let rb = entry(app, f.repo_id, prs[1]).await;
+    assert_eq!(rb.state, "awaiting_checks");
+    assert_eq!(rb.group_sha.as_ref(), Some(&shas[1]));
+    assert_ne!(rb.group_id, group);
+    let destroyed = outbox(app, "merge_group_destroyed").await;
+    assert!(
+        destroyed.iter().all(|d| d["reason"] == "merged"),
+        "{destroyed:?}"
+    );
+    assert!(!outbox(app, "push").await.is_empty());
+
+    // Same for the rest of the group.
+    bgh_git::merge::force_ref(&store(app), f.repo_id, "refs/heads/main", &shas[1])
+        .await
+        .unwrap();
+    bgh_pulls::merge_queue::service::run(&app.state, f.repo_id, "main")
+        .await
+        .unwrap();
+    settle(app).await;
+    let pb = pull(app, prs[1]).await;
+    assert_eq!(pb["merged"], true, "{pb}");
+    assert_eq!(pb["merge_commit_sha"], json!(shas[1]));
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[1]);
+    assert_eq!(
+        &history(app, f.repo_id).await[..3],
+        [shas[1].clone(), shas[0].clone(), base]
+    );
+    assert_eq!(outbox(app, "pull_request_merged").await.len(), 2);
 }
