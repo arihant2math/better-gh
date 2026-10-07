@@ -1,6 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect } from 'react';
-import { refresh, useResource } from '../../api/cache';
+import { usePollWhileVisible, useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { getMergeQueue } from '../../api/endpoints';
 import type { MergeQueue, MergeQueueEntry } from '../../api/types';
@@ -12,11 +11,10 @@ import { Box, EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CheckCircleIcon, ClockIcon, DotFillIcon, GitMergeQueueIcon, XCircleFillIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
-import { entryState, etaLabel, positionLabel, type QueueTone } from './mergeQueue';
+import { entryState, etaLabel, positionLabel, QUEUE_POLL_MS, type QueueTone } from './mergeQueue';
 import styles from './MergeQueue.module.css';
 
 const METHOD: Record<string, string> = { MERGE: 'merge commit', SQUASH: 'squash', REBASE: 'rebase' };
-const POLL_MS = 15_000;
 
 /** `/:owner/:repo/queue/*`: the merge queue of one branch (P39). */
 export default observer(function MergeQueuePage() {
@@ -30,14 +28,7 @@ export default observer(function MergeQueuePage() {
   const { data, error, loading } = useResource<MergeQueue>(key, load, { ttlMs: 10_000 });
 
   // The queue moves on its own: revalidate while the page is open.
-  useEffect(() => {
-    if (!key) return;
-    const t = setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh(key, load, { ttlMs: 10_000 }).catch(() => undefined);
-    }, POLL_MS);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by `key`
-  }, [key]);
+  usePollWhileVisible(key, load, QUEUE_POLL_MS, { ttlMs: 10_000 });
 
   const notFound = error instanceof ApiError && error.status === 404;
   return (
@@ -72,8 +63,8 @@ export default observer(function MergeQueuePage() {
           ))}
         </Box>
       ) : !data ? (
-        <EmptyState icon={AlertIcon} title={notFound ? 'Branch not found' : 'Couldn’t load the merge queue'}>
-          {notFound ? `There is no branch named ${branch} in ${owner}/${name}.` : error instanceof Error ? error.message : null}
+        <EmptyState icon={AlertIcon} title={notFound ? 'Repository not found' : 'Couldn’t load the merge queue'}>
+          {notFound ? `${owner}/${name} doesn’t exist or you don’t have access to it.` : error instanceof Error ? error.message : null}
         </EmptyState>
       ) : !data.enabled ? (
         <EmptyState icon={GitMergeQueueIcon} title="Merge queue is not enabled for this branch">

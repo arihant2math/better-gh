@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
-import { mutate, refresh, useResource } from '../../api/cache';
+import { mutate, refresh, usePollWhileVisible, useResource } from '../../api/cache';
 import { dequeuePull, enqueuePull, getPullRequirements } from '../../api/endpoints';
 import type { MergeQueueEntry, PullRequirements } from '../../api/types';
 import { Link } from '../../router';
@@ -9,7 +9,7 @@ import type { Issue } from '../../sync/models';
 import { setDraft } from '../../sync/mutations';
 import { deleteHeadBranch, disableAutoMerge, enableAutoMerge, mergePullWith, updateBranch, type MergeMethod } from '../../sync/pullMutations';
 import { checkRunsFor, checksSummary, latestReviews, runRollup, statusesFor, statusRollup } from '../../sync/pullSelectors';
-import { canWrite } from '../../sync/selectors';
+import { canWrite, eventsForIssue } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
 import { AlertIcon, CheckCircleIcon, CheckIcon, ChevronDownIcon, DotFillIcon, GitBranchIcon, GitMergeIcon, GitMergeQueueIcon, GitPullRequestClosedIcon, GitPullRequestIcon, TrashIcon, XCircleFillIcon } from '../../ui/icons';
 import { Input, Textarea } from '../../ui/Input';
@@ -18,7 +18,7 @@ import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
 import styles from '../issues/IssueView.module.css';
 import { RollupIcon } from './ChecksIcon';
-import { entryState, etaLabel, positionLabel, queuePath } from './mergeQueue';
+import { entryState, etaLabel, lastQueueEventId, positionLabel, QUEUE_POLL_MS, queuePath } from './mergeQueue';
 import pr from './PullDetail.module.css';
 
 const METHOD_LABEL: Record<MergeMethod, string> = {
@@ -48,12 +48,16 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
   const open = issue.state === 'open' && !issue.merged;
   const viewer = store().viewerId;
   const isAuthor = issue.authorId === viewer;
+  // Enqueue / dequeue / ejection (by anyone) land as synced timeline events: fold the newest into the key.
+  const queueEvent = open ? lastQueueEventId(eventsForIssue(issue.id)) : 0;
   const key =
     repo && open
-      ? `requirements:${repo.owner}/${repo.name}#${issue.number}@${issue.headSha}:${issue.baseSha}:${issue.mergeableState}:${issue.reviewDecision}:${issue.checks}:${issue.draft}`
+      ? `requirements:${repo.owner}/${repo.name}#${issue.number}@${issue.headSha}:${issue.baseSha}:${issue.mergeableState}:${issue.reviewDecision}:${issue.checks}:${issue.draft}:q${queueEvent}`
       : null;
   const loadReq = () => getPullRequirements(repo!.owner, repo!.name, issue.number);
   const { data: req } = useResource<PullRequirements>(key, loadReq, { ttlMs: 10_000 });
+  // A queued entry moves on its own (checks finish, PRs ahead merge): poll like the queue page.
+  usePollWhileVisible(req?.merge_queue?.entry ? key : null, loadReq, QUEUE_POLL_MS, { ttlMs: 10_000 });
   const [queueBusy, setQueueBusy] = useState(false);
   const [method, setMethod] = useState<MergeMethod | null>(() => savedMethod(issue.repoId));
   const [menu, setMenu] = useState(false);

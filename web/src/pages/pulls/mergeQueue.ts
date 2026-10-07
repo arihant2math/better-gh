@@ -1,5 +1,16 @@
 /** Display helpers shared by the merge box and the merge queue page (P39). */
 import type { MergeQueueEntry } from '../../api/types';
+import type { IssueEvent } from '../../sync/models';
+
+/** How often a visible merge queue (page or merge box) is revalidated. */
+export const QUEUE_POLL_MS = 15_000;
+
+/** Id of the newest `added_to_merge_queue` / `removed_from_merge_queue` event (0 if none). */
+export function lastQueueEventId(events: readonly Pick<IssueEvent, 'id' | 'event'>[]): number {
+  let last = 0;
+  for (const e of events) if ((e.event === 'added_to_merge_queue' || e.event === 'removed_from_merge_queue') && e.id > last) last = e.id;
+  return last;
+}
 
 /** `/:owner/:repo/queue/:branch` (branch keeps its slashes). */
 export function queuePath(owner: string, repo: string, branch: string): string {
