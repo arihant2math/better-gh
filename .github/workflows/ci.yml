@@ -378,10 +378,17 @@ jobs:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 2: the migration check diffs the PR merge commit
+      # against its first parent (the base branch tip).
       - uses: actions/checkout@v5
-      - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/ci-changes.sh scripts/lib/*.sh
+        with:
+          fetch-depth: 2
+      - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/check-migrations.sh scripts/ci-changes.sh scripts/lib/*.sh
       # One integration-test binary per crate (tests/it/main.rs).
       - run: ./scripts/check-test-layout.sh
+      # New migrations sort after main's; merged ones are immutable (#220).
+      - if: github.event_name == 'pull_request'
+        run: ./scripts/check-migrations.sh HEAD^1
       - run: python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/lib/tls-proxy.py
 
   # Single required check. Gated jobs that weren't needed are "skipped" (ok);

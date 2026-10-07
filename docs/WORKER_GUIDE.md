@@ -14,7 +14,9 @@ integration branch `claude/sleepy-cray-9jj0t3`.
 3. Every hour or so, and before finishing: `git fetch origin
    claude/sleepy-cray-9jj0t3 && git merge origin/claude/sleepy-cray-9jj0t3`
    and resolve conflicts (merge commits, no rebase/force-push).
-4. Stay inside your crate(s) and your migration range. Edits to shared
+4. Stay inside your crate(s); number new migrations per ARCHITECTURE.md
+   "Migrations" (highest on main + 10, checked by
+   `scripts/check-migrations.sh`). Edits to shared
    files (`bgh-core`, workspace `Cargo.toml`, `events.rs`, `models::api`)
    must be **small and additive** (new variants/fns/structs, new deps) so
    parallel merges stay trivial. Never rename or remove shared items.

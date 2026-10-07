@@ -409,8 +409,10 @@ by object SHA is immutable: cache it and send
 
 ## 12. Migrations
 
-* File: `migrations/NNNN_description.sql` in your crate's range (see
-  ARCHITECTURE.md; core used 0001-0006). Never edit a merged migration.
+* File: `migrations/NNNN_description.sql` numbered **highest on `main` +
+  10**, greater than every migration on `main` (ARCHITECTURE.md
+  "Migrations"; `scripts/check-migrations.sh` checks it). Never edit a
+  merged migration.
 * `BIGINT GENERATED ALWAYS AS IDENTITY` ids, `TIMESTAMPTZ NOT NULL DEFAULT
   now()`, FKs with explicit `ON DELETE` (`CASCADE` for owned rows, `SET
   NULL` for authors → rendered as ghost), `CHECK` constraints for enums,
@@ -420,8 +422,8 @@ by object SHA is immutable: cache it and send
 * Migrations are embedded at compile time (`bgh_core::db::MIGRATOR`); the
   test template DB re-migrates automatically. Core tables already cover
   issues, PRs, reviews, statuses/checks, webhooks, notifications,
-  releases, keys, teams — extend them with `ALTER TABLE` in your range
-  rather than creating parallel tables.
+  releases, keys, teams — extend them with `ALTER TABLE` in a new
+  migration rather than creating parallel tables.
 
 ## 13. Integration tests
 

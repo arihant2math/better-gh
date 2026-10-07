@@ -357,24 +357,23 @@ and octokit-style raw requests.
 
 ### Migrations
 
-`migrations/NNNN_description.sql`. Ranges by area to avoid collisions
-between parallel work:
+`migrations/NNNN_description.sql` (lowercase `[a-z0-9_]` description).
+sqlx applies every unapplied version regardless of order, so a migration
+numbered below one already applied would run *after* it on upgraded
+installs but *before* it on fresh ones. Hence one rule:
 
-| range     | area      | range     | area       |
-|-----------|-----------|-----------|------------|
-| 0001-0099 | core      | 0700-0799 | search     |
-| 0100-0199 | accounts  | 0800-0899 | admin      |
-| 0200-0299 | repos     | 0900-0999 | sync       |
-| 0300-0399 | issues    | 1000-1099 | actions    |
-| 0400-0499 | pulls     | 1100-1199 | projects   |
-| 0500-0599 | notify    | 1200-1299 | wiki/misc  |
-| 0600-0699 | releases  | 1300+     | later      |
+* A new migration takes **the highest version on `main` + 10** at PR time
+  and must be greater than every migration on `main`. If `main` gains a
+  higher one before your PR merges, renumber your own (unmerged) file.
+* Never edit, rename or delete a migration that has been merged to `main`;
+  add a new one.
 
-Phase 4 packages use `{1200+100·n}`–`{1299+100·n}` for package Pn
-(`docs/PHASE4_PLAN.md` §0), e.g. 2100–2199 for P9 (event outbox).
-
-Never edit a migration that has been merged to the integration branch;
-add a new one.
+`scripts/check-migrations.sh [BASE]` (default `origin/main`) enforces
+both, plus well-formed, unique names; CI runs it on every pull request
+against the base tip. Versions compare numerically, so they may grow past
+four digits. The old per-area ranges (0100 accounts, 0200 repos, …) and the
+Phase 4 `{1200+100·n}` package ranges (`docs/PHASE4_PLAN.md` §0) are
+historical: they explain existing numbers but reserve nothing.
 
 ## Sync engine (local-first)
 
