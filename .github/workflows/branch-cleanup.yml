@@ -1,0 +1,89 @@
+name: Branch cleanup
+
+# Deletes a PR's head branch once it is merged, and periodically deletes any
+# branch that is fully merged into the default branch. Agents can't delete
+# branches they didn't create, so cleanup lives here.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      min_age_hours:
+        description: Only delete merged branches whose tip is older than this
+        default: "48"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Branches some open PR still uses as its head or its base (stacked
+      # PRs) are never deleted.
+      - name: Collect branches used by open PRs
+        shell: bash  # -eo pipefail: a failing gh must fail the job, never yield an empty list
+        run: |
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 \
+            --json headRefName,baseRefName \
+            --jq '.[] | .headRefName, .baseRefName' | sort -u > "$RUNNER_TEMP/in-use"
+          echo "branches used by open PRs: $(wc -l < "$RUNNER_TEMP/in-use")"
+
+      - name: Delete the merged PR's head branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          [ -n "$DEFAULT_BRANCH" ] || { echo "no default branch"; exit 1; }
+          if [ "$HEAD_REF" = "$DEFAULT_BRANCH" ]; then
+            echo "not deleting the default branch"; exit 0
+          fi
+          if grep -qxF "$HEAD_REF" "$RUNNER_TEMP/in-use"; then
+            echo "skip: $HEAD_REF is still used by an open PR"; exit 0
+          fi
+          git push origin --delete "$HEAD_REF" || echo "already gone: $HEAD_REF"
+
+      - name: Delete branches fully merged into the default branch
+        if: github.event_name != 'pull_request'
+        env:
+          MIN_AGE_HOURS: ${{ inputs.min_age_hours || '48' }}
+        shell: bash
+        run: |
+          [ -n "$DEFAULT_BRANCH" ] || { echo "no default branch"; exit 1; }
+          case "$MIN_AGE_HOURS" in
+            ''|*[!0-9]*) echo "min_age_hours must be a non-negative integer, got '$MIN_AGE_HOURS'"; exit 1 ;;
+          esac
+          git fetch --prune origin
+          default_tip=$(git rev-parse "origin/$DEFAULT_BRANCH")
+          cutoff=$(( $(date +%s) - MIN_AGE_HOURS * 3600 ))
+          for b in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
+            if [ "$b" = HEAD ] || [ "$b" = "$DEFAULT_BRANCH" ]; then continue; fi
+            if grep -qxF "$b" "$RUNNER_TEMP/in-use"; then
+              echo "skip (used by an open PR): $b"; continue
+            fi
+            tip=$(git rev-parse "origin/$b")
+            # Age is the tip's commit date, not when the branch was created or last pushed.
+            # A branch at the default branch's tip was probably just created
+            # and has no commits yet; recent tips may be work in progress.
+            if [ "$tip" = "$default_tip" ]; then
+              echo "skip (at $DEFAULT_BRANCH tip): $b"; continue
+            fi
+            if [ "$(git log -1 --format=%ct "$tip")" -gt "$cutoff" ]; then
+              echo "skip (tip < ${MIN_AGE_HOURS}h old): $b"; continue
+            fi
+            if git merge-base --is-ancestor "$tip" "origin/$DEFAULT_BRANCH"; then
+              echo "deleting $b"
+              git push origin --delete "$b" || echo "failed: $b"
+            fi
+          done
