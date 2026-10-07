@@ -289,8 +289,11 @@ jobs:
           push: false
           load: true
           tags: bgh:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # One named scope; only main writes it (mode=max keeps the cooked
+          # deps layer), PRs restore it read-only so they don't add
+          # multi-GB entries that evict main's cargo caches (#85).
+          cache-from: type=gha,scope=bgh
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=bgh,mode=max' || '' }}
       - name: Smoke-test the image
         run: |
           docker run --rm bgh:ci --version
