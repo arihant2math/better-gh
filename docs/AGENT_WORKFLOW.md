@@ -31,7 +31,15 @@ observable agents, state in files rather than in memory.
   context or comments.
 * **CI is the shared gate.** The PR's CI runs the full workspace suite;
   reviewers rely on green CI for that and run targeted tests plus the
-  viewport matrix themselves, rather than rebuilding everything.
+  viewport matrix themselves, rather than rebuilding everything. CI is
+  path-filtered on PRs (`scripts/ci-changes.sh`): `web/`-only diffs skip the
+  Rust jobs, backend-only diffs (`crates/`, `migrations/`, `testdata/`,
+  `scripts/`, `Cargo.*`) skip the web job, Docker runs for either plus
+  `Dockerfile`/`.dockerignore`, and docs-only diffs skip all three. Skipped
+  jobs count as passing. `web/src/ui/markdown/emoji.json` is a backend input
+  too (`bgh-core` embeds it); workflow changes, pushes to `main` and manual
+  runs build everything. Update the script, the `ci.yml` header and this
+  paragraph together when adding a cross-tree dependency.
 * **Design questions go to GitHub Discussions** (category "Ideas", or an
   issue labelled `T-Docs` + `S-Blocked` if Discussions are unavailable),
   linked from the issue, so decisions are recorded once.

@@ -1,3 +1,22 @@
+# Path-filtered CI. The `changes` job classifies a pull request's diff
+# (scripts/ci-changes.sh) and the heavy jobs carry a job-level `if:`, so a
+# job that isn't needed reports "skipped", which satisfies required checks.
+# Pushes to main and workflow_dispatch always run everything.
+#
+# Dependency rules (keep in sync with scripts/ci-changes.sh and
+# docs/AGENT_WORKFLOW.md "CI is the shared gate"):
+# * backend (rust-lint, rust-test, compat): crates/, migrations/, testdata/,
+#   scripts/, Cargo.*, rust toolchain/fmt/clippy config, and
+#   web/src/ui/markdown/emoji.json (bgh-core include_str!s it).
+# * frontend (web): web/. The web job needs nothing from the backend (vitest
+#   runs without a server; the viewport matrix is run by hand, not in CI).
+# * docker: Dockerfile, .dockerignore, or any backend/frontend change (the
+#   image builds the server with `embed-web`, i.e. it embeds web/dist).
+# * release-binary embeds web/dist too; it only runs off pull requests, where
+#   everything runs.
+# * .github/workflows/ and scripts/ci-changes.sh run everything. Docs-only
+#   changes run only the cheap `scripts` job.
+
 name: CI
 
 on:
@@ -19,8 +38,34 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      # On pull_request the checkout is the test merge commit, whose first
+      # parent is the base branch tip: HEAD^1..HEAD is exactly the PR's diff.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ] && git rev-parse -q --verify HEAD^1 >/dev/null; then
+            git diff --name-only HEAD^1 HEAD | tee /dev/stderr | ./scripts/ci-changes.sh >> "$GITHUB_OUTPUT"
+          else
+            ./scripts/ci-changes.sh --all >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
   rust-lint:
     name: Rust (fmt, clippy)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +80,8 @@ jobs:
 
   rust-test:
     name: Rust (tests)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -68,6 +115,8 @@ jobs:
 
   web:
     name: Web (typecheck, lint, test, build)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -117,6 +166,8 @@ jobs:
 
   docker:
     name: Docker image
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/lib/*.sh
+      - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/ci-changes.sh scripts/lib/*.sh
       # One integration-test binary per crate (tests/it/main.rs).
       - run: ./scripts/check-test-layout.sh
       - run: python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/lib/tls-proxy.py
@@ -149,6 +200,8 @@ jobs:
   # to gate on it).
   compat:
     name: gh compatibility (report)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
