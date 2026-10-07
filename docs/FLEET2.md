@@ -20,7 +20,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-7 merged (#152, #311, #320, #330, #334, #338, #339). Item 8 is in progress. Then item 9 (optional sccache; may be skipped with a justification comment, ask the orchestrator), then item 10 (Node 24 action majors: checkout@v5, upload/download-artifact@v5, setup-node@v5), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). Close #85 at the end with a summary including honest timings.
+Items 1-7 merged (#152, #311, #320, #330, #334, #338, #339). Item 8 merged (#342, 78ad59b); item 9 skipped; item 10 in progress (session_01MW9yKCwbj3mqsNp3NBx4gt). Was: item 9 (optional sccache; may be skipped with a justification comment, ask the orchestrator), then item 10 (Node 24 action majors: checkout@v5, upload/download-artifact@v5, setup-node@v5), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). Close #85 at the end with a summary including honest timings.
 Timings so far (main): baseline ~29 min PR wall-clock at issue time. Main run 37611075666 (after item 5, warm) ~12m: tests job 11m42s (--no-run 3m27s, test run 6m55s), release binary 7m, Docker from prebuilt 38s. Item 6: main cold run 2755a5c ~18m15s (cache rename); gain is ~344 MB less cache, not wall-clock. Item 7 (nextest): test run step 6m55s → 4m52s (−30%) incl. doctests; 1320 tests, matching main. Get warm-main numbers from the post-#339 runs for the final summary.
 
 ### Follow-ups for the final #46 status
@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+13:30: orchestrator MERGED #342 (78ad59b). Item 8 worker session_01NqrbwhRpn4xG962rpZyFTA asked to post the first WARM main run numbers on #85 (vs 37622619342), then report; archive it after. Item 9 SKIPPED per orchestrator (comment on #85 issuecomment-6038985159). Item 10 (Node 24 action majors) worker session_01MW9yKCwbj3mqsNp3NBx4gt, branch agent/85-node24-actions; it ticks 8 and marks 9 skipped. When its PR pings: default-model adversarial CI reviewer (artifact names/paths between jobs, v5 breaking changes, all workflows).
 13:29: #342 READY (r2 APPROVE on 20f9a00; then only main merge b4c9c4e = head; CI result green run 37626407568; verified). Forwarded; r2 reviewer archived. Asked orchestrator: item 9 (sccache) worker or skip-with-justification → item 10.
 13:22: orchestrator MERGED #316 (021164a). r4 reviewer already archived. Lead told: retarget #322 to main, merge main (take main for #316 files), confirm diff is #322-only, report head+CI → then a sonnet delta reviewer (merge resolution didn't change #316 code) → forward.
 13:22: #316 READY (r4 APPROVE on 9ab35b6; then only main merge 868c817 = head; CI result green run 37625489127; clean; verified). Forwarded; r4 reviewer archived. #322 approved on 0664135, still based on #316's branch: after #316 merges, lead retargets to main + merges main → re-verify CI → forward. Main 6a0a8c0 rerun (attempt 2) GREEN → triggers test is a flake: filed #343 (no fixer; add to #46 list). Told orchestrator.
