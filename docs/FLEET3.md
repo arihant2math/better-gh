@@ -6,7 +6,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
 | B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | #347 | session_01GEmZUgjbnwUbTKfnPxQGiP (sonnet) |
-| C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 @0818833 | session_01Wq8po5orpNjMv7JimRHWxd (opus) |
+| C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -14,7 +14,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 ## Queues
 A: #286 items in order → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (rel. #237) → web of the same backlog.
-C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → other open flaky-test issues.
+C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open flaky-test issues.
 
 ## Log
 - 2026-10-07 21:07Z: created workers A, B, C.
@@ -30,3 +30,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:45Z: C reported #150 green @0818833; opus reviewer spawned.
 - 21:50Z: B opened #347 (Fixes #256), green; sonnet reviewer spawned.
 - 21:51Z: #150 APPROVE @0818833 (=head), CI+release green; S-Approved set; sent to coordinator. Nit: pin ubuntu-24.04.
+- 21:52Z: #150 approved; owner to merge. C worker+reviewer archived. Fresh C worker for #341. ubuntu-24.04 nit noted on #46.
