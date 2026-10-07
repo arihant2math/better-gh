@@ -12,7 +12,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
 
 ## Queues
-A: #286 items in order → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
+A: #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (done: #258, #256, #203-part; now #213; next #257, #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test issues.
 
@@ -41,3 +41,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 22:31Z: #352 Rust tests running; C in gate for #341; hourly status sent.
 - 22:32Z: #352 green; opus reviewer spawned. #348 filed for rules-engine move (from #226).
 - 22:41Z: B opened #354 (Fixes #213), green; sonnet reviewer spawned.
+- 22:46Z: #352 APPROVE @3bf255b (=head), CI green; sent to coordinator. Doc nits (BACKEND_PATTERNS:35, ARCHITECTURE:115) → fold into #353. Next A item: #181 (+#158).
