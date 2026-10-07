@@ -145,6 +145,16 @@ async function loadMatch(m: Match): Promise<void> {
   await Promise.all([loadModule(m.route.load), m.route.layout && loadModule(m.route.layout)]);
 }
 
+/**
+ * Start loading the route chunks (no data prefetch) for `pathname`. Called at
+ * boot so the current page's code downloads in parallel with the store
+ * hydrate/bootstrap instead of after it (#269).
+ */
+export function preloadRoute(pathname: string): Promise<void> {
+  const m = matchPath(pathname);
+  return m ? loadMatch(m).catch(() => undefined) : Promise.resolve();
+}
+
 const prefetched = new Map<string, number>();
 
 /** Preload the chunk and data for `href` (called on hover/focus of links). */
