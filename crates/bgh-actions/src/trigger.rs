@@ -70,7 +70,8 @@ pub enum TriggerKind {
     },
     /// Events evaluated against the default branch's workflows (`label`,
     /// `milestone`, `watch`, `fork`, `public`, `gollum`, `check_run`,
-    /// `check_suite`, `workflow_run`), see [`crate::trigger_events`].
+    /// `check_suite`, `workflow_run`; `deployment*` and `merge_group` at
+    /// their own commit), see [`crate::trigger_events`].
     Repo {
         event: String,
         action: Option<String>,
@@ -210,6 +211,14 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
 /// Dispatch events start workflows even when a job token sent them, and so
 /// does `workflow_run` (GitHub bounds those chains by depth instead, see
 /// `trigger_events::MAX_WORKFLOW_RUN_DEPTH`).
+///
+/// `merge_group` is deliberately not listed: the queue sets the event's
+/// actor to the entry's enqueuer (also when it rebuilds the group), so a
+/// human-enqueued group passes the guard as usual, while a group whose
+/// entry github-actions[bot] enqueued (e.g. auto-merge toggled with a job
+/// token) starts no workflows. Exempting it would let a `merge_group` job
+/// dequeue and re-enqueue its own PR forever (new group -> new run). Such
+/// a group is decided by other checks/statuses, or times out.
 fn is_dispatch(event: &Event) -> bool {
     matches!(
         event.name(),
@@ -421,7 +430,7 @@ pub(crate) async fn user(state: &AppState, id: Option<i64>) -> anyhow::Result<Op
 }
 
 /// Commit payload object (`head_commit`) for push events.
-async fn commit_payload(state: &AppState, repo_id: i64, sha: &str) -> Value {
+pub(crate) async fn commit_payload(state: &AppState, repo_id: i64, sha: &str) -> Value {
     let sha_owned = sha.to_string();
     let c = store(state)
         .read(repo_id, move |r| r.commit(&sha_owned))
