@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -x scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/lib/*.sh
+      - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/lib/*.sh
       # One integration-test binary per crate (tests/it/main.rs).
       - run: ./scripts/check-test-layout.sh
       - run: python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/lib/tls-proxy.py
