@@ -9,7 +9,7 @@ Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_m
 ### Open PRs at 09:05
 - #312 (#138 SECURITY, author session_015sx68MN6HVyxjdYqcwsVzi): S-Approved at 0a50a76, but the r2 security reviewer session_01SDYuLDtD7CYXTmwcLjoC1n was told to review only the FINAL head, after (a) a main merge following #323 (they overlap) and (b) the author covers the #329 org-invite repro (test, plus Fixes #329 if fully covered). Wait for its report and re-verify the SHA.
 - #309 (#275 SECURITY GraphQL cost, author session_01PoLx449ncVkpwQdp2GCpmb): adversarial r2 reviewer session_01Mgvsx8ABCZHLFeU4x5VMdn running on d1cafe7.
-- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e): r2 adversarial reviewer session_01BksntuTuL5AA8MnQapLdVo on 055aef2.
+- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e): r2 REQUEST_CHANGES at 055aef2. Round-1 items are fixed, but a flaky test (a dequeue destroys the whole group, and the rebuild SHA is timestamp-dependent) leaves CI red. The lead is fixing it by keeping the valid prefix. Start a fresh r3 reviewer when it pings.
 - #315 (#290 merge-queue GraphQL, same lead): r2 reviewer session_015Gpod5tzkrNKtz7Mi2ZxHc on 9a96154. It was told about the #322 loop (GITHUB_TOKEN auto-merge toggle).
 - #322 (#289 merge_group trigger, same lead, STACKED on #316): REQUEST_CHANGES at f53ad4f. Unbounded run loop: with #315, a job token's disable/enable auto-merge re-enqueues and the merge_group exemption re-runs. The lead must fix it (exempt only non-bot enqueuers, or cap runs) and add a test. Fresh adversarial reviewer when it pings. Merges only after #316, then retargets to main.
 - #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES. A failed recheck pass drops targets, delaying revokes; plus a minor first-subscriber race. Fresh adversarial reviewer when it pings.
@@ -44,6 +44,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:06: #316 r2 REQUEST_CHANGES (flaky dequeue_after_green test, CI red). Lead told; reviewer archived.
 09:05 cycle: #330 (#85 item 4) → reviewer session_01W5eCBySQcV5TFQ6miPpKZ3. #312 is S-Approved at 0a50a76 but held for the final head (#323 overlap + #329). Handoff refreshed.
 09:03: orchestrator MERGED #323 (74bd452) and archived its author. The #312 author was told to cover the #329 org-invite repro (with a test; Fixes #329 if fully covered). #312 must merge main again after #323 (they overlap).
 09:03: #323 READY (security APPROVE on d1584fb; head 2c0dac6 is a main merge; CI result green). Forwarded; reviewer archived. #329 (P-Critical) flagged to the orchestrator; the #312 r2 reviewer will report the overlap. No worker under wind-down unless directed. #315 lead confirmed fixes at 9a96154 (r2 running).
