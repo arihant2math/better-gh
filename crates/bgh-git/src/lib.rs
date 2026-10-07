@@ -11,6 +11,11 @@
 //! This crate knows nothing about users or permissions; `bgh-repos` mounts
 //! the HTTP routes and performs authorization.
 
+// The receive-pack hooks use FIFOs, `access(2)` and Unix permission bits
+// (POSIX, so Linux and macOS both work); there is no Windows port.
+#[cfg(not(unix))]
+compile_error!("bgh-git requires a Unix platform (Linux or macOS)");
+
 pub mod archive;
 pub mod blame;
 pub mod cache;
