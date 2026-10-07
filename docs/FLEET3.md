@@ -6,7 +6,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
 | B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | — | — |
-| C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 (main merged, CI running) | — |
+| C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 (all checks green; awaiting worker report) | — |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -26,3 +26,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:32Z: #345 APPROVE @8b35d0e (=head), CI green; sent to coordinator. Nits for follow-up: CLAUDE.md:5 wording; up-to-date-branch requirement.
 - 21:33Z: #345 merged as 4a70e36; reviewer archived; A → #226; up-to-date-branch note posted on #46.
 - 21:34Z: adopted per-PR session rule (relayed from user via session_01GowVR33vpQmuohFCEKVRUk); lanes told to stop after current item.
+- 21:41Z: #150 all checks green on 0818833 (incl. macOS release build); worker reports at 21:44. A on #226, B on #256.
