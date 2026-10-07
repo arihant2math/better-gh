@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | #357 @3269e31 | session_0178thbBf64HrWoBpDo3PABv (opus) |
-| B frontend | session_01EsNrXGtzEUjZUszNCWrCqH | #247 | — | — |
+| B frontend | session_01EsNrXGtzEUjZUszNCWrCqH | #247 | #361 | session_01LDm4TfYU6MKLSsRwhvtfR3 (opus) |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | #355 @85a51fb | session_017xe6qtipj6znd78dRydAF2 (opus) |
 
 ## Rule (user, 21:33Z)
@@ -53,3 +53,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 23:41Z: #359 APPROVE @df9fd83 (=head), CI green; sent to coordinator. Filed #360 (mock simpleUser shape).
 - 23:41Z: #359 merged as 1aacf33; B worker+reviewer archived; fresh B worker for #247. Queued #360, #358 in lane B after #280.
 - 23:47Z: A opened #357 (Fixes #181), green; opus reviewer spawned.
+- 23:55Z: B opened #361 (Fixes #247), green; opus reviewer spawned (CSRF).
