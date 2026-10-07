@@ -1,26 +1,30 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: session_01QGXdRWZfRg2trNCsoy9GjA (foreman4, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
+Foreman: foreman5 (see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## HANDOFF (10:48, foreman4 session_01QGXdRWZfRg2trNCsoy9GjA; context ~265k)
-Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow: the reviewer APPROVEs, sets S-Approved, updates the branch, then send_messages the foreman. The foreman verifies on GitHub that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, approved SHA, head SHA and CI to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
+## HANDOFF (11:17, foreman4 session_01QGXdRWZfRg2trNCsoy9GjA → foreman5; context ~310k)
+Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow: the reviewer APPROVEs, sets S-Approved, updates the branch, then send_messages the foreman. The foreman verifies on GitHub (get_reviews, get_commits, get_check_runs) that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, approved SHA, head SHA and CI to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
 
-### Merged since 09:22
-#332 (#331 flake), #315, #330 (#85 item 4), #312 (#138 + #329), #309 (#275; doubling-fragment DoS).
+### Merged by the orchestrator since 09:22
+#332 (#331 flake), #315, #330 (#85 item 4), #312 (#138 + #329), #309 (#275), #334 (#85 item 5, 223214d).
+
+### FIRST ACTIONS for foreman5
+1. Main CI run 37611075666 (223214d, the #334 merge) is the first real run of the Docker image built from the Ubuntu release binary on trixie. Check that the `Release binary (embed-web)` and `Docker image` jobs succeeded. If either failed, getting a fix PR up is TOP priority (the orchestrator asked); tell the orchestrator. If both are green, record the main timings for the #85 summary.
+2. Notify the live sessions of the new foreman id: the lead session_01Kq9BfEn4RqooYm2643Ah6e, the #319 author session_012T1MW3bqBQbQPoRqYR2z4G, the #335 fixer session_016RmaisDuJy7A79V54oB1mV, the #85 item 6 worker session_01BWCia78jFZoT3pq4UrYS1p, and reviewers session_015ZZYEzuEpDGu6JFJwPhAFm (#316), session_01XfyDSac15aDmCTGBNKoYtZ (#322) and session_016gCE3Ek4pZduRqtPbeHwTQ (#337).
 
 ### Open
+- #337 (#335 P-Critical GraphQL pre-parse depth/length guard, fixer session_016RmaisDuJy7A79V54oB1mV): adversarial security reviewer session_016gCE3Ek4pZduRqtPbeHwTQ on 378faba. The orchestrator wants it forwarded as soon as it's approved and green.
 - #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e; do NOT archive the lead): adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm on ee81558.
-- #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 and the lead's retarget to main; the reviewer also says whether #328 can close.
-- #334 (#85 item 5: Docker image from the release artifact, worker session_01DZesWKyJC6cAcCoaSNf8F2): reviewer session_01DGtHPF8b4fgLuBRs9d6FTH on 017af62.
-- #335 fix (P-Critical anonymous GraphQL parser stack overflow; orchestrator-approved exception): fixer session_016RmaisDuJy7A79V54oB1mV, branch agent/335-graphql-parse-depth. When it pings, start an ADVERSARIAL security reviewer (default model), then forward.
-- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48; park it (status comment) if the author is blocked.
+- #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 merges and the lead retargets it to main (then re-verify CI on the retargeted head). The reviewer says whether #328 can close.
+- #338 (#85 item 6, share clippy/test deps, worker session_01BWCia78jFZoT3pq4UrYS1p): opened at 236372d, no ping yet. When it pings, start a reviewer (default model; check that cross-platform clippy coverage, `CI result` and PR wall-clock are kept).
+- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48, no reply yet. If it's blocked or silent, park it: a PR status comment saying what remains (the failed recheck pass drops coalesced targets; the first-subscriber race) and the session archived via the orchestrator.
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-5 merged (#152, #311, #320, #330, #334); item 6 worker session_01BWCia78jFZoT3pq4UrYS1p. Watch main run 37611075666 (Docker prebuilt path). Then items 6-10 in issue order, one worker at a time ("Part of #85", T-Perf A-Ops). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
+Items 1-5 merged (#152, #311, #320, #330, #334); item 6 is #338. Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
 
 ### Follow-ups filed today (backlog, unassigned)
-#321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed).
+#321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed in #337).
 
 ### Finish
 When every open PR is merged or parked: post the final #46 status (merged today; open/parked; backlog #324 #325 #326 #333 #241/#245 if unfinished, #280 #286 #237, and other follow-ups), report to the orchestrator, archive the remaining sessions, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
@@ -41,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:17: #337 (#335 fix) → adversarial security reviewer session_016gCE3Ek4pZduRqtPbeHwTQ. #338 (#85 item 6) opened, no ping yet. Foreman4 context is ~310k, so it hands off to foreman5.
 11:00: orchestrator MERGED #334 (223214d); #85 item 5 done; worker archived. WATCH main CI run 37611075666 (223214d): release-binary and Docker on the Ubuntu-to-trixie prebuilt path; a failure means a top-priority fix PR. #85 item 6 worker session_01BWCia78jFZoT3pq4UrYS1p, branch agent/85-share-clippy-test-deps.
 10:59: #334 READY (APPROVE on 017af62; then only main merge 1650fea; CI result green, run 37609399608; Ubuntu-to-trixie ABI checked locally). Forwarded with caveats (watch the first main Docker run; toolchain is now stable). Reviewer archived. #85 item 6 starts after the merge.
 10:48 cycle: no new reports. Asked the #319 author for status. Handoff refreshed (context 265k).
