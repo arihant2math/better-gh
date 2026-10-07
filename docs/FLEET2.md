@@ -44,6 +44,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:09: #312 r2: the org-invite takeover and OIDC link from #329 are already fixed at 0a50a76. Still open: invite-mode sign-up admits an unverified account, and the allow-list checks only the claimed address (the @-parser mismatch is out of scope). Label back to NeedsReview; the reviewer stays subscribed and will re-review the final head after the author's #323 merge and #329 pushes.
 09:06: #316 r2 REQUEST_CHANGES (flaky dequeue_after_green test, CI red). Lead told; reviewer archived.
 09:05 cycle: #330 (#85 item 4) → reviewer session_01W5eCBySQcV5TFQ6miPpKZ3. #312 is S-Approved at 0a50a76 but held for the final head (#323 overlap + #329). Handoff refreshed.
 09:03: orchestrator MERGED #323 (74bd452) and archived its author. The #312 author was told to cover the #329 org-invite repro (with a test; Fixes #329 if fully covered). #312 must merge main again after #323 (they overlap).
