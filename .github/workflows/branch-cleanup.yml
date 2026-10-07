@@ -9,6 +9,10 @@ on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
+    inputs:
+      min_age_hours:
+        description: Only delete merged branches whose tip is older than this
+        default: "48"
 
 permissions:
   contents: write
@@ -32,10 +36,11 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+          MIN_AGE_HOURS: ${{ inputs.min_age_hours || '48' }}
         run: |
           git fetch --prune origin
           main_tip=$(git rev-parse origin/main)
-          cutoff=$(( $(date +%s) - 48*3600 ))
+          cutoff=$(( $(date +%s) - MIN_AGE_HOURS*3600 ))
           # Branches with an open PR are never touched.
           open_heads=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 \
             --json headRefName --jq '.[].headRefName')
@@ -51,7 +56,7 @@ jobs:
               echo "skip (at main tip): $b"; continue
             fi
             if [ "$(git log -1 --format=%ct "$tip")" -gt "$cutoff" ]; then
-              echo "skip (tip < 48h old): $b"; continue
+              echo "skip (tip < ${MIN_AGE_HOURS}h old): $b"; continue
             fi
             if git merge-base --is-ancestor "$tip" origin/main; then
               echo "deleting $b"
