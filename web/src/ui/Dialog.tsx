@@ -1,4 +1,5 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { shortcuts } from '../shortcuts/manager';
 import { IconButton, cx } from './Button';
 import { XIcon } from './icons';
 import styles from './Overlay.module.css';
@@ -33,6 +34,11 @@ export function Dialog({
   useEffect(() => {
     onCloseRef.current = onClose;
   });
+  // Layout effect: runs before the passive effects in which the dialog's own
+  // `useShortcuts` register, so those land on the new layer.
+  useLayoutEffect(() => {
+    if (open) return shortcuts.pushLayer();
+  }, [open]);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -41,9 +47,9 @@ export function Dialog({
       el.showModal();
       // showModal() focuses the first focusable element (React's `autoFocus`
       // ran before and is overridden): prefer an element marked
-      // `data-autofocus`; if it landed on our close button, focus the dialog
-      // itself instead (no stray focus ring).
-      const auto = el.querySelector<HTMLElement>('[data-autofocus]');
+      // `data-autofocus`, then the first form field; if it landed on our
+      // close button, focus the dialog itself instead (no stray focus ring).
+      const auto = el.querySelector<HTMLElement>('[data-autofocus]') ?? firstField(el);
       if (auto) auto.focus();
       else if ((document.activeElement as HTMLElement | null)?.dataset.dialogClose !== undefined) el.focus();
       return () => {
@@ -80,4 +86,12 @@ export function Dialog({
       )}
     </dialog>
   );
+}
+
+const FIELD =
+  'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly]), select:not([disabled])';
+
+function firstField(root: HTMLElement): HTMLElement | null {
+  for (const f of root.querySelectorAll<HTMLElement>(FIELD)) if (f.getClientRects().length) return f;
+  return null;
 }

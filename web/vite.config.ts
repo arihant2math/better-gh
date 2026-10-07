@@ -53,7 +53,7 @@ export default defineConfig({
   preview: { port: 4173, proxy },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
     setupFiles: ['src/test/setup.ts'],
   },
 });

@@ -16,10 +16,63 @@ feature work: [`docs/FRONTEND.md`](../docs/FRONTEND.md). Wire protocol:
 | `npm run typecheck` | `tsc` for app, build config and service worker |
 | `npm run lint` | ESLint (typescript-eslint, react-hooks) |
 | `npm test` | vitest (store, reconciliation, sync client vs. mock, query language, diff parser) |
+| `npm run viewports -- [options]` | device-testing matrix: screenshots + layout checks at 9 viewports × 2 themes + live resize, see [below](#device-testing-viewport-matrix) |
 | `node scripts/screenshots.mjs [url] [dir]` | Playwright screenshots of key pages (mock mode) |
 | `node scripts/smoke.mjs [url]` | Playwright interaction smoke test (optimistic writes, rollback, reload, keyboard) |
 | `node scripts/admin-smoke.mjs [url] [dir]` | Playwright smoke test of site admin + org settings against a real backend (no mock) |
 | `node scripts/pat-smoke.mjs [url] [dir]` | Playwright smoke test of fine-grained PATs + org token policy/approval against a real backend (signs up a user, creates an org); `BGH_MOCK=1` runs it against the mock |
+
+## Device testing (viewport matrix)
+
+`scripts/viewport-matrix.mjs` (`npm run viewports`) loads routes of a
+running server at every viewport in `docs/AGENT_WORKFLOW.md` → "Device
+testing" — phones and tablets with touch emulation (`isMobile`, `hasTouch`,
+DPR 2–3), laptop to 21:9 ultrawide and a portrait monitor — in light and
+dark, plus a live-resize pass per route (opens at 1440 wide and shrinks to
+360 in steps, re-checking each step, which catches overflow that only
+appears on resize). Every page is checked for:
+
+| Check | Fails when |
+|---|---|
+| `page-overflow` | `documentElement.scrollWidth > clientWidth` (horizontal page scroll) |
+| `offscreen` | an element sticks out of the viewport without a scrolling ancestor (wholly off-screen positioned layers such as skip links are ignored) |
+| `unreachable` | a control is clipped out of an `overflow: hidden` box |
+| `clipped-text` | text is cut by an `overflow: hidden/clip` box (its own or an ancestor's) without `text-overflow: ellipsis` / line clamp |
+| `overlap` | the centre of a control is covered by another control |
+| `tap-target` | touch viewports only: a control smaller than 32 px (inline links in running text and inputs inside a big enough `<label>` are exempt) |
+| `console`, `request` | console errors / uncaught exceptions, failed requests, HTTP 5xx |
+| `load` | the route didn't load (HTTP ≥ 400, timeout, `--wait-for` missing) |
+
+```
+# real backend with seeded data (../scripts/dev-setup.sh, scripts/seed-real.mjs)
+npm run viewports -- --base http://localhost:3000 --login ada:password123
+# mock backend (npm run dev:mock / vite preview): add --mock or ?mock to --base
+npm run viewports -- --base http://localhost:4173 --mock --routes /,/acme/api
+# quick look at one page
+npm run viewports -- --routes /acme/api/issues --viewports phone,1440 --themes light --no-resize
+```
+
+It writes `test-results/viewports/<route>__<viewport>__<theme>.png` (and
+`__resize-<width>__` shots for steps that found something new) plus
+`report.json`, prints a route × viewport summary table and the issues, and
+exits 1 when any issue isn't baselined. Known issues go in an `--allow`
+file — one rule per line, `check route viewport theme selector`, `*`
+wildcards, comma lists, missing fields match anything:
+
+```
+tap-target * phone-s,phone,tablet-p,tablet-l * div.feedLine > a.feedActor
+clipped-text /acme/api/issues * dark *
+```
+
+`--write-allow <file>` writes every current issue as a baseline. Selectors
+use the readable part of CSS-module class names, so they survive rebuilds.
+The default route set (`/`, `/notifications`, `/acme`, `/ada`, `/acme/api`,
+issues, an issue, pulls, `/settings`) at all viewports takes about 2–3
+minutes with `--jobs 4`. `--help` lists every option. Playwright and
+Chromium come preinstalled (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`);
+never run `playwright install`. The checks themselves are tested against
+fixture pages in `scripts/viewport-matrix/viewport-matrix.test.mjs` (part
+of `npm test`; skipped where Chromium isn't available).
 
 ## Bundle budget
 

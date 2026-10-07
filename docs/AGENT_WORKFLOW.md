@@ -127,8 +127,12 @@ server at a matrix of viewports and fails on layout problems:
 * light and dark themes.
 
 Usage: `node web/scripts/viewport-matrix.mjs --base http://localhost:3000
---routes /,/acme/api,/acme/api/issues --out web/test-results/viewports`.
-It prints a summary table and writes PNGs + `report.json`.
+--routes /,/acme/api,/acme/api/issues --out web/test-results/viewports`
+(or `npm run viewports -- …` in `web/`; add `--login ada:password123` for
+signed-in pages, `--mock` against the mock backend, `--allow <file>` to
+baseline known issues). It prints a summary table and writes PNGs +
+`report.json`; checks and options are documented in `web/README.md` →
+"Device testing (viewport matrix)".
 (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; never `playwright install`.)
 
 ## QA agents
