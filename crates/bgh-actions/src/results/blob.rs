@@ -138,7 +138,12 @@ pub fn artifact_blocks_dir(state: &AppState, id: &str) -> PathBuf {
 /// Largest artifact accepted through the results service.
 const MAX_ARTIFACT_SIZE: u64 = 10 << 30;
 
-async fn write_target(state: &AppState, kind: &str, id: &str) -> Result<WriteTarget, Response> {
+/// Errors are boxed: `Response` is large and these are cold paths.
+async fn write_target(
+    state: &AppState,
+    kind: &str,
+    id: &str,
+) -> Result<WriteTarget, Box<Response>> {
     match kind {
         "cache" => {
             let id: i64 = id.parse().map_err(|_| not_found())?;
@@ -168,7 +173,7 @@ async fn write_target(state: &AppState, kind: &str, id: &str) -> Result<WriteTar
         }
         "artifact-upload" => {
             if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-                return Err(not_found());
+                return Err(not_found().into());
             }
             Ok(WriteTarget {
                 staging: artifact_staging_path(state, id),
@@ -176,11 +181,11 @@ async fn write_target(state: &AppState, kind: &str, id: &str) -> Result<WriteTar
                 max_size: MAX_ARTIFACT_SIZE,
             })
         }
-        _ => Err(not_found()),
+        _ => Err(not_found().into()),
     }
 }
 
-async fn read_source(state: &AppState, kind: &str, id: &str) -> Result<PathBuf, Response> {
+async fn read_source(state: &AppState, kind: &str, id: &str) -> Result<PathBuf, Box<Response>> {
     let id: i64 = id.parse().map_err(|_| not_found())?;
     let ok: bool = match kind {
         "cache" => {
@@ -203,7 +208,7 @@ async fn read_source(state: &AppState, kind: &str, id: &str) -> Result<PathBuf, 
     }
     .map_err(internal)?;
     if !ok {
-        return Err(not_found());
+        return Err(not_found().into());
     }
     Ok(match kind {
         "cache" => crate::cache::archive_path(state, id),
@@ -298,7 +303,7 @@ pub async fn get_blob(
     }
     let path = match read_source(&state, &kind, &id).await {
         Ok(p) => p,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     let mut file = match tokio::fs::File::open(&path).await {
         Ok(f) => f,
@@ -446,7 +451,7 @@ pub async fn put(
     }
     let target = match write_target(&state, &kind, &id).await {
         Ok(t) => t,
-        Err(r) => return r,
+        Err(r) => return *r,
     };
     match q.comp.as_deref() {
         None => put_blob(&target, &headers, body).await,
