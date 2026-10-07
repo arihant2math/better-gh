@@ -181,10 +181,11 @@ async fn jit_provisioning_respects_signup_policy() {
     let attempt = |name_id: &'static str, email: &'static str| {
         sign_in(&app, move |o| o.attr("emails", &[email]), name_id)
     };
+    let db = &app.state.db;
     let exists = |login: &'static str| async move {
         sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM users WHERE login = $1)")
             .bind(login)
-            .fetch_one(&app.state.db)
+            .fetch_one(db)
             .await
             .unwrap()
     };
