@@ -25,4 +25,43 @@ describe('eslint.config.js', () => {
     expect(severity(config.rules['react-hooks/refs'])).toBe(1);
     expect(severity(config.rules['react-hooks/rules-of-hooks'])).toBe(2);
   });
+
+  // Convention rules (#203), checked against real file paths so the per-file
+  // overrides apply. Type-aware rules are skipped: only these are under test.
+  const lint = async (filePath: string, code: string) => {
+    const eslint = new ESLint({
+      cwd: process.cwd(),
+      overrideConfig: { languageOptions: { parserOptions: { project: null } } },
+      ruleFilter: ({ ruleId }) => ['no-restricted-imports', 'no-restricted-globals', 'bgh/observer-reads-store'].includes(ruleId),
+    });
+    const [result] = await eslint.lintText(code, { filePath });
+    return result.messages.map((m) => m.ruleId);
+  };
+
+  it('keeps pages and REST wrappers out of routes.ts', async () => {
+    expect(await lint('src/app/routes.ts', "import { v3 } from '../api/client';\nexport const x = v3;\n")).toEqual(['no-restricted-imports']);
+    expect(await lint('src/app/routes.ts', "import Page from '../pages/repo/RepoLayout';\nexport const x = Page;\n")).toEqual(['no-restricted-imports']);
+    expect(await lint('src/app/routes.ts', "import type { Issue } from '../sync/models';\nexport const p = () => import('../pages/repo/RepoLayout');\nexport type I = Issue;\n")).toEqual([]);
+  });
+
+  it('keeps heavy libraries in their lazy owners', async () => {
+    expect(await lint('src/ui/Button.tsx', "import { marked } from 'marked';\nexport const x = marked;\n")).toEqual(['no-restricted-imports']);
+    expect(await lint('src/ui/Button.tsx', "import { useVirtualizer } from '@tanstack/react-virtual';\nexport const x = useVirtualizer;\n")).toEqual(['no-restricted-imports']);
+    expect(await lint('src/ui/markdown/render.ts', "import { marked } from 'marked';\nexport const x = marked;\n")).toEqual([]);
+    expect(await lint('src/ui/markdown/render.ts', "import mermaid from 'mermaid';\nexport const x = mermaid;\n")).toEqual(['no-restricted-imports']);
+    expect(await lint('src/ui/markdown/enhance.ts', "export const m = () => import('mermaid');\n")).toEqual([]);
+    expect(await lint('src/pages/code/CodeLines.tsx', "import { useVirtualizer } from '@tanstack/react-virtual';\nexport const x = useVirtualizer;\n")).toEqual([]);
+  });
+
+  it('allows raw fetch only in the transport seam, boot and the service worker', async () => {
+    const code = "export const go = () => fetch('/x');\n";
+    expect(await lint('src/sync/client.ts', code)).toEqual(['no-restricted-globals']);
+    expect(await lint('src/pages/actions/log/sse.ts', code)).toEqual(['no-restricted-globals']);
+    for (const ok of ['src/api/transport.ts', 'src/main.tsx', 'src/sw.ts']) expect(await lint(ok, code)).toEqual([]);
+  });
+
+  it('requires observer for components that read the store', async () => {
+    const code = "import { store } from '../sync';\nexport function Who() { return <p>{store().all('user').length}</p>; }\n";
+    expect(await lint('src/ui/Who.tsx', code)).toEqual(['bgh/observer-reads-store']);
+  });
 });

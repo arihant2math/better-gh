@@ -221,7 +221,7 @@ interface Candidate {
   avatarUrl: string;
 }
 
-function AddPersonDialog({
+const AddPersonDialog = observer(function AddPersonDialog({
   open,
   onClose,
   repo,
@@ -413,7 +413,7 @@ function AddPersonDialog({
       </form>
     </Dialog>
   );
-}
+});
 
 // ------------------------------------------------------------------ teams
 

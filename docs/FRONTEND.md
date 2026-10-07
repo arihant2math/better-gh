@@ -10,6 +10,14 @@ npm run dev          # against bgh-server on :3000 (proxied: /api, /_bgh incl. W
 npm run typecheck && npm run lint && npm test && npm run build   # must pass
 ```
 
+Lint enforces the conventions below that are cheap to check statically
+(`eslint.config.js`, local rules in `build/eslint-rules.mjs`): `routes.ts`
+imports no pages or `api/*` modules; `mermaid`/`temml` are only `import()`ed,
+`marked`/`dompurify` stay in `ui/markdown/`, `@tanstack/react-virtual` in
+`ui/VirtualList` or page chunks; raw `fetch` only in `api/`, `main.tsx` and
+`sw.ts`; a component that calls `store()` or a `sync/selectors` reader during
+render must be `observer`.
+
 Open any URL with `?mock` to use the mock backend (sticky for the tab;
 `?mock=0` leaves). Extra flags: `&reset` (fresh seed + empty local DB),
 `&live=0` (no simulated activity), `&fail=0.3` (30 % retryable mutation

@@ -159,7 +159,7 @@ const Labels = observer(function Labels({ repo }: { repo: Repo }) {
 });
 
 /** Create / edit form with live preview. Name must be unique (case-insensitive). */
-function LabelForm({
+const LabelForm = observer(function LabelForm({
   repo,
   label,
   onSubmit,
@@ -223,4 +223,4 @@ function LabelForm({
       </div>
     </form>
   );
-}
+});

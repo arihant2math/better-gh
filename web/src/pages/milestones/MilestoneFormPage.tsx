@@ -26,7 +26,7 @@ export default observer(function MilestoneFormPage() {
   return <Form key={m?.id ?? 'new'} repo={repo} milestone={m} />;
 });
 
-function Form({ repo, milestone }: { repo: Repo; milestone?: Milestone }) {
+const Form = observer(function Form({ repo, milestone }: { repo: Repo; milestone?: Milestone }) {
   const [title, setTitle] = useState(milestone?.title ?? '');
   const [due, setDue] = useState(toDateInput(milestone?.dueOn ?? null));
   const [description, setDescription] = useState(milestone?.description ?? '');
@@ -111,4 +111,4 @@ function Form({ repo, milestone }: { repo: Repo; milestone?: Milestone }) {
       )}
     </div>
   );
-}
+});
