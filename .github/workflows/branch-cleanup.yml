@@ -1,0 +1,41 @@
+name: Branch cleanup
+
+# Deletes a PR's head branch once it is merged, and periodically deletes any
+# branch that is fully merged into main. Agents can't delete branches they
+# didn't create, so cleanup lives here.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Delete the merged PR's head branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ "$HEAD_REF" != "main" ]; then
+            git push origin --delete "$HEAD_REF" || echo "already gone: $HEAD_REF"
+          fi
+      - name: Delete branches fully merged into main
+        if: github.event_name != 'pull_request'
+        run: |
+          git fetch --prune origin
+          for b in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
+            case "$b" in HEAD|main) continue ;; esac
+            if git merge-base --is-ancestor "origin/$b" origin/main; then
+              echo "deleting $b"
+              git push origin --delete "$b" || echo "failed: $b"
+            fi
+          done

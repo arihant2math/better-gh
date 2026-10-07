@@ -71,7 +71,13 @@ invent new prefixes; add a value to this table in a PR if one is missing.
    matrix result), and screenshots described (paths in the branch under
    `web/test-results/` are not committed — describe what you checked). Label
    the PR `S-NeedsReview` plus the issue's `T-`/`A-` labels.
-7. **After review:** if the reviewer requests changes (`S-ChangesRequested`),
+7. **Branches are deleted when done.** The `Branch cleanup` workflow
+   deletes a PR's head branch when it merges and sweeps branches already
+   merged into `main` daily (run it manually from the Actions tab or via
+   `workflow_dispatch` any time). If you abandon work, delete your own
+   branch (`git push origin --delete <branch>`) and say so on the issue.
+   Coordinators delete their scratch branches when they finish.
+8. **After review:** if the reviewer requests changes (`S-ChangesRequested`),
    fix, push, reply to each review comment (or push back with reasoning if
    you disagree), then set `S-NeedsReview` again. Keep your branch mergeable
    with `main` (merge `origin/main` in; never force-push a branch under
