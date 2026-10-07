@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
-| B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | #347 | session_01GEmZUgjbnwUbTKfnPxQGiP (sonnet) |
+| B frontend | session_01WmJgQQUXw6fzN2GtxWckvE | #203 | — | — |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #286 items in order → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (rel. #237) → web of the same backlog.
+B: #280 items in order (done: #258, #256; now #203; next #213, #257, #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350 → web of the backlog.
 C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open flaky-test issues.
 
 ## Log
@@ -33,3 +33,4 @@ C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open f
 - 21:52Z: #150 approved; owner to merge. C worker+reviewer archived. Fresh C worker for #341. ubuntu-24.04 nit noted on #46.
 - 21:54Z: #347 REQUEST_CHANGES @e5f13c0: file follow-up issues for 61 hooks-v7 warnings + 21 switch-exhaustiveness hits; relayed to B.
 - 21:55Z: #347 re-review APPROVE @e5f13c0 (=head; follow-ups #349 #350); CI green; sent to coordinator.
+- 21:56Z: #347 merged as 44226d1; B worker+reviewer archived; fresh B worker for #203 (max-warnings-0 deferred until #349/#213).
