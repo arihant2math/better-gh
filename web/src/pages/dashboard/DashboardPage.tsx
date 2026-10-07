@@ -19,7 +19,7 @@ import { ReclaimBanner } from '../imports/ReclaimBanner';
 import { InvitationsBanner } from '../invitations/InvitationsBanner';
 import { issueHref } from '../issues/IssueRow';
 import styles from './DashboardPage.module.css';
-import { dayLabel, feedFor, groupFeed, type FeedGroup } from './feed';
+import { dayLabel, feedFor, groupFeed, shouldAutoLoad, type FeedGroup } from './feed';
 import { FeedItem } from './FeedItem';
 
 function greeting(): string {
@@ -317,8 +317,8 @@ export default observer(function DashboardPage() {
 /** Last row: loads the next page when it scrolls into view. */
 const FeedEnd = observer(function FeedEnd({ feed }: { feed: ReturnType<typeof feedFor> }) {
   useEffect(() => {
-    if (!feed.done && !feed.loading && feed.events.length) void feed.loadMore();
-  }, [feed, feed.done, feed.loading, feed.events.length]);
+    if (shouldAutoLoad(feed)) void feed.loadMore();
+  }, [feed, feed.done, feed.loading, feed.error, feed.events.length]);
   if (feed.error)
     return (
       <div className={styles.feedEnd}>
