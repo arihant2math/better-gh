@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatKb, plural } from '../../components/admin/format';
-import { PageHeader, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
+import { PageHeader, SearchInput, ShortLabel, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -130,7 +130,7 @@ export default function ReposPage() {
         actions={
           <>
             <Button ref={menuRef} leadingIcon={ToolsIcon} trailingIcon={ChevronDownIcon} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-              Run maintenance on all repositories…
+              <ShortLabel short="Maintenance">Run maintenance on all repositories…</ShortLabel>
             </Button>
             <Menu open={menuOpen} onClose={() => setMenuOpen(false)} anchor={menuRef} items={menu} placement="bottom-end" aria-label="Bulk maintenance" />
           </>

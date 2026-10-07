@@ -75,7 +75,9 @@ export default observer(function AdminLayout({ children }: { children: ReactNode
             {n.group && <div className={styles.subnavGroup}>{n.group}</div>}
             <Link to={n.to} className={styles.subnavItem} aria-current={active === n.to ? 'page' : undefined}>
               <n.icon size={16} />
-              {n.label}
+              <span className={styles.subnavLabel} title={n.label}>
+                {n.label}
+              </span>
               {n.to === '/site-admin/settings' && settingsDirty.dirty ? (
                 <span className={styles.dirtyDot} aria-label="Unsaved changes" />
               ) : (
