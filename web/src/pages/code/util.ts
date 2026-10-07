@@ -141,12 +141,17 @@ export function routeLinks(e: MouseEvent<HTMLElement>): void {
   navigate(url.pathname + url.search + url.hash);
 }
 
-/** Nearest scrollable ancestor (the repo layout body). */
+/**
+ * Nearest ancestor that actually scrolls vertically (the repo layout body).
+ * `overflow-x: auto` alone makes `overflow-y` compute to `auto` too, so a
+ * horizontal-only wrapper like `.codeScroll` would match on style alone;
+ * require the box to be height-bounded (content taller than the box).
+ */
 export function scrollParent(el: HTMLElement | null): HTMLElement | null {
   let n = el?.parentElement ?? null;
   while (n) {
     const o = getComputedStyle(n).overflowY;
-    if (o === 'auto' || o === 'scroll') return n;
+    if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
     n = n.parentElement;
   }
   return document.scrollingElement as HTMLElement | null;

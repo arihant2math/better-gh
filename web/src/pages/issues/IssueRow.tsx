@@ -54,6 +54,7 @@ export const IssueRow = observer(function IssueRow({
   selected,
   active,
   selectable = true,
+  index = 0,
   onToggleSelect,
   onActivate,
 }: {
@@ -62,8 +63,10 @@ export const IssueRow = observer(function IssueRow({
   selected?: boolean;
   active?: boolean;
   selectable?: boolean;
-  onToggleSelect?: (e: MouseEvent) => void;
-  onActivate?: () => void;
+  /** Passed back to the callbacks, so lists can hand every row the same stable functions. */
+  index?: number;
+  onToggleSelect?: (index: number, e: MouseEvent) => void;
+  onActivate?: (index: number) => void;
 }) {
   const s = store();
   const href = issueHref(issue);
@@ -78,7 +81,7 @@ export const IssueRow = observer(function IssueRow({
       role="listitem"
       aria-selected={selected}
       onMouseEnter={() => {
-        onActivate?.();
+        onActivate?.(index);
         if (!pending) prefetch(href);
       }}
       onClick={(e) => {
@@ -96,7 +99,7 @@ export const IssueRow = observer(function IssueRow({
           onChange={() => undefined}
           onClick={(e) => {
             e.stopPropagation();
-            onToggleSelect?.(e);
+            onToggleSelect?.(index, e);
           }}
         />
       )}

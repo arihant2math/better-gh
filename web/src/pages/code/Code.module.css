@@ -573,11 +573,14 @@
   box-sizing: content-box;
 }
 
+/* Absolute rows don't size `.lines`; let each row grow with its line so the
+   selection/hover background spans long lines when scrolled horizontally. */
 .vrow {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max-content;
 }
 
 .line {
