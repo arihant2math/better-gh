@@ -414,6 +414,13 @@ fn copy_order(names: &mut [String], is_repo: bool) {
     names.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.cmp(b)));
 }
 
+/// Set a file's modification time. A read-only handle suffices (the
+/// owner may set explicit times), so read-only files such as git objects
+/// work for non-root users too.
+fn set_mtime(path: &Path, ns: i128) -> std::io::Result<()> {
+    std::fs::File::open(path)?.set_modified(to_systime(ns))
+}
+
 fn to_systime(ns: i128) -> SystemTime {
     UNIX_EPOCH + Duration::from_nanos(ns.max(0) as u64)
 }
@@ -556,9 +563,7 @@ impl Copier {
         };
         // Size and mtime as of the copy (the file may have grown since the stat).
         let copied = std::fs::metadata(out)?;
-        let f = std::fs::File::options().write(true).open(out)?;
-        f.set_modified(to_systime(mtime))?;
-        drop(f);
+        set_mtime(out, mtime)?;
         set_mode(out, mode(meta))?;
         self.stats.files += 1;
         self.stats.bytes += copied.len();
@@ -774,14 +779,14 @@ pub async fn restore(
                 }
                 Kind::File => {
                     let from = src.join(&e.path);
-                    std::fs::copy(&from, &to).with_context(|| format!("restoring {}", e.path))?;
                     if e.path.ends_with("objects/info/alternates") && old_root != new_root {
-                        let text = std::fs::read_to_string(&to)?;
+                        let text = std::fs::read_to_string(&from)?;
                         std::fs::write(&to, text.replace(&old_root, &new_root))?;
+                    } else {
+                        std::fs::copy(&from, &to)
+                            .with_context(|| format!("restoring {}", e.path))?;
                     }
-                    let f = std::fs::File::options().write(true).open(&to)?;
-                    f.set_modified(to_systime(e.mtime_ns))?;
-                    drop(f);
+                    set_mtime(&to, e.mtime_ns)?;
                     set_mode(&to, e.mode)?;
                     files += 1;
                 }
