@@ -117,6 +117,9 @@ pub async fn insert_user(
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('bgh_create_user'))")
         .execute(&mut **tx)
         .await?;
+    if email_verified {
+        crate::emails::release_unverified(tx, email).await?;
+    }
     let site_admin = match site_admin {
         Some(v) => v,
         None => {

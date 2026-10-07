@@ -56,6 +56,9 @@ pub async fn create_user(
         )));
     }
     let mut tx = Tx::begin(state).await?;
+    if let Some(email) = email {
+        bgh_accounts::emails::release_unverified(&mut tx, email).await?;
+    }
     let mut user = db::NewUser {
         login,
         email,

@@ -150,8 +150,10 @@ receive password resets, attribute commits/signatures/CODEOWNERS, route
 notifications or match org invitations. Self-service sign-up stores its
 primary email unverified and mails a `/_bgh/emails/verify` link; only
 trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
-`email_verified` claim) pass `email_verified: true` to `db::NewUser`, and
-such an insert releases unverified claims on that address by other accounts.
+`email_verified` claim) pass `email_verified: true` to `db::NewUser`, after
+`emails::release_unverified` drops other accounts' unverified claims on that
+address (and unpublishes it from their profiles). An unverified primary
+can't be made public.
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,

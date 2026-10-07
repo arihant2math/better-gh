@@ -588,6 +588,11 @@ async fn oidc_ignores_unverified_signup_email() {
     res.assert_status(201);
     let mallory_id = res.json()["id"].clone();
     let mallory = cookie_from(&res);
+    // A squat published before unverified primaries became unpublishable.
+    sqlx::query("UPDATE users SET email = 'alice@corp.example' WHERE login = 'mallory'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
 
     let (st, nonce) = start(&app, "/").await;
     let res = app
@@ -635,4 +640,10 @@ async fn oidc_ignores_unverified_signup_email() {
         .await
         .json();
     assert_eq!(emails, json!([]));
+    let profile = app.get("/api/v3/users/mallory").send().await.json();
+    assert_eq!(
+        profile["email"],
+        json!(null),
+        "squatter keeps publishing it"
+    );
 }
