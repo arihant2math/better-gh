@@ -4,6 +4,7 @@ import { peek } from '../../api/cache';
 import { browseKeys, isSha } from '../../api/endpoints';
 import type { BrowseRefs } from '../../api/types';
 import { navigate } from '../../router';
+import { parseCodeUrl } from '../../components/code/urls';
 
 export interface CodeTarget {
   owner: string;
@@ -60,10 +61,6 @@ export function isSettled(t: CodeTarget): boolean {
 /** `ref` to send to the browse API: the pinned commit when known. */
 export function fetchRef(t: CodeTarget): string {
   return t.commit ?? t.ref;
-}
-
-export function codeUrl(t: { owner: string; repo: string }, mode: 'tree' | 'blob' | 'blame' | 'commits' | 'edit' | 'new' | 'delete' | 'upload' | 'raw', ref: string, path = ''): string {
-  return `/${t.owner}/${t.repo}/${mode}/${ref}${path ? `/${path}` : ''}`;
 }
 
 export function parentPath(path: string): string {
@@ -132,7 +129,7 @@ export function routeLinks(e: MouseEvent<HTMLElement>): void {
   const a = (e.target as HTMLElement).closest('a');
   if (!a || a.target === '_blank' || !a.href) return;
   const url = new URL(a.href, window.location.href);
-  if (url.origin !== window.location.origin || url.pathname.includes('/raw/') || url.pathname.includes('/releases/download/')) return;
+  if (url.origin !== window.location.origin || parseCodeUrl(url.pathname)?.view === 'raw' || url.pathname.includes('/releases/download/')) return;
   e.preventDefault();
   if (url.pathname === window.location.pathname && url.hash) {
     document.getElementById(url.hash.slice(1))?.scrollIntoView();
@@ -141,12 +138,17 @@ export function routeLinks(e: MouseEvent<HTMLElement>): void {
   navigate(url.pathname + url.search + url.hash);
 }
 
-/** Nearest scrollable ancestor (the repo layout body). */
+/**
+ * Nearest ancestor that actually scrolls vertically (the repo layout body).
+ * `overflow-x: auto` alone makes `overflow-y` compute to `auto` too, so a
+ * horizontal-only wrapper like `.codeScroll` would match on style alone;
+ * require the box to be height-bounded (content taller than the box).
+ */
 export function scrollParent(el: HTMLElement | null): HTMLElement | null {
   let n = el?.parentElement ?? null;
   while (n) {
     const o = getComputedStyle(n).overflowY;
-    if (o === 'auto' || o === 'scroll') return n;
+    if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
     n = n.parentElement;
   }
   return document.scrollingElement as HTMLElement | null;

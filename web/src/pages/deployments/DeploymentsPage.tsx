@@ -11,6 +11,7 @@ import {
   type RestDeploymentStatus,
 } from '../../api/deployments';
 import { Link, setQuery, useParams, useQuery } from '../../router';
+import { treeUrl } from '../../components/code/urls';
 import { Avatar } from '../../ui/Badge';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -136,7 +137,7 @@ function RefLabel({ owner, repo, d }: { owner: string; repo: string; d: Deployme
   return (
     <span className={styles.ref}>
       {!isSha && (
-        <Link to={`${base}/tree/${encodeURIComponent(d.ref)}`} className={styles.branch}>
+        <Link to={treeUrl({ owner, repo }, d.ref)} className={styles.branch}>
           {d.ref}
         </Link>
       )}

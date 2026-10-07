@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupFeed, type FeedEvent } from './feed';
+import { groupFeed, shouldAutoLoad, type FeedEvent } from './feed';
 
 function ev(id: number, type: string, actor: number, repo: string, at: string, payload: Record<string, unknown> = {}): FeedEvent {
   return { id: String(id), type, actor: { id: actor, login: `u${actor}`, avatar_url: '' }, repo: { id: 1, name: repo }, payload, public: true, created_at: at };
@@ -28,5 +28,23 @@ describe('groupFeed', () => {
   it('does not merge events far apart in time', () => {
     const g = groupFeed([ev(2, 'WatchEvent', 1, 'a/x', '2026-10-05T12:00:00Z'), ev(1, 'WatchEvent', 1, 'a/x', '2026-10-05T01:00:00Z')]);
     expect(g).toHaveLength(2);
+  });
+});
+
+describe('shouldAutoLoad', () => {
+  const events = [ev(1, 'WatchEvent', 1, 'a/x', '2026-10-05T12:00:00Z')];
+
+  it('loads the next page when idle', () => {
+    expect(shouldAutoLoad({ done: false, loading: false, error: null, events })).toBe(true);
+  });
+
+  it('does not refetch a failed page by itself (no hot loop)', () => {
+    expect(shouldAutoLoad({ done: false, loading: false, error: 'Failed to load activity', events })).toBe(false);
+  });
+
+  it('stays quiet while loading, when done, and before the first page', () => {
+    expect(shouldAutoLoad({ done: false, loading: true, error: null, events })).toBe(false);
+    expect(shouldAutoLoad({ done: true, loading: false, error: null, events })).toBe(false);
+    expect(shouldAutoLoad({ done: false, loading: false, error: null, events: [] })).toBe(false);
   });
 });

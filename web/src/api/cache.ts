@@ -162,6 +162,23 @@ export function useResource<T>(
   };
 }
 
+/**
+ * Revalidate `key` every `intervalMs` while the tab is visible, for server
+ * state that changes on its own (merge queues, running builds). Pass
+ * `key = null` to stop polling. Keyed by `key`: the loader of the render that
+ * set the key is used.
+ */
+export function usePollWhileVisible<T>(key: string | null, loader: () => Promise<T>, intervalMs: number, opts: ResourceOptions = {}): void {
+  useEffect(() => {
+    if (!key) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh(key, loader, opts).catch(() => undefined);
+    }, intervalMs);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by `key` by design
+  }, [key, intervalMs]);
+}
+
 /** Replace a cached value locally (e.g. with a mutation's response) and notify readers. */
 export function mutate<T>(key: string, update: (prev: T | undefined) => T): void {
   const e = entries.get(key) as Entry<T> | undefined;

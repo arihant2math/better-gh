@@ -2,26 +2,33 @@ import { observer } from 'mobx-react-lite';
 import { useMemo, useRef, useState } from 'react';
 import { useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
-import { compareRefs, getPullTemplate, listBranches, listForks } from '../../api/endpoints';
+import { compareRefs, getPullTemplates, listBranches, listForks, type PullTemplate, type PullTemplates } from '../../api/endpoints';
 import type { RestBranch, RestCompare, RestFork } from '../../api/types';
 import { toEntries } from '../../components/diff/DiffViewer';
 import { DiffView, type DiffSource } from '../../components/diff/DiffView';
 import { parsePatch, type DiffFile } from '../../components/diff/parseDiff';
+import { MarkdownEditor } from '../../components/editor/MarkdownEditor';
 import { Link, navigate, useParams, useQuery, setQuery } from '../../router';
+import { formatKeys } from '../../shortcuts/manager';
+import { compareUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import { createPull } from '../../sync/pullMutations';
-import { issuesForRepo, repoByName } from '../../sync/selectors';
+import type { ID } from '../../sync/models';
+import { canTriage, issuesForRepo, labelByName, milestonesForRepo, repoByName, userByLogin } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
-import { AlertIcon, ArrowLeftIcon, CheckIcon, ChevronDownIcon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, RepoForkedIcon, XIcon } from '../../ui/icons';
-import { Input, Textarea } from '../../ui/Input';
+import { AlertIcon, ArrowLeftIcon, CheckIcon, ChevronDownIcon, FileIcon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, RepoForkedIcon, XIcon } from '../../ui/icons';
+import { Input } from '../../ui/Input';
 import { Menu, SelectPanel } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
+import { MetaPickers, projectCandidates } from '../issues/new/MetaPickers';
 import styles from './Compare.module.css';
+import { carriedQuery, initialBody, parseCompareParams } from './compareParams';
+import { applyNewPullMeta, hasMeta, type NewPullMeta } from './newPull';
 
 /** `base...head` (or just `head`, compared with the default branch). Head may be `owner:branch`. */
 export function parseSpec(spec: string, defaultBranch: string): { base: string; head: string } {
@@ -47,11 +54,12 @@ export default observer(function ComparePage() {
   const { base, head } = parseSpec(spec, repo.defaultBranch);
   const headOwner = head.includes(':') ? head.split(':')[0]! : repo.owner;
   const headBranch = head.includes(':') ? head.split(':').slice(1).join(':') : head;
-  const prefix = `/${repo.owner}/${repo.name}/compare`;
-  const go = (b: string, h: string) => navigate(`${prefix}/${b}...${h}${query.get('expand') ? '?expand=1' : ''}`, { replace: true });
+  const params = parseCompareParams(query);
+  // `carriedQuery` keeps `expand` and the form's prefill params.
+  const go = (b: string, h: string) => navigate(`${compareUrl({ owner: repo.owner, repo: repo.name }, b, h)}${carriedQuery(query)}`, { replace: true });
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>{query.get('expand') ? 'Open a pull request' : 'Comparing changes'}</h1>
+      <h1 className={styles.title}>{params.expand ? 'Open a pull request' : 'Comparing changes'}</h1>
       <p className={styles.subtle}>
         Choose two branches to see what’s changed or to start a new pull request. If you need to, you can also compare across forks.
       </p>
@@ -73,7 +81,7 @@ export default observer(function ComparePage() {
           Pick a branch to compare with <code>{base}</code>.
         </EmptyState>
       ) : (
-        <CompareBody repoId={repo.id} owner={repo.owner} name={repo.name} base={base} head={head} headOwner={headOwner} headBranch={headBranch} expand={!!query.get('expand')} />
+        <CompareBody repoId={repo.id} owner={repo.owner} name={repo.name} base={base} head={head} headOwner={headOwner} headBranch={headBranch} expand={params.expand} />
       )}
     </div>
   );
@@ -211,7 +219,7 @@ const CompareBody = observer(function CompareBody({
           </Button>
         )}
       </div>
-      {!identical && !existing && expand && <CreateForm repoId={repoId} owner={owner} name={name} base={base} head={head} headBranch={headBranch} compare={data} />}
+      {!identical && !existing && expand && <CreateForm repoId={repoId} owner={owner} name={name} base={base} head={head} headBranch={headBranch} crossRepo={headOwner !== owner} compare={data} />}
       {!identical && <CompareDetails compare={data} owner={owner} name={name} sameRepo={headOwner === owner} />}
     </>
   );
@@ -224,6 +232,7 @@ const CreateForm = observer(function CreateForm({
   base,
   head,
   headBranch,
+  crossRepo,
   compare,
 }: {
   repoId: number;
@@ -232,27 +241,61 @@ const CreateForm = observer(function CreateForm({
   base: string;
   head: string;
   headBranch: string;
+  crossRepo: boolean;
   compare: RestCompare;
 }) {
-  const repo = store().get('repo', repoId)!;
+  const s = store();
+  const repo = s.get('repo', repoId)!;
+  const query = useQuery();
+  const [params] = useState(() => parseCompareParams(query));
+  const triage = canTriage(repoId);
   const single = compare.commits.length === 1 ? compare.commits[0]!.commit.message : null;
-  const { data: template } = useResource<string | null>(`pr-template:${owner}/${name}`, () => getPullTemplate(owner, name), { ttlMs: 300_000 });
-  const [title, setTitle] = useState(() => (single ? single.split('\n')[0]! : humanize(headBranch)));
+  const { data: templates } = useResource<PullTemplates>(`pr-templates:${owner}/${name}`.toLowerCase(), () => getPullTemplates(owner, name), { ttlMs: 300_000 });
+  const [title, setTitle] = useState(() => params.title ?? (single ? single.split('\n')[0]! : humanize(headBranch)));
+  const [templateName, setTemplateName] = useState(params.template);
   const [body, setBody] = useState<string | null>(null);
+  const initial = initialBody({ body: params.body, template: templateName }, templates, single ? single.split('\n').slice(1).join('\n').trim() : '');
+  const value = body ?? initial.body;
   const [draft, setDraft] = useState(false);
+  const [maintainerCanModify, setMaintainerCanModify] = useState(true);
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [picker, setPicker] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
-  const defaultBody = template ?? (single ? single.split('\n').slice(1).join('\n').trim() : '');
-  const value = body ?? defaultBody;
+  const pickerRef = useRef<HTMLButtonElement>(null);
+
+  // Sidebar, prefilled from `?labels=&assignees=&reviewers=&milestone=&projects=`.
+  const [labelIds, setLabelIds] = useState<ID[]>(() => params.labels.map((n) => labelByName(repoId, n)?.id).filter((x): x is ID => x != null));
+  const [assigneeIds, setAssigneeIds] = useState<ID[]>(() => params.assignees.map((l) => userByLogin(l)?.id).filter((x): x is ID => x != null));
+  const [reviewerIds, setReviewerIds] = useState<ID[]>(() => params.reviewers.map((l) => userByLogin(l)?.id).filter((x): x is ID => x != null && x !== s.viewerId));
+  const [teamIds, setTeamIds] = useState<ID[]>([]);
+  const [milestoneId, setMilestoneId] = useState<ID | null>(() => {
+    const m = params.milestone;
+    return m ? (milestonesForRepo(repoId).find((x) => x.title === m || String(x.number) === m)?.id ?? null) : null;
+  });
+  const [projectIds, setProjectIds] = useState<ID[]>(() => {
+    const candidates = projectCandidates(repo);
+    return params.projects
+      .map((ref) => candidates.find((p) => p.number === ref.number && (ref.owner == null ? p.ownerId === repo.ownerId : s.get('user', p.ownerId)?.login.toLowerCase() === ref.owner.toLowerCase()))?.id)
+      .filter((x): x is ID => x != null);
+  });
+
+  const chooseTemplate = (t: PullTemplate | null) => {
+    setTemplateName(t?.name ?? null);
+    setBody(t?.body ?? templates?.default?.body ?? '');
+    setQuery({ template: t?.name ?? null, body: null });
+  };
 
   const submit = () => {
     if (!title.trim() || busy) return;
     setBusy(true);
-    createPull(repo, { title: title.trim(), body: value, base, head, draft }).done.then(
-      (res) => {
+    const meta: NewPullMeta = triage ? { reviewerIds, teamIds, assigneeIds, labelIds, milestoneId, projectIds } : { reviewerIds: [], teamIds: [], assigneeIds: [], labelIds: [], milestoneId: null, projectIds: [] };
+    createPull(repo, { title: title.trim(), body: value, base, head, draft, ...(crossRepo ? { maintainerCanModify } : {}) }).done.then(
+      async (res) => {
         const number = (res.data as { number?: number } | null)?.number;
-        toast({ kind: 'success', title: `Opened pull request${number ? ` #${number}` : ''}` });
+        const failed = number && hasMeta(meta) ? await applyNewPullMeta(repo, number, meta) : [];
+        if (failed.length) toast({ kind: 'error', title: `Opened pull request #${number}`, description: `Couldn’t set ${failed.join(', ')}.` });
+        else toast({ kind: 'success', title: `Opened pull request${number ? ` #${number}` : ''}` });
         navigate(number ? `/${owner}/${name}/pull/${number}` : `/${owner}/${name}/pulls`);
       },
       () => setBusy(false),
@@ -260,42 +303,93 @@ const CreateForm = observer(function CreateForm({
   };
   useShortcuts('New pull request', { 'mod+enter': { handler: submit, description: 'Create pull request', group: 'Pull request', allowInInput: true } });
 
+  const named = templates?.templates ?? [];
+  const current = initial.template;
   return (
-    <div className={styles.form}>
-      <Avatar user={store().get('user', store().viewerId)} size={40} />
-      <div className={styles.formMain}>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" aria-label="Title" autoFocus size="lg" />
-        <Textarea value={value} onChange={(e) => setBody(e.target.value)} rows={12} placeholder="Add a description (Markdown supported)" aria-label="Description" className={styles.body} />
-        <div className={styles.formActions}>
-          {template && body === null && <span className={styles.subtle}>Prefilled from the pull request template.</span>}
-          <span style={{ flex: 1 }} />
-          <span className={styles.split}>
-            <Button variant="success" loading={busy} disabled={!title.trim()} onClick={submit}>
-              {draft ? 'Draft pull request' : 'Create pull request'}
+    <div className={styles.createLayout}>
+      <div className={styles.form}>
+        <Avatar user={s.get('user', s.viewerId)} size={40} />
+        <div className={styles.formMain}>
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" aria-label="Title" autoFocus size="lg" />
+          {named.length > 0 && (
+            <div className={styles.templateRow}>
+              <Button ref={pickerRef} size="sm" leadingIcon={FileIcon} trailingIcon={ChevronDownIcon} onClick={() => setPicker(true)} aria-label="Pull request template">
+                <span className={styles.pickerLabel}>Template:</span> {current && current !== templates?.default ? current.name : templates?.default ? 'Default' : 'None'}
+              </Button>
+              <SelectPanel
+                open={picker}
+                onClose={() => setPicker(false)}
+                anchor={pickerRef}
+                multiple={false}
+                title="Choose a template"
+                placeholder="Filter templates"
+                items={[
+                  { id: '', text: templates?.default ? 'Default template' : 'No template', description: templates?.default?.filename, leading: <FileIcon size={14} />, selected: !current || current === templates?.default },
+                  ...named.map((t) => ({ id: t.name, text: t.name, description: t.filename, leading: <FileIcon size={14} />, selected: current === t })),
+                ]}
+                onToggle={(id) => chooseTemplate(named.find((t) => t.name === id) ?? null)}
+              />
+            </div>
+          )}
+          <MarkdownEditor value={value} onChange={setBody} repo={`${owner}/${name}`} repoId={repoId} rows={12} placeholder="Add a description (Markdown supported)" ariaLabel="Description" hideActions />
+          {crossRepo && (
+            <label className={styles.check}>
+              <input type="checkbox" checked={maintainerCanModify} onChange={(e) => setMaintainerCanModify(e.target.checked)} />
+              <span>
+                <strong>Allow edits by maintainers</strong>
+                <span className={styles.subtle}> — maintainers of {owner}/{name} can push to {headBranch}.</span>
+              </span>
+            </label>
+          )}
+          <div className={styles.formActions}>
+            {initial.template && body === null && (
+              <span className={styles.subtle}>
+                Prefilled from <code>{initial.template.filename}</code>
+                {templates?.source === 'org' ? ` (${owner}/.github)` : ''}.
+              </span>
+            )}
+            <span style={{ flex: 1 }} />
+            <Button variant="ghost" leadingIcon={XIcon} onClick={() => setQuery({ expand: null, quick_pull: null })}>
+              Cancel
             </Button>
-            <Button ref={menuRef} variant="success" aria-label="Pull request type" onClick={() => setMenu((m) => !m)} className={styles.splitToggle}>
-              <ChevronDownIcon size={16} />
-            </Button>
-          </span>
-          <Menu
-            open={menu}
-            onClose={() => setMenu(false)}
-            anchor={menuRef}
-            placement="bottom-end"
-            items={[
-              { id: 'pr', label: 'Create pull request', description: 'Open a pull request that is ready for review.', leading: <span className={styles.menuCheck}>{!draft && <CheckIcon size={16} />}</span>, onSelect: () => setDraft(false) },
-              { id: 'draft', label: 'Create draft pull request', description: 'Cannot be merged until marked ready for review.', leading: <span className={styles.menuCheck}>{draft && <CheckIcon size={16} />}</span>, onSelect: () => setDraft(true) },
-            ]}
-          />
-          <Button variant="ghost" leadingIcon={XIcon} onClick={() => setQuery({ expand: null })}>
-            Cancel
-          </Button>
+            <span className={styles.split}>
+              <Button variant="success" loading={busy} disabled={!title.trim()} onClick={submit} kbd={formatKeys('mod+enter')[0]}>
+                {draft ? 'Draft pull request' : 'Create pull request'}
+              </Button>
+              <Button ref={menuRef} variant="success" aria-label="Pull request type" onClick={() => setMenu((m) => !m)} className={styles.splitToggle}>
+                <ChevronDownIcon size={16} />
+              </Button>
+            </span>
+            <Menu
+              open={menu}
+              onClose={() => setMenu(false)}
+              anchor={menuRef}
+              placement="bottom-end"
+              items={[
+                { id: 'pr', label: 'Create pull request', description: 'Open a pull request that is ready for review.', leading: <span className={styles.menuCheck}>{!draft && <CheckIcon size={16} />}</span>, onSelect: () => setDraft(false) },
+                { id: 'draft', label: 'Create draft pull request', description: 'Cannot be merged until marked ready for review.', leading: <span className={styles.menuCheck}>{draft && <CheckIcon size={16} />}</span>, onSelect: () => setDraft(true) },
+              ]}
+            />
+          </div>
         </div>
       </div>
+      {triage && (
+        <MetaPickers
+          repo={repo}
+          label="Pull request metadata"
+          reviewers={{ userIds: reviewerIds, setUserIds: setReviewerIds, teamIds, setTeamIds }}
+          assigneeIds={assigneeIds}
+          setAssigneeIds={setAssigneeIds}
+          labelIds={labelIds}
+          setLabelIds={setLabelIds}
+          projects={{ ids: projectIds, setIds: setProjectIds }}
+          milestoneId={milestoneId}
+          setMilestoneId={setMilestoneId}
+        />
+      )}
     </div>
   );
 });
-
 function CompareDetails({ compare, owner, name, sameRepo }: { compare: RestCompare; owner: string; name: string; sameRepo: boolean }) {
   const mode = useQuery().get('diff') === 'split' ? 'split' : 'unified';
   const files: DiffFile[] = useMemo(

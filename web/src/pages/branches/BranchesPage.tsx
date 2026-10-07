@@ -6,6 +6,7 @@ import { browseKeys, getRefs, isSha } from '../../api/endpoints';
 import { activeBranchRulesets, type Ruleset } from '../../api/rulesets';
 import { RefPicker, refLabel } from '../../components/code/RefPicker';
 import { Link, useParams } from '../../router';
+import { compareUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
@@ -24,7 +25,6 @@ import { selectsRef } from '../rulesets/match';
 import { OVERVIEW_LIMIT, barFraction, branchDate, classifyBranches, parseView, type BranchView } from './classify';
 import styles from './Branches.module.css';
 
-const enc = encodeURIComponent;
 const VIRTUALIZE_OVER = 100;
 const NO_RULESETS: Ruleset[] = [];
 
@@ -298,7 +298,7 @@ function BranchRow({
   return (
     <div className={styles.row} role="listitem">
       <div className={styles.nameCell}>
-        <Link to={`${base}/tree/${enc(b.name)}`} className={styles.name} title={b.name}>
+        <Link to={treeUrl(repoRefOf(repo), b.name)} className={styles.name} title={b.name}>
           {b.name}
         </Link>
         <IconButton icon={CopyIcon} label="Copy branch name" size="sm" onClick={() => copy(b.name)} />
@@ -324,7 +324,7 @@ function BranchRow({
           </Link>
         ) : (
           !isDefault && (
-            <Link to={`${base}/compare/${enc(defaultBranch)}...${enc(b.name)}?expand=1`} className={styles.newPr}>
+            <Link to={compareUrl(repoRefOf(repo), defaultBranch, b.name, { expand: true })} className={styles.newPr}>
               <GitPullRequestIcon size={14} />
               New pull request
             </Link>
