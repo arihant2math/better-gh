@@ -30,11 +30,30 @@ jobs:
           fi
       - name: Delete branches fully merged into main
         if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --prune origin
+          main_tip=$(git rev-parse origin/main)
+          cutoff=$(( $(date +%s) - 48*3600 ))
+          # Branches with an open PR are never touched.
+          open_heads=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 \
+            --json headRefName --jq '.[].headRefName')
           for b in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
             case "$b" in HEAD|main) continue ;; esac
-            if git merge-base --is-ancestor "origin/$b" origin/main; then
+            if printf '%s\n' "$open_heads" | grep -qxF "$b"; then
+              echo "skip (open PR): $b"; continue
+            fi
+            tip=$(git rev-parse "origin/$b")
+            # A branch pointing at main's tip was probably just created and
+            # has no commits yet; recent tips may belong to work in progress.
+            if [ "$tip" = "$main_tip" ]; then
+              echo "skip (at main tip): $b"; continue
+            fi
+            if [ "$(git log -1 --format=%ct "$tip")" -gt "$cutoff" ]; then
+              echo "skip (tip < 48h old): $b"; continue
+            fi
+            if git merge-base --is-ancestor "$tip" origin/main; then
               echo "deleting $b"
               git push origin --delete "$b" || echo "failed: $b"
             fi
