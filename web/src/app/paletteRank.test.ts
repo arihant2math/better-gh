@@ -76,3 +76,12 @@ describe('rankCommands', () => {
     expect(ids(rankCommands(CMDS, 'new', false))[0]).toBe('issue.new');
   });
 });
+
+describe('strictScore performance', () => {
+  it('stays fast on adversarial word-start inputs', () => {
+    const text = Array.from({ length: 200 }, () => 'a').join(' ');
+    const t0 = performance.now();
+    expect(strictScore('a'.repeat(40) + 'b', text)).toBe(0);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+});

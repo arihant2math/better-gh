@@ -42,13 +42,25 @@ export function strictScore(token: string, text: string): number {
   if (direct >= 0) {
     return 1000 + (direct === 0 ? 400 : 0) + (isWordStart(text, direct) ? 200 : 0) - Math.min(text.length, 200) / 4;
   }
-  const runs = segments(token, 0, text, 0);
+  const runs = segments(token, 0, text, 0, new Map());
   return runs ? 500 - runs * 20 - Math.min(text.length, 200) / 4 : 0;
 }
 
-/** Fewest word-start runs covering token[qi..] within text[ti..], or 0 if impossible. */
-function segments(q: string, qi: number, t: string, ti: number): number {
+/**
+ * Fewest word-start runs covering token[qi..] within text[ti..], or 0 if
+ * impossible. Memoized on (qi, ti), so at most |q|·|t| states.
+ */
+function segments(q: string, qi: number, t: string, ti: number, memo: Map<number, number>): number {
   if (qi === q.length) return 0;
+  const key = qi * (t.length + 1) + ti;
+  const cached = memo.get(key);
+  if (cached !== undefined) return cached;
+  const best = searchSegments(q, qi, t, ti, memo);
+  memo.set(key, best);
+  return best;
+}
+
+function searchSegments(q: string, qi: number, t: string, ti: number, memo: Map<number, number>): number {
   let best = 0;
   for (let j = ti; j < t.length; j++) {
     if (t[j] !== q[qi] || !isWordStart(t, j)) continue;
@@ -57,7 +69,7 @@ function segments(q: string, qi: number, t: string, ti: number): number {
     while (qi + len < q.length && t[j + len] === q[qi + len]) len++;
     for (let l = len; l >= 1; l--) {
       if (qi + l === q.length) return 1;
-      const rest = segments(q, qi + l, t, j + l);
+      const rest = segments(q, qi + l, t, j + l, memo);
       if (rest && (!best || rest + 1 < best)) best = rest + 1;
     }
     if (best === 2) return best;

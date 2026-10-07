@@ -307,7 +307,10 @@ const PaletteBody = observer(function PaletteBody() {
             onClick={() => {
               cycleScope(1);
               inputRef.current?.focus();
-            }} title="Change scope (Tab)" data-scope={scope.scope.kind}>
+            }}
+            title="Change scope (Tab)"
+            data-scope={scope.scope.kind}
+          >
             {scope.label}
           </button>
         )}
