@@ -205,9 +205,19 @@ fn callback_url(state: &AppState, provider: &str) -> String {
 }
 
 /// Only same-site relative paths are allowed as `return_to`.
+///
+/// Browsers treat `\` as `/` and strip tab/newline from URLs, so `/\x` and
+/// `/\t/x` would become the protocol-relative `//x`; reject those along with
+/// any other control character.
 pub(crate) fn safe_return_to(r: Option<&str>) -> String {
     match r {
-        Some(p) if p.starts_with('/') && !p.starts_with("//") && !p.contains('\\') => p.to_string(),
+        Some(p)
+            if p.starts_with('/')
+                && !p.starts_with("//")
+                && !p.chars().any(|c| c == '\\' || c.is_control()) =>
+        {
+            p.to_string()
+        }
         _ => "/".to_string(),
     }
 }
@@ -677,5 +687,20 @@ mod tests {
         assert_eq!(safe_return_to(Some("//evil.com")), "/");
         assert_eq!(safe_return_to(Some("https://evil.com")), "/");
         assert_eq!(safe_return_to(None), "/");
+        for bad in [
+            "/\\x",
+            "/\t/x",
+            "/\n/x",
+            "/\r/x",
+            "/\0x",
+            "\\\\x",
+            "//x",
+            "https://x",
+            "javascript:alert(1)",
+            "",
+        ] {
+            assert_eq!(safe_return_to(Some(bad)), "/", "{bad:?}");
+        }
+        assert_eq!(safe_return_to(Some("/acme/api?x=1#y")), "/acme/api?x=1#y");
     }
 }
