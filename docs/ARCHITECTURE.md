@@ -148,6 +148,19 @@ instead: the `smtp` setting when enabled, else `BGH_SMTP_URL`, else the
 dev transport (`bgh_core::mail`). `BGH_SIGNUP_ENABLED=false` still
 disables sign-up regardless of the setting.
 
+Email trust: only `user_emails.verified` addresses may link an SSO identity,
+receive password resets, attribute commits/signatures/CODEOWNERS, route
+notifications or match org invitations. Self-service sign-up stores its
+primary email unverified and mails a `/_bgh/emails/verify` link; only
+trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
+`email_verified` claim) pass `email_verified: true` to `db::NewUser`, after
+`emails::release_unverified` drops other accounts' unverified claims on that
+address (and unpublishes it from their profiles). An unverified primary
+can't be made public. When the sign-up policy gates on the address (`invite`
+or an `allowed_email_domains` list), `settings::check_email_gate` refuses
+sign-up (`session::create_signup`, right after `admit_signup`) and password
+sign-in (403) until the account has a verified email.
+
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,

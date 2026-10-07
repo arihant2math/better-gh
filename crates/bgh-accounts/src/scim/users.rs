@@ -442,7 +442,7 @@ async fn find_or_create_account(
     let mut email = None;
     for e in f.email_values() {
         let taken: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM user_emails WHERE lower(email) = lower($1))",
+            "SELECT EXISTS (SELECT 1 FROM user_emails WHERE lower(email) = lower($1) AND verified)",
         )
         .bind(&e)
         .fetch_one(&mut *tx)
@@ -464,6 +464,7 @@ async fn find_or_create_account(
         f.name().as_deref(),
         None,
         Some(false),
+        true,
     )
     .await?;
     audit::log(
