@@ -170,6 +170,51 @@ async fn sp_initiated_round_trip_provisions_and_maps_attributes() {
     assert_eq!(audit, ["user.saml_link", "user.demote"]);
 }
 
+/// SAML just-in-time provisioning obeys the site sign-up policy (#317).
+#[tokio::test]
+async fn jit_provisioning_respects_signup_policy() {
+    let app = bgh_server::test_app().await;
+    let admin = app.create_admin("root").await;
+    enable(&app, &admin, json!({})).await;
+    app.create_org("acme", &admin).await;
+    let set = |signup: Value| crate::signup_policy::set_signup(&app, &admin, signup);
+    let attempt = |name_id: &'static str, email: &'static str| {
+        sign_in(&app, move |o| o.attr("emails", &[email]), name_id)
+    };
+    let db = &app.state.db;
+    let exists = |login: &'static str| async move {
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM users WHERE login = $1)")
+            .bind(login)
+            .fetch_one(db)
+            .await
+            .unwrap()
+    };
+
+    set(json!({"policy": "closed"})).await;
+    assert!(failed(&attempt("closed", "closed@corp.example").await));
+    assert!(!exists("closed").await);
+
+    set(json!({"policy": "invite"})).await;
+    assert!(failed(&attempt("stranger", "stranger@corp.example").await));
+    assert!(!exists("stranger").await);
+    app.post("/api/v3/orgs/acme/invitations")
+        .auth(&admin)
+        .json(&json!({"email": "invited@corp.example", "role": "direct_member"}))
+        .send()
+        .await
+        .assert_status(201);
+    let res = attempt("invited", "invited@corp.example").await;
+    res.assert_status(303);
+    assert!(!failed(&res));
+    assert!(exists("invited").await);
+
+    set(json!({"policy": "open", "allowed_email_domains": ["corp.example"]})).await;
+    assert!(failed(&attempt("eve", "eve@evil.test").await));
+    assert!(!exists("eve").await);
+    assert!(!failed(&attempt("bob", "bob@corp.example").await));
+    assert!(exists("bob").await);
+}
+
 #[tokio::test]
 async fn rejects_invalid_responses() {
     let app = bgh_server::test_app().await;
