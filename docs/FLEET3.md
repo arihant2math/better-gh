@@ -50,3 +50,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 23:20Z: C opened #355 (core: hold advisory locks outside the pool, for #341); Rust tests running.
 - 23:26Z: #355 green; opus reviewer spawned.
 - 23:37Z: B opened #359 (Fixes #154; codegen → #358), green; sonnet reviewer spawned.
+- 23:41Z: #359 APPROVE @df9fd83 (=head), CI green; sent to coordinator. Filed #360 (mock simpleUser shape).
