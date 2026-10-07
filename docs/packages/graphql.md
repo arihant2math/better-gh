@@ -30,6 +30,12 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   headers; with enforcement on, an over-budget query is rejected with
   `RATE_LIMITED`. `rateLimit { cost nodeCount }` report the computed
   values (`dryRun` is accepted but still charges).
+* Pre-parse guard (`src/guard.rs`, issue #335): before async-graphql's
+  recursive parser sees it, the raw query is scanned once (strings and
+  comments skipped) and rejected with a 200 `errors[]` if it is longer
+  than 256 KiB (`MAX_QUERY_LENGTH_EXCEEDED`) or nests `{`/`(`/`[` deeper
+  than 128 (`MAX_NESTING_EXCEEDED`), so a deep query can't overflow the
+  stack. `variables` are bounded by serde_json's recursion limit (128).
 * `GET /api/v3/meta` (GHES shape, `installed_version: "3.17.0"` =
   `bgh_graphql::COMPAT_GHES_VERSION`). `gh` gates GraphQL feature detection
   on it: 3.17 = classic issue-search syntax, no classic projects.
