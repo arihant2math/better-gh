@@ -50,14 +50,15 @@ function storedTab(): WorkTab {
 const CompactIssue = observer(function CompactIssue({ issue }: { issue: Issue }) {
   const repo = store().get('repo', issue.repoId);
   const labels = issue.labelIds.slice(0, 2).map((id) => store().get('label', id));
+  const ref = repo ? `${repo.owner}/${repo.name}#${issue.number}` : `#${issue.number}`;
   return (
     <Link to={issueHref(issue)} className={styles.issue}>
       <StateIcon issue={issue} />
       <span className={styles.issueMain}>
         <span className={styles.issueTitle}>{issue.title}</span>
         <span className={styles.issueMeta}>
-          <span className={styles.issueRef} title={`${repo?.owner}/${repo?.name}#${issue.number}`}>
-            {repo?.owner}/{repo?.name}#{issue.number}
+          <span className={styles.issueRef} title={ref}>
+            {ref}
           </span>
           {labels.map((l) => l && <span key={l.id} className={styles.labelDot} style={{ background: `#${l.color}` }} title={l.name} />)}
         </span>
