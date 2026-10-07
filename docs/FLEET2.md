@@ -5,7 +5,7 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 ## Bootstrap
 | PR | Status |
 |---|---|
-| #44 (land prior work → main) | CI running; merge (method: merge) when green |
+| #44 (land prior work → main) | clippy red (result_large_err, rust 1.99); fixer session_01HBf9yWEgQS6UYyubf7XC61 pushing to claude/sleepy-cray-9jj0t3 |
 
 ## Workers
 | Issue | Session | PR | Status |
