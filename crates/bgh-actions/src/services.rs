@@ -101,7 +101,7 @@ pub async fn builtin_runner(state: AppState, shutdown: CancellationToken) {
     if !state.config.actions.builtin_runner || state.config.actions.max_jobs == 0 {
         return;
     }
-    let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "bgh".into());
+    let host = &state.config.instance_name;
     let Some(cfg) = builtin_config(&state, &format!("bgh-builtin-{host}")).await else {
         tracing::warn!(
             "!!! The built-in Actions runner is DISABLED: BGH_ACTIONS_EXECUTOR=auto needs a \

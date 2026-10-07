@@ -20,7 +20,7 @@ use tokio::time::Instant;
 
 use crate::delta::{self, Item};
 use crate::hub::{Conn, Hub, HubMsg};
-use crate::{compact, config, scopes};
+use crate::{compact, scopes};
 
 /// Close code: not authenticated (client goes to login).
 pub const CLOSE_UNAUTHENTICATED: u16 = 4001;
@@ -93,7 +93,9 @@ fn origin_allowed(state: &AppState, headers: &HeaderMap) -> bool {
     let origin = origin.trim_end_matches('/');
     let base = state.config.base_url.trim_end_matches('/');
     if origin.eq_ignore_ascii_case(base)
-        || config::get()
+        || state
+            .config
+            .sync
             .allowed_origins
             .iter()
             .any(|o| o.eq_ignore_ascii_case(origin))

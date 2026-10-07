@@ -132,11 +132,27 @@ export class StepLog {
   }
 }
 
-/** All steps of one job's log. Mutable; bump a version counter to re-render. */
+/**
+ * A point-in-time handle on a mutable store: a new object after every
+ * mutation, the same one otherwise, so memos can depend on it.
+ */
+export interface Snapshot<T> {
+  readonly of: T;
+  readonly version: number;
+}
+
+/** All steps of one job's log. Mutated in place; read it through `snapshot()`. */
 export class JobLog {
   readonly steps = new Map<number, StepLog>();
   /** Total parsed lines across steps. */
   lineCount = 0;
+  private version = 0;
+  private snap: Snapshot<JobLog> | null = null;
+
+  snapshot(): Snapshot<JobLog> {
+    if (this.snap?.version !== this.version) this.snap = { of: this, version: this.version };
+    return this.snap;
+  }
 
   append(step: number, text: string): void {
     let s = this.steps.get(step);
@@ -145,6 +161,7 @@ export class JobLog {
       this.steps.set(step, s);
     }
     this.lineCount += s.push(text);
+    this.version++;
   }
 
   /** End of stream: flush partial lines. */
@@ -154,11 +171,13 @@ export class JobLog {
       s.finish();
       this.lineCount += s.lines.length - n;
     }
+    this.version++;
   }
 
   reset(): void {
     this.steps.clear();
     this.lineCount = 0;
+    this.version++;
   }
 }
 

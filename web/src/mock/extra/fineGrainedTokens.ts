@@ -170,7 +170,7 @@ export function installFineGrainedTokenMocks(server: MockServer): void {
   const minimalRepo = (r: Repo) => ({ id: r.id, name: r.name, full_name: `${r.owner}/${r.name}`, private: r.private, owner: account(r.ownerId), html_url: `/${r.owner}/${r.name}` });
   const expired = (row: TokenRow) => Date.parse(row.expires_at) <= Date.now();
 
-  function seedState() {
+  function seedState(): MockState {
     const now = Date.now();
     const viewer = server.db.viewerId;
     const acme = orgByLogin('acme');
@@ -221,7 +221,7 @@ export function installFineGrainedTokenMocks(server: MockServer): void {
         }),
       );
     }
-    return { tokens, policies: {}, nextId } as MockState;
+    return { tokens, policies: {}, nextId };
   }
 
   const tokenJson = (row: TokenRow, token?: string) => ({
@@ -421,7 +421,7 @@ export function installFineGrainedTokenMocks(server: MockServer): void {
       if (k in b) {
         const v = b[k];
         if (v !== null && (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 366)) return invalid(`${k} must be between 1 and 366, or null`, k, 'invalid', 'PatPolicy');
-        next[k] = v as number | null;
+        next[k] = v;
       }
     }
     S().policies[org.id] = next;

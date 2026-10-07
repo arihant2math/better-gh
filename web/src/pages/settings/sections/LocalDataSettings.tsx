@@ -34,9 +34,7 @@ export default observer(function LocalDataSettings() {
         <div>
           <Button
             variant="danger"
-            onClick={async () => {
-              await c.bootstrap();
-            }}
+            onClick={() => void c.bootstrap()}
           >
             Re-download workspace
           </Button>

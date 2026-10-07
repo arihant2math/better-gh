@@ -35,7 +35,6 @@ import {
   type SimpleUser,
   type Team,
   type TeamFull,
-  type TeamPrivacy,
   type TeamRepo,
   type TeamRepoPermission,
   type TeamRole,
@@ -743,7 +742,7 @@ function SettingsTab({ org, team }: { org: string; team: TeamFull }) {
                 </Select>
               </Field>
               <TeamPrivacyChoice
-                value={nested ? 'closed' : (form.privacy as TeamPrivacy)}
+                value={nested ? 'closed' : form.privacy}
                 onChange={(v) => set({ privacy: v })}
                 secretDisabled={nested}
                 secretReason={hasChildren ? 'Teams with child teams can’t be secret.' : 'Nested teams can’t be secret.'}

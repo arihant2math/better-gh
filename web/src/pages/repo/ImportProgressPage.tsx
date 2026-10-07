@@ -32,7 +32,7 @@ function useImport(owner: string, repo: string) {
         const data = await getImport(owner, repo);
         if (cancelled) return;
         setState({ key, data });
-        if (running(data.status)) timer = setTimeout(tick, POLL_MS);
+        if (running(data.status)) timer = setTimeout(() => void tick(), POLL_MS);
       } catch (error) {
         if (!cancelled) setState({ key, error });
       }

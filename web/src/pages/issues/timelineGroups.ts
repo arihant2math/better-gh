@@ -19,7 +19,7 @@ export function groupEvents(events: IssueEvent[]): IssueEvent[][] {
       prev.actorId === e.actorId &&
       Math.abs(Date.parse(e.createdAt) - Date.parse(prev.createdAt)) <= GROUP_WINDOW_MS
     ) {
-      last!.push(e);
+      last.push(e);
     } else {
       out.push([e]);
     }

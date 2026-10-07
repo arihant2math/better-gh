@@ -67,14 +67,14 @@ function g(a: number, b: number, c: number, d: number, ix: number, iy: number): 
   add64aa(a, b);
   add64ac(a, y0, y1);
   // d = (d ^ a) >>> 16
-  xor0 = v[d]! ^ v[a]!;
+  xor0 = v[d] ^ v[a]!;
   xor1 = v[d + 1]! ^ v[a + 1]!;
   v[d] = (xor0 >>> 16) ^ (xor1 << 16);
   v[d + 1] = (xor1 >>> 16) ^ (xor0 << 16);
 
   add64aa(c, d);
   // b = (b ^ c) >>> 63
-  xor0 = v[b]! ^ v[c]!;
+  xor0 = v[b] ^ v[c]!;
   xor1 = v[b + 1]! ^ v[c + 1]!;
   v[b] = (xor1 >>> 31) ^ (xor0 << 1);
   v[b + 1] = (xor0 >>> 31) ^ (xor1 << 1);

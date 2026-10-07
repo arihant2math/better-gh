@@ -355,7 +355,7 @@ const ViewBody = observer(function ViewBody({ ctx, view, fields }: { ctx: Projec
               size="sm"
               variant="primary"
               onClick={() => {
-                updateView(ctx.project, view, { filter: urlFilter! });
+                updateView(ctx.project, view, { filter: urlFilter });
                 setQuery({ filterQuery: null });
               }}
             >

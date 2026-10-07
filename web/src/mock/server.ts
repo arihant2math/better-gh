@@ -260,7 +260,7 @@ export class MockServer implements Transport {
 
   private refsFor(d: Record<string, unknown>): User[] {
     const ids = new Set<ID>();
-    for (const k of ['authorId', 'actorId', 'userId', 'mergedById']) if (typeof d[k] === 'number') ids.add(d[k] as ID);
+    for (const k of ['authorId', 'actorId', 'userId', 'mergedById']) if (typeof d[k] === 'number') ids.add(d[k]);
     for (const k of ['assigneeIds', 'requestedReviewerIds', 'memberIds']) for (const v of (d[k] as ID[] | undefined) ?? []) ids.add(v);
     return [...ids].map((i) => this.db.tables.user.get(i)).filter((u): u is User => !!u);
   }
@@ -1235,7 +1235,7 @@ export class MockServer implements Transport {
       issue: (r, n) => this.issue(r, n),
       files: (r) => this.repoFilesFor(r),
       restIssue: (i) => this.restIssue(i),
-      event: (i, e, d) => this.event(i, e as IssueEvent['event'], (d ?? {}) as IssueEvent['data']),
+      event: (i, e, d) => this.event(i, e as IssueEvent['event'], d ?? {}),
       bumpCounts: (r, i, d) => this.bumpCounts(r, i, d),
       commits: (r, salt, n, start, author) => this.commits(r, salt, n, start, author),
     };
@@ -1298,7 +1298,7 @@ export class MockServer implements Transport {
       status: 200,
       body: {
         ref: t.ref, commit: t.commit, path: t.path, sha: fakeSha(`tree:${t.path}`), entries, last_commits: null,
-        readme: readmeFile ? { name: readmeEntry!.name, path: readmeEntry!.path, sha: readmeEntry!.sha, html: renderMarkdown(readmeFile.content, { repo: `${t.repo.owner}/${t.repo.name}` }) } : null,
+        readme: readmeFile ? { name: readmeEntry.name, path: readmeEntry.path, sha: readmeEntry.sha, html: renderMarkdown(readmeFile.content, { repo: `${t.repo.owner}/${t.repo.name}` }) } : null,
       },
     };
   }

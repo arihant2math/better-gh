@@ -314,7 +314,7 @@ function FormFields({
             );
             break;
           case 'checkboxes': {
-            const checked = Array.isArray(values[k]) ? (values[k] as boolean[]) : [];
+            const checked = Array.isArray(values[k]) ? values[k] : [];
             control = (
               <div className={styles.checks} id={`field-${k}`} tabIndex={-1}>
                 {(a.options ?? []).map((o, j) => {

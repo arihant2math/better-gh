@@ -303,7 +303,7 @@ pub async fn run_workers(
         })
     };
 
-    let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "bgh".into());
+    let host = state.config.instance_name.clone();
     let mut workers = Vec::with_capacity(concurrency);
     for i in 0..concurrency {
         let state = state.clone();

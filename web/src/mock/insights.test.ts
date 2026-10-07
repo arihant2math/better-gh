@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { MockServer } from './server';
 
-type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const call = async (s: MockServer, method: string, path: string, body?: unknown) => {
   const init: RequestInit = { method, headers: body === undefined ? {} : { 'content-type': 'application/json' } };
   if (body !== undefined) init.body = JSON.stringify(body);
   const r = await s.fetch(path, init);
   const text = await r.text();
-  return { status: r.status, body: (text ? JSON.parse(text) : null) as Json };
+  return { status: r.status, body: text ? JSON.parse(text) : null };
 };
 
 describe('mock insights backend', () => {

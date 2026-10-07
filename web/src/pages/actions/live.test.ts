@@ -27,7 +27,7 @@ const run = (id: number, patch: Partial<WorkflowRun> = {}): WorkflowRun =>
     run_started_at: '2026-10-05T08:00:00Z',
     head_commit: null,
     ...patch,
-  }) as WorkflowRun;
+  });
 
 const delta = (model: string, mid: number, d: Record<string, unknown>, a: Delta['a'] = 'U'): Delta =>
   ({ id: mid, scope: 'repo:7', model, mid, a, d }) as unknown as Delta;

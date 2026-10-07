@@ -226,7 +226,7 @@ function fieldError(field: string, message = `${field} is invalid`): Resp {
 /** The backend's SAML checks (bgh-admin `validate`). */
 function validateSaml(ap: Json): Resp | null {
   const s = ap.saml as Json;
-  const str = (k: string) => (typeof s[k] === 'string' ? (s[k] as string) : '');
+  const str = (k: string) => (typeof s[k] === 'string' ? s[k] : '');
   if (s.enabled) {
     if (!/^https?:\/\//.test(str('idp_sso_url'))) return fieldError('auth_providers.saml.idp_sso_url');
     if (!str('idp_certificate').trim()) return fieldError('auth_providers.saml.idp_certificate');

@@ -2263,7 +2263,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
       },
       cancel() {
         closed = true;
-        const w = wake as (() => void) | null;
+        const w = wake;
         if (w) {
           logListeners.get(job.id)?.delete(w);
           w();
@@ -2303,7 +2303,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     m = new Map();
     store.set(sc.key, m);
     const add = (name: string, value: string, k: number, visibility?: SecretRow['visibility'], selected?: ID[]) =>
-      m!.set(name, { name, value, createdAt: seedTime(k), updatedAt: seedTime(k + 2), visibility, selected });
+      m.set(name, { name, value, createdAt: seedTime(k), updatedAt: seedTime(k + 2), visibility, selected });
     if (kind === 'secrets') {
       if (sc.kind === 'repo') ['DEPLOY_KEY', 'NPM_TOKEN', 'SLACK_WEBHOOK_URL'].forEach((n, k) => add(n, '***', k));
       else if (sc.kind === 'env') (sc.key.endsWith(':production') ? ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'] : ['AWS_ACCESS_KEY_ID']).forEach((n, k) => add(n, '***', k));
@@ -2370,7 +2370,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
       const name = dec(ctx.m[sc.i]).toUpperCase();
       const bad = badName(name, 'Secret');
       if (bad) return bad;
-      const { encrypted_value: value, key_id: keyId, visibility, selected_repository_ids: selected } = ctx.body as Record<string, unknown>;
+      const { encrypted_value: value, key_id: keyId, visibility, selected_repository_ids: selected } = ctx.body;
       if (typeof value !== 'string' || !value) return err(422, 'Validation Failed', { errors: [{ resource: 'Secret', field: 'encrypted_value', code: 'missing_field' }] });
       if (keyId !== publicKey(sc).key_id) return err(422, 'Validation Failed', { errors: [{ resource: 'Secret', field: 'key_id', code: 'invalid' }] });
       if (sc.kind === 'org' && visibility !== undefined && !['all', 'private', 'selected'].includes(String(visibility)))
@@ -2491,7 +2491,7 @@ export function installActionsRoutes(R: RouteFn, s: MockServer): void {
     const now = s.now();
     const prev = st.envs.get(name.toLowerCase());
     const e: EnvRow = prev ? { ...prev, updatedAt: now } : { id: st.repo.id * 100 + st.nextEnv++, name, createdAt: now, updatedAt: now };
-    const b = ctx.body as Record<string, unknown>;
+    const b = ctx.body;
     if (typeof b.wait_timer === 'number') {
       if (b.wait_timer < 0 || b.wait_timer > 43200) return err(422, 'Validation Failed', { errors: [{ resource: 'Environment', field: 'wait_timer', code: 'custom', message: 'wait_timer must be an integer between 0 and 43200' }] });
       e.waitTimer = b.wait_timer;

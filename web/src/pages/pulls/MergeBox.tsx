@@ -283,7 +283,7 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
               <Button
                 leadingIcon={GitBranchIcon}
                 onClick={() =>
-                  updateBranch(issue).done.then(
+                  void updateBranch(issue).done.then(
                     () => toast({ kind: 'success', title: 'Updating branch…' }),
                     () => undefined,
                   )
@@ -420,7 +420,7 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
               <Button
                 size="sm"
                 onClick={() =>
-                  enableAutoMerge(issue, chosen).done.then(
+                  void enableAutoMerge(issue, chosen).done.then(
                     () => toast({ kind: 'success', title: 'Auto-merge enabled' }),
                     () => undefined,
                   )

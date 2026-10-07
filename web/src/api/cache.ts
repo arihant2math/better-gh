@@ -74,7 +74,7 @@ function start<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions, 
   );
   p.catch(() => undefined);
   entry.promise = p;
-  touch(key, entry as Entry);
+  touch(key, entry);
   return entry;
 }
 
@@ -185,7 +185,7 @@ export function mutate<T>(key: string, update: (prev: T | undefined) => T): void
   const value = update(e?.status === 'ok' ? e.value : undefined);
   if (!e) {
     const entry: Entry<T> = { status: 'ok', value, promise: Promise.resolve(value), fetchedAt: Date.now(), immutable: false, listeners: new Set() };
-    touch(key, entry as Entry);
+    touch(key, entry);
     return;
   }
   e.status = 'ok';

@@ -105,7 +105,7 @@ export default function UsersPage() {
         onSort={(s) => setQuery({ sort: s.key, direction: s.direction })}
         loading={list.loading}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         empty={
           list.error ? (
             <EmptyState icon={PersonIcon} title="Could not load users">

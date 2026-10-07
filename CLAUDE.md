@@ -2,7 +2,7 @@
 
 Read `docs/ARCHITECTURE.md` before changing anything, and
 `docs/BACKEND_PATTERNS.md` before writing backend code. It is the source of
-truth for layout, API compatibility rules, migrations ranges, and the sync
+truth for layout, API compatibility rules, migration numbering, and the sync
 engine. If you must deviate, update the doc in the same commit.
 
 ## Setup

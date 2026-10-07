@@ -38,18 +38,17 @@ export function RepoAccessPicker<S extends { mode: string; repos: PickedRepo[] }
   const me = session.user?.login ?? '';
   const res = useResource(value.mode === 'selected' ? `apps:repos:${account.login}` : null, () => listAccountRepos(account, me));
   const [q, setQ] = useState('');
-  const picked = new Set(value.repos.map((r) => r.id));
   const matches = useMemo(() => {
+    const picked = new Set(value.repos.map((r) => r.id));
     const needle = q.trim().toLowerCase();
     return (res.data ?? []).filter((r) => !picked.has(r.id) && (!needle || r.full_name.toLowerCase().includes(needle))).slice(0, 8);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [res.data, q, value.repos]);
   return (
     <div className={styles.picker}>
       <RadioCards
         aria-label="Repository access"
         value={value.mode}
-        onChange={(mode) => onChange({ ...value, mode } as S)}
+        onChange={(mode) => onChange({ ...value, mode })}
         options={[
           ...(publicOption ? [{ value: 'public', ...publicOption }] : []),
           { value: 'all', label: 'All repositories', description: `Applies to all current and future repositories owned by ${account.login}.` },

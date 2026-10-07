@@ -14,7 +14,7 @@ feature work: [`docs/FRONTEND.md`](../docs/FRONTEND.md). Wire protocol:
 | `npm run build` | production build to `dist/` (+ `.br`/`.gz` siblings, `sw.js`) **and the bundle budget check** |
 | `npm run size` / `npm run analyze` | budget check / per-chunk breakdown of an existing build |
 | `npm run typecheck` | `tsc` for app, build config and service worker |
-| `npm run lint` | ESLint (typescript-eslint, react-hooks) |
+| `npm run lint` | ESLint (type-aware typescript-eslint, react-hooks v7 rules; about 2 min) |
 | `npm test` | vitest (store, reconciliation, sync client vs. mock, query language, diff parser) |
 | `npm run viewports -- [options]` | device-testing matrix: screenshots + layout checks at 9 viewports × 2 themes + live resize, see [below](#device-testing-viewport-matrix) |
 | `node scripts/screenshots.mjs [url] [dir]` | Playwright screenshots of key pages (mock mode) |

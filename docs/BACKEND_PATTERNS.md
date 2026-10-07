@@ -28,8 +28,12 @@ pub fn register(reg: &mut Registry) {          // jobs + event listeners
 }
 ```
 
-Shared code that two crates need goes into `bgh-core`, never a dependency on
-another domain crate's internals.
+Shared code that two crates need goes into `bgh-core`, or into a small `pub`
+service fn of the owning crate; any new dependency edge between domain
+crates must be added to the edge table in ARCHITECTURE.md "Repository
+layout". Settings come from `state.config` (`bgh_core::Config`), never
+`std::env::var`; a new variable gets a `Config` field and a row in
+ARCHITECTURE.md "Configuration" (a unit test enforces the docs).
 
 ## 2. A handler
 
