@@ -17,7 +17,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-4 merged (#152, #311, #320, #330); item 5 is #334. Then items 6-10 in issue order, one worker at a time ("Part of #85", T-Perf A-Ops). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
+Items 1-5 merged (#152, #311, #320, #330, #334); item 6 worker session_01BWCia78jFZoT3pq4UrYS1p. Watch main run 37611075666 (Docker prebuilt path). Then items 6-10 in issue order, one worker at a time ("Part of #85", T-Perf A-Ops). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
 
 ### Follow-ups filed today (backlog, unassigned)
 #321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed).
@@ -41,6 +41,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:00: orchestrator MERGED #334 (223214d); #85 item 5 done; worker archived. WATCH main CI run 37611075666 (223214d): release-binary and Docker on the Ubuntu-to-trixie prebuilt path; a failure means a top-priority fix PR. #85 item 6 worker session_01BWCia78jFZoT3pq4UrYS1p, branch agent/85-share-clippy-test-deps.
 10:59: #334 READY (APPROVE on 017af62; then only main merge 1650fea; CI result green, run 37609399608; Ubuntu-to-trixie ABI checked locally). Forwarded with caveats (watch the first main Docker run; toolchain is now stable). Reviewer archived. #85 item 6 starts after the merge.
 10:48 cycle: no new reports. Asked the #319 author for status. Handoff refreshed (context 265k).
 10:38: orchestrator MERGED #309 (2a45a56); author archived. #335 APPROVED as a wind-down exception and labelled P-Critical + C-Claimed. Fixer session_016RmaisDuJy7A79V54oB1mV, branch agent/335-graphql-parse-depth; start an adversarial security reviewer when it pings.
