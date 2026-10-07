@@ -11,8 +11,8 @@
 # See docs/SELF_HOSTING.md.
 
 ARG RUST_VERSION=1.97
-# cargo-chef image tag prefix: "latest" or a release such as "0.1.78".
-ARG CARGO_CHEF_VERSION=latest
+# cargo-chef release (image tag prefix); "latest" tracks upstream.
+ARG CARGO_CHEF_VERSION=0.1.78
 ARG NODE_VERSION=22
 ARG DEBIAN_RELEASE=trixie
 

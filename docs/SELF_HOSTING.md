@@ -65,8 +65,8 @@ caches the Rust dependency build, and the runtime stage is `debian:trixie-slim` 
   `docker run IMAGE migrate` or `docker run IMAGE admin create-user ...`
   work too
 
-Build arguments: `RUST_VERSION` (1.97), `CARGO_CHEF_VERSION` (`latest`,
-or a cargo-chef release such as `0.1.78`), `NODE_VERSION` (22),
+Build arguments: `RUST_VERSION` (1.97), `CARGO_CHEF_VERSION` (`0.1.78`;
+`latest` tracks the newest cargo-chef release), `NODE_VERSION` (22),
 `DEBIAN_RELEASE` (trixie), `CARGO_FEATURES` (`embed-web`; set to `""` to
 serve the client from `BGH_WEB_DIR` instead), `CARGO_BUILD_JOBS` (cap
 parallel rustc processes on small builders; the release profile uses LTO
