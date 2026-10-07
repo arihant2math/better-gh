@@ -67,6 +67,13 @@ impl Default for SignupSettings {
 }
 
 impl SignupSettings {
+    /// Whether the policy gates on the claimed address (invite-only or a
+    /// domain allow-list). A self-service account must then prove that
+    /// address by mail before it can sign in: see [`check_email_gate`].
+    pub fn gates_on_email(&self) -> bool {
+        self.policy == SignupPolicy::Invite || !self.allowed_email_domains.is_empty()
+    }
+
     /// Whether `email`'s domain is allowed.
     pub fn email_domain_allowed(&self, email: &str) -> bool {
         if self.allowed_email_domains.is_empty() {
@@ -891,7 +898,7 @@ pub async fn load(state: &AppState) -> ApiResult<Arc<SiteSettings>> {
         return Ok(s.clone());
     }
     let s = Arc::new(load_uncached(&state.config, &state.db).await?);
-    crate::camo::set_enabled(s.markdown.image_proxy);
+    crate::camo::set_enabled(&state.config.base_url, s.markdown.image_proxy);
     cache()
         .lock()
         .expect("settings cache")
@@ -956,6 +963,28 @@ pub async fn check_signup(state: &AppState, email: &str) -> ApiResult<()> {
         ));
     }
     Ok(())
+}
+
+/// 403 while `user` has no verified email and the sign-up policy gates on
+/// the address ([`SignupSettings::gates_on_email`]). Sign-up only checks the
+/// address the user *claims*; without this, typing an invited or allowed
+/// address would be enough to get a working account. Site admins are exempt.
+pub async fn check_email_gate(state: &AppState, user: &db::User) -> ApiResult<()> {
+    if user.site_admin || !load(state).await?.signup.gates_on_email() {
+        return Ok(());
+    }
+    let verified: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM user_emails WHERE user_id = $1 AND verified)",
+    )
+    .bind(user.id)
+    .fetch_one(&state.db)
+    .await?;
+    if verified {
+        return Ok(());
+    }
+    Err(ApiError::forbidden(
+        "Confirm your email address before signing in: open the link we emailed you.",
+    ))
 }
 
 /// Effective storage limits for an owner, in KB: `(per_repo, total)`.

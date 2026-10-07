@@ -23,6 +23,7 @@ pub mod engine;
 pub mod expr;
 pub mod gates;
 pub mod json;
+pub mod live_logs;
 pub mod logs;
 pub mod models;
 pub mod oidc;

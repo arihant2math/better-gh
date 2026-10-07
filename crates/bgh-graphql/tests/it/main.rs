@@ -5,6 +5,8 @@
 mod common;
 
 mod access_policy;
+mod cost_limits;
+mod merge_queue;
 mod moderation;
 mod mutations;
 mod projects;

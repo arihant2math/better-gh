@@ -23,7 +23,6 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::session::{self, LoginBody, PasswordLogin, SignupBody, TwoFactorBody};
-use crate::users::{self, NewAccount};
 use crate::util::ClientInfo;
 
 #[derive(Debug, Clone, Serialize)]
@@ -218,27 +217,7 @@ pub async fn signup(
     client: ClientInfo,
     Json(body): Json<SignupBody>,
 ) -> ApiResult<Response> {
-    if !state.config.signup_enabled {
-        return Err(ApiError::forbidden("Sign up is disabled on this instance."));
-    }
-    if bgh_core::ratelimit::hit(&state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
-        return Err(ApiError::Status(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many sign ups. Please try again later.".into(),
-        ));
-    }
-    let user = users::create_user(
-        &state,
-        NewAccount {
-            login: body.login.trim(),
-            email: body.email.trim(),
-            password: &body.password,
-            name: body.name.as_deref(),
-            site_admin: None,
-        },
-        None,
-    )
-    .await?;
+    let user = session::create_signup(&state, &client, &body).await?;
     signed_in(&state, &client, &user, StatusCode::CREATED).await
 }
 

@@ -762,6 +762,7 @@ dependencies = [
  "http",
  "http-body-util",
  "lettre",
+ "libc",
  "metrics",
  "rand 0.9.5",
  "rand_core 0.6.4",

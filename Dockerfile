@@ -7,10 +7,19 @@
 #     -e DATABASE_URL=postgres://... -e REDIS_URL=redis://... bgh
 #
 # Stages: web (vite build) -> chef/planner/builder (cached Rust deps via
-# cargo-chef) -> runtime (debian slim + git + git-lfs, non-root).
+# cargo-chef) -> bin (just the binary) -> runtime (debian slim + git +
+# git-lfs, non-root).
+#
+# To package an already-built Linux x86_64 `bgh` instead of compiling one,
+# override the `bin` stage with a directory holding it (CI does this on main
+# with the release-binary artifact, so release + LTO compiles once, #85):
+#
+#   docker buildx build --build-context bin=path/to/dir -t bgh .
 # See docs/SELF_HOSTING.md.
 
 ARG RUST_VERSION=1.97
+# cargo-chef release (image tag prefix); "latest" tracks upstream.
+ARG CARGO_CHEF_VERSION=0.1.78
 ARG NODE_VERSION=22
 ARG DEBIAN_RELEASE=trixie
 
@@ -24,13 +33,13 @@ COPY web/ ./
 RUN npm run build
 
 # --- rust toolchain + cargo-chef ----------------------------------------------
-FROM rust:${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
+# The official rust slim image with a prebuilt cargo-chef, so cold builds
+# don't compile it (#85).
+FROM lukemathwalker/cargo-chef:${CARGO_CHEF_VERSION}-rust-${RUST_VERSION}-slim-${DEBIAN_RELEASE} AS chef
 # OpenSSL headers: webauthn-rs (security keys / passkeys) links libssl.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pkg-config libssl-dev \
  && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    cargo install cargo-chef --locked --version ^0.1
 WORKDIR /src
 
 FROM chef AS planner
@@ -57,6 +66,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked -p bgh-server --bin bgh --features "$CARGO_FEATURES" \
  && install -m 0755 target/release/bgh /usr/local/bin/bgh
 
+# --- binary ---------------------------------------------------------------------
+# Replaceable with `--build-context bin=<dir containing bgh>`; BuildKit then
+# skips every stage above.
+FROM scratch AS bin
+COPY --from=builder /usr/local/bin/bgh /bgh
+
 # --- runtime --------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # git: smart HTTP / SSH transport and write plumbing. tini: PID 1 that
@@ -70,7 +85,7 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid bgh --home-dir /data --shell /usr/sbin/nologin bgh \
  && mkdir -p /data \
  && chown bgh:bgh /data
-COPY --from=builder /usr/local/bin/bgh /usr/local/bin/bgh
+COPY --from=bin --chmod=0755 /bgh /usr/local/bin/bgh
 
 # Actions: this image has no docker, so with BGH_ACTIONS_EXECUTOR=auto the
 # built-in runner takes no jobs (it never runs workflow code inside the

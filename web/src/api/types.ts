@@ -60,6 +60,58 @@ export interface PullRequirements {
   can_bypass: boolean;
   /** Latest deployment of the head commit per environment (P19). */
   deployments?: PullDeployment[];
+  /** Merge queue status for the base branch (P39); absent on older servers. */
+  merge_queue?: PullMergeQueue;
+}
+
+/** `PullRequirements.merge_queue`. */
+export interface PullMergeQueue {
+  /** The base branch's rules require merging through the queue. */
+  required: boolean;
+  branch: string;
+  /** This pull request's active queue entry, if queued. */
+  entry: MergeQueueEntry | null;
+}
+
+export type MergeQueueEntryState = 'queued' | 'awaiting_checks' | 'mergeable' | 'unmergeable' | 'merged' | 'removed';
+
+/** One merge queue entry (`/_bgh/repos/{o}/{r}/queue/{branch}`, `PUT …/pulls/{n}/queue`). */
+export interface MergeQueueEntry {
+  id: number;
+  /** 1-based. */
+  position: number;
+  state: MergeQueueEntryState;
+  base_ref: string;
+  head_sha: string;
+  jump: boolean;
+  pull: { number: number; title: string; user: RestUser };
+  enqueuer: RestUser;
+  enqueued_at: string;
+  /** Seconds. */
+  estimated_time_to_merge: number | null;
+  group_head_sha: string | null;
+  failure_reason: string | null;
+}
+
+/** `merge_queue` rule parameters of the branch. */
+export interface MergeQueueConfig {
+  merge_method: 'MERGE' | 'SQUASH' | 'REBASE';
+  max_entries_to_build: number;
+  min_entries_to_merge: number;
+  max_entries_to_merge: number;
+  grouping_strategy: 'ALLGREEN' | 'HEADGREEN';
+  check_response_timeout_minutes: number;
+  min_entries_to_merge_wait_minutes: number;
+}
+
+/** `GET /_bgh/repos/{o}/{r}/queue/{branch}`. */
+export interface MergeQueue {
+  branch: string;
+  /** The merge_queue rule is active for the branch. */
+  enabled: boolean;
+  config: MergeQueueConfig | null;
+  /** Active entries, ordered by position. */
+  entries: MergeQueueEntry[];
 }
 
 /** `PullRequirements.deployments` item. */
@@ -297,6 +349,8 @@ export interface TreeView {
   entries: TreeEntry[];
   last_commits: Record<string, BrowseCommit> | null;
   readme: RenderedReadme | null;
+  /** The repository has no commits yet (no entries, no README). */
+  empty?: boolean;
 }
 
 export interface LastCommits {
@@ -338,6 +392,8 @@ export interface History {
   per_page: number;
   has_more: boolean;
   commits: BrowseCommit[];
+  /** The repository has no commits yet. */
+  empty?: boolean;
 }
 
 /** `GET /_bgh/repos/{o}/{r}/issues/{n}/links`: the Development section (P4). */

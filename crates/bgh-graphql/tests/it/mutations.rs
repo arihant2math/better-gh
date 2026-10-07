@@ -20,7 +20,13 @@ async fn repo_id(app: &TestApp, user: &TestUser, nwo: &str) -> String {
     d["repository"]["id"].as_str().unwrap().to_string()
 }
 
-async fn rest(app: &TestApp, user: &TestUser, method: &str, path: &str, body: Value) -> Value {
+pub(crate) async fn rest(
+    app: &TestApp,
+    user: &TestUser,
+    method: &str,
+    path: &str,
+    body: Value,
+) -> Value {
     let req = match method {
         "POST" => app.post(path),
         "PUT" => app.put(path),
@@ -33,7 +39,7 @@ async fn rest(app: &TestApp, user: &TestUser, method: &str, path: &str, body: Va
 }
 
 /// A repo with `feature` one commit ahead of `main`.
-async fn repo_with_branch(app: &TestApp, user: &TestUser, name: &str) {
+pub(crate) async fn repo_with_branch(app: &TestApp, user: &TestUser, name: &str) {
     app.create_repo_with(user, None, json!({"name": name, "auto_init": true}))
         .await;
     let nwo = format!("{}/{name}", user.login);
