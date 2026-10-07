@@ -39,6 +39,13 @@ Follow-up issues filed: #153 (flake, fixed by #293), #305, #307, #310, #313, #31
 ### Finally (when everything is done)
 Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR if useful, else just delete bgh/foreman2; report to the orchestrator; cancel triggers.
 
+## WIND DOWN (08:53, user via orchestrator; effective now)
+1. No new workers, auditors or QA, and no new claims. Reviewers are still allowed for open PRs (#309, #312, #323, #315, #316, #322, #319) and for the #85 track.
+2. In-flight PRs finish their review and fix rounds. Keep forwarding approved heads to the orchestrator, which merges them.
+3. Archive each reviewer when its PR merges.
+4. #85 continues sequentially: one worker PR at a time, items 4-10 after #320.
+5. When every open PR is merged or parked (parked = a status comment on the PR saying what remains, with its sessions archived), post the final #46 status: merged today; still open/parked; the high-priority unassigned backlog (#324, #325, #326, #241/#245 if unfinished, audit umbrellas #280, #286, #237); filed follow-ups #321, #327, #328. Then report to the orchestrator.
+
 ## Mode
 04:10 WIND DOWN (user via orchestrator; supersedes FULL SPEED):
 1. No new workers/QA/reviewers for feature/polish/QA work; no new claims; queue frozen. In-flight workers finish their current claimed issue/PR (review + fixer rounds on already-open PRs OK). Archive each session when its PR merges. QA told (04:10) to finish current pass, stop filing, report.
@@ -48,6 +55,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:53: WIND DOWN received (see the section above).
 08:53: #322 → REQUEST_CHANGES at f53ad4f: with #315 applied, a GITHUB_TOKEN disable/enable auto-merge cycle plus the merge_group exemption makes an unbounded run loop (reproduced). The lead was told; the #322 reviewer is archived; the #315 r2 reviewer was given the context.
 08:50: #319 REQUEST_CHANGES (a failed recheck pass drops coalesced targets, so a revoke is delayed up to 5 min and private deltas leak; minor first-subscriber race). Author session_012T1MW3bqBQbQPoRqYR2z4G told; reviewer archived.
 08:50: #322 reviewer APPROVED, but on stale a79fb11 (head is now f53ad4f) and assumed there is no GraphQL enqueue path, while #315 adds one. Asked it for a delta re-review plus a loop re-test with #315 applied. It filed #328 (T-Polish). Not forwarded yet.
