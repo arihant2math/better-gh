@@ -641,7 +641,38 @@ async fn empty_repository() {
     let app = bgh_server::test_app().await;
     let alice = app.create_user("alice").await;
     app.create_repo(&alice, "empty").await;
-    app.get("/_bgh/repos/alice/empty/tree")
+    // Tree and history answer 200 with `empty: true` (no 404 probes).
+    for path in [
+        "/_bgh/repos/alice/empty/tree",
+        "/_bgh/repos/alice/empty/tree/main",
+        "/_bgh/repos/alice/empty/history/main",
+    ] {
+        let res = app.get(path).send().await;
+        res.assert_status(200);
+        let v = res.json();
+        assert_eq!(v["empty"], true, "{path}");
+        assert_eq!(v["ref"], "main", "{path}");
+    }
+    let v = app.get("/_bgh/repos/alice/empty/tree").send().await.json();
+    assert_eq!(v["entries"], serde_json::json!([]));
+    assert!(v["readme"].is_null());
+    let v = app
+        .get("/_bgh/repos/alice/empty/history")
+        .send()
+        .await
+        .json();
+    assert_eq!(v["commits"], serde_json::json!([]));
+    assert_eq!(v["has_more"], false);
+    // A SHA is never answered as "empty" (those responses are immutable).
+    app.get("/_bgh/repos/alice/empty/tree/0123456789abcdef0123456789abcdef01234567")
+        .send()
+        .await
+        .assert_status(404);
+    // Another user's private empty repository stays hidden.
+    let bob = app.create_user("bob").await;
+    app.create_private_repo(&bob, "secret").await;
+    app.get("/_bgh/repos/bob/secret/tree")
+        .auth(&alice)
         .send()
         .await
         .assert_status(404);

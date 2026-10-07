@@ -1,5 +1,4 @@
 import { useEffect, type ReactNode } from 'react';
-import type { BrowseRefs } from '../../../api/types';
 import { isSha } from '../../../api/endpoints';
 import { useRefs } from '../../../components/code/RefPicker';
 import { useParams } from '../../../router';
@@ -7,22 +6,8 @@ import { store } from '../../../sync';
 import { repoByName } from '../../../sync/selectors';
 import { cx } from '../../../ui/Button';
 import { AlertIcon, InfoIcon, LockIcon } from '../../../ui/icons';
+import { splitRefPath } from '../util';
 import styles from './Edit.module.css';
-
-/**
- * Split `{ref}/{rest}` when the ref itself contains slashes
- * (`/edit/feature/x/src/a.ts` → ref `feature/x`, path `src/a.ts`).
- */
-export function resolveRefPath(ref: string, rest: string, refs: BrowseRefs | undefined): { ref: string; path: string } {
-  const path = rest.replace(/^\/+|\/+$/g, '');
-  if (!refs || !path) return { ref, path };
-  const full = `${ref}/${path}`;
-  let best = '';
-  for (const r of [...refs.branches, ...refs.tags]) {
-    if (r.name.length > best.length && r.name.startsWith(`${ref}/`) && (full === r.name || full.startsWith(`${r.name}/`))) best = r.name;
-  }
-  return best ? { ref: best, path: full.slice(best.length + 1) } : { ref, path };
-}
 
 /** Route params + repo, resolved ref and push permission for the edit pages. */
 export function useEditTarget() {
@@ -31,7 +16,10 @@ export function useEditTarget() {
   const name = params.repo;
   const repo = repoByName(owner, name);
   const refs = useRefs(owner, name);
-  const { ref, path } = resolveRefPath(params.ref ?? repo?.defaultBranch ?? '', params['*'] ?? '', refs.data);
+  // Same split as the code view (longest branch/tag prefix wins).
+  const refParam = params.ref ?? repo?.defaultBranch ?? '';
+  const rest = (params['*'] ?? '').replace(/^\/+|\/+$/g, '');
+  const { ref, path } = (refs.data && splitRefPath(refs.data, refParam, rest)) || { ref: refParam, path: rest };
   const isBranch = refs.data ? refs.data.branches.some((b) => b.name === ref) : !isSha(ref);
   const isTag = !!refs.data?.tags.some((t) => t.name === ref);
   const permission = repo ? store().get('viewerRepo', repo.id)?.permission : undefined;

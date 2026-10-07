@@ -156,6 +156,48 @@ pub async fn resolve_with(
     })
 }
 
+/// [`resolve`] that tolerates a repository without commits: when the ref
+/// doesn't resolve and the repository has no branches or tags, returns a
+/// placeholder target (empty commit and path) and `true`, so the code
+/// browser can render its "empty repository" state from a 200 instead of
+/// probing with requests that 404. SHAs never take this path (their
+/// responses are cached as immutable).
+pub async fn resolve_or_empty(
+    state: &AppState,
+    auth: Option<&AuthContext>,
+    owner: &str,
+    repo: &str,
+    spec: Option<&str>,
+) -> ApiResult<(Target, bool)> {
+    let access = RepoAccess::load(state, auth, owner, repo).await?;
+    let (id, default) = (access.repo.id, access.repo.default_branch.clone());
+    let placeholder = access.clone();
+    match resolve_with(state, access, spec).await {
+        Ok(t) => Ok((t, false)),
+        Err(e) => {
+            let refname = spec
+                .map(|s| s.trim_matches('/'))
+                .filter(|s| !s.is_empty())
+                .map_or(default, |s| s.split('/').next().unwrap_or(s).to_string());
+            let empty = !bgh_git::is_sha(&refname)
+                && crate::store(state)
+                    .read(id, |r| r.is_empty())
+                    .await
+                    .unwrap_or(false);
+            if !empty {
+                return Err(e);
+            }
+            let t = Target {
+                access: placeholder,
+                refname,
+                commit: String::new(),
+                path: String::new(),
+            };
+            Ok((t, true))
+        }
+    }
+}
+
 /// `Cache-Control` for a response about `t`.
 pub fn cache_control(private: bool, immutable: bool) -> HeaderValue {
     let vis = if private { "private" } else { "public" };

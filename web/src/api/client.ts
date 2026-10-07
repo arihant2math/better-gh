@@ -6,9 +6,20 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly body: unknown,
+    /** The response's `Retry-After`, in ms from when it arrived (429/503). */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
   }
+}
+
+/** `Retry-After` (delay-seconds or HTTP-date) → ms from `now`; `undefined` when absent or invalid. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v) * 1000;
+  const at = Date.parse(v);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
 export interface RequestOptions {
@@ -44,6 +55,15 @@ export function setSudoHandler(handler: SudoHandler | null): () => void {
   return () => {
     if (sudoHandler === handler) sudoHandler = null;
   };
+}
+
+/**
+ * Show the installed sudo prompt (for write paths outside `ApiClient`, e.g.
+ * the sync tx queue). Resolves false when no prompt is installed or the user
+ * cancels.
+ */
+export function requestSudo(): Promise<boolean> {
+  return sudoHandler ? sudoHandler() : Promise.resolve(false);
 }
 
 export interface ApiResponse<T> {
@@ -111,7 +131,7 @@ export class ApiClient {
     if (!res.ok) {
       const body = data as { message?: unknown } | null;
       const message = body && typeof body === 'object' && body.message ? String(body.message) : `${method} ${path} failed (${res.status})`;
-      throw new ApiError(message, res.status, data);
+      throw new ApiError(message, res.status, data, parseRetryAfter(res.headers.get('retry-after')));
     }
     const etag = res.headers.get('etag');
     if (method === 'GET' && etag) {
