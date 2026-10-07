@@ -22,7 +22,9 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   (product of page sizes down each connection path, summed;
   `MAX_NODE_LIMIT_EXCEEDED`). Fragments are expanded at any depth, and
   `nodes(ids:)` takes at most 100 ids (`ARGUMENT_LIMIT`), each multiplying
-  what is selected below it. The cost is the number of connection fetches
+  what is selected below it. Before parsing checks and validation (which
+  expand fragments without memoising), a document whose fragment-expanded
+  size exceeds 100,000 selections is rejected in linear time. The cost is the number of connection fetches
   / 100, rounded, at least 1: the middleware counts 1 point, the extension
   charges the rest (`ratelimit::charge`) and refreshes the `X-RateLimit-*`
   headers; with enforcement on, an over-budget query is rejected with

@@ -272,3 +272,50 @@ async fn nodes_ids_are_capped_and_multiplied() {
     let d = data(&app, &perf, q, json!({ "ids": [id.clone(), id] })).await;
     assert_eq!(d["rateLimit"]["nodeCount"], 1_202);
 }
+
+#[tokio::test]
+async fn doubling_fragments_are_rejected_before_validation() {
+    let app = bgh_server::test_app().await;
+    // `D30` expands to 2^30 selections; validation would take minutes.
+    let mut q = String::from("query { ...D30 }\nfragment D0 on Query { viewer { login } }\n");
+    for i in 1..=30 {
+        q.push_str(&format!(
+            "fragment D{i} on Query {{ ...D{p} ...D{p} }}\n",
+            p = i - 1
+        ));
+    }
+    let started = std::time::Instant::now();
+    let res = app
+        .post("/api/graphql")
+        .json(&json!({ "query": q }))
+        .send()
+        .await;
+    let elapsed = started.elapsed();
+    let body = res.json();
+    assert_eq!(
+        body["errors"][0]["type"], "MAX_NODE_LIMIT_EXCEEDED",
+        "{body:#}"
+    );
+    assert_eq!(
+        body["errors"][0]["message"],
+        "This query has too many selections to evaluate."
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "took {elapsed:?}"
+    );
+
+    // A long fragment chain is rejected rather than recursed through.
+    let mut q = String::from("query { ...C0 }\n");
+    for i in 0..2000 {
+        q.push_str(&format!("fragment C{i} on Query {{ ...C{} }}\n", i + 1));
+    }
+    q.push_str("fragment C2000 on Query { viewer { login } }\n");
+    let body = app
+        .post("/api/graphql")
+        .json(&json!({ "query": q }))
+        .send()
+        .await
+        .json();
+    assert!(body["errors"][0]["message"].is_string(), "{body:#}");
+}

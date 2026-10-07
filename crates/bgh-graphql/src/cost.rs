@@ -40,8 +40,13 @@ pub const MAX_NODES: i64 = 500_000;
 /// Most ids one `nodes(ids:)` lookup may take.
 pub const MAX_IDS: i64 = 100;
 
-/// Selections the walk visits at most (fragment expansion can blow up a
-/// small document).
+/// Deepest selection / fragment nesting the pre-validation size check
+/// follows.
+const MAX_NESTING: usize = 256;
+
+/// Selections a query may expand to, fragments included. Checked in
+/// `prepare_request` (see [`expanded_size`]) before async-graphql expands
+/// fragments itself, and again by the walk.
 const MAX_VISITS: usize = 100_000;
 
 /// The static cost of an operation.
@@ -99,6 +104,17 @@ impl Extension for CostExt {
         next: NextPrepareRequest<'_>,
     ) -> ServerResult<Request> {
         *self.operation.lock().unwrap() = request.operation_name.clone();
+        // async-graphql's recursion-depth check and validation both expand
+        // fragments without memoising them, so a small document of doubling
+        // fragments takes exponential time there; reject it before either
+        // runs. The parsed document is handed on so it isn't parsed twice.
+        // (Parse errors are left for the normal path to report.)
+        let mut request = request;
+        if let Ok(doc) = request.parsed_query()
+            && expanded_size(doc) > MAX_VISITS
+        {
+            return Err(too_many_selections(None));
+        }
         next.run(ctx, request).await
     }
 
@@ -186,6 +202,64 @@ fn error(ty: &str, message: String, pos: Option<Pos>, path: Vec<String>) -> Serv
     ext.set("type", ty);
     e.extensions = Some(ext);
     e
+}
+
+fn too_many_selections(pos: Option<Pos>) -> ServerError {
+    error(
+        "MAX_NODE_LIMIT_EXCEEDED",
+        "This query has too many selections to evaluate.".into(),
+        pos,
+        Vec::new(),
+    )
+}
+
+/// Selections in all operations of `doc` with fragments expanded (what the
+/// walk would visit), computed in time linear in the document: each
+/// fragment's size is memoised, and a fragment in a cycle counts 0 (the
+/// validation rules report the cycle). Nesting deeper than [`MAX_NESTING`]
+/// (fragments included) counts as too large rather than risking the stack.
+pub fn expanded_size(doc: &ExecutableDocument) -> usize {
+    fn set_size(
+        doc: &ExecutableDocument,
+        set: &SelectionSet,
+        memo: &mut HashMap<Name, Option<usize>>,
+        depth: usize,
+    ) -> usize {
+        if depth > MAX_NESTING {
+            return usize::MAX;
+        }
+        set.items.iter().fold(0usize, |n, item| {
+            let inner = match &item.node {
+                Selection::Field(f) => set_size(doc, &f.node.selection_set.node, memo, depth + 1),
+                Selection::InlineFragment(f) => {
+                    set_size(doc, &f.node.selection_set.node, memo, depth + 1)
+                }
+                Selection::FragmentSpread(s) => {
+                    let name = &s.node.fragment_name.node;
+                    match memo.get(name) {
+                        Some(Some(n)) => *n,
+                        // In progress: a cycle.
+                        Some(None) => 0,
+                        None => match doc.fragments.get(name) {
+                            Some(def) => {
+                                memo.insert(name.clone(), None);
+                                let n =
+                                    set_size(doc, &def.node.selection_set.node, memo, depth + 1);
+                                memo.insert(name.clone(), Some(n));
+                                n
+                            }
+                            None => 0,
+                        },
+                    }
+                }
+            };
+            n.saturating_add(1).saturating_add(inner)
+        })
+    }
+    let mut memo = HashMap::new();
+    doc.operations.iter().fold(0usize, |n, (_, op)| {
+        n.saturating_add(set_size(doc, &op.node.selection_set.node, &mut memo, 0))
+    })
 }
 
 /// `1234567` -> `1,234,567` (GitHub's number format in limit errors).
@@ -282,12 +356,7 @@ impl Walker<'_> {
         for item in &set.items {
             self.visits += 1;
             if self.visits > MAX_VISITS {
-                return Err(error(
-                    "MAX_NODE_LIMIT_EXCEEDED",
-                    "This query has too many selections to evaluate.".into(),
-                    Some(item.pos),
-                    Vec::new(),
-                ));
+                return Err(too_many_selections(Some(item.pos)));
             }
             match &item.node {
                 Selection::Field(f) => {
