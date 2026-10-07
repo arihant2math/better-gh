@@ -42,7 +42,7 @@ pub async fn commit_annotations(
            FROM check_runs r
            JOIN check_run_annotations a ON a.check_run_id = r.id
           WHERE r.repo_id = $1 AND r.head_sha = $2
-          ORDER BY a.path COLLATE \"C\", a.start_line, a.id
+          ORDER BY a.path, a.start_line, a.id
           LIMIT $3",
     )
     .bind(access.repo.id)

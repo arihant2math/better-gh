@@ -10,9 +10,7 @@ use crate::fake::{ASSET_BODY, Fake, SOURCE};
 
 async fn app() -> TestApp {
     TestApp::spawn_with_config(bgh_server::factory(), |c| {
-        // The fake redirects asset downloads to `localhost`, which may also
-        // resolve to ::1 (e.g. on GitHub's runners).
-        c.webhook_allowed_hosts = vec!["127.0.0.1".into(), "localhost".into()];
+        c.webhook_allowed_hosts = vec!["127.0.0.1".into()];
     })
     .await
 }
