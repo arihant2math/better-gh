@@ -73,6 +73,10 @@ pub async fn push(state: AppState, job: PushSync) -> anyhow::Result<()> {
 }
 
 pub async fn checks_changed(state: AppState, job: ChecksChanged) -> anyhow::Result<()> {
+    // A merge group commit: its queue decides (merge / eject).
+    crate::merge_queue::service::on_checks_changed(&state, job.repo_id, &job.sha)
+        .await
+        .map_err(|e| anyhow::anyhow!("merge queue checks {}: {e:?}", job.sha))?;
     let ids: Vec<i64> = sqlx::query_scalar(
         "SELECT p.issue_id FROM pull_requests p JOIN issues i ON i.id = p.issue_id
           WHERE (p.repo_id = $1 OR p.head_repo_id = $1) AND p.head_sha = $2 AND i.state = 'open'",

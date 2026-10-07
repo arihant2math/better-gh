@@ -407,7 +407,18 @@ async fn permissions_and_private_repos() {
 async fn push_and_close_remove_from_queue() {
     let f = fixture().await;
     let app = &f.app;
-    queue_rule(app, &f.alice).await;
+    // A required check keeps the entries in the queue (no merge).
+    ruleset(
+        app,
+        &f.alice,
+        json!([
+            {"type": "merge_queue"},
+            {"type": "required_status_checks", "parameters": {
+                "required_status_checks": [{"context": "ci"}],
+                "strict_required_status_checks_policy": false}},
+        ]),
+    )
+    .await;
     let one = pr_from(app, &f, "one").await;
     let two = pr_from(app, &f, "two").await;
     settle(app).await;

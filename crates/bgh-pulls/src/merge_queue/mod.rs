@@ -9,11 +9,12 @@
 //! (`added_to_merge_queue`, `removed_from_merge_queue` `{"reason"}`).
 //! Entries leave the queue automatically when the PR is closed or its head
 //! changes. Building merge groups and merging is the queue processing
-//! service (P39.2), started through [`schedule`].
+//! job ([`service`], P39.2), started through [`schedule`].
 //!
 //! `/_bgh` endpoints: [`web`].
 
 mod config;
+pub mod service;
 pub mod web;
 
 use bgh_core::prelude::*;
@@ -264,15 +265,34 @@ pub async fn dequeue(
 }
 
 /// The queue of `repo_id`'s `base` changed (entry added or removed):
-/// (re)start its processing in `tx`. The processing service (building
-/// merge groups, merging) lands in P39.2; until then entries just wait.
+/// (re)start its processing (`pulls.merge_queue` job, [`service`]) after
+/// `tx` commits.
 pub async fn schedule(tx: &mut Tx, repo_id: i64, base: &str) -> ApiResult<()> {
-    let _ = (tx, repo_id, base);
+    service::kick(&mut **tx, repo_id, base).await?;
     Ok(())
 }
 
-/// Event listener: a PR closed or merged outside the queue leaves it.
+/// Event listener: a PR closed or merged outside the queue leaves it (a
+/// merge group containing it is rebuilt); a push to a branch with a queue
+/// re-runs the queue (its merge group is based on the old tip).
 pub async fn on_event(state: AppState, event: std::sync::Arc<Event>) -> anyhow::Result<()> {
+    if let Event::Push(p) = &*event {
+        for branch in p.updates.iter().filter_map(|u| u.branch()) {
+            let queued: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM merge_queue_entries
+                                 WHERE repo_id = $1 AND base_ref = $2
+                                   AND state IN ('queued', 'awaiting_checks', 'mergeable'))",
+            )
+            .bind(p.repo_id)
+            .bind(branch)
+            .fetch_one(&state.db)
+            .await?;
+            if queued {
+                service::kick(&state.db, p.repo_id, branch).await?;
+            }
+        }
+        return Ok(());
+    }
     let (repo_id, pull_id, actor_id, reason) = match &*event {
         Event::PullRequestClosed {
             repo_id,
@@ -287,10 +307,10 @@ pub async fn on_event(state: AppState, event: std::sync::Arc<Event>) -> anyhow::
         } => (*repo_id, *pull_id, *actor_id, "merged"),
         _ => return Ok(()),
     };
-    // Entries in a merge group are finished by the queue itself (P39.2).
+    // PRs merged by the queue are no longer active here.
     let queued: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM merge_queue_entries
-                         WHERE pull_id = $1 AND state = 'queued' AND group_id IS NULL)",
+                         WHERE pull_id = $1 AND state IN ('queued', 'awaiting_checks', 'mergeable'))",
     )
     .bind(pull_id)
     .fetch_one(&state.db)
