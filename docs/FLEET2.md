@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:53: #322 → REQUEST_CHANGES at f53ad4f: with #315 applied, a GITHUB_TOKEN disable/enable auto-merge cycle plus the merge_group exemption makes an unbounded run loop (reproduced). The lead was told; the #322 reviewer is archived; the #315 r2 reviewer was given the context.
 08:50: #319 REQUEST_CHANGES (a failed recheck pass drops coalesced targets, so a revoke is delayed up to 5 min and private deltas leak; minor first-subscriber race). Author session_012T1MW3bqBQbQPoRqYR2z4G told; reviewer archived.
 08:50: #322 reviewer APPROVED, but on stale a79fb11 (head is now f53ad4f) and assumed there is no GraphQL enqueue path, while #315 adds one. Asked it for a delta re-review plus a loop re-test with #315 applied. It filed #328 (T-Polish). Not forwarded yet.
 08:48 cycle: #315 (9a96154) and #316 (055aef2) are back to NeedsReview → adversarial r2 reviewers: #316 session_01BksntuTuL5AA8MnQapLdVo, #315 session_015Gpod5tzkrNKtz7Mi2ZxHc. #322 head is now f53ad4f (its reviewer was told). #320 is S-Approved, waiting for its reviewer's report. Still in review: #323, #319, #312 r2, #309 r2.
