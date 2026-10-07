@@ -6,7 +6,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 |---|---|---|---|---|
 | A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | — | — |
 | B frontend | session_017AzAN6yFHnENwVtA1wfUAR | #154 (steps 1+3) | — | — |
-| C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | #355 (CI running) | — |
+| C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | #355 @85a51fb | session_017xe6qtipj6znd78dRydAF2 (opus) |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -48,3 +48,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 23:16Z: #356 APPROVE @0663476 (=head), CI green; sent to coordinator.
 - 23:17Z: #356 merged as 393e8d7; B worker+reviewer archived; fresh B worker for #154 (consolidate types; ts-rs codegen → follow-up issue).
 - 23:20Z: C opened #355 (core: hold advisory locks outside the pool, for #341); Rust tests running.
+- 23:26Z: #355 green; opus reviewer spawned.
