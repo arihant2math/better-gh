@@ -17,14 +17,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bgh_core::db::AdvisoryLock;
 use bgh_core::events::Event;
 use bgh_core::jobs::JobPayload;
 use bgh_core::prelude::*;
 use bgh_git::maintenance::{NetworkRole, ObjectStats, Task};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::pool::PoolConnection;
-use sqlx::{FromRow, Postgres};
+use sqlx::FromRow;
 use tokio_util::sync::CancellationToken;
 
 /// Pack refs when at least this many loose ref files exist.
@@ -115,65 +115,18 @@ const LEADER_KEY: i64 = 0x4247_4d41_494e_0001; // "BGMAIN" 1
 /// Advisory-lock namespace of per-repository maintenance locks.
 const REPO_LOCK_NS: i64 = 0x4d4e << 40;
 
-/// A session-level pg advisory lock held on a dedicated connection.
-/// Released by [`AdvisoryLock::release`]; if dropped instead, the connection
-/// is closed (not returned to the pool), which releases the lock too.
-pub struct AdvisoryLock {
-    conn: Option<PoolConnection<Postgres>>,
-    key: i64,
-}
-
-impl AdvisoryLock {
-    /// Take `key`, waiting for it when `wait`, else `None` when it's held.
-    pub async fn acquire(state: &AppState, key: i64, wait: bool) -> sqlx::Result<Option<Self>> {
-        let mut conn = state.db.acquire().await?;
-        let got: bool = if wait {
-            sqlx::query("SELECT pg_advisory_lock($1)")
-                .bind(key)
-                .execute(&mut *conn)
-                .await?;
-            true
-        } else {
-            sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-                .bind(key)
-                .fetch_one(&mut *conn)
-                .await?
-        };
-        Ok(got.then_some(Self {
-            conn: Some(conn),
-            key,
-        }))
-    }
-
-    pub async fn release(mut self) {
-        if let Some(mut conn) = self.conn.take() {
-            let ok = sqlx::query("SELECT pg_advisory_unlock($1)")
-                .bind(self.key)
-                .execute(&mut *conn)
-                .await
-                .is_ok();
-            if !ok {
-                drop(conn.detach());
-            }
-        }
-    }
-}
-
-impl Drop for AdvisoryLock {
-    fn drop(&mut self) {
-        if let Some(conn) = self.conn.take() {
-            drop(conn.detach()); // closes the session → lock released
-        }
-    }
-}
-
 /// The per-repository maintenance lock.
 pub async fn lock_repo(
     state: &AppState,
     repo_id: i64,
     wait: bool,
 ) -> sqlx::Result<Option<AdvisoryLock>> {
-    AdvisoryLock::acquire(state, REPO_LOCK_NS | (repo_id & ((1 << 40) - 1)), wait).await
+    let key = REPO_LOCK_NS | (repo_id & ((1 << 40) - 1));
+    if wait {
+        AdvisoryLock::acquire(&state.db, key).await.map(Some)
+    } else {
+        AdvisoryLock::try_acquire(&state.db, key).await
+    }
 }
 
 // ----- roles and single runs ---------------------------------------------------
@@ -406,7 +359,7 @@ pub async fn run_pass(
     shutdown: Option<&CancellationToken>,
 ) -> anyhow::Result<PassReport> {
     let mut report = PassReport::default();
-    let Some(leader) = AdvisoryLock::acquire(state, LEADER_KEY, false).await? else {
+    let Some(leader) = AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await? else {
         return Ok(report);
     };
     report.leader = true;

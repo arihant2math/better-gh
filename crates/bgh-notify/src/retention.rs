@@ -17,6 +17,7 @@
 use std::time::Duration;
 
 use axum::extract::State;
+use bgh_core::db::AdvisoryLock;
 use bgh_core::prelude::*;
 use bgh_core::settings::{self, RetentionSettings};
 use bgh_core::sync;
@@ -70,19 +71,11 @@ pub async fn service(state: AppState, shutdown: CancellationToken) -> anyhow::Re
 
 /// One pass with `cfg` (empty report when another process leads).
 pub async fn run(state: &AppState, cfg: &RetentionSettings) -> anyhow::Result<Report> {
-    let mut conn = state.db.acquire().await?;
-    let leader: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-        .bind(LEADER_KEY)
-        .fetch_one(&mut *conn)
-        .await?;
-    if !leader {
+    let Some(leader) = AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await? else {
         return Ok(Report::default());
-    }
+    };
     let res = pass(state, cfg).await;
-    let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(LEADER_KEY)
-        .execute(&mut *conn)
-        .await;
+    leader.release().await;
     res
 }
 

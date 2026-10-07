@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use bgh_core::db::Tx;
+use bgh_core::db::{AdvisoryLock, Tx};
 use bgh_core::events::Event;
 use bgh_core::jobs::{self, JobPayload};
 use bgh_core::registry::{AppFactory, Registry};
@@ -227,4 +227,46 @@ async fn audit_log_entries() {
     .await
     .unwrap();
     assert_eq!(row, ("alice".into(), "repo".into(), Some(9), Some(5)));
+}
+
+/// #341: an advisory lock holder doing its work through the pool must not
+/// starve it. Services taking their leader lock on a pooled connection and
+/// then querying through the pool deadlocked a small pool at startup until
+/// the acquire timeout.
+#[tokio::test]
+async fn advisory_lock_does_not_pin_a_pooled_connection() {
+    let app = TestApp::spawn_with(bgh_server::factory()).await;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(2))
+        .connect_with((*app.state.db.connect_options()).clone())
+        .await
+        .unwrap();
+    const KEY: i64 = 0x7e57_0341;
+
+    let lock = AdvisoryLock::try_acquire(&pool, KEY).await.unwrap();
+    let lock = lock.expect("free key is taken");
+    // The holder's work still gets the pool's only connection.
+    let one: i32 = sqlx::query_scalar("SELECT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("pool usable while the lock is held");
+    assert_eq!(one, 1);
+    assert!(
+        AdvisoryLock::try_acquire(&pool, KEY)
+            .await
+            .unwrap()
+            .is_none(),
+        "held key is not taken twice"
+    );
+    lock.release().await;
+    let again = AdvisoryLock::try_acquire(&pool, KEY).await.unwrap();
+    assert!(again.is_some(), "released key is free");
+    drop(again);
+    // Dropping also releases (the session ends); waiting acquire takes it.
+    let waited = tokio::time::timeout(Duration::from_secs(5), AdvisoryLock::acquire(&pool, KEY))
+        .await
+        .expect("dropped lock is released")
+        .unwrap();
+    waited.release().await;
 }

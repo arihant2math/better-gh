@@ -1,10 +1,11 @@
-//! Database helpers: embedded migrations and the [`Tx`] unit of work.
+//! Database helpers: embedded migrations, the [`Tx`] unit of work and
+//! [`AdvisoryLock`].
 
 use std::ops::{Deref, DerefMut};
 
 use serde::Serialize;
 use sqlx::migrate::Migrator;
-use sqlx::{PgConnection, PgPool, Postgres, Transaction};
+use sqlx::{Connection, PgConnection, PgPool, Postgres, Transaction};
 
 use crate::error::ApiResult;
 use crate::events::Event;
@@ -20,6 +21,45 @@ pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 /// Apply pending migrations.
 pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     MIGRATOR.run(db).await
+}
+
+/// A session-level pg advisory lock (leader election, per-resource
+/// exclusion), held on a dedicated connection opened outside the pool.
+///
+/// Never hold one on a pooled connection: the holder then needs a second
+/// pooled connection for its work, and a few holders at once (services
+/// starting together on a small pool) deadlock until the acquire timeout
+/// (#341). Released by [`AdvisoryLock::release`] or by dropping it (the
+/// connection closes, which ends the session and its locks).
+pub struct AdvisoryLock {
+    conn: PgConnection,
+}
+
+impl AdvisoryLock {
+    /// Take `key` if it is free, else `None`.
+    pub async fn try_acquire(db: &PgPool, key: i64) -> sqlx::Result<Option<Self>> {
+        let mut conn = PgConnection::connect_with(&db.connect_options()).await?;
+        let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+            .bind(key)
+            .fetch_one(&mut conn)
+            .await?;
+        Ok(got.then_some(Self { conn }))
+    }
+
+    /// Take `key`, waiting while another session holds it.
+    pub async fn acquire(db: &PgPool, key: i64) -> sqlx::Result<Self> {
+        let mut conn = PgConnection::connect_with(&db.connect_options()).await?;
+        sqlx::query("SELECT pg_advisory_lock($1)")
+            .bind(key)
+            .execute(&mut conn)
+            .await?;
+        Ok(Self { conn })
+    }
+
+    /// Release the lock (closes its connection).
+    pub async fn release(self) {
+        let _ = self.conn.close().await;
+    }
 }
 
 /// A database transaction that also collects post-commit side effects.

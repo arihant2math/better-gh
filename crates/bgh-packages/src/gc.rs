@@ -11,6 +11,7 @@
 use std::time::Duration;
 
 use bgh_core::AppState;
+use bgh_core::db::AdvisoryLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::digest::Digest;
@@ -48,19 +49,11 @@ pub struct Report {
 /// `0 seconds`). Returns an empty report when another process leads.
 pub async fn run(state: &AppState, grace: &str, retention: &str) -> anyhow::Result<Report> {
     let mut report = Report::default();
-    let mut conn = state.db.acquire().await?;
-    let leader: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-        .bind(LEADER_KEY)
-        .fetch_one(&mut *conn)
-        .await?;
-    if !leader {
+    let Some(leader) = AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await? else {
         return Ok(report);
-    }
+    };
     let res = pass(state, grace, retention, &mut report).await;
-    let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(LEADER_KEY)
-        .execute(&mut *conn)
-        .await;
+    leader.release().await;
     res.map(|()| report)
 }
 
