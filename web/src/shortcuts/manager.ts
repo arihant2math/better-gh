@@ -9,6 +9,12 @@
  * page's `j/k` shadows nothing global while a dialog can capture `escape`.
  * Shortcuts don't fire while typing in inputs unless they use `mod` or the
  * binding sets `allowInInput`.
+ *
+ * Modal layers: while a modal is open (`pushLayer()`, done by `Dialog`), only
+ * scopes registered after it opened fire, so page and global keys (`g h`,
+ * `j`, `v`…) can't act underneath it. A scope belongs to the topmost layer
+ * at registration time; when a layer closes, its leftover scopes drop to the
+ * layer below.
  */
 
 export interface Binding {
@@ -25,6 +31,8 @@ interface Scope {
   id: number;
   name: string;
   bindings: Binding[];
+  /** Modal layer the scope belongs to (0 = page). */
+  layer: number;
 }
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -89,11 +97,32 @@ export class ShortcutManager {
   private buffer: string[] = [];
   private bufferTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
+  private layers: number[] = [];
+
+  private get topLayer(): number {
+    return this.layers[this.layers.length - 1] ?? 0;
+  }
+
+  /** Open a modal layer that suspends all scopes registered before it. */
+  pushLayer(): () => void {
+    const layer = ++this.seq;
+    this.layers.push(layer);
+    this.buffer = [];
+    return () => {
+      const i = this.layers.indexOf(layer);
+      if (i < 0) return;
+      this.layers.splice(i, 1);
+      const below = this.layers[i - 1] ?? 0;
+      for (const s of this.scopes) if (s.layer === layer) s.layer = below;
+      this.buffer = [];
+    };
+  }
 
   register(name: string, bindings: Binding[]): () => void {
     const scope: Scope = {
       id: ++this.seq,
       name,
+      layer: this.topLayer,
       bindings: bindings.map((b) => ({ ...b, keys: b.keys.split(' ').map(normalizeChord).join(' ') })),
     };
     this.scopes.push(scope);
@@ -123,11 +152,14 @@ export class ShortcutManager {
     const chord = chordFromEvent(e);
     if (!chord) return;
     const editable = isEditable(e.target);
+    const layer = this.topLayer;
     const attempt = (seq: string[]): 'fired' | 'prefix' | 'none' => {
       const keys = seq.join(' ');
       let prefix = false;
       for (let i = this.scopes.length - 1; i >= 0; i--) {
-        for (const b of this.scopes[i]!.bindings) {
+        const scope = this.scopes[i]!;
+        if (scope.layer !== layer) continue;
+        for (const b of scope.bindings) {
           const usable = !editable || b.allowInInput || b.keys.startsWith('mod+') || b.keys === 'escape';
           if (!usable) continue;
           if (b.keys === keys) {
