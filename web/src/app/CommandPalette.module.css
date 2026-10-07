@@ -13,6 +13,8 @@
 }
 
 .inputRow {
+  /* Fixed row: the results list, not the input, absorbs the palette's max-height. */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -120,8 +122,10 @@
 }
 
 .footer {
+  flex: none;
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
   padding: 8px 14px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-subtle);
