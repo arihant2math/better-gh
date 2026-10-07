@@ -71,6 +71,16 @@ async fn signup_login_logout_flow() {
         .send()
         .await
         .assert_status(200);
+    // Sign-in by email needs a verified address (#138).
+    app.post("/_bgh/session")
+        .json(&json!({"login": "second@example.com", "password": "s3cret-password"}))
+        .send()
+        .await
+        .assert_status(401);
+    sqlx::query("UPDATE user_emails SET verified = true WHERE email = 'second@example.com'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
     app.post("/_bgh/session")
         .json(&json!({"login": "second@example.com", "password": "s3cret-password"}))
         .send()

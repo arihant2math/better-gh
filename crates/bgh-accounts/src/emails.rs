@@ -97,8 +97,37 @@ pub async fn list_public(
     Ok(p.page(rows).map(|e| Email::from(&e)))
 }
 
+/// Drop other accounts' unverified claims on `email` before it is stored
+/// verified for its proven owner (an IdP, SCIM, LDAP or a site admin vouched
+/// for it). A squatter that published the address on its profile loses that
+/// too.
+pub async fn release_unverified(tx: &mut Tx, email: &str) -> ApiResult<()> {
+    let owners: Vec<i64> = sqlx::query_scalar(
+        "DELETE FROM user_emails WHERE lower(email) = lower($1) AND NOT verified
+         RETURNING user_id",
+    )
+    .bind(email)
+    .fetch_all(&mut **tx)
+    .await?;
+    for id in owners {
+        let user: Option<db::User> = sqlx::query_as(&format!(
+            "UPDATE users SET email = NULL, updated_at = now()
+              WHERE id = $1 AND lower(email) = lower($2) RETURNING {}",
+            db::User::COLUMNS
+        ))
+        .bind(id)
+        .bind(email)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if let Some(user) = user {
+            util::sync_profile(tx, &user).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Queue a verification mail for `email_id`.
-async fn send_verification(
+pub(crate) async fn send_verification(
     state: &AppState,
     tx: &mut Tx,
     user: &db::User,
@@ -276,6 +305,23 @@ pub async fn set_visibility(
         }
     };
     let mut tx = Tx::begin(&state).await?;
+    if visibility == "public" {
+        // Only a proven address may appear on the public profile (#138).
+        let unverified: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM user_emails
+                             WHERE user_id = $1 AND is_primary AND NOT verified)",
+        )
+        .bind(auth.user.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if unverified {
+            return Err(ApiError::invalid_field(FieldError::custom(
+                "User",
+                "email",
+                "Verify your primary email address before making it public.",
+            )));
+        }
+    }
     let primary: Option<String> = sqlx::query_scalar(
         "UPDATE user_emails SET visibility = $2 WHERE user_id = $1 AND is_primary RETURNING email",
     )
