@@ -1,0 +1,200 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+publish = false
+rust-version = "1.88"
+
+[workspace.dependencies]
+# internal crates
+bgh-core = { path = "crates/bgh-core" }
+bgh-git = { path = "crates/bgh-git" }
+bgh-accounts = { path = "crates/bgh-accounts" }
+bgh-repos = { path = "crates/bgh-repos" }
+bgh-issues = { path = "crates/bgh-issues" }
+bgh-pulls = { path = "crates/bgh-pulls" }
+bgh-notify = { path = "crates/bgh-notify" }
+bgh-releases = { path = "crates/bgh-releases" }
+bgh-search = { path = "crates/bgh-search" }
+bgh-admin = { path = "crates/bgh-admin" }
+bgh-sync = { path = "crates/bgh-sync" }
+bgh-graphql = { path = "crates/bgh-graphql" }
+bgh-actions = { path = "crates/bgh-actions" }
+bgh-projects = { path = "crates/bgh-projects" }
+bgh-wiki = { path = "crates/bgh-wiki" }
+bgh-import = { path = "crates/bgh-import" }
+bgh-packages = { path = "crates/bgh-packages" }
+bgh-uploads = { path = "crates/bgh-uploads" }
+bgh-security = { path = "crates/bgh-security" }
+bgh-server = { path = "crates/bgh-server" }
+
+# web / async
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+tokio = { version = "1.47", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = [
+    "compression-br",
+    "compression-gzip",
+    "trace",
+    "cors",
+    "fs",
+    "request-id",
+    "set-header",
+    "util",
+] }
+http = "1"
+http-body-util = "0.1"
+bytes = "1"
+futures = "0.3"
+async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+async-trait = "0.1"
+
+# storage
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "postgres",
+    "runtime-tokio",
+    "tls-rustls",
+    "chrono",
+    "json",
+    "uuid",
+    "migrate",
+    "macros",
+] }
+redis = { version = "0.32", default-features = false, features = ["tokio-comp", "connection-manager", "aio"] }
+
+# serialization / utils
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+# license detection (P33)
+askalono = { version = "0.5", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+# observability (P61): metrics facade + Prometheus text exporter (no HTTP server)
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
+# optional OTLP trace export (`bgh-server --features otlp`)
+opentelemetry = { version = "0.31", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.31", default-features = false, features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+tracing-opentelemetry = { version = "0.32", default-features = false }
+uuid = { version = "1", features = ["v4", "serde"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# crypto
+argon2 = "0.5"
+rand = "0.9"
+base64 = "0.22"
+sha2 = "0.10"
+hex = "0.4"
+# GitHub App JWTs (RS256) and key generation
+rsa = { version = "0.9", features = ["sha2", "pem"] }
+# SAML (bgh-accounts::saml): XML tokenizer, certificates, XML encryption.
+xmlparser = "0.13"
+x509-cert = { version = "0.2", features = ["builder", "pem"] }
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+aes-gcm = "0.10"
+rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+# commit/tag signatures (P25): OpenPGP and SSH (sshsig) verification, web-flow signing
+pgp = { version = "0.21", default-features = false }
+ssh-key = { version = "0.7.0-rc.11", default-features = false, features = ["alloc", "std", "ed25519", "p256", "p384", "p521"] }
+
+# content
+comrak = { version = "0.55", default-features = false }
+ammonia = "4"
+gix = { version = "0.88", default-features = false, features = ["revision", "sha1", "parallel"] }
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-onig"] }
+two-face = { version = "0.4", default-features = false, features = ["syntect-onig"] }
+
+# ssh
+russh = { version = "0.64", default-features = false, features = ["ring", "flate2"] }
+
+# mail / http clients (accounts, notify webhooks)
+lettre = { version = "0.11", default-features = false, features = [
+    "smtp-transport",
+    "pool",
+    "hostname",
+    "builder",
+    "tokio1",
+    "tokio1-rustls",
+    "tokio1-rustls-tls",
+    "rustls-tls",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots", "stream", "http2"] }
+hmac = "0.12"
+sha1 = "0.10"
+flate2 = "1"
+crc32fast = "1"
+url = "2"
+
+# search
+regex = "1"
+
+# actions
+indexmap = { version = "2", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+crypto_box = { version = "0.9", features = ["seal", "chacha20"] }
+chacha20poly1305 = "0.10"
+# WebAuthn security keys and passkeys (bgh-accounts; links system OpenSSL).
+webauthn-rs = { version = "0.5", features = ["danger-allow-state-serialisation", "danger-credential-internals", "conditional-ui"] }
+webauthn-rs-proto = "0.5"
+webauthn-authenticator-rs = { version = "0.5", default-features = false, features = ["softpasskey"] }
+
+# testing
+tempfile = "3"
+libc = "0.2"
+
+# packaging
+rust-embed = { version = "8.7", features = ["debug-embed", "include-exclude", "interpolate-folder-path"] }
+mime_guess = "2"
+
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
+ldap3_proto = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+
+[profile.dev]
+# Faster builds; enough debuginfo for backtraces with file:line in our code.
+debug = "line-tables-only"
+# Keep DWARF in the per-crate object files instead of copying it into every
+# linked binary (one integration-test binary per crate, each ~all of the
+# server): smaller test binaries and less linker I/O. Backtraces still
+# resolve file:line.
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+# Dependencies: lightly optimized (tests and the dev server stay snappy) and
+# without debuginfo (smaller target dir, faster links). They rarely rebuild.
+opt-level = 1
+debug = false
+
+# Password hashing (Argon2id) runs on every signup, login and git
+# password auth; keep it fast in dev builds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.release]
+# Whole-program optimization across crates; one codegen unit per crate for
+# the best inlining. Release builds are for packaging (Docker, CI artifacts).
+lto = "thin"
+codegen-units = 1
+# Keep symbol names (readable panic backtraces), drop DWARF (the
+# precompiled std ships with debuginfo even when `debug = false`).
+debug = false
+strip = "debuginfo"
+# Unwind, not abort: a panicking request handler or job must not take the
+# whole server down (tokio contains panics per task).
+panic = "unwind"

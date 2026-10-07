@@ -1,0 +1,262 @@
+/*
+ * Design tokens. Light is the default; dark applies via prefers-color-scheme
+ * unless the user forced a theme (html[data-theme]). Components must only use
+ * these variables — never raw colors.
+ * `[data-theme-scope]` applies a palette to a subtree (theme previews).
+ */
+:root,
+[data-theme-scope='light'] {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+  --lh: 1.5;
+  --fw-medium: 510;
+  --fw-semibold: 590;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+
+  --dur-fast: 80ms;
+  --dur: 140ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --sidebar-w: 236px;
+  --topbar-h: 48px;
+  --row-h: 40px;
+  --control-h: 28px;
+  --control-h-sm: 24px;
+
+  /* light palette */
+  --bg: #ffffff;
+  --bg-app: #fbfbfc;
+  --bg-sidebar: #f6f7f9;
+  --bg-subtle: #f6f7f9;
+  --bg-muted: #eff1f4;
+  --bg-inset: #f3f4f6;
+  --bg-hover: rgba(20, 24, 33, 0.045);
+  --bg-active: rgba(20, 24, 33, 0.08);
+  --bg-selected: rgba(94, 106, 210, 0.09);
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(14, 16, 22, 0.32);
+
+  --border: #e4e6ea;
+  --border-strong: #d0d4da;
+  --border-subtle: #eef0f2;
+
+  --fg: #1a1c21;
+  --fg-muted: #5d6470;
+  --fg-subtle: #8b919c;
+  --fg-faint: #b4b9c1;
+  --fg-on-accent: #ffffff;
+
+  --accent: #5e6ad2;
+  --accent-hover: #5260c7;
+  --accent-fg: #4b57c4;
+  --accent-subtle: rgba(94, 106, 210, 0.12);
+  --focus: rgba(94, 106, 210, 0.55);
+
+  --open: #1a7f37;
+  --open-subtle: rgba(26, 127, 55, 0.1);
+  --closed: #8250df;
+  --closed-subtle: rgba(130, 80, 223, 0.1);
+  --merged: #8250df;
+  --draft: #6e7781;
+  --not-planned: #6e7781;
+  --danger: #cf222e;
+  --danger-hover: #b31d28;
+  --danger-subtle: rgba(207, 34, 46, 0.1);
+  --warning: #9a6700;
+  --warning-subtle: rgba(212, 167, 44, 0.15);
+  --success: #1a7f37;
+
+  --shadow-sm: 0 1px 2px rgba(16, 18, 27, 0.06);
+  --shadow-md: 0 2px 4px rgba(16, 18, 27, 0.04), 0 6px 16px rgba(16, 18, 27, 0.08);
+  --shadow-lg: 0 0 0 1px rgba(16, 18, 27, 0.06), 0 12px 32px rgba(16, 18, 27, 0.14), 0 2px 6px rgba(16, 18, 27, 0.06);
+
+  --diff-add-bg: #e9fbee;
+  --diff-add-num: #d1f5db;
+  --diff-add-hl: #abf2bc;
+  --diff-del-bg: #fff0ef;
+  --diff-del-num: #ffdcd9;
+  --diff-del-hl: #ffc1bc;
+  --diff-hunk-bg: #eef4ff;
+  --diff-hunk-fg: #57606a;
+
+  --hl-k: #cf222e;
+  --hl-s: #0a3069;
+  --hl-c: #6e7781;
+  --hl-n: #0550ae;
+  --hl-t: #953800;
+  --hl-f: #8250df;
+  --hl-a: #116329;
+
+  /* charts: categorical slots in fixed order (validated for CVD + contrast, both themes) */
+  --chart-1: var(--accent);
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-muted: #c4c8cf;
+  --chart-grid: var(--border-subtle);
+  color-scheme: light;
+}
+
+/* Dark palette — duplicated for media query and explicit toggle. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #111215;
+    --bg-app: #0d0e10;
+    --bg-sidebar: #0f1012;
+    --bg-subtle: #16171a;
+    --bg-muted: #1c1d21;
+    --bg-inset: #0b0c0e;
+    --bg-hover: rgba(255, 255, 255, 0.045);
+    --bg-active: rgba(255, 255, 255, 0.08);
+    --bg-selected: rgba(122, 133, 236, 0.13);
+    --bg-elevated: #1a1b1f;
+    --bg-overlay: rgba(0, 0, 0, 0.55);
+    --border: #26282d;
+    --border-strong: #34373d;
+    --border-subtle: #1d1f23;
+    --fg: #e8e9ec;
+    --fg-muted: #9ca1ab;
+    --fg-subtle: #6f7580;
+    --fg-faint: #4b5058;
+    --accent: #6e79e0;
+    --accent-hover: #7e88e6;
+    --accent-fg: #9ea6f0;
+    --accent-subtle: rgba(122, 133, 236, 0.16);
+    --focus: rgba(122, 133, 236, 0.6);
+    --open: #3fb950;
+    --open-subtle: rgba(63, 185, 80, 0.14);
+    --closed: #a371f7;
+    --closed-subtle: rgba(163, 113, 247, 0.14);
+    --merged: #a371f7;
+    --draft: #8b949e;
+    --not-planned: #8b949e;
+    --danger: #f85149;
+    --danger-hover: #ff6b63;
+    --danger-subtle: rgba(248, 81, 73, 0.14);
+    --warning: #d29922;
+    --warning-subtle: rgba(210, 153, 34, 0.16);
+    --success: #3fb950;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 16px 40px rgba(0, 0, 0, 0.6);
+    --diff-add-bg: rgba(46, 160, 67, 0.13);
+    --diff-add-num: rgba(46, 160, 67, 0.22);
+    --diff-add-hl: rgba(46, 160, 67, 0.4);
+    --diff-del-bg: rgba(248, 81, 73, 0.12);
+    --diff-del-num: rgba(248, 81, 73, 0.2);
+    --diff-del-hl: rgba(248, 81, 73, 0.4);
+    --diff-hunk-bg: rgba(56, 139, 253, 0.1);
+    --diff-hunk-fg: #8b949e;
+    --hl-k: #ff7b72;
+    --hl-s: #a5d6ff;
+    --hl-c: #8b949e;
+    --hl-n: #79c0ff;
+    --hl-t: #ffa657;
+    --hl-f: #d2a8ff;
+    --hl-a: #7ee787;
+    --chart-1: var(--accent);
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-muted: #4a4e57;
+    --chart-grid: var(--border-subtle);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'],
+[data-theme-scope='dark'] {
+  --bg: #111215;
+  --bg-app: #0d0e10;
+  --bg-sidebar: #0f1012;
+  --bg-subtle: #16171a;
+  --bg-muted: #1c1d21;
+  --bg-inset: #0b0c0e;
+  --bg-hover: rgba(255, 255, 255, 0.045);
+  --bg-active: rgba(255, 255, 255, 0.08);
+  --bg-selected: rgba(122, 133, 236, 0.13);
+  --bg-elevated: #1a1b1f;
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+  --border: #26282d;
+  --border-strong: #34373d;
+  --border-subtle: #1d1f23;
+  --fg: #e8e9ec;
+  --fg-muted: #9ca1ab;
+  --fg-subtle: #6f7580;
+  --fg-faint: #4b5058;
+  --accent: #6e79e0;
+  --accent-hover: #7e88e6;
+  --accent-fg: #9ea6f0;
+  --accent-subtle: rgba(122, 133, 236, 0.16);
+  --focus: rgba(122, 133, 236, 0.6);
+  --open: #3fb950;
+  --open-subtle: rgba(63, 185, 80, 0.14);
+  --closed: #a371f7;
+  --closed-subtle: rgba(163, 113, 247, 0.14);
+  --merged: #a371f7;
+  --draft: #8b949e;
+  --not-planned: #8b949e;
+  --danger: #f85149;
+  --danger-hover: #ff6b63;
+  --danger-subtle: rgba(248, 81, 73, 0.14);
+  --warning: #d29922;
+  --warning-subtle: rgba(210, 153, 34, 0.16);
+  --success: #3fb950;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 16px 40px rgba(0, 0, 0, 0.6);
+  --diff-add-bg: rgba(46, 160, 67, 0.13);
+  --diff-add-num: rgba(46, 160, 67, 0.22);
+  --diff-add-hl: rgba(46, 160, 67, 0.4);
+  --diff-del-bg: rgba(248, 81, 73, 0.12);
+  --diff-del-num: rgba(248, 81, 73, 0.2);
+  --diff-del-hl: rgba(248, 81, 73, 0.4);
+  --diff-hunk-bg: rgba(56, 139, 253, 0.1);
+  --diff-hunk-fg: #8b949e;
+  --hl-k: #ff7b72;
+  --hl-s: #a5d6ff;
+  --hl-c: #8b949e;
+  --hl-n: #79c0ff;
+  --hl-t: #ffa657;
+  --hl-f: #d2a8ff;
+  --hl-a: #7ee787;
+  --chart-1: var(--accent);
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-muted: #4a4e57;
+  --chart-grid: var(--border-subtle);
+  color-scheme: dark;
+}
+
+/* Compact density (Settings → Appearance; html[data-density], set before first paint). */
+:root[data-density='compact'] {
+  --fs-base: 13px;
+  --fs-md: 12.5px;
+  --sp-2: 6px;
+  --sp-3: 10px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 20px;
+  --sp-8: 26px;
+  --topbar-h: 42px;
+  --row-h: 32px;
+  --control-h: 26px;
+  --control-h-sm: 22px;
+}

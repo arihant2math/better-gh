@@ -1,0 +1,86 @@
+[package]
+name = "bgh-server"
+description = "The `bgh` binary: composes all domain routers, runs HTTP, job workers and admin commands"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Exposes `bgh_server::test_app()` for other crates' integration tests.
+testing = ["bgh-core/testing"]
+# Compile web/dist (run `npm run build` in web/ first) into the binary so a
+# single file serves everything. A directory at BGH_WEB_DIR containing an
+# index.html still takes precedence (handy for hot-swapping a client build).
+embed-web = ["dep:rust-embed"]
+# Export tracing spans over OTLP/HTTP when `BGH_OTLP_ENDPOINT` is set.
+otlp = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]
+
+[lib]
+name = "bgh_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bgh"
+path = "src/main.rs"
+
+[dependencies]
+bgh-core.workspace = true
+bgh-git.workspace = true
+bgh-accounts.workspace = true
+bgh-repos.workspace = true
+bgh-issues.workspace = true
+bgh-pulls.workspace = true
+bgh-notify.workspace = true
+bgh-releases.workspace = true
+bgh-search.workspace = true
+bgh-admin.workspace = true
+bgh-sync.workspace = true
+bgh-graphql.workspace = true
+bgh-actions.workspace = true
+bgh-projects.workspace = true
+bgh-wiki.workspace = true
+bgh-import.workspace = true
+bgh-packages.workspace = true
+bgh-uploads.workspace = true
+bgh-security.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+bytes.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+sha2.workspace = true
+base64.workspace = true
+chrono.workspace = true
+mime_guess.workspace = true
+rust-embed = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+
+[dev-dependencies]
+bgh-core = { workspace = true, features = ["testing"] }
+futures.workspace = true
+tokio.workspace = true
+tempfile.workspace = true
+uuid.workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "bgh-issues"
+description = "Issues, labels, milestones, comments, reactions, timeline/events, assignees, locking, templates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bgh-core.workspace = true
+bgh-git.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
+redis.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+bgh-core = { workspace = true, features = ["testing"] }
+bgh-server = { workspace = true, features = ["testing"] }
+bgh-git.workspace = true
+tokio.workspace = true
+serde_json.workspace = true

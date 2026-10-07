@@ -1,0 +1,72 @@
+# Better GitHub with Postgres 16 and Redis 7.
+#
+#   docker compose up -d --build
+#   docker compose exec bgh bgh admin create-user \
+#     --login admin --email admin@example.com --password 'change-me' --site-admin
+#   open http://localhost:3000
+#
+# Override settings in a `.env` file next to this one (see docs/SELF_HOSTING.md),
+# e.g. BGH_BASE_URL=https://git.example.com, POSTGRES_PASSWORD=...
+
+name: bgh
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bgh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bgh}
+      POSTGRES_DB: bgh
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bgh -d bgh"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Redis only holds caches, rate-limit counters and pub/sub: no persistence.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bgh:
+    build:
+      context: .
+    image: ${BGH_IMAGE:-bgh:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://bgh:${POSTGRES_PASSWORD:-bgh}@postgres/bgh
+      REDIS_URL: redis://redis/
+      BGH_BASE_URL: ${BGH_BASE_URL:-http://localhost:3000}
+      BGH_SSH_PORT: ${BGH_SSH_PORT:-2222}
+      BGH_SIGNUP_ENABLED: ${BGH_SIGNUP_ENABLED:-true}
+      BGH_SITE_NAME: ${BGH_SITE_NAME:-Better GitHub}
+      BGH_JOB_WORKERS: ${BGH_JOB_WORKERS:-4}
+      # Actions: `auto` runs jobs in docker when the daemon is reachable and
+      # otherwise leaves them to external runners; it never runs workflow
+      # code in this container. `shell` (steps on the server host) is for
+      # trusted single-tenant installs only. See docs/SELF_HOSTING.md.
+      BGH_ACTIONS_EXECUTOR: ${BGH_ACTIONS_EXECUTOR:-auto}
+      RUST_LOG: ${RUST_LOG:-info,sqlx=warn}
+    ports:
+      - "${BGH_HTTP_PUBLISH:-3000}:3000"
+      - "${BGH_SSH_PUBLISH:-2222}:2222"
+    volumes:
+      - bghdata:/data
+
+volumes:
+  pgdata:
+  bghdata:

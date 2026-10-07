@@ -1,0 +1,305 @@
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.sort {
+  width: auto;
+}
+
+.stateTabs {
+  display: flex;
+  gap: 4px;
+}
+
+.stateTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.stateTab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.stateTab[aria-selected='true'] {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  gap: 24px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowActive {
+  background: var(--bg-hover);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rowTitle {
+  color: var(--fg);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+}
+
+.rowTitle:hover {
+  color: var(--accent-fg);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.overdue {
+  color: var(--danger);
+}
+
+.dotSep {
+  color: var(--fg-faint);
+}
+
+.rowDesc {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.rowDesc p {
+  margin: 0;
+}
+
+.rowSide {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress,
+.progressWide {
+  width: 100%;
+  height: 8px;
+  appearance: none;
+  border: 0;
+  border-radius: 4px;
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.progressWide {
+  max-width: 480px;
+}
+
+.progress::-webkit-progress-bar,
+.progressWide::-webkit-progress-bar {
+  background: var(--bg-muted);
+}
+
+.progress::-webkit-progress-value,
+.progressWide::-webkit-progress-value {
+  background: var(--success);
+}
+
+.progress::-moz-progress-bar,
+.progressWide::-moz-progress-bar {
+  background: var(--success);
+}
+
+.stats {
+  display: flex;
+  gap: 14px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.stats a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stats a:hover {
+  color: var(--accent-fg);
+}
+
+.stats strong {
+  color: var(--fg);
+}
+
+.rowActions {
+  display: flex;
+  gap: 12px;
+  font-size: var(--fs-sm);
+}
+
+.rowActions a,
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-fg);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.rowActions a:hover,
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.danger {
+  color: var(--danger);
+}
+
+/* detail */
+.detailHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 4px;
+}
+
+.detailTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+  text-decoration: none;
+}
+
+.crumb:hover {
+  color: var(--accent-fg);
+}
+
+.detailTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+}
+
+.closedTag {
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--closed);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.detailDesc {
+  max-width: 760px;
+  color: var(--fg-muted);
+}
+
+/* form */
+.formPage {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+}
+
+.formHeading {
+  margin: 0 0 4px;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+}
+
+.formHint {
+  margin: 0 0 16px;
+  color: var(--fg-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.date {
+  width: 200px;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error {
+  color: var(--danger);
+  font-weight: normal;
+  font-size: var(--fs-sm);
+}

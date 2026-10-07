@@ -1,0 +1,283 @@
+/* Shared styles for popovers, menus, tooltips and dialogs (all in the top layer). */
+.popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  max-height: min(480px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+}
+
+/* Author styles beat the UA's [popover] { display: none } — restore it. */
+.popover:not(:popover-open),
+.tooltip:not(:popover-open) {
+  display: none;
+}
+
+.popover:popover-open {
+  animation: pop-in var(--dur) var(--ease);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.985);
+  }
+}
+
+/* --------------------------------------------------------------- menu */
+.menu {
+  min-width: 200px;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.menuItem:hover {
+  text-decoration: none;
+}
+
+.menuItem[data-active='true'] {
+  background: var(--bg-hover);
+}
+
+.menuItem svg {
+  color: var(--fg-muted);
+}
+
+.menuItem.danger,
+.menuItem.danger svg {
+  color: var(--danger);
+}
+
+.menuItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuItemDesc {
+  display: block;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuItemTrailing {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: 4px -4px;
+  background: var(--border-subtle);
+}
+
+.menuHeader {
+  padding: 6px 8px 4px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* --------------------------------------------------------------- select panel */
+.panel {
+  width: 300px;
+}
+
+.panelTitle {
+  padding: 10px 12px 6px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.panelFilter {
+  margin: 4px 8px 6px;
+}
+
+.panelList {
+  padding: 0 4px 4px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 4px;
+}
+
+.panelFooter {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+
+.panelFooter a {
+  color: var(--fg-muted);
+}
+
+.panelFooter a:hover {
+  color: var(--accent-fg);
+}
+
+.check {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.check[data-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.check svg {
+  color: inherit !important;
+}
+
+.empty {
+  padding: 16px 12px;
+  color: var(--fg-subtle);
+  text-align: center;
+  font-size: var(--fs-sm);
+}
+
+/* --------------------------------------------------------------- tooltip */
+.tooltip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: #1d1f24;
+  color: #f2f3f5;
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  animation: fade-in var(--dur) var(--ease);
+}
+
+:root[data-theme='dark'] .tooltip {
+  background: #2a2c32;
+}
+
+.tooltipKbd {
+  color: #9da3ad;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.anchor {
+  display: inline-flex;
+}
+
+/* --------------------------------------------------------------- dialog */
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: dialog-in 160ms var(--ease);
+}
+
+.dialog::backdrop {
+  background: var(--bg-overlay);
+  animation: fade-in 160ms var(--ease);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.dialogTop {
+  margin-top: 12vh;
+  margin-bottom: auto;
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px 10px;
+}
+
+.dialogTitle {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+}
+
+.dialogBody {
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.dialogFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.dialog:focus,
+.dialog:focus-visible {
+  outline: none;
+}

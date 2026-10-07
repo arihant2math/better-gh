@@ -1,0 +1,418 @@
+/* Organization settings pages: extras on top of components/admin/admin.module.css. */
+
+.notice,
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.notice svg,
+.callout svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.callout {
+  margin: 0 20px 10px;
+}
+
+.inlineError {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 20px 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--danger-subtle);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.errorText {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: var(--fw-medium);
+}
+
+.sectionHint {
+  margin: -2px 0 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.nested {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: -4px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border-subtle);
+}
+
+/* ------------------------------------------------------------------ profile */
+.profileGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 24px;
+}
+
+@media (max-width: 760px) {
+  .profileGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.avatarCol {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+
+.avatarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ tables */
+.rowMenu {
+  display: inline-flex;
+}
+
+.cellControl {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.compactSelect {
+  height: var(--control-h-sm);
+  font-size: var(--fs-sm);
+}
+
+.treeCell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.treeElbow {
+  width: 10px;
+  height: 12px;
+  margin-left: -14px;
+  margin-top: -10px;
+  border-bottom: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border-strong);
+  border-bottom-left-radius: 3px;
+  flex-shrink: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ team page */
+.titleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.back {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+}
+
+.back:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.tabNav {
+  padding: 0 20px;
+  margin-bottom: 10px;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.jsonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------ webhooks */
+.hooksPane {
+  flex-shrink: 0;
+  max-height: 40%;
+  margin: 0 20px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.hookList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hookRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hookRow:last-child {
+  border-bottom: 0;
+}
+
+.hookRowSelected {
+  background: var(--bg-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hookMain {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hookMain:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.hookActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.deliveriesHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 10px;
+}
+
+.wideDialog {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.eventsBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.eventsToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eventsToolbar > :first-child {
+  flex: 1;
+}
+
+.eventsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 4px 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.eventItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.eventItem input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.eventDesc {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+/* Danger zone (rename / delete organization). */
+.dangerList {
+  display: flex;
+  flex-direction: column;
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.dangerRow + .dangerRow {
+  border-top: 1px solid var(--border);
+}
+
+.dangerTitle {
+  font-weight: var(--fw-semibold);
+}
+
+.dangerWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--danger);
+}
+
+.dangerWarn svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+/* ---------------------------------------------------------------- personal access tokens */
+
+.patRow {
+  align-items: flex-start;
+  padding: 10px 14px;
+}
+
+.patRow > svg {
+  margin-top: 3px;
+}
+
+.patMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.patTitle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.patMeta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+.patRepo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.patActions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.affectedList {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.affectedList li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}

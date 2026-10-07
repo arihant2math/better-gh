@@ -1,0 +1,498 @@
+//! Site settings: `GET/PATCH /_bgh/admin/settings`, the public banner info
+//! `GET /_bgh/site`, GHES `/enterprise/announcement` and `GET /rate_limit`.
+
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use bgh_core::audit::Target;
+use bgh_core::prelude::*;
+use bgh_core::settings::{self, Announcement, SECTIONS, SiteSettings};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+
+use crate::common::log;
+
+/// Placeholder returned instead of stored secrets; sending it back keeps
+/// the stored value.
+pub const REDACTED: &str = "********";
+
+/// Paths (`section`, `field`) of secret values inside settings.
+fn redact(mut v: Value) -> Value {
+    if let Some(p) = v.pointer_mut("/smtp/password")
+        && !p.is_null()
+    {
+        *p = json!(REDACTED);
+    }
+    if let Some(p) = v.pointer_mut("/auth_providers/ldap/bind_password")
+        && !p.is_null()
+    {
+        *p = json!(REDACTED);
+    }
+    if let Some(p) = v.pointer_mut("/auth_providers/saml/sp_private_key")
+        && !p.is_null()
+    {
+        *p = json!(REDACTED);
+    }
+    if let Some(list) = v
+        .pointer_mut("/auth_providers/oidc")
+        .and_then(Value::as_array_mut)
+    {
+        for p in list {
+            if let Some(s) = p.get_mut("client_secret")
+                && !s.is_null()
+            {
+                *s = json!(REDACTED);
+            }
+        }
+    }
+    v
+}
+
+/// Replace redacted placeholders in `new` with the stored secrets.
+fn keep_secrets(section: &str, new: &mut Value, old: &Value) {
+    match section {
+        "smtp" => {
+            if new.get("password").and_then(Value::as_str) == Some(REDACTED) {
+                new["password"] = old.get("password").cloned().unwrap_or(Value::Null);
+            }
+        }
+        "auth_providers" => {
+            if let Some(ldap) = new.get_mut("ldap").and_then(Value::as_object_mut)
+                && ldap.get("bind_password").and_then(Value::as_str) == Some(REDACTED)
+            {
+                ldap.insert(
+                    "bind_password".into(),
+                    old.pointer("/ldap/bind_password")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+            }
+            if let Some(saml) = new.get_mut("saml").and_then(Value::as_object_mut)
+                && saml.get("sp_private_key").and_then(Value::as_str) == Some(REDACTED)
+            {
+                saml.insert(
+                    "sp_private_key".into(),
+                    old.pointer("/saml/sp_private_key")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                );
+            }
+            let old_list = old
+                .get("oidc")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(list) = new.get_mut("oidc").and_then(Value::as_array_mut) {
+                for p in list {
+                    if p.get("client_secret").and_then(Value::as_str) == Some(REDACTED) {
+                        let name = p.get("name").cloned();
+                        p["client_secret"] = old_list
+                            .iter()
+                            .find(|o| o.get("name") == name.as_ref())
+                            .and_then(|o| o.get("client_secret").cloned())
+                            .unwrap_or(Value::Null);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn validate(s: &SiteSettings) -> ApiResult<()> {
+    let bad = |field: &str| ApiError::invalid_field(FieldError::invalid("SiteSettings", field));
+    if !matches!(
+        s.repositories.default_visibility.as_str(),
+        "public" | "private" | "internal"
+    ) {
+        return Err(bad("repositories.default_visibility"));
+    }
+    if s.repositories.max_repo_size_mb.is_some_and(|m| m <= 0) {
+        return Err(bad("repositories.max_repo_size_mb"));
+    }
+    let g = &s.git;
+    for (field, v) in [
+        ("git.max_object_size_mb", g.max_object_size_mb),
+        ("git.warn_object_size_mb", g.warn_object_size_mb),
+        ("git.max_push_size_mb", g.max_push_size_mb),
+    ] {
+        if v.is_some_and(|m| m <= 0) {
+            return Err(bad(field));
+        }
+    }
+    if let (Some(warn), Some(max)) = (g.warn_object_size_mb, g.max_object_size_mb)
+        && warn >= max
+    {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "git.warn_object_size_mb",
+            "the warning size must be below the maximum file size",
+        )));
+    }
+    let r = &s.rate_limits;
+    if [
+        r.authenticated_per_hour,
+        r.unauthenticated_per_hour,
+        r.search_authenticated_per_minute,
+        r.search_unauthenticated_per_minute,
+        r.graphql_per_hour,
+    ]
+    .iter()
+    .any(|n| *n <= 0)
+    {
+        return Err(bad("rate_limits"));
+    }
+    if !matches!(s.smtp.tls.as_str(), "none" | "starttls" | "tls") {
+        return Err(bad("smtp.tls"));
+    }
+    if s.smtp.enabled && (s.smtp.host.is_empty() || s.smtp.from.is_empty()) {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "smtp",
+            "host and from are required when SMTP is enabled",
+        )));
+    }
+    let mut names = std::collections::HashSet::new();
+    for p in &s.auth_providers.oidc {
+        if p.name.is_empty()
+            || !p
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            || !names.insert(p.name.to_ascii_lowercase())
+        {
+            return Err(bad("auth_providers.oidc.name"));
+        }
+        if !p.issuer.starts_with("https://") && !p.issuer.starts_with("http://") {
+            return Err(bad("auth_providers.oidc.issuer"));
+        }
+        if p.client_id.is_empty() {
+            return Err(bad("auth_providers.oidc.client_id"));
+        }
+    }
+    let l = &s.auth_providers.ldap;
+    if l.enabled {
+        if l.host.trim().is_empty() || l.host.contains(char::is_whitespace) {
+            return Err(bad("auth_providers.ldap.host"));
+        }
+        if l.port == 0 {
+            return Err(bad("auth_providers.ldap.port"));
+        }
+        if l.user_search_bases.iter().all(|b| b.trim().is_empty()) {
+            return Err(bad("auth_providers.ldap.user_search_bases"));
+        }
+        if l.uid_field.trim().is_empty() {
+            return Err(bad("auth_providers.ldap.uid_field"));
+        }
+    }
+    if !matches!(l.encryption.as_str(), "none" | "ldaps" | "starttls") {
+        return Err(bad("auth_providers.ldap.encryption"));
+    }
+    if l.sync_interval_hours == 0 {
+        return Err(bad("auth_providers.ldap.sync_interval_hours"));
+    }
+    let saml = &s.auth_providers.saml;
+    if saml.enabled {
+        if !saml.idp_sso_url.starts_with("https://") && !saml.idp_sso_url.starts_with("http://") {
+            return Err(bad("auth_providers.saml.idp_sso_url"));
+        }
+        if saml.idp_certificate.trim().is_empty() {
+            return Err(bad("auth_providers.saml.idp_certificate"));
+        }
+        if saml.require_encrypted_assertions
+            && saml
+                .sp_private_key
+                .as_deref()
+                .is_none_or(|k| k.trim().is_empty())
+        {
+            return Err(ApiError::invalid_field(FieldError::custom(
+                "SiteSettings",
+                "auth_providers.saml.require_encrypted_assertions",
+                "encrypted assertions need an SP key pair",
+            )));
+        }
+    }
+    if saml.display_name.trim().is_empty() {
+        return Err(bad("auth_providers.saml.display_name"));
+    }
+    if saml.clock_skew_seconds > 3600 {
+        return Err(bad("auth_providers.saml.clock_skew_seconds"));
+    }
+    if !s.auth_providers.password_login
+        && s.auth_providers.oidc.is_empty()
+        && !l.enabled
+        && !saml.enabled
+    {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "auth_providers",
+            "at least one sign-in method must stay enabled",
+        )));
+    }
+    let g = &s.git_maintenance;
+    if g.prune_grace_days == 0 || g.prune_grace_days > 3650 {
+        return Err(bad("git_maintenance.prune_grace_days"));
+    }
+    if g.interval_hours == 0 || g.full_interval_days == 0 || g.archive_cache_max_age_days == 0 {
+        return Err(bad("git_maintenance"));
+    }
+    if g.loose_objects_threshold <= 0 || g.pack_count_threshold <= 1 || g.max_repos_per_pass <= 0 {
+        return Err(bad("git_maintenance"));
+    }
+    let r = &s.retention;
+    if [
+        r.notifications_days,
+        r.webhook_payload_days,
+        r.webhook_delivery_days,
+        r.activity_days,
+    ]
+    .iter()
+    .any(|d| *d > 36_500)
+    {
+        return Err(bad("retention"));
+    }
+    for d in &s.signup.allowed_email_domains {
+        if d.is_empty() || d.contains('@') || d.contains(char::is_whitespace) {
+            return Err(bad("signup.allowed_email_domains"));
+        }
+    }
+    if let Err(msg) = s.validate_policy() {
+        let field = if msg.starts_with("repositories.") {
+            "repositories.default_visibility"
+        } else {
+            "privacy.allowed_visibilities"
+        };
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            field,
+            msg,
+        )));
+    }
+    Ok(())
+}
+
+/// `GET /_bgh/admin/settings` → all sections, effective values (the
+/// environment's defaults overridden by stored fields; secrets redacted).
+pub async fn get(State(state): State<AppState>, _auth: RequireSiteAdmin) -> ApiResult<Json<Value>> {
+    let s = settings::load_uncached(&state.config, &state.db).await?;
+    Ok(Json(redact(serde_json::to_value(&s)?)))
+}
+
+/// `PATCH /_bgh/admin/settings` with `{section: {field: value}}`: the
+/// fields are merged into the stored section (fields never set keep
+/// following the environment's defaults, e.g. `BGH_RATE_LIMIT*`); the
+/// result is validated as a whole.
+pub async fn update(
+    State(state): State<AppState>,
+    auth: RequireSiteAdmin,
+    headers: HeaderMap,
+    Json(body): Json<Map<String, Value>>,
+) -> ApiResult<Json<Value>> {
+    for key in body.keys() {
+        if !SECTIONS.contains(&key.as_str()) {
+            return Err(ApiError::invalid_field(FieldError::custom(
+                "SiteSettings",
+                key,
+                format!("unknown settings section {key:?}"),
+            )));
+        }
+    }
+    let mut tx = Tx::begin(&state).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('bgh_site_settings'))")
+        .execute(&mut *tx)
+        .await?;
+    let mut stored: Map<String, Value> = settings::load_rows(&mut *tx).await?.into_iter().collect();
+    let defaults = SiteSettings::defaults(&state.config);
+    let current = serde_json::to_value(SiteSettings::from_rows_with(
+        defaults.clone(),
+        stored.clone(),
+    ))?;
+    for (key, patch) in &body {
+        let Value::Object(patch) = patch else {
+            return Err(ApiError::invalid_field(FieldError::invalid(
+                "SiteSettings",
+                key,
+            )));
+        };
+        let mut section = match stored.get(key) {
+            Some(Value::Object(fields)) => Value::Object(fields.clone()),
+            _ => json!({}),
+        };
+        for (k, v) in patch {
+            section[k] = v.clone();
+        }
+        let old = current.get(key).cloned().unwrap_or(json!({}));
+        keep_secrets(key, &mut section, &old);
+        stored.insert(key.clone(), section);
+    }
+    let mut typed = defaults;
+    for (key, section) in &stored {
+        let (true, Value::Object(fields)) = (SECTIONS.contains(&key.as_str()), section) else {
+            continue;
+        };
+        let res = typed.apply_section(key, fields);
+        // Only the patched sections must be valid; a bad stored row of
+        // another section keeps its defaults (as in `settings::load`).
+        if body.contains_key(key) {
+            res.map_err(|e| ApiError::unprocessable(format!("Invalid settings: {e}")))?;
+        }
+    }
+    validate(&typed)?;
+    // Requiring 2FA site-wide: the admin turning it on must have it (P36).
+    if typed.auth_providers.require_2fa
+        && current.pointer("/auth_providers/require_2fa") != Some(&Value::Bool(true))
+        && bgh_core::two_factor::enabled_at(&mut *tx, auth.user.id)
+            .await?
+            .is_none()
+    {
+        return Err(ApiError::invalid_field(FieldError::custom(
+            "SiteSettings",
+            "auth_providers.require_2fa",
+            "enable two-factor authentication on your own account before requiring it",
+        )));
+    }
+    let normalized = serde_json::to_value(&typed)?;
+    for key in body.keys() {
+        // Store only the fields set (normalized), not the defaults.
+        let fields: Map<String, Value> = stored[key]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(k, _)| Some((k.clone(), normalized[key].get(k)?.clone())))
+            .collect();
+        settings::store_section(&mut *tx, key, &Value::Object(fields)).await?;
+    }
+    let changed: Map<String, Value> = body
+        .keys()
+        .map(|k| (k.clone(), redact(normalized.clone())[k].clone()))
+        .collect();
+    log(
+        &mut tx,
+        &auth,
+        &headers,
+        "business.update_settings",
+        Target::Site,
+        Value::Object(changed),
+    )
+    .await?;
+    tx.commit().await?;
+    settings::invalidate(&state);
+    Ok(Json(redact(normalized)))
+}
+
+/// `GET /_bgh/site` (public): banner, maintenance and sign-in options for
+/// the web client.
+pub async fn site(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let s = settings::load(&state).await?;
+    Ok(Json(settings::public_info(&state, &s)))
+}
+
+/// GHES `announcement`
+#[derive(Debug, Serialize)]
+pub struct AnnouncementJson {
+    pub announcement: Option<String>,
+    pub expires_at: Option<Timestamp>,
+    pub user_dismissible: bool,
+}
+
+impl From<&Announcement> for AnnouncementJson {
+    fn from(a: &Announcement) -> Self {
+        Self {
+            announcement: a.message.clone(),
+            expires_at: a.expires_at.map(Timestamp::from),
+            user_dismissible: a.user_dismissible,
+        }
+    }
+}
+
+/// `GET /enterprise/announcement`
+pub async fn get_announcement(
+    State(state): State<AppState>,
+    _auth: RequireSiteAdmin,
+) -> ApiResult<Json<AnnouncementJson>> {
+    let s = settings::load_uncached(&state.config, &state.db).await?;
+    Ok(Json(AnnouncementJson::from(&s.announcement)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AnnouncementBody {
+    pub announcement: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub user_dismissible: bool,
+}
+
+async fn store_announcement(
+    state: &AppState,
+    auth: &AuthContext,
+    headers: &HeaderMap,
+    a: &Announcement,
+    action: &str,
+) -> ApiResult<()> {
+    let mut tx = Tx::begin(state).await?;
+    settings::store_section(&mut *tx, "announcement", &serde_json::to_value(a)?).await?;
+    log(
+        &mut tx,
+        auth,
+        headers,
+        action,
+        Target::Site,
+        json!({ "announcement": a.message, "expires_at": a.expires_at }),
+    )
+    .await?;
+    tx.commit().await?;
+    settings::invalidate(state);
+    Ok(())
+}
+
+/// `PATCH /enterprise/announcement`
+pub async fn set_announcement(
+    State(state): State<AppState>,
+    auth: RequireSiteAdmin,
+    headers: HeaderMap,
+    Json(body): Json<AnnouncementBody>,
+) -> ApiResult<Json<AnnouncementJson>> {
+    let message = body
+        .announcement
+        .filter(|m| !m.trim().is_empty())
+        .ok_or_else(|| {
+            ApiError::invalid_field(FieldError::missing_field("Announcement", "announcement"))
+        })?;
+    let a = Announcement {
+        message: Some(message),
+        expires_at: body.expires_at,
+        user_dismissible: body.user_dismissible,
+    };
+    store_announcement(&state, &auth, &headers, &a, "business.set_announcement").await?;
+    Ok(Json(AnnouncementJson::from(&a)))
+}
+
+/// `DELETE /enterprise/announcement` → 204.
+pub async fn delete_announcement(
+    State(state): State<AppState>,
+    auth: RequireSiteAdmin,
+    headers: HeaderMap,
+) -> ApiResult<StatusCode> {
+    store_announcement(
+        &state,
+        &auth,
+        &headers,
+        &Announcement::default(),
+        "business.remove_announcement",
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `GET /rate_limit`: the caller's budgets in GitHub's shape (always
+/// available, not counted; see `bgh_core::ratelimit`).
+pub async fn rate_limit(
+    State(state): State<AppState>,
+    auth: MaybeUser,
+    req: axum::extract::Request,
+) -> ApiResult<Json<Value>> {
+    let ip = bgh_core::auth::client_ip(&state.config, req.headers(), req.extensions());
+    Ok(Json(
+        bgh_core::ratelimit::status(&state, auth.as_ref(), &ip).await?,
+    ))
+}

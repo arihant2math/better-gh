@@ -1,0 +1,385 @@
+/* GitHub App pages: registration, installations, public page, install flow. */
+
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.appIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--accent-subtle, var(--bg-muted));
+  color: var(--accent-fg, var(--fg-muted));
+  font-weight: var(--fw-semibold);
+}
+
+.titleLink {
+  color: var(--fg);
+  font-weight: var(--fw-semibold);
+}
+
+.titleLink:hover {
+  color: var(--accent-fg);
+}
+
+.meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.meta code,
+.fingerprint,
+.kv code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.hint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.hint code {
+  font-family: var(--font-mono);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.kv > span:nth-child(odd) {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.kv > span:nth-child(even) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.formHeading {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.permGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.permGroup {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.permGroup legend {
+  padding: 0 6px;
+  margin-left: 10px;
+  font-weight: var(--fw-semibold);
+}
+
+.permRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px;
+}
+
+.permRow + .permRow {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.permRow select {
+  width: auto;
+  min-width: 150px;
+}
+
+.permText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.permText span {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 16px;
+}
+
+.pemBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--open-subtle);
+}
+
+.pemWarn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--fw-medium);
+}
+
+.pemWarn svg {
+  color: var(--warning);
+}
+
+.dangerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dangerRow + .dangerRow {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.permSummary,
+.changeList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.permSummary li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.permSummary svg {
+  color: var(--success);
+}
+
+.overview {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 24px;
+}
+
+@media (max-width: 720px) {
+  .overview {
+    grid-template-columns: 1fr;
+  }
+}
+
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aside h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--fg-muted);
+}
+
+.ownerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.accounts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.accounts li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.accounts li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.accountName {
+  flex: 1;
+  font-weight: var(--fw-semibold);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.repoResults,
+.repoPicked {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.repoResults li button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.repoResults li button:hover,
+.repoResults li button:focus-visible {
+  background: var(--bg-subtle);
+}
+
+.repoResults > li.hint,
+.repoPicked > li.hint {
+  padding: 8px 12px;
+}
+
+.repoPicked li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.repoPicked li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.repoPicked li span {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+/* P46: settings tabs, deliveries, manifest confirmation. */
+.tabs {
+  margin-bottom: 16px;
+}
+
+.deliveryToggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deliveryToggle code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.deliveryEvent {
+  font-weight: var(--fw-semibold);
+}
+
+.deliveryDetail {
+  margin-top: 10px;
+}
+
+.deliveryHeading {
+  margin: 12px 0 4px;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+}
+
+.deliveryPre {
+  max-height: 320px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.manifestTitle {
+  margin: 0 0 8px;
+  font-size: var(--fs-xl, 20px);
+}
+
+.manifestPerms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.block {
+  display: block;
+}

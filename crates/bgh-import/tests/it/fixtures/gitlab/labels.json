@@ -1,0 +1,15 @@
+[
+  {
+    "id": 501,
+    "name": "bug",
+    "color": "#d9534f",
+    "text_color": "#FFFFFF",
+    "description": "Something is broken",
+    "open_issues_count": 1,
+    "closed_issues_count": 0,
+    "open_merge_requests_count": 0,
+    "subscribed": false,
+    "priority": null,
+    "is_project_label": true
+  }
+]

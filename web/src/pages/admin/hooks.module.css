@@ -1,0 +1,78 @@
+/* Global webhooks page: create / edit dialog. */
+
+.secretRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secretRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+  color: var(--fg);
+  font-size: var(--fs-md);
+}
+
+.warning svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--warning);
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.event {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.event input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.event[data-disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.eventLabel {
+  display: block;
+  font-weight: var(--fw-medium);
+}
+
+.eventDesc {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.fieldError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}

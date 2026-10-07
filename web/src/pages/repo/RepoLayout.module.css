@@ -1,0 +1,141 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  flex-shrink: 0;
+  padding: 14px 16px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  flex-wrap: wrap;
+}
+
+.repoIcon {
+  color: var(--fg-subtle);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-lg);
+  font-weight: 450;
+}
+
+.owner {
+  color: var(--fg-muted);
+}
+
+.name {
+  color: var(--fg);
+  font-weight: var(--fw-semibold);
+}
+
+.slash {
+  color: var(--fg-faint);
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.count {
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+
+.starred svg {
+  color: #e3b341 !important;
+}
+
+.tabs {
+  margin: 8px -8px 0;
+}
+
+.body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.loading {
+  display: grid;
+  place-items: center;
+  height: 240px;
+  color: var(--fg-subtle);
+}
+
+.split {
+  display: inline-flex;
+}
+
+.split > :first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.countLink {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h-sm);
+  padding: 0 8px;
+  margin-left: -1px;
+  border: 1px solid var(--border);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+}
+
+.countLink:hover {
+  background: var(--bg-muted);
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 2px 0 0 24px;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+
+.subline a {
+  color: var(--fg-muted);
+}
+
+.subline a:hover {
+  color: var(--fg);
+}
+
+.mirrored {
+  margin: 0;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.mirrored a {
+  color: var(--fg-muted);
+  text-decoration: underline;
+}

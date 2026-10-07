@@ -1,0 +1,169 @@
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--sp-8) clamp(16px, 3vw, 24px) 64px;
+  container: newform / inline-size;
+}
+
+.form > section {
+  margin-top: var(--sp-8);
+}
+
+.required {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-style: italic;
+}
+
+.label {
+  display: block;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--fg);
+  margin-bottom: 6px;
+}
+
+.ownerName {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.ownerCol {
+  flex: none;
+  min-width: 0;
+}
+
+.nameCol {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.nameCol > span {
+  width: 100%;
+}
+
+.slash {
+  font-size: 22px;
+  line-height: var(--control-h);
+  color: var(--fg-muted);
+  padding-bottom: 1px;
+}
+
+.ownerButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--control-h);
+  padding: 0 10px;
+  max-width: 260px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.ownerButton:hover {
+  background: var(--bg-hover);
+}
+
+.ownerButton:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ownerButton > span:not(:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ownerButton svg {
+  color: var(--fg-muted);
+  flex: none;
+}
+
+.nameStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: calc(-1 * var(--sp-2));
+  min-height: 18px;
+  font-size: var(--fs-sm);
+}
+
+.nameStatus > span:not(.hint) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ok {
+  color: var(--success);
+}
+
+.bad {
+  color: var(--danger);
+}
+
+.hint {
+  color: var(--fg-muted);
+}
+
+.hint strong {
+  color: var(--fg);
+}
+
+.templates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+
+.credentials {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+
+.inlineWarning {
+  margin-top: var(--sp-3);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border);
+}
+
+.summary {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.summary strong {
+  color: var(--fg);
+}
+
+@container newform (max-width: 600px) {
+  .credentials,
+  .templates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .slash {
+    display: none;
+  }
+
+  .nameCol {
+    flex-basis: 100%;
+  }
+}

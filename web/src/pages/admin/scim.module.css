@@ -1,0 +1,30 @@
+/* SCIM provisioning page: endpoint panel and provisioned users / groups. */
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.help {
+  margin: 10px 0 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+}
+
+.table > [role='row']:last-of-type {
+  border-bottom: 0;
+}
+
+.empty {
+  padding: 16px 20px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-md);
+}

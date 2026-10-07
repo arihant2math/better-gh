@@ -1,0 +1,42 @@
+[
+  {
+    "id": 80000001,
+    "node_id": "PRR_80000001",
+    "user": {
+      "login": "hubot",
+      "id": 7,
+      "node_id": "MDQ6VXNlcj7",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/hubot",
+      "html_url": "https://github.com/hubot",
+      "followers_url": "https://api.github.com/users/hubot/followers",
+      "following_url": "https://api.github.com/users/hubot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/hubot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/hubot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/hubot/subscriptions",
+      "organizations_url": "https://api.github.com/users/hubot/orgs",
+      "repos_url": "https://api.github.com/users/hubot/repos",
+      "events_url": "https://api.github.com/users/hubot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/hubot/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "Ship it",
+    "state": "APPROVED",
+    "html_url": "https://github.com/octo-org/pulls-demo/pull/3#pullrequestreview-80000001",
+    "pull_request_url": "https://api.github.com/repos/octo-org/pulls-demo/pulls/3",
+    "author_association": "MEMBER",
+    "_links": {
+      "html": {
+        "href": "https://github.com/octo-org/pulls-demo/pull/3#pullrequestreview-80000001"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/octo-org/pulls-demo/pulls/3"
+      }
+    },
+    "submitted_at": "2024-02-02T11:00:00Z",
+    "commit_id": "{{SHA_F1}}"
+  }
+]

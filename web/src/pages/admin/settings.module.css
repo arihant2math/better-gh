@@ -1,0 +1,362 @@
+/* Site settings page: section index, chip editor, previews, provider list. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 184px;
+  gap: 24px;
+  align-items: start;
+}
+
+.index {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.indexTitle {
+  padding: 0 8px 6px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.indexLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+.indexLink:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.indexLink[aria-current='true'] {
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+
+.indexMark {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+}
+
+.indexMark[data-kind='dirty'] {
+  color: var(--warning);
+}
+
+.indexMark[data-kind='error'] {
+  color: var(--danger);
+}
+
+@media (max-width: 1080px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .indexWrap {
+    display: none;
+  }
+}
+
+/* Panels scroll under the sticky save bar; keep anchors clear of the top. */
+.section {
+  scroll-margin-top: 16px;
+}
+
+.dirtyTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warning);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.narrow {
+  max-width: 260px;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------- chip editor */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: text;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.chips:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.chips[data-invalid] {
+  border-color: var(--danger);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.chip[data-invalid] {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.chipRemove:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.chipRemove:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.chipInput {
+  flex: 1;
+  min-width: 160px;
+  height: 24px;
+  padding: 0 2px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+
+.chipInput::placeholder {
+  color: var(--fg-subtle);
+}
+
+/* ------------------------------------------------------------- preview */
+.preview {
+  overflow: hidden;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.previewLabel {
+  padding: 4px 10px;
+  border-bottom: 1px dashed var(--border);
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.previewEmpty {
+  padding: 8px 10px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------- providers */
+.providers {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.provider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.provider:last-child {
+  border-bottom: 0;
+}
+
+.providerMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.providerMain > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.providerError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.secretRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secretRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.disabledWrap {
+  display: inline-flex;
+}
+
+.disabledWrap > button {
+  pointer-events: none;
+}
+
+.saveList {
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+}
+
+/* ------------------------------------------------------------------ LDAP */
+.ldap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ldapFields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ldapMore > summary {
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.ldapMore[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ldapActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ldapActions > input {
+  flex: 1 1 200px;
+  max-width: 280px;
+}
+
+.ldapOk {
+  color: var(--success);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------------ SAML */
+.samlInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.samlInfoTitle {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.copyValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.copyValue > :first-child {
+  overflow-wrap: anywhere;
+}
+
+.certs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cert {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fingerprint {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}

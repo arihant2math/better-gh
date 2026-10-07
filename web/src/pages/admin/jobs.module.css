@@ -1,0 +1,154 @@
+/* Background jobs page: totals, per-kind table, drawer details. */
+
+.top {
+  display: grid;
+  grid-template-columns: minmax(280px, 2fr) minmax(320px, 3fr);
+  gap: 12px;
+  padding: 0 20px 12px;
+}
+
+@media (max-width: 900px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tileButton {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tileButton:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tileButton[aria-pressed='true'] > * {
+  border-color: var(--accent);
+}
+
+.kinds {
+  max-height: 196px;
+  overflow-y: auto;
+}
+
+.kindTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.kindTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kindTable td {
+  height: 34px;
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.kindTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.kindTable th:first-child,
+.kindTable td:first-child {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+.kindLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.kindLink:hover {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.zero {
+  color: var(--fg-faint);
+}
+
+.failedCount {
+  color: var(--danger);
+  font-weight: var(--fw-medium);
+}
+
+.error {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errorBlock {
+  max-height: 280px;
+  overflow: auto;
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+
+.drawerHeading {
+  margin: 0 0 8px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+  color: var(--fg);
+  font-size: var(--fs-md);
+}

@@ -1,0 +1,376 @@
+.page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------------ sidebar */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: none;
+  width: 232px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+}
+
+.sideTitle {
+  padding: 10px 8px 6px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sideTitle:first-child {
+  padding-top: 2px;
+}
+
+.sideItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.sideItem:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.sideItemActive,
+.sideItemActive:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.sideItemDisabled .sideText {
+  color: var(--fg-subtle);
+  text-decoration: line-through;
+}
+
+.sideText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideEmpty {
+  padding: 4px 8px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------------ main */
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 8px;
+}
+
+.headTitle {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.path {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.subtle {
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.banner {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--warning-subtle);
+  color: var(--fg);
+  font-size: var(--fs-md);
+}
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.count {
+  flex: 1;
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.filterOn {
+  color: var(--accent-fg);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+}
+
+.skeletons {
+  padding: 4px 0;
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ------------------------------------------------------------------ rows */
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.row:hover,
+.rowActive {
+  background: var(--bg-hover);
+}
+
+.rowActive::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.rowIcon {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitle {
+  display: block;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTitle::after {
+  /* whole row clickable */
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.rowTitle:hover {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin-top: 2px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.rowWorkflow {
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+}
+
+.attempt {
+  color: var(--fg-subtle);
+  font-weight: normal;
+}
+
+.actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-weight: var(--fw-medium);
+}
+
+.branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 180px;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.branchName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowWhen {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  width: 104px;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------------ dispatch */
+.dispatch {
+  width: 320px;
+  padding: 0;
+}
+
+.dispatchForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(70vh, 560px);
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.dispatchTitle {
+  font-weight: var(--fw-semibold);
+}
+
+.dispatchLoading {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkboxRow input {
+  accent-color: var(--accent);
+}
+
+.formError {
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--danger-subtle);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 760px) {
+  .sidebar {
+    display: none;
+  }
+
+  .branch {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ status badge */
+.badgeForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(480px, 100%);
+}
+
+.badgePreview {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.badgeMarkdown {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+}

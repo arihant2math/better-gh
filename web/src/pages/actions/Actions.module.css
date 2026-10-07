@@ -1,0 +1,56 @@
+/* Shared Actions styles (status colors, durations). Page-specific CSS lives next to each page. */
+
+.status {
+  flex: none;
+  vertical-align: text-bottom;
+}
+
+.st-success {
+  color: var(--success);
+}
+
+.st-failure {
+  color: var(--danger);
+}
+
+.st-cancelled,
+.st-skipped,
+.st-neutral,
+.st-queued {
+  color: var(--fg-subtle);
+}
+
+.st-waiting {
+  color: var(--warning);
+}
+
+.st-in_progress {
+  color: var(--warning);
+}
+
+.spin {
+  display: inline-grid;
+  place-items: center;
+}
+
+.spin svg {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin svg {
+    animation-duration: 3s;
+  }
+}
+
+.duration {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

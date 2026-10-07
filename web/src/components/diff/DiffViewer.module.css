@@ -1,0 +1,738 @@
+.viewer {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+.noTree {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ------------------------------------------------------------------ tree */
+.tree {
+  overflow-y: auto;
+  padding: 8px 6px 16px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+}
+
+.treeHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 10px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.viewedCount {
+  margin-left: auto;
+  color: var(--fg-subtle);
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeItem:hover {
+  background: var(--bg-hover);
+}
+
+.treeItem svg {
+  color: var(--fg-subtle);
+  flex-shrink: 0;
+}
+
+.dirIcon {
+  color: #54aeff !important;
+}
+
+.treeViewed {
+  color: var(--fg-subtle);
+}
+
+.treeName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dotStatus {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.dotStatus.added {
+  background: var(--success);
+}
+
+.dotStatus.deleted {
+  background: var(--danger);
+}
+
+/* ------------------------------------------------------------------ diff */
+.diff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 16px;
+}
+
+.fileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  margin-top: 16px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+}
+
+.fileHeaderCollapsed {
+  border-radius: var(--radius-lg);
+}
+
+.collapse {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.collapse:hover {
+  background: var(--bg-hover);
+}
+
+.stat {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.add {
+  color: var(--success);
+}
+
+.del {
+  color: var(--danger);
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+}
+
+.status {
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  text-transform: capitalize;
+  line-height: 18px;
+}
+
+.status.added {
+  background: var(--open-subtle);
+  color: var(--success);
+}
+
+.status.deleted {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.status.renamed {
+  background: var(--warning-subtle);
+  color: var(--warning);
+}
+
+.viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.viewed input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.line,
+.hunk {
+  display: grid;
+  grid-template-columns: 48px 48px minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.num {
+  padding: 0 8px;
+  color: var(--fg-subtle);
+  text-align: right;
+  user-select: none;
+}
+
+.code {
+  padding-right: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.marker {
+  display: inline-block;
+  width: 18px;
+  padding-left: 6px;
+  color: var(--fg-subtle);
+  user-select: none;
+}
+
+.hunk {
+  background: var(--diff-hunk-bg);
+  color: var(--diff-hunk-fg);
+}
+
+.hunk .code {
+  padding-left: 10px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.add.line,
+.line.add {
+  background: var(--diff-add-bg);
+}
+
+.line.add .num {
+  background: var(--diff-add-num);
+}
+
+.line.add .marker {
+  color: var(--success);
+}
+
+.line.del {
+  background: var(--diff-del-bg);
+}
+
+.line.del .num {
+  background: var(--diff-del-num);
+}
+
+.line.del .marker {
+  color: var(--danger);
+}
+
+.line.meta {
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+
+.binary {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  color: var(--fg-subtle);
+  font-family: var(--font-sans);
+}
+
+.gap {
+  height: 1px;
+  border-top: 1px solid var(--border);
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ DiffView additions */
+.emptyState {
+  padding: 32px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 4px;
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+}
+
+.fileActive {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.viewedOn {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.commentCount,
+.treeCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.treeCount {
+  font-size: var(--fs-xs);
+}
+
+.treeActive {
+  background: var(--accent-subtle);
+}
+
+.extra {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 6px 10px;
+  background: var(--bg-subtle);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.line,
+.splitLine {
+  position: relative;
+}
+
+.selected,
+.line.selected,
+.line.selected .num {
+  background: var(--accent-subtle) !important;
+}
+
+.line.selected .num,
+.num.selected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.cursor {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.numClickable {
+  cursor: pointer;
+}
+
+.numClickable:hover {
+  color: var(--fg);
+}
+
+.addComment {
+  position: absolute;
+  display: none;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  margin-left: -22px;
+  margin-top: 1px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.line:hover .addComment,
+.cell:hover .addComment {
+  display: grid;
+}
+
+.line .code,
+.cell {
+  position: relative;
+  padding-left: 0;
+}
+
+/* split view */
+.splitLine,
+.hunkSplit {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 48px minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.hunkSplit .code {
+  grid-column: 2 / span 3;
+}
+
+.cell.add,
+.num.add {
+  background: var(--diff-add-bg);
+}
+
+.num.add {
+  background: var(--diff-add-num);
+}
+
+.cell.del {
+  background: var(--diff-del-bg);
+}
+
+.num.del {
+  background: var(--diff-del-num);
+}
+
+.cell.empty,
+.num.empty {
+  background: var(--bg-subtle);
+}
+
+.splitLine > .cell:nth-child(2) {
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* ------------------------------------------------------------------ P37: expansion, annotations, file actions, rich/image diffs */
+.hunkExpandable {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.hunkSplit.hunkExpandable {
+  grid-template-columns: 48px minmax(0, 1fr) 48px minmax(0, 1fr);
+}
+
+.expander {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-left: 4px;
+  min-height: 24px;
+}
+
+.expandBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--diff-hunk-fg);
+  cursor: pointer;
+}
+
+.expandBtn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.generated {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  line-height: 18px;
+}
+
+.fileActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fileAction {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.fileAction:hover {
+  background: var(--bg-hover, var(--bg-subtle));
+  color: var(--fg);
+}
+
+.richToggle,
+.richBar {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.richToggle button,
+.richBar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.richToggle button + button,
+.richBar button + button {
+  border-left: 1px solid var(--border);
+}
+
+.richToggle button[aria-pressed='true'],
+.richBar button[aria-pressed='true'] {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.annotations {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 4px 10px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.annotation {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.annotation_failure {
+  border-left-color: var(--danger);
+}
+
+.annotation_warning {
+  border-left-color: var(--warning);
+}
+
+.annotation_notice {
+  border-left-color: var(--accent);
+}
+
+.annotation_failure .annotationIcon {
+  color: var(--danger);
+}
+
+.annotation_warning .annotationIcon {
+  color: var(--warning);
+}
+
+.annotation_notice .annotationIcon {
+  color: var(--accent);
+}
+
+.annotationIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.annotationBody {
+  min-width: 0;
+  flex: 1;
+}
+
+.annotationHead {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.annotationLines {
+  margin-left: auto;
+  color: var(--fg-subtle);
+  font-size: var(--fs-sm);
+}
+
+.annotationMessage {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.annotationBody pre {
+  overflow: auto;
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.rich,
+.imageDiff {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+.richPanes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.richSplit {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.richPane {
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.richBefore {
+  border-top: 3px solid var(--danger);
+}
+
+.richAfter {
+  border-top: 3px solid var(--success);
+}
+
+.richLabel,
+.imageLabel {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.richNote {
+  color: var(--fg-muted);
+}
+
+.binarySizes {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.imageTwoUp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.imageFigure {
+  margin: 0;
+  text-align: center;
+}
+
+.imageFigure img {
+  max-width: 100%;
+  max-height: 480px;
+  border: 1px solid var(--border);
+  background: repeating-conic-gradient(var(--bg-subtle) 0 25%, var(--bg) 0 50%) 50% / 16px 16px;
+}
+
+.imageFigure figcaption {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.imageBefore img {
+  border-color: var(--danger);
+}
+
+.imageAfter img {
+  border-color: var(--success);
+}
+
+.imageStackWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.imageStack {
+  position: relative;
+  max-width: 100%;
+  min-width: 32px;
+  min-height: 32px;
+  background: repeating-conic-gradient(var(--bg-subtle) 0 25%, var(--bg) 0 50%) 50% / 16px 16px;
+}
+
+.imageStack > img {
+  display: block;
+  position: absolute;
+  inset: 0 auto auto 0;
+}
+
+.swipeAfter {
+  position: absolute;
+  inset: 0 0 0 auto;
+  overflow: hidden;
+  direction: rtl;
+}
+
+.swipeAfter img {
+  display: block;
+  max-width: none;
+}
+
+.swipeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.onionTop {
+  z-index: 1;
+}

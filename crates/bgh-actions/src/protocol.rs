@@ -1,0 +1,300 @@
+//! Runner protocol: the job specification a runner receives, what it
+//! reports back, and the [`Backend`] trait through which a runner talks to
+//! the server — in-process for the built-in runner
+//! ([`crate::server::LocalBackend`]), over HTTP long-polling for external
+//! `bgh-runner` processes ([`crate::runner::http::HttpBackend`]).
+//!
+//! HTTP endpoints (`Authorization: RunnerToken <token>`):
+//!
+//! | Method | Path | Body → Response |
+//! |---|---|---|
+//! | POST | `/_bgh/actions/runner/register` | [`RegisterRequest`] (no auth) → [`RegisterResponse`] |
+//! | POST | `/_bgh/actions/runner/acquire?wait=30` | → 200 [`JobSpec`] or 204 |
+//! | POST | `/_bgh/actions/runner/jobs/{id}/logs?step=N` | text/plain chunk → 204 |
+//! | POST | `/_bgh/actions/runner/jobs/{id}/steps` | `[StepState]` → [`Heartbeat`] |
+//! | POST | `/_bgh/actions/runner/jobs/{id}/complete` | [`JobCompletion`] → 204 |
+//! | GET  | `/_bgh/actions/runner/jobs/{id}/artifacts` | → `[ArtifactInfo]` (same run) |
+//! | PUT  | `/_bgh/actions/runner/jobs/{id}/artifacts/{name}?retention_days=N` | zip → [`ArtifactInfo`] |
+//! | GET  | `/_bgh/actions/runner/jobs/{id}/artifacts/{artifact_id}/zip` | → zip |
+//! | DELETE | `/_bgh/actions/runner/self` | unregister (ephemeral runners) |
+
+use std::path::Path;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+pub use crate::models::StepState;
+pub use crate::workflow::{RunDefaults, Step};
+
+/// Everything a runner needs to execute one job. Job-level expressions
+/// (`runs-on`, `env`, `container`, `services`, `timeout-minutes`, ...) are
+/// already evaluated; step-level ones are evaluated by the runner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JobSpec {
+    pub job_id: i64,
+    pub run_id: i64,
+    pub run_number: i64,
+    pub run_attempt: i32,
+    /// Job id in the workflow file.
+    pub job_key: String,
+    /// Display name (`build (ubuntu-latest, 18)`).
+    pub name: String,
+    pub workflow_name: String,
+    /// `.github/workflows/ci.yml`
+    pub workflow_path: String,
+    /// `owner/name`
+    pub repository: String,
+    pub repository_id: i64,
+    pub repository_owner: String,
+    pub server_url: String,
+    pub api_url: String,
+    /// `GITHUB_TOKEN` (filled in when the job is acquired).
+    #[serde(default)]
+    pub token: String,
+    /// The `github` context without `token`.
+    pub github: Value,
+    /// Workflow + job `env`, evaluated.
+    pub env: IndexMap<String, String>,
+    pub vars: Value,
+    /// Filled in when the job is acquired; never stored.
+    #[serde(default)]
+    pub secrets: IndexMap<String, String>,
+    pub matrix: Value,
+    pub needs: Value,
+    pub inputs: Value,
+    pub strategy: Value,
+    pub defaults: RunDefaults,
+    pub container: Option<ContainerSpec>,
+    pub services: IndexMap<String, ContainerSpec>,
+    pub steps: Vec<Step>,
+    /// Raw `outputs:` expressions, evaluated by the runner at the end.
+    pub outputs: IndexMap<String, String>,
+    pub timeout_minutes: u64,
+    pub environment: Option<String>,
+    /// `GITHUB_TOKEN` permission map (`{"contents": "read"}`), filled in
+    /// when the job is acquired; shown in the "Set up job" log.
+    #[serde(default)]
+    pub token_permissions: IndexMap<String, String>,
+    /// `ACTIONS_RUNTIME_TOKEN` for the cache and results services (filled
+    /// in when the job is acquired; see [`crate::runtime`]).
+    #[serde(default)]
+    pub runtime_token: String,
+    /// `ACTIONS_ID_TOKEN_REQUEST_URL` when the token has `id-token: write`
+    /// (see [`crate::oidc`]); filled in when the job is acquired.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token_request_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ContainerSpec {
+    pub image: String,
+    pub env: IndexMap<String, String>,
+    pub ports: Vec<String>,
+    pub volumes: Vec<String>,
+    pub options: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+/// A check-run annotation from `::error file=..,line=..::msg`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Annotation {
+    /// `notice` | `warning` | `failure`
+    pub level: String,
+    pub message: String,
+    pub title: Option<String>,
+    pub path: Option<String>,
+    pub start_line: Option<i64>,
+    pub end_line: Option<i64>,
+    pub start_column: Option<i64>,
+    pub end_column: Option<i64>,
+}
+
+/// Final report of a job.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct JobCompletion {
+    /// `success` | `failure` | `cancelled` | `skipped`
+    pub conclusion: String,
+    pub outputs: IndexMap<String, String>,
+    pub steps: Vec<StepState>,
+    pub annotations: Vec<Annotation>,
+    /// Concatenated `GITHUB_STEP_SUMMARY` markdown.
+    pub summary: Option<String>,
+}
+
+/// Response to a step update: tells the runner to stop.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Heartbeat {
+    pub cancel: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactInfo {
+    pub id: i64,
+    pub name: String,
+    pub size_in_bytes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterRequest {
+    /// Registration token from `POST .../actions/runners/registration-token`.
+    pub token: String,
+    pub name: String,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(default)]
+    pub ephemeral: bool,
+    /// Host OS (`Linux`, `macOS`, `Windows`; default `Linux`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os: Option<String>,
+    /// Host architecture (`X64`, `X86`, `ARM64`, `ARM`; default `X64`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arch: Option<String>,
+    /// Runner group name (organization / site runners; default group
+    /// when unset), like `config.sh --runnergroup`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner_group: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    pub id: i64,
+    pub name: String,
+    /// Secret runner token for `Authorization: RunnerToken <token>`.
+    pub token: String,
+}
+
+/// How a runner talks to the server.
+#[async_trait]
+pub trait Backend: Send + Sync {
+    /// Claim the next job this runner can run, waiting up to `wait`.
+    async fn acquire(&self, wait: Duration) -> anyhow::Result<Option<JobSpec>>;
+    /// Append raw log text (complete lines) to a step's log.
+    async fn append_log(&self, job_id: i64, step: i64, text: &str) -> anyhow::Result<()>;
+    /// Report step states; doubles as heartbeat. Returns whether the job
+    /// was cancelled.
+    async fn update_steps(&self, job_id: i64, steps: &[StepState]) -> anyhow::Result<Heartbeat>;
+    async fn complete(&self, job_id: i64, result: &JobCompletion) -> anyhow::Result<()>;
+    async fn upload_artifact(
+        &self,
+        job_id: i64,
+        name: &str,
+        zip: &Path,
+        retention_days: Option<i64>,
+    ) -> anyhow::Result<ArtifactInfo>;
+    async fn list_artifacts(&self, job_id: i64) -> anyhow::Result<Vec<ArtifactInfo>>;
+    async fn download_artifact(
+        &self,
+        job_id: i64,
+        artifact_id: i64,
+        dest: &Path,
+    ) -> anyhow::Result<()>;
+}
+
+/// `encoded_jit_config` of `POST .../actions/runners/generate-jitconfig`.
+///
+/// Same container as GitHub's: base64 of a JSON object mapping runner
+/// config file names to base64 file contents. `.runner` carries the
+/// official runner's settings keys; `.credentials` uses the
+/// `BghRunnerToken` scheme (the runner token of this protocol) until the
+/// official runner protocol is supported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JitConfig {
+    pub runner_id: i64,
+    pub runner_name: String,
+    pub runner_group_id: i64,
+    pub runner_group_name: String,
+    /// Server base URL (`BGH_BASE_URL`).
+    pub server_url: String,
+    /// HTML URL of the runner's repository / organization / site.
+    pub github_url: String,
+    pub work_folder: String,
+    /// Secret runner token (`Authorization: RunnerToken <token>`).
+    pub token: String,
+}
+
+impl JitConfig {
+    pub fn encode(&self) -> String {
+        use base64::Engine as _;
+        let b64 = |v: &Value| base64::engine::general_purpose::STANDARD.encode(v.to_string());
+        let runner = serde_json::json!({
+            "agentId": self.runner_id,
+            "agentName": self.runner_name,
+            "poolId": self.runner_group_id,
+            "poolName": self.runner_group_name,
+            "serverUrl": self.server_url,
+            "gitHubUrl": self.github_url,
+            "workFolder": self.work_folder,
+            "ephemeral": true,
+            "disableUpdate": true,
+        });
+        let creds = serde_json::json!({
+            "scheme": "BghRunnerToken",
+            "data": {"token": self.token},
+        });
+        let files = serde_json::json!({".runner": b64(&runner), ".credentials": b64(&creds)});
+        base64::engine::general_purpose::STANDARD.encode(files.to_string())
+    }
+
+    pub fn decode(encoded: &str) -> anyhow::Result<Self> {
+        use anyhow::Context as _;
+        use base64::Engine as _;
+        let dec = |s: &str| -> anyhow::Result<Value> {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(s.trim())
+                .context("invalid base64")?;
+            serde_json::from_slice(&bytes).context("invalid JSON")
+        };
+        let files = dec(encoded).context("invalid JIT config")?;
+        let file = |name: &str| -> anyhow::Result<Value> {
+            dec(files[name]
+                .as_str()
+                .with_context(|| format!("JIT config has no {name}"))?)
+            .with_context(|| format!("invalid {name} in JIT config"))
+        };
+        let runner = file(".runner")?;
+        let creds = file(".credentials")?;
+        let s = |v: &Value, k: &str| -> anyhow::Result<String> {
+            v[k].as_str()
+                .map(str::to_string)
+                .with_context(|| format!("JIT config is missing {k}"))
+        };
+        Ok(JitConfig {
+            runner_id: runner["agentId"]
+                .as_i64()
+                .context("JIT config is missing agentId")?,
+            runner_name: s(&runner, "agentName")?,
+            runner_group_id: runner["poolId"].as_i64().unwrap_or(1),
+            runner_group_name: s(&runner, "poolName").unwrap_or_default(),
+            server_url: s(&runner, "serverUrl")?,
+            github_url: s(&runner, "gitHubUrl").unwrap_or_default(),
+            work_folder: s(&runner, "workFolder").unwrap_or_else(|_| "_work".into()),
+            token: s(&creds["data"], "token")?,
+        })
+    }
+}
+
+#[cfg(test)]
+mod jit_tests {
+    use super::JitConfig;
+
+    #[test]
+    fn jit_config_roundtrip() {
+        let c = JitConfig {
+            runner_id: 7,
+            runner_name: "jit-1".into(),
+            runner_group_id: 3,
+            runner_group_name: "Default".into(),
+            server_url: "http://localhost:3000".into(),
+            github_url: "http://localhost:3000/acme".into(),
+            work_folder: "_work".into(),
+            token: "secret".into(),
+        };
+        let enc = c.encode();
+        assert_eq!(JitConfig::decode(&enc).unwrap(), c);
+        assert!(JitConfig::decode("bm9wZQ==").is_err());
+    }
+}

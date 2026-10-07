@@ -1,0 +1,32 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  flex-shrink: 0;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--accent-subtle);
+  color: var(--fg);
+  font-size: var(--fs-md);
+}
+
+.banner[data-kind='maintenance'] {
+  background: var(--warning-subtle);
+}
+
+.icon {
+  flex-shrink: 0;
+  color: var(--accent-fg);
+}
+
+.banner[data-kind='maintenance'] .icon {
+  color: var(--warning);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
