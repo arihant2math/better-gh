@@ -153,7 +153,9 @@ trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
 `email_verified` claim) pass `email_verified: true` to `db::NewUser`, after
 `emails::release_unverified` drops other accounts' unverified claims on that
 address (and unpublishes it from their profiles). An unverified primary
-can't be made public.
+can't be made public. When the sign-up policy gates on the address (`invite`
+or an `allowed_email_domains` list), `settings::check_email_gate` refuses
+sign-up and password sign-in (403) until the account has a verified email.
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,

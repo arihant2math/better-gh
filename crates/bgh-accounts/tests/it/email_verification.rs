@@ -119,3 +119,100 @@ async fn admin_created_users_are_verified() {
     assert!(verified);
     assert_eq!(mails_to(&app, "carol@corp.example").await, 0);
 }
+
+async fn set_signup(app: &TestApp, admin: &bgh_core::testing::TestUser, signup: serde_json::Value) {
+    app.patch("/_bgh/admin/settings")
+        .auth(admin)
+        .json(&json!({ "signup": signup }))
+        .send()
+        .await
+        .assert_status(200);
+}
+
+/// #329: an org invitation by email must not be claimable by someone who
+/// merely types the invited address at sign-up, and on an invite-only
+/// instance that claim must not yield a usable account.
+#[tokio::test]
+async fn invited_address_claim_cannot_take_over_invitation() {
+    let app = bgh_server::test_app().await;
+    let admin = app.create_admin("root").await;
+    app.create_org("acme", &admin).await;
+    app.post("/api/v3/orgs/acme/invitations")
+        .auth(&admin)
+        .json(&json!({"email": "victim@x.test", "role": "admin"}))
+        .send()
+        .await
+        .assert_status(201);
+    let gated = "Confirm your email address before signing in: open the link we emailed you.";
+
+    // Invite-only: the pending invitation lets the sign-up through, but the
+    // claimed address is unproven, so neither sign-up nor sign-in yields a
+    // session, on either sign-up endpoint.
+    set_signup(&app, &admin, json!({"policy": "invite"})).await;
+    for (path, login, email) in [
+        ("/_bgh/signup", "mallory", "VICTIM@x.test"),
+        ("/_bgh/auth/signup", "mallory2", "eve@x.test"),
+    ] {
+        if login == "mallory2" {
+            app.post("/api/v3/orgs/acme/invitations")
+                .auth(&admin)
+                .json(&json!({"email": email}))
+                .send()
+                .await
+                .assert_status(201);
+        }
+        let res = app
+            .post(path)
+            .json(&json!({"login": login, "email": email, "password": "s3cret-password"}))
+            .send()
+            .await;
+        res.assert_status(403);
+        assert_eq!(res.json()["message"], gated, "{path}");
+        assert!(res.header("set-cookie").is_none(), "{path}");
+        let res = app
+            .post("/_bgh/session")
+            .json(&json!({"login": login, "password": "s3cret-password"}))
+            .send()
+            .await;
+        res.assert_status(403);
+        assert_eq!(res.json()["message"], gated);
+    }
+
+    // Even with a session (open policy), the unverified claim doesn't
+    // match the invitation: it can be neither seen nor accepted.
+    set_signup(&app, &admin, json!({"policy": "open"})).await;
+    let res = app
+        .post("/_bgh/session")
+        .json(&json!({"login": "mallory", "password": "s3cret-password"}))
+        .send()
+        .await;
+    res.assert_status(200);
+    let cookie = cookie_from(&res);
+    let pending = app
+        .get("/api/v3/user/memberships/orgs?state=pending")
+        .cookie(&cookie)
+        .send()
+        .await;
+    pending.assert_status(200);
+    assert_eq!(pending.json(), json!([]));
+    let res = app
+        .patch("/api/v3/user/memberships/orgs/acme")
+        .cookie(&cookie)
+        .json(&json!({"state": "active"}))
+        .send()
+        .await;
+    assert_ne!(res.status(), 200, "{}", res.text());
+    app.get("/api/v3/orgs/acme/members/mallory")
+        .auth(&admin)
+        .send()
+        .await
+        .assert_status(404);
+
+    // The web sign-up endpoint honours the policy too.
+    set_signup(&app, &admin, json!({"policy": "closed"})).await;
+    app.post("/_bgh/auth/signup")
+        .json(&json!({"login": "trent", "email": "trent@x.test", "password": "s3cret-password"}))
+        .send()
+        .await
+        .assert_status(403);
+}

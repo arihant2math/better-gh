@@ -179,6 +179,7 @@ pub async fn signup(
         None,
     )
     .await?;
+    bgh_core::settings::check_email_gate(&state, &user).await?;
     start_session(&state, &client, &user, StatusCode::CREATED).await
 }
 

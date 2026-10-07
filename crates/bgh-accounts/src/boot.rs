@@ -227,6 +227,7 @@ pub async fn signup(
             "Too many sign ups. Please try again later.".into(),
         ));
     }
+    bgh_core::settings::check_signup(&state, body.email.trim()).await?;
     let user = users::create_user(
         &state,
         NewAccount {
@@ -241,6 +242,7 @@ pub async fn signup(
         None,
     )
     .await?;
+    bgh_core::settings::check_email_gate(&state, &user).await?;
     signed_in(&state, &client, &user, StatusCode::CREATED).await
 }
 
