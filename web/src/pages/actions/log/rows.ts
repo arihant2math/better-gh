@@ -6,7 +6,7 @@
  * with collapsed groups are cached and extended incrementally while lines
  * stream in, so a frame costs O(new lines), not O(log).
  */
-import type { StepLog } from './parse';
+import type { Snapshot, StepLog } from './parse';
 
 export type Row =
   | { kind: 'step'; step: number }
@@ -49,6 +49,13 @@ export interface Layout {
 export class GroupState {
   private open = new Map<number, Set<number>>();
   version = 0;
+  private snap: Snapshot<GroupState> | null = null;
+
+  /** See `JobLog.snapshot()`. */
+  snapshot(): Snapshot<GroupState> {
+    if (this.snap?.version !== this.version) this.snap = { of: this, version: this.version };
+    return this.snap;
+  }
 
   isOpen(step: number, group: number): boolean {
     return this.open.get(step)?.has(group) ?? false;
