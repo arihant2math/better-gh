@@ -53,6 +53,18 @@ export function PageHeader({ title, description, actions, leading }: { title: Re
   );
 }
 
+/** Button label that collapses to `short` when its `PageHeader` is narrow. */
+export function ShortLabel({ children, short }: { children: ReactNode; short: ReactNode }) {
+  return (
+    <>
+      <span className={styles.labelLong}>{children}</span>
+      <span className={styles.labelShort} aria-hidden>
+        {short}
+      </span>
+    </>
+  );
+}
+
 export function Panel({
   title,
   actions,

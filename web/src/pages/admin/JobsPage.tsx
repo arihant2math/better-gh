@@ -5,7 +5,7 @@ import { StatTile } from '../../components/admin/charts';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatDateTime, plural } from '../../components/admin/format';
-import { Drawer, JsonView, KeyValue, PageHeader, Panel, StatusPill, errorMessage, useConfirm, type PillStatus } from '../../components/admin/kit';
+import { Drawer, JsonView, KeyValue, PageHeader, Panel, ShortLabel, StatusPill, errorMessage, useConfirm, type PillStatus } from '../../components/admin/kit';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -137,10 +137,10 @@ export default function JobsPage() {
         actions={
           <>
             <Button leadingIcon={SyncIcon} aria-pressed={auto} onClick={() => setAuto((a) => !a)} kbd="p">
-              {auto ? 'Auto-refresh on' : 'Auto-refresh paused'}
+              <ShortLabel short={auto ? 'Auto' : 'Paused'}>{auto ? 'Auto-refresh on' : 'Auto-refresh paused'}</ShortLabel>
             </Button>
             <Button leadingIcon={PlayIcon} variant="primary" disabled={!s?.failed} loading={retrying === '*'} onClick={() => void retryAll()}>
-              Retry all failed{s?.failed ? ` (${formatCount(s.failed)})` : ''}
+              <ShortLabel short={`Retry${s?.failed ? ` (${formatCount(s.failed)})` : ''}`}>Retry all failed{s?.failed ? ` (${formatCount(s.failed)})` : ''}</ShortLabel>
             </Button>
           </>
         }
