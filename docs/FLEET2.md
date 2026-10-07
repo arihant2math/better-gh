@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:30: new #322 (merge_group trigger + webhook, #289; STACKED on #316, merges only after #316 and a retarget) → adversarial reviewer session_01CW7onm3wAGmdxS1T4VGB4G. The lead is fixing #315 and #316.
 08:30: orchestrator MERGED #294 (1c37832) and archived its worker.
 08:29: #294 READY (APPROVE on 34144b6; head 79dbe28 is a main merge; CI result green). Forwarded to the orchestrator; r2 reviewer archived.
 08:28: filed #312 follow-ups at the orchestrator's request (backlog, no workers): #324 (P-High SAML JIT links by login), #325 (unverified email squat DoS), #326 (backfill for pre-fix verified=true).
