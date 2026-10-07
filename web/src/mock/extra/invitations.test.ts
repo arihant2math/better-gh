@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('invitation mocks', () => {
   it('accepts a pending org invitation and syncs the membership', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const pending = (await call(s, 'GET', '/api/v3/user/memberships/orgs?state=pending')).body as Json[];
     expect(pending).toHaveLength(1);
     const login = (pending[0]!.organization as Json).login as string;
@@ -31,7 +23,7 @@ describe('invitation mocks', () => {
   });
 
   it('declines org and repository invitations', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'DELETE', '/_bgh/orgs/initech/invitation')).status).toBe(204);
     expect((await call(s, 'DELETE', '/_bgh/orgs/initech/invitation')).status).toBe(404);
     expect((await call(s, 'GET', '/_bgh/orgs/initech/invitation')).status).toBe(404);
@@ -45,7 +37,7 @@ describe('invitation mocks', () => {
   });
 
   it('lists memberships, toggles publicity and refuses to remove the last owner', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const me = s.viewer.login;
     const orgs = (await call(s, 'GET', '/_bgh/user/organizations')).body as Json[];
     expect(orgs.length).toBeGreaterThan(0);

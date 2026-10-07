@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Record<string, any>) : null }; // eslint-disable-line @typescript-eslint/no-explicit-any
-}
+import { call, newServer } from '../../test/mockServer';
 
 describe('GitHub App mocks', () => {
   it('registers an app, generates a key and installs it', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/_bgh/apps', { name: '' })).status).toBe(422);
     const created = await call(s, 'POST', '/_bgh/apps', { name: 'My Bot', homepage_url: 'https://x.test', permissions: { issues: 'write' } });
     expect(created.status).toBe(201);
@@ -52,7 +42,7 @@ describe('GitHub App mocks', () => {
 
 describe('GitHub App mocks (P46)', () => {
   it('client secrets, hook deliveries and manifests', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     await call(s, 'POST', '/_bgh/apps', { name: 'Hooked', homepage_url: 'https://x.test', webhook_url: 'https://x.test/hook', webhook_active: true });
     const secret = await call(s, 'POST', '/_bgh/apps/hooked/client_secrets');
     expect(secret.status).toBe(201);

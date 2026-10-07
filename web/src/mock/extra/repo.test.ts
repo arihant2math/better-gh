@@ -1,20 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
 import { sampleKeyB64 } from './repo';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 const R = '/api/v3/repos/acme/api';
 
 describe('repo settings mocks', () => {
   it('serves the full repository shape and patches synced + extra fields', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const full = await call(s, 'GET', R);
     expect(full.status).toBe(200);
     expect(full.body!.allow_merge_commit).toBe(true);
@@ -30,7 +22,7 @@ describe('repo settings mocks', () => {
   });
 
   it('renames with validation and keeps names unique per owner', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'PATCH', R, { name: 'bad name' })).status).toBe(422);
     const clash = await call(s, 'PATCH', R, { name: 'web' });
     expect(clash.status).toBe(422);
@@ -41,7 +33,7 @@ describe('repo settings mocks', () => {
   });
 
   it('archives (read-only until unarchived), validates topics, transfers and deletes', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'PUT', `${R}/topics`, { names: ['Rust', 'web-api'] })).body!.names).toEqual(['rust', 'web-api']);
     expect((await call(s, 'PUT', `${R}/topics`, { names: ['-bad'] })).status).toBe(422);
     expect((await call(s, 'PATCH', R, { archived: true })).status).toBe(200);
@@ -59,7 +51,7 @@ describe('repo settings mocks', () => {
   });
 
   it('manages classic branch protection', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const prot = await call(s, 'GET', `${R}/branches?protected=true`);
     expect((prot.body as unknown as Json[]).map((b) => b.name)).toEqual(['main']);
     const missing = await call(s, 'PUT', `${R}/branches/main/protection`, { enforce_admins: true });
@@ -82,7 +74,7 @@ describe('repo settings mocks', () => {
   });
 
   it('invites outside collaborators, adds org members directly, removes them', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const before = (await call(s, 'GET', `${R}/collaborators?affiliation=direct`)).body as unknown as Json[];
     const invitesBefore = ((await call(s, 'GET', `${R}/invitations`)).body as unknown as Json[]).length;
     const memberIds = new Set([...s.db.tables.membership.values()].filter((m) => m.orgId === s.repo('acme', 'api')!.ownerId).map((m) => m.userId));
@@ -104,7 +96,7 @@ describe('repo settings mocks', () => {
   });
 
   it('grants and revokes team access (synced team.repoIds)', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const repo = s.repo('acme', 'api')!;
     const teams = (await call(s, 'GET', `${R}/teams`)).body as unknown as Json[];
     expect(teams.map((t) => t.slug)).toEqual(['core']);
@@ -118,7 +110,7 @@ describe('repo settings mocks', () => {
   });
 
   it('validates and manages deploy keys', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', `${R}/keys`, { title: 'x', key: 'ssh-ed25519 notbase64!!' })).status).toBe(422);
     const key = `ssh-ed25519 ${sampleKeyB64('test')} me@host`;
     const created = await call(s, 'POST', `${R}/keys`, { title: 'deploy', key, read_only: false });
@@ -131,7 +123,7 @@ describe('repo settings mocks', () => {
   });
 
   it('creates webhooks, pings them and redelivers', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const bad = await call(s, 'POST', `${R}/hooks`, { config: { url: 'ftp://x' }, events: ['push'] });
     expect(bad.status).toBe(422);
     expect((await call(s, 'POST', `${R}/hooks`, { config: { url: 'https://x.dev/h' }, events: ['nope'] })).status).toBe(422);
@@ -162,7 +154,7 @@ describe('repo settings mocks', () => {
   });
 
   it('validates autolinks', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const bad = await call(s, 'POST', `${R}/autolinks`, { key_prefix: 'T K', url_template: 'https://x.dev/' });
     expect(bad.status).toBe(422);
     expect((bad.body!.errors as Json[]).map((e) => e.field).sort()).toEqual(['key_prefix', 'url_template']);

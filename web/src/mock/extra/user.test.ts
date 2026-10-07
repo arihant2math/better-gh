@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('user settings mocks', () => {
   it('updates the profile and records a synced user row', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const head = s.syncId;
     const r = await call(s, 'PATCH', '/api/v3/user', { name: 'Ada King', bio: 'Poetical science', twitter_username: '@ada' });
     expect(r.status).toBe(200);
@@ -27,7 +19,7 @@ describe('user settings mocks', () => {
   });
 
   it('accepts a raw avatar upload and rejects non-images', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
     const ok = await s.fetch('/_bgh/user/avatar', { method: 'PUT', body: new Blob([png], { type: 'image/png' }), headers: { 'Content-Type': 'image/png' } });
     expect(ok.status).toBe(200);
@@ -42,7 +34,7 @@ describe('user settings mocks', () => {
   });
 
   it('manages emails', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const list = (await call(s, 'GET', '/api/v3/user/emails')).body as Json[];
     expect(list.filter((e) => e.primary)).toHaveLength(1);
     expect(list.some((e) => !e.verified)).toBe(true);
@@ -64,7 +56,7 @@ describe('user settings mocks', () => {
   });
 
   it('runs the 2FA state machine', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/_bgh/user/two_factor')).body).toMatchObject({ enabled: false });
     expect((await call(s, 'POST', '/_bgh/user/two_factor/totp/enable', { code: '123456' })).status).toBe(422);
     const setup = await call(s, 'POST', '/_bgh/user/two_factor/totp');
@@ -86,7 +78,7 @@ describe('user settings mocks', () => {
   });
 
   it('changes the password and revokes sessions', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const sessions = (await call(s, 'GET', '/_bgh/sessions')).body as Json[];
     expect(sessions.filter((x) => x.current)).toHaveLength(1);
     expect(sessions.length).toBeGreaterThan(2);
@@ -101,7 +93,7 @@ describe('user settings mocks', () => {
   });
 
   it('blocks and unblocks users', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'PUT', '/api/v3/user/blocks/grace')).status).toBe(204);
     expect((await call(s, 'GET', '/api/v3/user/blocks/grace')).status).toBe(204);
     expect(((await call(s, 'GET', '/api/v3/user/blocks')).body as Json[]).map((u) => u.login)).toEqual(['grace']);
@@ -113,7 +105,7 @@ describe('user settings mocks', () => {
   });
 
   it('lists and unlinks SSO identities', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const ids = (await call(s, 'GET', '/_bgh/user/identities')).body as Json[];
     expect(ids).toHaveLength(1);
     expect((await call(s, 'DELETE', `/_bgh/user/identities/${ids[0]!.id as number}`)).status).toBe(204);
@@ -123,7 +115,7 @@ describe('user settings mocks', () => {
 
 describe('account security mocks (P36)', () => {
   it('reports sudo mode and WebAuthn counts', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const sudo = await call(s, 'GET', '/_bgh/sudo');
     expect(sudo.body).toMatchObject({ active: true, methods: { password: true, totp: false, webauthn: false } });
     expect((await call(s, 'POST', '/_bgh/sudo', { password: 'wrong' })).status).toBe(403);

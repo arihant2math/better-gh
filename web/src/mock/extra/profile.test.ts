@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('profile mocks', () => {
   it('resolves users and organizations', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const ada = await call(s, 'GET', '/api/v3/users/ada');
     expect(ada.status).toBe(200);
     expect(ada.body!.type).toBe('User');
@@ -25,7 +17,7 @@ describe('profile mocks', () => {
   });
 
   it('follows and unfollows', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/api/v3/user/following/margaret')).status).toBe(404);
     const before = (await call(s, 'GET', '/api/v3/users/margaret')).body!.followers as number;
     expect((await call(s, 'PUT', '/api/v3/user/following/margaret')).status).toBe(204);
@@ -39,7 +31,7 @@ describe('profile mocks', () => {
   });
 
   it('lists repositories with GitHub visibility rules', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const pub = await call(s, 'GET', '/api/v3/users/linus/repos?type=owner&per_page=100');
     expect(pub.body).toHaveLength(100);
     const p2 = await call(s, 'GET', '/api/v3/users/linus/repos?type=owner&per_page=100&page=2');
@@ -53,7 +45,7 @@ describe('profile mocks', () => {
   });
 
   it('creates repositories (validation, duplicates, orgs, templates)', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/api/v3/user/repos', { name: '' })).status).toBe(422);
     expect((await call(s, 'POST', '/api/v3/user/repos', { name: 'bad name' })).status).toBe(422);
     const dup = await call(s, 'POST', '/api/v3/user/repos', { name: 'Dotfiles' });
@@ -72,7 +64,7 @@ describe('profile mocks', () => {
   });
 
   it('creates organizations', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/_bgh/orgs', { login: 'acme' })).body!.errors).toEqual([expect.objectContaining({ field: 'login', code: 'already_exists' })]);
     expect((await call(s, 'POST', '/_bgh/orgs', { login: 'settings' })).status).toBe(422);
     expect((await call(s, 'POST', '/_bgh/orgs', { login: '-bad' })).status).toBe(422);

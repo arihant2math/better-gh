@@ -1,30 +1,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { WorkflowJob, WorkflowRun } from '../api/actions';
 import { actionsMock } from './actions';
-import { MockServer } from './server';
+import type { MockServer } from './server';
+import { get, newServer, post } from '../test/mockServer';
 
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 const BASE = '/api/v3/repos/acme/api';
 
 let server: MockServer | null = null;
 function mk(): MockServer {
-  server = new MockServer(null, { now: NOW });
+  server = newServer({ now: NOW });
   return server;
 }
 afterEach(() => {
   server?.dispose();
   server = null;
 });
-
-async function get<T>(s: MockServer, path: string): Promise<{ status: number; body: T; headers: Headers }> {
-  const res = await s.fetch(path);
-  return { status: res.status, body: (await res.json()) as T, headers: res.headers };
-}
-
-async function post<T>(s: MockServer, path: string, body: unknown): Promise<{ status: number; body: T }> {
-  const res = await s.fetch(path, { method: 'POST', body: JSON.stringify(body) });
-  return { status: res.status, body: (res.status === 204 ? null : await res.json()) as T };
-}
 
 async function readAll(res: Response): Promise<{ event: string; data: unknown }[]> {
   const text = await res.text();
@@ -84,7 +75,8 @@ describe('mock actions', () => {
     );
     expect((await post<{ message: string }>(s, url, { ref: 'main', inputs: { reason: 'x', nope: '1' } })).body.message).toBe('Unexpected inputs provided: ["nope"]');
     const badRef = await post<{ message: string }>(s, url, { ref: 'no-such-branch', inputs: { reason: 'x' } });
-    expect(badRef).toEqual({ status: 422, body: { message: 'No ref found for: no-such-branch' } });
+    expect(badRef.status).toBe(422);
+    expect(badRef.body).toEqual({ message: 'No ref found for: no-such-branch' });
     expect((await post<{ message: string }>(s, `${BASE}/actions/workflows/stale.yml/dispatches`, { ref: 'main' })).status).toBe(422);
 
     const form = await get<{ dispatchable: boolean; inputs: { name: string; type: string }[] }>(s, `/_bgh/actions/repos/acme/api/workflows/ci.yml/dispatch?ref=main`);

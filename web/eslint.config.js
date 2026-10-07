@@ -89,7 +89,7 @@ export default tseslint.config(
     rules: { 'no-restricted-globals': 'off' },
   },
   {
-    files: ['src/mock/**', 'src/**/*.test.ts', 'src/**/*.test.tsx'],
+    files: ['src/mock/**', 'src/test/**', 'src/**/*.test.ts', 'src/**/*.test.tsx'],
     rules: { 'no-restricted-imports': 'off', 'no-restricted-globals': 'off' },
   },
   {

@@ -1,30 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
-
-type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-const call = async (s: MockServer, method: string, path: string, body?: unknown, accept?: string) => {
-  const headers: Record<string, string> = {};
-  if (accept) headers.accept = accept;
-  const init: RequestInit = { method, headers };
-  if (body instanceof Blob) init.body = body;
-  else if (body !== undefined) {
-    init.body = JSON.stringify(body);
-    headers['content-type'] = 'application/json';
-  }
-  const r = await s.fetch(path, init);
-  const isJson = r.headers.get('content-type')?.includes('json');
-  return { status: r.status, body: (r.status === 204 ? null : isJson ? await r.json() : await r.text()) as Json };
-};
+import { call, newServer, type Json } from '../test/mockServer';
 
 describe('mock releases backend', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const writable = new Set([...s.db.tables.viewerRepo.values()].filter((v) => ['admin', 'maintain', 'write'].includes(v.permission)).map((v) => v.id));
   const repo = [...s.db.tables.repo.values()].find((r) => writable.has(r.id))!;
   const base = `/api/v3/repos/${repo.owner}/${repo.name}/releases`;
 
   it('lists seeded releases newest first with an html body on request', async () => {
-    const list = await call(s, 'GET', `${base}?per_page=2`, undefined, 'application/vnd.github.html+json');
+    const list = await call(s, 'GET', `${base}?per_page=2`, undefined, { accept: 'application/vnd.github.html+json' });
     expect(list.status).toBe(200);
     expect(list.body.map((r: Json) => r.tag_name)).toEqual(['v0.3.1-rc.1', 'v0.3.0']);
     expect(list.body[1].body_html).toContain('<h2');

@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('lifecycle mocks (P50)', () => {
   it('renames the viewer, resolves the old login and rate-limits', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const r = await call(s, 'PATCH', '/api/v3/user', { login: 'countess' });
     expect(r.status).toBe(200);
     expect(r.body!.login).toBe('countess');
@@ -30,7 +22,7 @@ describe('lifecycle mocks (P50)', () => {
   });
 
   it('renames an organization and resolves the old name', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const r = await call(s, 'PATCH', '/api/v3/orgs/acme', { login: 'acme-corp' });
     expect(r.status).toBe(200);
     expect(r.body!.login).toBe('acme-corp');
@@ -39,7 +31,7 @@ describe('lifecycle mocks (P50)', () => {
   });
 
   it('lists deleted repositories and restores them', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'DELETE', '/api/v3/repos/ada/advent-of-code')).status).toBe(204);
     const list = (await call(s, 'GET', '/_bgh/repos/deleted')).body as unknown as Json[];
     const names = list.map((r) => r.full_name);
@@ -62,7 +54,7 @@ describe('lifecycle mocks (P50)', () => {
   });
 
   it('creates, shows and cancels a pending transfer to another user', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const r = await call(s, 'POST', '/api/v3/repos/ada/dotfiles/transfer', { new_owner: 'grace' });
     expect(r.status).toBe(202);
     expect(r.body!.full_name).toBe('ada/dotfiles');
@@ -77,7 +69,7 @@ describe('lifecycle mocks (P50)', () => {
   });
 
   it('accepts and declines incoming transfers', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const list = (await call(s, 'GET', '/_bgh/user/repo_transfers')).body as unknown as Json[];
     expect(list).toHaveLength(1);
     expect((list[0]!.repository as Json).full_name).toBe('grace/pixel-tools');
@@ -89,7 +81,7 @@ describe('lifecycle mocks (P50)', () => {
   });
 
   it('checks the password when deleting the account', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'DELETE', '/api/v3/user', { password: 'wrong' })).status).toBe(403);
     const owner = await call(s, 'DELETE', '/api/v3/user', { password: 'owner' });
     expect(owner.status).toBe(422);

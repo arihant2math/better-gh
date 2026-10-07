@@ -1,17 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 const ORG = '/api/v3/orgs/acme/actions';
 const ADMIN = '/_bgh/admin/actions';
@@ -32,7 +20,7 @@ const RUNNER_KEYS = ['busy', 'ephemeral', 'id', 'labels', 'name', 'os', 'runner_
 
 describe('runners mock', () => {
   it('lists site-wide runners with scope, builtin and group info', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const all = await call(s, 'GET', `${ADMIN}/runners`);
     expect(all.status).toBe(200);
     const runners = all.body!.runners as Json[];
@@ -67,7 +55,7 @@ describe('runners mock', () => {
   });
 
   it('mints tokens and JIT configs, and serves the queue', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const tok = await call(s, 'POST', `${ADMIN}/runners/registration-token`);
     expect(tok.status).toBe(201);
     expect(tok.body).toMatchObject({ token: expect.stringMatching(/^[A-Z2-7]{29}$/), expires_at: expect.any(String) });
@@ -96,7 +84,7 @@ describe('runners mock', () => {
   });
 
   it('manages organization runner groups', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const list = await call(s, 'GET', `${ORG}/runner-groups`);
     const groups = list.body!.runner_groups as Json[];
     expect(groups).toHaveLength(1);
@@ -119,7 +107,7 @@ describe('runners mock', () => {
       selected_workflows: ['acme/api/.github/workflows/release.yml@refs/heads/main'],
     });
     expect(created.status).toBe(201);
-    expect(Object.keys(created.body!).sort()).toEqual([...GROUP_KEYS, 'selected_repositories_url'].sort());
+    expect(Object.keys(created.body).sort()).toEqual([...GROUP_KEYS, 'selected_repositories_url'].sort());
     expect(created.body).toMatchObject({ visibility: 'selected', default: false, restricted_to_workflows: true });
     const id = created.body!.id as number;
     expect((await call(s, 'POST', `${ORG}/runner-groups`, { name: 'release' })).status).toBe(422);
@@ -154,7 +142,7 @@ describe('runners mock', () => {
   });
 
   it('manages site runner groups and their organizations', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const groups = (await call(s, 'GET', `${ADMIN}/runner-groups`)).body!.runner_groups as Json[];
     expect(groups[0]).toMatchObject({ id: 1, name: 'Default', default: true });
     const gpu = groups.find((g) => g.name === 'GPU pool')!;

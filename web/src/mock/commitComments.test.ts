@@ -1,18 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { gitFor } from './git';
 import { newSideLines } from './commitComments';
-import { MockServer } from './server';
-
-type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-const call = async (s: MockServer, method: string, path: string, body?: unknown, accept?: string) => {
-  const headers: Record<string, string> = body === undefined ? {} : { 'content-type': 'application/json' };
-  if (accept) headers.accept = accept;
-  const init: RequestInit = { method, headers };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  const r = await s.fetch(path, init);
-  return { status: r.status, body: (r.status === 204 ? {} : await r.json()) as Json };
-};
+import { call, newServer, type Json } from '../test/mockServer';
 
 describe('newSideLines', () => {
   it('lists added and context lines of the new side', () => {
@@ -22,7 +11,7 @@ describe('newSideLines', () => {
 });
 
 describe('mock commit comments backend', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const repo = [...s.db.tables.repo.values()][0]!;
   const rest = `/api/v3/repos/${repo.owner}/${repo.name}`;
   const git = gitFor(s, repo);
@@ -30,7 +19,7 @@ describe('mock commit comments backend', () => {
   const diff = git.diff(git.commit(head).parents[0] ?? null, head).find((d) => d.after !== null)!;
 
   it('seeds a general and an inline comment on the default branch head', async () => {
-    const r = await call(s, 'GET', `${rest}/commits/${head}/comments`, undefined, 'application/vnd.github.full+json');
+    const r = await call(s, 'GET', `${rest}/commits/${head}/comments`, undefined, { accept: 'application/vnd.github.full+json' });
     expect(r.status).toBe(200);
     expect(r.body.length).toBeGreaterThanOrEqual(1);
     expect(r.body[0].path).toBeNull();

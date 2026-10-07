@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import type { MockServer } from '../server';
+import { call, newServer, type Json } from '../../test/mockServer';
 
 function issueOf(s: MockServer) {
   const repo = s.repo('acme', 'api')!;
@@ -17,7 +10,7 @@ function issueOf(s: MockServer) {
 
 describe('moderation mocks', () => {
   it('hides and unhides a comment through the synced row', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const { issue } = issueOf(s);
     const c = await call(s, 'POST', `/api/v3/repos/acme/api/issues/${issue.number}/comments`, { body: 'spam' });
     const id = c.body!.id as number;
@@ -31,7 +24,7 @@ describe('moderation mocks', () => {
   });
 
   it('records edit history and deletes revisions', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const { issue } = issueOf(s);
     s.db.tables.issue.set(issue.id, { ...issue, body: 'v0' });
     for (const body of ['v1', 'v2', 'v3']) await call(s, 'PATCH', `/api/v3/repos/acme/api/issues/${issue.number}`, { body });
@@ -50,7 +43,7 @@ describe('moderation mocks', () => {
   });
 
   it('deletes an issue and answers 410 afterwards', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const { issue } = issueOf(s);
     expect((await call(s, 'DELETE', `/_bgh/repos/acme/api/issues/${issue.number}`)).status).toBe(204);
     expect(s.db.tables.issue.has(issue.id)).toBe(false);

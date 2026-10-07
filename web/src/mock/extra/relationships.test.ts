@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import type { MockServer } from '../server';
+import { call, newServer, type Json } from '../../test/mockServer';
 
 const issues = (s: MockServer) => [...s.db.tables.issue.values()].filter((i) => i.repoId === s.repo('acme', 'api')!.id && !i.isPr);
 
 describe('issue types, dependencies and duplicates (P41 mocks)', () => {
   it('serves org issue types and sets an issue type', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const list = await call(s, 'GET', '/api/v3/orgs/acme/issue-types');
     expect((list.body as Json[]).map((t) => t.name)).toEqual(['Task', 'Bug', 'Feature']);
     const created = await call(s, 'POST', '/api/v3/orgs/acme/issue-types', { name: 'Epic', is_enabled: true, color: 'purple' });
@@ -29,7 +22,7 @@ describe('issue types, dependencies and duplicates (P41 mocks)', () => {
   });
 
   it('adds dependencies, refuses cycles and tracks open blockers', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const open = issues(s).filter((i) => i.state === 'open');
     const [a, b] = [open[0]!, open[1]!];
     const add = await call(s, 'POST', `/api/v3/repos/acme/api/issues/${a.number}/dependencies/blocked_by`, { issue_id: b.id });
@@ -45,7 +38,7 @@ describe('issue types, dependencies and duplicates (P41 mocks)', () => {
   });
 
   it('closes as a duplicate', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const open = issues(s).filter((i) => i.state === 'open');
     const [dup, orig] = [open[0]!, open[1]!];
     const r = await call(s, 'PATCH', `/api/v3/repos/acme/api/issues/${dup.number}`, { state: 'closed', state_reason: 'duplicate', duplicate_of: orig.id });

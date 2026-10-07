@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockServer } from '../mock/server';
+import type { MockServer } from '../mock/server';
 import { SyncClient } from './client';
 import type { Issue } from './models';
 import { ops } from './overlay';
 import { IdbPersistence, MemoryPersistence, type Persistence } from './persistence';
+import { newServer } from '../test/mockServer';
 
 const until = async (cond: () => boolean, ms = 3000) => {
   const start = Date.now();
@@ -32,7 +33,7 @@ describe('SyncClient against the mock backend', () => {
   const now = Date.parse('2026-10-01T12:00:00Z');
 
   it('bootstraps, goes live and receives deltas from other clients', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     const b = client(server);
     await Promise.all([a.start(), b.start()]);
@@ -53,7 +54,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('rolls back a rejected mutation', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     await a.start();
     const issue = firstOpenIssue(a);
@@ -68,7 +69,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('subscribes to scopes granted through viewerRepo / membership deltas', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     await a.start();
     const spy = vi.spyOn(a, 'ensureScope').mockResolvedValue(true);
@@ -92,7 +93,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('loads lazy models via partial sync', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     await a.start();
     const issue = a.pool.all('issue').find((i) => i.comments > 2)!;
@@ -103,7 +104,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('resumes from lastSyncId after a reconnect', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     await a.start();
     await until(() => a.status === 'live');
@@ -118,7 +119,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('rebootstraps when the server log no longer covers lastSyncId', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const a = client(server);
     await a.start();
     await until(() => a.status === 'live');
@@ -130,7 +131,7 @@ describe('SyncClient against the mock backend', () => {
   });
 
   it('hydrates from IndexedDB on the next start without bootstrapping', async () => {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     const name = `bgh-test-${Math.random()}`;
     const p1 = await IdbPersistence.open(name);
     const a = new SyncClient({ userId: server.db.viewerId, transport: server, persistence: p1 });
