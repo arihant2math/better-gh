@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { returnTo } from './App';
-import { sameOriginPath } from '../router';
+import { returnTo, sameOriginPath } from './index';
 
 const ORIGIN = 'https://bgh.test';
 const ret = (target: string) => returnTo(`?return_to=${encodeURIComponent(target)}`, ORIGIN);

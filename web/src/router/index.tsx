@@ -214,6 +214,12 @@ export function sameOriginPath(to: string, origin: string): string | null {
   return url.origin === origin ? url.pathname + url.search + url.hash : null;
 }
 
+/** Where to go after signing in: a same-origin `return_to`, else home. */
+export function returnTo(search = window.location.search, origin = window.location.origin): string {
+  const ret = new URLSearchParams(search).get('return_to');
+  return (ret && sameOriginPath(ret, origin)) || '/';
+}
+
 export function navigate(to: string, opts: NavigateOptions = {}): void {
   const url = new URL(to, window.location.href);
   if (url.origin !== window.location.origin) {
