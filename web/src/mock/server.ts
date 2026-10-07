@@ -609,6 +609,12 @@ export class MockServer implements Transport {
         this.event(issue, 'reopened');
         this.bumpCounts(repo, issue, 1);
       }
+      // Replace-all lists, like GitHub (the new PR form sets them in one PATCH).
+      if (Array.isArray(b.labels)) {
+        const names = (b.labels as unknown[]).map((l) => (typeof l === 'string' ? l : (l as { name?: string })?.name));
+        next.labelIds = [...this.db.tables.label.values()].filter((l) => l.repoId === repo.id && names.includes(l.name)).map((l) => l.id);
+      }
+      if (Array.isArray(b.assignees)) next.assigneeIds = (b.assignees as string[]).map((l) => this.userByLogin(l)?.id).filter((x): x is ID => !!x);
       if ('milestone' in b) {
         const ms = b.milestone == null ? null : [...this.db.tables.milestone.values()].find((m) => m.repoId === repo.id && m.number === b.milestone);
         if (b.milestone != null && !ms) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Issue', field: 'milestone', code: 'invalid' }] } };
@@ -1079,6 +1085,20 @@ export class MockServer implements Transport {
       const repo = repoOr404(ctx);
       if (isResp(repo)) return repo;
       return { status: 200, body: mockTemplates(repo) };
+    });
+    R('GET', '/_bgh/repos/:owner/:repo/pull-templates', (ctx) => {
+      const repo = repoOr404(ctx);
+      if (isResp(repo)) return repo;
+      const t = (name: string, body: string) => ({ filename: `.github/PULL_REQUEST_TEMPLATE/${name}`, name, body });
+      return {
+        status: 200,
+        body: {
+          commit_sha: null,
+          source: 'repo',
+          default: { filename: '.github/pull_request_template.md', name: 'pull_request_template.md', body: '## Summary\n\n## Testing\n' },
+          templates: [t('bugfix.md', '## Bug\n\nFixes #\n'), t('feature.md', '## Feature\n\n## Screenshots\n')],
+        },
+      };
     });
 
     // ---------------- pulls

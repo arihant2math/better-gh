@@ -300,6 +300,89 @@ async fn oidc_respects_auto_create_domains_and_two_factor() {
         .assert_status(200);
 }
 
+/// Just-in-time OIDC accounts obey the site sign-up policy (#317); already
+/// existing accounts can still sign in.
+#[tokio::test]
+async fn oidc_auto_create_respects_signup_policy() {
+    let app = bgh_server::test_app().await;
+    let issuer = mock_provider().await;
+    configure(&app, &issuer, json!({})).await;
+    let admin = app.create_admin("root").await;
+    app.create_org("acme", &admin).await;
+    app.create_user("ada").await;
+
+    let login = |sub: &'static str, email: &'static str| {
+        let app = &app;
+        let issuer = &issuer;
+        async move {
+            let (st, nonce) = start(app, "/").await;
+            app.get(&format!(
+                "/_bgh/sso/corp/callback?state={st}&code={}",
+                code(
+                    issuer,
+                    &nonce,
+                    sub,
+                    email,
+                    json!({"preferred_username": sub})
+                )
+            ))
+            .send()
+            .await
+        }
+    };
+    let refused = |res: &bgh_core::testing::TestResponse, words: &str| {
+        assert!(res.header("set-cookie").is_none());
+        let loc = res.header("location").unwrap().replace("%20", "+");
+        assert!(loc.contains(&words.replace(' ', "+")), "{loc}");
+    };
+    let set = |signup: Value| crate::signup_policy::set_signup(&app, &admin, signup);
+
+    set(json!({"policy": "closed"})).await;
+    refused(
+        &login("c-1", "new@example.com").await,
+        "Sign up is disabled",
+    );
+    // Linking an existing account by verified email is not a sign-up.
+    let res = login("a-1", "ada@example.com").await;
+    assert!(res.header("set-cookie").is_some());
+
+    set(json!({"policy": "invite"})).await;
+    refused(
+        &login("i-1", "new@example.com").await,
+        "requires an invitation",
+    );
+    app.post("/api/v3/orgs/acme/invitations")
+        .auth(&admin)
+        .json(&json!({"email": "new@example.com", "role": "direct_member"}))
+        .send()
+        .await
+        .assert_status(201);
+    assert!(
+        login("i-1", "new@example.com")
+            .await
+            .header("set-cookie")
+            .is_some()
+    );
+
+    set(json!({"policy": "open", "allowed_email_domains": ["example.com"]})).await;
+    refused(
+        &login("d-1", "eve@evil.test").await,
+        "not allowed for this email domain",
+    );
+    assert!(
+        login("d-2", "bob@example.com")
+            .await
+            .header("set-cookie")
+            .is_some()
+    );
+    let n: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM user_identities WHERE subject LIKE '_-1'")
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(n, 2, "only ada and the invited user were linked");
+}
+
 #[tokio::test]
 async fn oidc_groups_claim_syncs_mapped_teams() {
     let app = bgh_server::test_app().await;

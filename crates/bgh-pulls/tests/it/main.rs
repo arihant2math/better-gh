@@ -16,4 +16,5 @@ mod rest_compat;
 mod review_flow;
 mod reviews;
 mod signatures;
+mod templates;
 mod web_client;

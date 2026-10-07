@@ -266,3 +266,9 @@
   background: var(--danger-subtle);
   font-size: var(--fs-md);
 }
+
+@media (pointer: coarse) {
+  .sideHeader {
+    min-height: 32px;
+  }
+}

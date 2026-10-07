@@ -349,6 +349,8 @@ export interface TreeView {
   entries: TreeEntry[];
   last_commits: Record<string, BrowseCommit> | null;
   readme: RenderedReadme | null;
+  /** The repository has no commits yet (no entries, no README). */
+  empty?: boolean;
 }
 
 export interface LastCommits {
@@ -390,6 +392,8 @@ export interface History {
   per_page: number;
   has_more: boolean;
   commits: BrowseCommit[];
+  /** The repository has no commits yet. */
+  empty?: boolean;
 }
 
 /** `GET /_bgh/repos/{o}/{r}/issues/{n}/links`: the Development section (P4). */
