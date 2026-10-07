@@ -2,7 +2,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, type ProxyOptions } from 'vite';
 import { compression } from 'vite-plugin-compression2';
-import { bghFontPreload, bghServiceWorker } from './build/plugins.ts';
+import { bghFontPreload, bghPreloadDedupe, bghServiceWorker } from './build/plugins.ts';
 
 const BACKEND = process.env.BGH_BACKEND ?? 'http://localhost:3000';
 
@@ -18,6 +18,8 @@ const proxy: Record<string, ProxyOptions> = {
   '^/[^/]+/[^/]+/(raw|archive)/.*': { target: BACKEND },
 };
 
+const preloadDedupe = bghPreloadDedupe();
+
 /** Modules that are needed on every page go into one long-cached vendor chunk. */
 const VENDOR = /[\\/]node_modules[\\/](react|react-dom|scheduler|mobx|mobx-react-lite|idb)[\\/]/;
 
@@ -25,6 +27,7 @@ export default defineConfig({
   plugins: [
     react(),
     bghFontPreload(),
+    preloadDedupe.plugin,
     bghServiceWorker(),
     compression({
       algorithms: ['gzip', 'brotliCompress'],
@@ -38,7 +41,7 @@ export default defineConfig({
     cssCodeSplit: true,
     manifest: true,
     sourcemap: false,
-    modulePreload: { polyfill: false },
+    modulePreload: { polyfill: false, resolveDependencies: preloadDedupe.resolveDependencies },
     assetsInlineLimit: 2048,
     reportCompressedSize: false,
     rolldownOptions: {

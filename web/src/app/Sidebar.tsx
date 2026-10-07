@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Link, navigate, useLocation } from '../router';
 import { store } from '../sync';
 import type { Repo } from '../sync/models';
-import { Avatar } from '../ui/Badge';
+import { Avatar } from '../ui/Avatar';
 import {
   ChevronDownIcon,
   GearIcon,
