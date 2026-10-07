@@ -69,6 +69,7 @@ export {
   GitCommitIcon,
   GitCompareIcon,
   GitMergeIcon,
+  GitMergeQueueIcon,
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
   GitPullRequestIcon,

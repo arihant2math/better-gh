@@ -624,7 +624,7 @@ fn finish(html: &str, base: &str) -> String {
     if !html.contains("<img") {
         return html;
     }
-    let camo = crate::camo::enabled() && !base.is_empty();
+    let camo = !base.is_empty() && crate::camo::enabled(base);
     let mut out = String::with_capacity(html.len() + 64);
     let mut rest = html.as_str();
     while let Some(at) = rest.find("<img") {

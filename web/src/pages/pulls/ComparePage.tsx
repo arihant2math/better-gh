@@ -10,6 +10,7 @@ import { parsePatch, type DiffFile } from '../../components/diff/parseDiff';
 import { MarkdownEditor } from '../../components/editor/MarkdownEditor';
 import { Link, navigate, useParams, useQuery, setQuery } from '../../router';
 import { formatKeys } from '../../shortcuts/manager';
+import { compareUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import { createPull } from '../../sync/pullMutations';
@@ -53,9 +54,9 @@ export default observer(function ComparePage() {
   const { base, head } = parseSpec(spec, repo.defaultBranch);
   const headOwner = head.includes(':') ? head.split(':')[0]! : repo.owner;
   const headBranch = head.includes(':') ? head.split(':').slice(1).join(':') : head;
-  const prefix = `/${repo.owner}/${repo.name}/compare`;
   const params = parseCompareParams(query);
-  const go = (b: string, h: string) => navigate(`${prefix}/${b}...${h}${carriedQuery(query)}`, { replace: true });
+  // `carriedQuery` keeps `expand` and the form's prefill params.
+  const go = (b: string, h: string) => navigate(`${compareUrl({ owner: repo.owner, repo: repo.name }, b, h)}${carriedQuery(query)}`, { replace: true });
   return (
     <div className={styles.page}>
       <h1 className={styles.title}>{params.expand ? 'Open a pull request' : 'Comparing changes'}</h1>

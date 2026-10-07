@@ -18,6 +18,8 @@ import type {
   MergeUpstreamResult,
   RestCheckRun,
   LastCommits,
+  MergeQueue,
+  MergeQueueEntry,
   PullRequirements,
   RestBranch,
   RestCommit,
@@ -68,6 +70,23 @@ export function getPullRequirements(owner: string, repo: string, number: number)
   return api.get<PullRequirements>(
     `/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requirements`,
   );
+}
+
+const bghRepo = (owner: string, repo: string) => `/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+
+/** Merge queue of `branch` (may contain slashes). */
+export function getMergeQueue(owner: string, repo: string, branch: string): Promise<MergeQueue> {
+  return api.get<MergeQueue>(`${bghRepo(owner, repo)}/queue/${encodePath(branch)}`);
+}
+
+/** Add a pull request to its base branch's merge queue (`jump` = to the front). */
+export function enqueuePull(owner: string, repo: string, number: number, opts: { jump?: boolean } = {}): Promise<MergeQueueEntry> {
+  return api.put<MergeQueueEntry>(`${bghRepo(owner, repo)}/pulls/${number}/queue`, opts.jump ? { jump: true } : {});
+}
+
+/** Remove a pull request from the merge queue. */
+export function dequeuePull(owner: string, repo: string, number: number): Promise<void> {
+  return api.delete<void>(`${bghRepo(owner, repo)}/pulls/${number}/queue`);
 }
 
 /** Server-side syntax highlighting, immutable per blob sha. 404 → render plain text. */
