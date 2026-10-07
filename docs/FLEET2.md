@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+14:03: #344 (#85 item 10) ready, 52efaf2, CI green run 37629213901; used upload-artifact@v6/download-artifact@v7 (v5 still node20) + docker build-push v7/buildx v4. Adversarial CI reviewer started (see Reviewers). Items 8/9 updated on #85 by the worker.
 14:03: #322 READY (delta APPROVE on 4a17f0e after r2/r4 on 0664135; then only main merge 5cc4dfe = head; CI result green run 37631482737; base main; clean; verified). Forwarded; delta reviewer archived. #328 closes after merge.
 13:38 cycle: #340 r1 APPROVED (S-Approved); its reviewer merged main (63526b2), waiting for CI, then reports. #344 = #85 item 10 PR (52efaf2), not yet NeedsReview. #322 delta reviewer running.
 13:31: #322 retargeted to main by lead, head 4a17f0e (merged main; only conflict docs/packages/pulls.md; diff = #322's 10 files). Sonnet delta reviewer started (merge didn't alter #316 code; CI green) → forward.
