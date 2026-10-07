@@ -2,42 +2,31 @@
 
 Foreman: session_011BS1twjVWtvUAmNtnSQ52s (foreman3, since 08:12; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## HANDOFF (08:12, foreman2 session_01TnU6QngZQQ3epR16djXC76 → successor; context >700k)
+## HANDOFF (09:05, foreman3 session_011BS1twjVWtvUAmNtnSQ52s; context ~285k)
+Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Foreman2 is gone (archived by the orchestrator). WIND DOWN is in effect (section below).
+Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_message the foreman. The foreman verifies on GitHub that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, head SHA and CI status to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge. On ChangesRequested, message the author (session id is in the PR body link).
 
-### Current direction (from the user via orchestrator session_01U7ukQiQRpcMMA4n4VDVQR7)
-- WIND DOWN starts about 08:52; the orchestrator will send details then. Until then, PRs from orchestrator-dispatched workers still get reviewed.
-- Every PR needing review gets a FRESH reviewer session, one per round. Reviewers must NOT merge: they approve, set S-Approved, update the branch from main, and send the foreman the PR#, approved head SHA and CI status. The foreman forwards each ready PR to the orchestrator, which merges after checking the APPROVE and a green `CI result` on the exact head. Never merge before a verdict is posted (#274 incident). The classifier blocked adopting a relayed "agents merge themselves" policy, so don't adopt it.
-- S-ChangesRequested: message the author. The author's session id is in the claude.ai link in the PR body. Start a fresh reviewer when the author reports the fix is pushed.
-- Archive reviewer sessions as soon as they report. The orchestrator archives workers after merge.
-- Ignore bgh-audit sessions and O-Audit issues.
-- #150 belongs to the user's own session; don't touch it. Its macOS blocker is fixed on main via #273.
-- Security PRs get adversarial security reviewers that actually run the attacks.
+### Open PRs at 09:05
+- #312 (#138 SECURITY, author session_015sx68MN6HVyxjdYqcwsVzi): S-Approved at 0a50a76, but the r2 security reviewer session_01SDYuLDtD7CYXTmwcLjoC1n was told to review only the FINAL head, after (a) a main merge following #323 (they overlap) and (b) the author covers the #329 org-invite repro (test, plus Fixes #329 if fully covered). Wait for its report and re-verify the SHA.
+- #309 (#275 SECURITY GraphQL cost, author session_01PoLx449ncVkpwQdp2GCpmb): adversarial r2 reviewer session_01Mgvsx8ABCZHLFeU4x5VMdn running on d1cafe7.
+- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e): r2 adversarial reviewer session_01BksntuTuL5AA8MnQapLdVo on 055aef2.
+- #315 (#290 merge-queue GraphQL, same lead): r2 reviewer session_015Gpod5tzkrNKtz7Mi2ZxHc on 9a96154. It was told about the #322 loop (GITHUB_TOKEN auto-merge toggle).
+- #322 (#289 merge_group trigger, same lead, STACKED on #316): REQUEST_CHANGES at f53ad4f. Unbounded run loop: with #315, a job token's disable/enable auto-merge re-enqueues and the merge_group exemption re-runs. The lead must fix it (exempt only non-bot enqueuers, or cap runs) and add a test. Fresh adversarial reviewer when it pings. Merges only after #316, then retargets to main.
+- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES. A failed recheck pass drops targets, delaying revokes; plus a minor first-subscriber race. Fresh adversarial reviewer when it pings.
+- #330 (#85 item 4, worker session_011YDWD7b7snUjdLSGdr2vq4): reviewer (sonnet) session_01W5eCBySQcV5TFQ6miPpKZ3.
+- #150: the user's own; don't touch it.
 
-### Open PRs at 08:12
-- #304 (search index predicates, #277+#278). Labelled S-Approved, but reviewer session_01RxVGUE3TRBk6FJNA5bpijT hasn't reported yet. When it does, forward the PR# and approved SHA to the orchestrator. If it has gone silent, check that session.
-- #316 (merge queue service, #288). Reviewer session_012M6KVSN9CuUn2yHTB1ZWtY is running. Lead is session_01Kq9BfEn4RqooYm2643Ah6e (#2 merge queue; it opens several sub-PRs).
-- #315 (merge queue GraphQL + auto-merge, #290). ChangesRequested with 4 findings: auto-merge must wait then enqueue, disabling auto-merge must dequeue, private-repo NOT_FOUND leak, N+1. The lead is fixing them and will ping; then start a fresh reviewer.
-- #314 (actions streaming, #218+#223). ChangesRequested: over-cap upload returns 500 instead of 413 (web.rs:258 double-wrap); a test is needed. Author session_01AoPFjmaiac4HttSRmN6gJB will ping; then a quick re-review.
-- #312 (SECURITY #138, signup emails start unverified). Now ChangesRequested; the security reviewer session_0194YYMCkbdiMibSpxPFzgZG may not have reported to me yet. Read the review, message author session_015sx68MN6HVyxjdYqcwsVzi, then a fresh security reviewer.
-- #309 (SECURITY #275, GraphQL cost/node limit). ChangesRequested: 2 bypasses (fragments nested >8 levels count as 0; nodes(ids:) unbounded). Author session_01PoLx449ncVkpwQdp2GCpmb will ping; then a fresh adversarial reviewer.
-- #294 (#78 empty repo states). ChangesRequested: merge conflict in CommitsPage.tsx plus untested compare/new-PR/releases/file-finder. Author session_01WXLPuawpcP7jUeYDATVYdD.
-- #150: the user's own.
+### #85 track
+Items 1 (#152), 2 (#311) and 3 (#320, saves a runner but not wall-clock) are merged; item 4 is #330. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
 
-### Pending PRs that will arrive
-- #317 (P-High SECURITY: POST /_bgh/auth/signup skips settings::check_signup). The orchestrator dispatched the fixer "bgh fix #317 signup policy bypass", which will message the foreman with its PR. Assign an adversarial security reviewer.
-- More #2 merge-queue sub-PRs from lead session_01Kq9BfEn4RqooYm2643Ah6e.
-- Other orchestrator-dispatched workers whose PRs haven't appeared yet: #245/#241, #253 (done as #296), and others.
+### Follow-ups filed today (backlog, unassigned)
+#321 (GraphQL alias cap), #324 (P-High SAML JIT links by login), #325 (unverified email squat DoS), #326 (backfill verified=true), #327 (actions cap polish), #328 (merge_group loop cap/test), #329 (P-Critical: sign-up claims verified email → org-invite hijack; may be covered by #312).
 
-### #85 CI caching track (one worker PR at a time, ci.yml)
-- Item 1 (#152) is merged. Item 2 (#311, test cache: main-only save-if + cache-on-failure + --no-run) appears MERGED (no longer open). Verify, then archive worker session_015QY2gRLnM8MU2bjXzNzHUL and reviewer session_01CnGM7nUSt7UMu6WKTSqu83 if they're still alive.
-- NEXT: start the item 3 worker: fold compat into the tests job, or `needs: rust-test` on the same target, or give it its own shared-key with main-only save. 'Part of #85', labels T-Perf A-Ops, branch agent/85-<slug>, no merge. Then items 4–10 in issue order, each reviewed and merged before the next. Close #85 when all are done. Respect the wind-down details the orchestrator sends at about 08:52 (the user earlier said the CI track continues).
+### Merged by foreman3/orchestrator since 08:12
+#311, #304, #294, #314, #320, #323 (plus #298, #302, #306 just before).
 
-### Merged this session (highlights)
-#81, #82, #83, #86, #88, #93, #94, #99, #120, #137, #141, #143, #147, #149, #151 (main tests fix), #152, #273, #274 (merged before review, which was the bug), #292, #293, #295 (#96 security fix), #296, #297, #298, #299, #300, #301, #302, #306, #311.
-Follow-up issues filed: #153 (flake, fixed by #293), #305, #307, #310, #313, #317.
-
-### Finally (when everything is done)
-Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR if useful, else just delete bgh/foreman2; report to the orchestrator; cancel triggers.
+### Finish
+When every open PR is merged or parked (parked = a PR status comment saying what remains, with its sessions archived): post the final #46 status (merged today; open/parked; backlog #324 #325 #326 #329 #241/#245 if unfinished #280 #286 #237 plus the other follow-ups), report to the orchestrator, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
 
 ## WIND DOWN (08:53, user via orchestrator; effective now)
 1. No new workers, auditors or QA, and no new claims. Reviewers are still allowed for open PRs (#309, #312, #323, #315, #316, #322, #319) and for the #85 track.
@@ -55,6 +44,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:05 cycle: #330 (#85 item 4) → reviewer session_01W5eCBySQcV5TFQ6miPpKZ3. #312 is S-Approved at 0a50a76 but held for the final head (#323 overlap + #329). Handoff refreshed.
 09:03: orchestrator MERGED #323 (74bd452) and archived its author. The #312 author was told to cover the #329 org-invite repro (with a test; Fixes #329 if fully covered). #312 must merge main again after #323 (they overlap).
 09:03: #323 READY (security APPROVE on d1584fb; head 2c0dac6 is a main merge; CI result green). Forwarded; reviewer archived. #329 (P-Critical) flagged to the orchestrator; the #312 r2 reviewer will report the overlap. No worker under wind-down unless directed. #315 lead confirmed fixes at 9a96154 (r2 running).
 08:55: orchestrator MERGED #320 (0fb60f3); #85 item 3 done; its worker archived. #85 item 4 (Docker prebuilt cargo-chef + buildx scope=bgh, cache-to main only) worker session_011YDWD7b7snUjdLSGdr2vq4, branch agent/85-docker-chef; it also ticks items 1-3 on #85.
