@@ -21,7 +21,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-5 merged (#152, #311, #320, #330, #334); item 6 is #338. Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
+Items 1-6 merged (#152, #311, #320, #330, #334, #338=2755a5c); item 7 (nextest) worker session_01QwMebKjPFE9rJAckNQapM4, branch agent/85-nextest. Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
 
 ### Follow-ups filed today (backlog, unassigned)
 #321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed in #337).
@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:44: orchestrator MERGED #338 (2755a5c); worker archived. #85 item 7 (cargo-nextest) worker session_01QwMebKjPFE9rJAckNQapM4 (also ticks items 5 and 6). WATCH: main's cold run for 2755a5c must end green.
 11:44: #338 READY (r2 APPROVE on 9dcc8f5 = head; CI result green, run 37613747443; verified on GitHub). Forwarded to the orchestrator with caveats (first main run after merge is cold; the gain is cache storage). r2 reviewer archived. After the merge: #85 item 7 (cargo-nextest) worker.
 11:42: #338 fixed at 9dcc8f5 (warm step gated; description honest; CI green, run 37613747443) → delta reviewer r2 session_01PeHu5zVtft2A3h7cKziEKJ (sonnet).
 11:35 cycle: #338 pushed 9dcc8f5 (no ping yet). #337 security review still running. #316 waiting on the lead's deadlock fix. #322 S-Approved, blocked on #316. The #319 author is live but working on agent/241-sync-lock (a flaky consumer_lag_and_prune test) and hasn't answered two status asks. Park #319 at the next cycle if there's still no reply.
