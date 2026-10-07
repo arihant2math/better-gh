@@ -22,7 +22,7 @@ Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_m
 - #312 r2 reviewer session_01SDYuLDtD7CYXTmwcLjoC1n stays subscribed. It re-reviews the final head after the author fixes the #329 remainder (invite-mode unverified sign-up; allow-list uses the claimed address) and merges main (#323 overlap).
 
 ### #85 track
-Items 1 (#152), 2 (#311) and 3 (#320, saves a runner but not wall-clock) are merged; item 4 is #330. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
+Items 1 (#152), 2 (#311), 3 (#320, saves a runner but not wall-clock) and 4 (#330) are merged; item 5 worker session_01DZesWKyJC6cAcCoaSNf8F2. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
 
 ### Follow-ups filed today (backlog, unassigned)
 #321 (GraphQL alias cap), #324 (P-High SAML JIT links by login), #325 (unverified email squat DoS), #326 (backfill verified=true), #327 (actions cap polish), #328 (merge_group loop cap/test), #329 (P-Critical: sign-up claims verified email → org-invite hijack; may be covered by #312).
@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:08: orchestrator MERGED #330 (c9b30cb); #85 item 4 done; worker archived by the orchestrator. The orchestrator confirmed that the #85 track runs to completion (user-exempt from the wind-down). Item 5 (release binary from Docker) worker session_01DZesWKyJC6cAcCoaSNf8F2, branch agent/85-release-from-docker; it also ticks item 4 on #85.
 10:08: #330 READY (r2 APPROVE on f817f86; then only main merges 6cc3c00 and eb4ece4; CI result green, run 37603775491). Forwarded to the orchestrator; reviewer archived. Asked the orchestrator to confirm #85 item 5 (one worker) after the merge.
 10:05: orchestrator MERGED #315 (4e4be6a); lead stays live. The lead was told #316 must merge main and update auto_merge_waits_for_requirements_then_enqueues before its r3 review.
 10:05: #315 READY (r2 APPROVE on 9a96154; then only main merges edddec1 and a9c887f; CI result green, run 37603710378). Forwarded to the orchestrator; reviewer archived. #309 CI is green on fb5b052, waiting on the r3 reviewer.
