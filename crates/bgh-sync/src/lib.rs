@@ -20,7 +20,6 @@ use bgh_core::{AppState, Registry};
 
 pub mod bootstrap;
 pub mod compact;
-pub mod config;
 pub mod delta;
 pub mod hub;
 pub mod middleware;

@@ -64,6 +64,10 @@ crates/
   bgh-import/              metadata importer (GitHub/GHES/GitLab issues, pull
                            requests, reviews, labels, milestones, releases,
                            wiki, repo config, users/mannequins + reclaim)
+  bgh-projects/            Projects (v2): projects, fields, views, items,
+                           workflows (REST + `/_bgh` web routes)
+  bgh-wiki/                repository wikis (separate `.wiki.git` repos,
+                           pages API, settings, git transport helpers)
   bgh-security/            secret scanning (pattern engine, history/push
                            scans, alerts API, custom patterns) and push
                            protection; code scanning builds on it (P66)
@@ -87,10 +91,27 @@ Each domain crate exposes exactly three functions, all already wired into
   event listeners and long-running services (`reg.service`, started by the
   `bgh` binary only, e.g. the built-in CI runner).
 
-Domain crates depend on `bgh-core` (and `bgh-git` when needed),
-**never on each other's internals** — shared logic that two domains need
-moves into `bgh-core` (or a small `pub` service fn re-exported by the owning
-crate, depended on explicitly; e.g. `bgh_accounts::create_user`).
+Domain crates depend on `bgh-core` (and `bgh-git` when needed). Shared
+logic that two domains need belongs in `bgh-core`, or in a small `pub`
+service fn of the owning crate that others depend on explicitly (e.g.
+`bgh_accounts::create_user`, the `import` modules bgh-import uses). Do not
+add a new edge between domain crates without updating this list. The
+current edges (besides bgh-server, which depends on every crate):
+
+| crate | depends on | for |
+|---|---|---|
+| bgh-repos | bgh-wiki, bgh-security | wiki git transport (`bgh_wiki::git`), push protection (`bgh_security::push`, `settings::apply`) |
+| bgh-pulls | bgh-repos | rulesets / branch protection (`protection`, `rule_eval`), `refs::write_ref`, `signatures` |
+| bgh-actions | bgh-repos | same rules engine and ref writes |
+| bgh-admin | bgh-accounts, bgh-repos | user admin, `maintenance::run_task`, `store` |
+| bgh-projects | bgh-issues | issue/PR items |
+| bgh-import | bgh-repos, bgh-issues, bgh-pulls, bgh-releases, bgh-wiki | each crate's `import` module |
+| bgh-graphql | bgh-repos, bgh-issues, bgh-pulls, bgh-projects | handler internals (to become service fns, #211) |
+
+Known debt: the rules engine (`bgh_repos::protection` + `rule_eval`) is
+shared code living in a domain crate, which makes bgh-repos a hub that
+recompiles most of the workspace; moving it to `bgh-core` (or its own
+crate) is #348.
 `bgh-git` depends on `bgh-core` only for config and error conversion; it
 knows nothing about users or permissions.
 
@@ -98,29 +119,19 @@ The cookbook for feature work is `docs/BACKEND_PATTERNS.md`.
 
 ## Configuration
 
-Environment variables, read by `bgh_core::Config::from_env` (defaults in
-parentheses): `DATABASE_URL` (`postgres://postgres:postgres@localhost/bgh`),
-`REDIS_URL` (`redis://127.0.0.1/`), `BGH_LISTEN` (`0.0.0.0:3000`),
-`BGH_BASE_URL` (`http://localhost:3000`, used for every generated URL),
-`BGH_DATA_DIR` (`./data`), `BGH_WEB_DIR` (`web/dist`), `BGH_SSH_PORT`
-(`2222`), `BGH_SSH_ENABLED`, `BGH_SIGNUP_ENABLED` (`true`),
-`BGH_SESSION_TTL_DAYS` (`30`), `BGH_JOB_WORKERS` (`4`),
-`BGH_DB_MAX_CONNECTIONS` (`20`), `BGH_REDIS_PREFIX` (`bgh:`, prepended to
-every Redis key/channel via `AppState::redis_key`), `BGH_GIT_BIN` (`git`),
-`BGH_MAX_BLOB_SIZE` (10 MiB), `BGH_SITE_NAME`, `BGH_SMTP_URL` (unset: mail is
-logged and written to `{data_dir}/mail/`), `BGH_MAIL_FROM`,
-`BGH_RATE_LIMIT_ENABLED` (`false`), `BGH_RATE_LIMIT` (`5000`/h per user),
-`BGH_RATE_LIMIT_ANONYMOUS` (`60`/h per IP), `BGH_RATE_LIMIT_SEARCH` /
-`_SEARCH_ANONYMOUS` (`30` / `10` per minute), `BGH_RATE_LIMIT_GRAPHQL`
-(`5000`/h), `BGH_TRUST_PROXY` (`false`; take client IPs from
-`X-Forwarded-For`), and `BGH_OIDC_*` for a single SSO provider (see
-`bgh_accounts::sso`). Observability: `BGH_METRICS_TOKEN` /
-`BGH_METRICS_LISTEN` (Prometheus `/metrics`, off by default),
-`BGH_LOG_FORMAT` (`pretty`|`json`), `BGH_OTLP_ENDPOINT` (`--features
-otlp`); instrumentation helpers in `bgh_core::observability` (bounded
-labels only), recorder and `/metrics` in `bgh_server::telemetry`, metric
-names in `docs/SELF_HOSTING.md` "Monitoring". CI settings `BGH_ACTIONS_*` (see
-`bgh_core::config::ActionsConfig` and `docs/packages/actions.md`).
+Server settings are environment variables read once by
+`bgh_core::Config::from_env` (`Config::from_lookup` in tests;
+`TestApp::spawn_with_config` overrides any of them), including bgh-sync's
+`Config::sync` and the instance name `Config::instance_name` (`HOSTNAME`).
+Code reads settings from `state.config`, never `std::env::var`; the only
+exceptions are process-level knobs read before `Config` exists (logging,
+tracing) and the CLI / `bgh-runner` flags. The full reference is the table
+in `docs/SELF_HOSTING.md` "Configuration reference";
+`bgh_core::config::tests::env_vars_are_documented` fails when a `"BGH_…"`
+literal in crate sources is missing from it (hook-protocol and test-only
+variables are listed in its `INTERNAL_ENV`). Observability helpers live in
+`bgh_core::observability` (bounded labels only), the recorder and
+`/metrics` in `bgh_server::telemetry`.
 
 Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
