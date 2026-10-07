@@ -201,7 +201,7 @@ export interface NavigateOptions {
 
 /**
  * `to` as a same-origin `pathname + search + hash`, or null when it resolves
- * elsewhere (`//x`, `/\x`, `/\t/x`, `https://x`, `javascript:`). Use it for
+ * elsewhere (`//x`, `/\x`, `/\t/x`, `/..//x`, `https://x`, `javascript:`). Use it for
  * any untrusted target such as `?return_to=`.
  */
 export function sameOriginPath(to: string, origin: string): string | null {
@@ -211,7 +211,9 @@ export function sameOriginPath(to: string, origin: string): string | null {
   } catch {
     return null;
   }
-  return url.origin === origin ? url.pathname + url.search + url.hash : null;
+  // Dot segments can normalize to a protocol-relative path (`/..//x` → `//x`).
+  if (url.origin !== origin || url.pathname.startsWith('//')) return null;
+  return url.pathname + url.search + url.hash;
 }
 
 /** Where to go after signing in: a same-origin `return_to`, else home. */
