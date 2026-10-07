@@ -87,8 +87,20 @@ async fn admin_conn() -> PgConnection {
         .expect("connect to postgres maintenance db (is ./scripts/dev-setup.sh running?)")
 }
 
+#[cfg(target_os = "linux")]
 fn pid_alive(pid: u32) -> bool {
     std::path::Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// No procfs: probe with signal 0 (EPERM still means the process exists).
+#[cfg(not(target_os = "linux"))]
+fn pid_alive(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that `pid` exists and may be signalled.
+    let rc = unsafe { libc::kill(pid, 0) };
+    rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// Migrate the template database once per process (under a cross-process

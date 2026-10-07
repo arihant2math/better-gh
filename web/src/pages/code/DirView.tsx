@@ -13,7 +13,8 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import styles from './Code.module.css';
 import { prefetchBlob, prefetchTree, useTree } from './data';
 import { LastCommitBar } from './LastCommitBar';
-import { codeUrl, parentPath, routeLinks, type CodeTarget } from './util';
+import { parentPath, routeLinks, type CodeTarget } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 /** Directory listing (+ last commit per entry) and the rendered README. */
 export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTarget; repo: Repo; root: boolean }) {

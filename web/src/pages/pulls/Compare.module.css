@@ -189,3 +189,49 @@
   overflow: hidden;
 }
 .body { font-family: var(--font-mono); font-size: 13px; }
+
+/* Creation form + metadata sidebar (P55). */
+.createLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.createLayout > .form {
+  margin-bottom: 0;
+}
+
+@media (max-width: 860px) {
+  .createLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.templateRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-md);
+}
+
+.check input {
+  margin-top: 3px;
+}
+
+.formActions {
+  flex-wrap: wrap;
+}
+
+@media (pointer: coarse) {
+  .templateRow > button {
+    min-height: 32px;
+  }
+}

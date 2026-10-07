@@ -674,6 +674,12 @@ export const EventItem = observer(function EventItem({ events, repo, baseRef }: 
     case 'head_ref_force_pushed':
       text = <>force-pushed the branch {sha(d.commitId)}</>;
       break;
+    case 'added_to_merge_queue':
+      text = <>added this pull request to the merge queue</>;
+      break;
+    case 'removed_from_merge_queue':
+      text = <>removed this pull request from the merge queue{d.reason ? `: ${d.reason}` : ''}</>;
+      break;
     default:
       text = <>{String(event.event).replace(/_/g, ' ')}</>;
   }

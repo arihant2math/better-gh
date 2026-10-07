@@ -2,7 +2,10 @@ import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, cx } from '../../ui/Button';
 import type { CommitAnnotation } from '../../api/types';
+import type { Pager } from '../../api/pager';
+import { LoadMore } from '../LoadMore';
 import { Link } from '../../router';
+import { blobUrl, codeUrl } from '../code/urls';
 import { toast } from '../../ui/Toast';
 import {
   AlertIcon,
@@ -95,7 +98,8 @@ export interface DiffViewProps {
   fileActions?(file: DiffFileEntry): ReactNode;
   /** Number of files still being listed (rendered as a trailing placeholder). */
   pendingFiles?: number;
-  onNeedMoreFiles?(): void;
+  /** Pager of the file list, driven by the trailing placeholder. */
+  moreFiles?: Pick<Pager<unknown>, 'status' | 'loadMore' | 'retry'>;
   tree?: boolean;
   /** Enable j/k/n/p/c and friends. */
   keyboard?: boolean;
@@ -435,7 +439,7 @@ export function DiffView(props: DiffViewProps) {
         getKey={(r, i) => rowKey(r, files, i)}
         renderItem={(r, i) => {
           if (r.k === 'footer') return props.footer;
-          if (r.k === 'more') return <MoreFiles count={props.pendingFiles ?? 0} onNeed={props.onNeedMoreFiles} />;
+          if (r.k === 'more') return <MoreFiles count={props.pendingFiles ?? 0} pager={props.moreFiles} />;
           const file = files[r.f]!;
           const active = i === cursor;
           switch (r.k) {
@@ -790,8 +794,6 @@ function CheckAnnotations({ items }: { items: readonly CommitAnnotation[] }) {
 function FileActions({ file, extras }: { file: DiffFileEntry; extras: DiffExtras }) {
   const { source } = extras;
   const status = file.status === 'removed' ? 'deleted' : file.status;
-  const base = `/${source.owner}/${source.repo}`;
-  const enc = file.path.split('/').map(encodeURIComponent).join('/');
   const rich = extras.rich.has(file.path);
   return (
     <span className={styles.fileActions}>
@@ -820,12 +822,12 @@ function FileActions({ file, extras }: { file: DiffFileEntry; extras: DiffExtras
         <CopyIcon size={14} />
       </button>
       {status !== 'deleted' && (
-        <Link className={styles.fileAction} to={`${base}/blob/${source.newRef}/${enc}`} aria-label="View file" title={`View file @ ${source.newRef.slice(0, 7)}`}>
+        <Link className={styles.fileAction} to={blobUrl(source, source.newRef, file.path)} aria-label="View file" title={`View file @ ${source.newRef.slice(0, 7)}`}>
           <EyeIcon size={14} />
         </Link>
       )}
       {status !== 'deleted' && source.editRef && !file.binary && (
-        <Link className={styles.fileAction} to={`${base}/edit/${source.editRef.split('/').map(encodeURIComponent).join('/')}/${enc}`} aria-label="Edit file" title={`Edit file on ${source.editRef}`}>
+        <Link className={styles.fileAction} to={codeUrl(source, 'edit', source.editRef, file.path)} aria-label="Edit file" title={`Edit file on ${source.editRef}`}>
           <PencilIcon size={14} />
         </Link>
       )}
@@ -844,15 +846,15 @@ function LoadingFile({ path, onNeed }: { path: string; onNeed?: (path: string) =
   );
 }
 
-function MoreFiles({ count, onNeed }: { count: number; onNeed?: () => void }) {
-  useEffect(() => {
-    onNeed?.();
-  }, [onNeed]);
-  return (
-    <div className={styles.more}>
-      <Spinner size={14} /> Loading {count} more file{count === 1 ? '' : 's'}…
-    </div>
-  );
+function MoreFiles({ count, pager }: { count: number; pager?: Pick<Pager<unknown>, 'status' | 'loadMore' | 'retry'> }) {
+  const label = `Loading ${count} more file${count === 1 ? '' : 's'}…`;
+  if (!pager)
+    return (
+      <div className={styles.more}>
+        <Spinner size={14} /> {label}
+      </div>
+    );
+  return <LoadMore pager={pager} auto className={styles.more} label="Load more files" loadingLabel={label} />;
 }
 
 // ------------------------------------------------------------------ tree

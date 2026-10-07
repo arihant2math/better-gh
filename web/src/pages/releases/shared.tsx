@@ -6,6 +6,7 @@ import { codeKeys, findReleaseByTag, getLatestRelease, type RestAsset, type Rest
 import { browseKeys } from '../../api/endpoints';
 import { useRefs } from '../../components/code/RefPicker';
 import { Link, navigate, prefetch as prefetchRoute } from '../../router';
+import { archiveUrl, treeUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
@@ -151,7 +152,7 @@ export function Assets({ owner, repo, release, open }: { owner: string; repo: st
   const source = !release.draft;
   const count = release.assets.length + (source ? 2 : 0);
   if (!count) return null;
-  const archive = (ext: string) => `/${owner}/${repo}/archive/refs/tags/${encodeURIComponent(release.tag_name)}.${ext}`;
+  const archive = (ext: 'zip' | 'tar.gz') => archiveUrl({ owner, repo }, `refs/tags/${release.tag_name}`, ext);
   return (
     <details className={styles.assets} open={open}>
       <summary className={styles.assetsSummary}>
@@ -208,7 +209,7 @@ export const ReleaseMeta = observer(function ReleaseMeta({
         </Link>
       )}
       {sha ? (
-        <Link to={`/${owner}/${repo}/tree/${encodeURIComponent(release.tag_name)}`} className={cx(styles.metaItem, styles.mono)}>
+        <Link to={treeUrl({ owner, repo }, release.tag_name)} className={cx(styles.metaItem, styles.mono)}>
           <TagIcon size={14} />
           {release.tag_name}
         </Link>

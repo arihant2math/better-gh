@@ -17,7 +17,8 @@ import { prefetchFileList, useRefsData, useTree } from './data';
 import { DirView } from './DirView';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
-import { codeUrl, copyText, resolveTarget, setHash, type CodeTarget } from './util';
+import { copyText, resolveTarget, setHash, type CodeTarget } from './util';
+import { codeUrl, historyUrl, parseCodeUrl } from '../../components/code/urls';
 
 const FileFinder = lazy(() => import('./FileFinder'));
 
@@ -31,7 +32,8 @@ export default observer(function CodePage() {
   // Re-resolve once the ref list arrives (pins the commit SHA for immutable caching).
   useRefsData(params.owner, params.repo);
   if (!repo) return null;
-  const mode: 'tree' | 'blob' | 'blame' = pathname.includes('/blob/') ? 'blob' : pathname.includes('/blame/') ? 'blame' : 'tree';
+  const view = parseCodeUrl(pathname)?.view;
+  const mode: 'tree' | 'blob' | 'blame' = view === 'blob' || view === 'blame' ? view : 'tree';
   const t = resolveTarget(repo.owner, repo.name, params.ref ?? repo.defaultBranch, params['*'] ?? '');
   return <CodeView key={repo.id} repo={repo} t={t} mode={mode} />;
 });
@@ -148,7 +150,7 @@ function RepoNav({ repo, t }: { repo: Repo; t: CodeTarget }) {
     <nav className={styles.repoNav} aria-label="Repository">
       <Link to={`${base}/branches`}>Branches</Link>
       <Link to={`${base}/tags`}>Tags</Link>
-      <Link to={`${base}/commits/${t.ref}`}>Commits</Link>
+      <Link to={historyUrl(t, t.ref)}>Commits</Link>
     </nav>
   );
 }
