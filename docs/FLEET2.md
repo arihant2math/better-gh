@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:05: #315 READY (r2 APPROVE on 9a96154; then only main merges edddec1 and a9c887f; CI result green, run 37603710378). Forwarded to the orchestrator; reviewer archived. #309 CI is green on fb5b052, waiting on the r3 reviewer.
 09:54: orchestrator MERGED #332 (9611f57); #331 fixed. #331 fixer archived. #315 branch updated from main (its reviewer reports when CI is green). The #330 and #312 reviewers, the merge-queue lead and the #319 author were told to merge main instead of re-running.
 09:53: #332 READY (APPROVE on da622ff = head; base is current main; CI result green). Forwarded to the orchestrator; reviewer archived. #309 author ported the #332 seed fix as fb5b052; the r3 reviewer was told to confirm it is test-only.
 09:39 cycle: #332 (the #331 flake fix, fixer session_01HiZuw5TZdK2DU9KPyfjtRs) → reviewer (sonnet) session_01SLY77MMq7oTmYgDfsevpsm. #312 final head 3c826a4 (consolidated on admit_signup, Fixes #329); its r2 reviewer was told to re-review it. #315 reviewer interim: approved, head edddec1, CI red only from #331; it re-runs at 10:03 and then reports. #330 is S-Approved at 6cc3c00, waiting on its reviewer's report. Waiting on authors: #316, #322 (new heads, no ping yet), #319.
