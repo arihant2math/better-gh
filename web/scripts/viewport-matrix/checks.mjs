@@ -124,6 +124,7 @@ export function collectLayoutIssues(opts) {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const range = document.createRange();
   const clippedSeen = new Set();
+  const squeezedSeen = new Set();
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const parent = n.parentElement;
     if (!parent || !n.textContent.trim() || clippedSeen.has(parent)) continue;
@@ -131,6 +132,14 @@ export function collectLayoutIssues(opts) {
     range.selectNodeContents(n);
     const tr = range.getBoundingClientRect();
     if (tr.width <= 1) continue;
+    // 3a. text squeezed to a couple of characters per line by its siblings
+    // (e.g. a title next to wide header actions).
+    const chars = n.textContent.replace(/\s+/g, '').length;
+    const lines = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top))).size;
+    if (chars >= 6 && lines >= 3 && chars / lines < 3 && !squeezedSeen.has(parent)) {
+      squeezedSeen.add(parent);
+      push('squeezed-text', parent, `${chars} characters on ${lines} lines (${Math.round(tr.width)}px wide): "${n.textContent.trim().slice(0, 40)}"`);
+    }
     let anc = null;
     let ellipsis = false;
     for (let e = parent; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
