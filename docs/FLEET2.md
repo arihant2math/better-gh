@@ -17,7 +17,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e; do NOT archive the lead): adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm on ee81558.
 - #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 merges and the lead retargets it to main (then re-verify CI on the retargeted head). The reviewer says whether #328 can close.
 - #338 (#85 item 6, share clippy/test deps, worker session_01BWCia78jFZoT3pq4UrYS1p): r1 REQUEST_CHANGES on 236372d (11:23): gate the main-only clippy warm step on cache-hit != 'true' (~1m wasted on main otherwise); the description must say the gain is cache storage (~344 MB), not PR wall-clock. Author told; reviewer archived. Fresh delta reviewer (sonnet) when the author pings.
-- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48, no reply yet. If it's blocked or silent, park it: a PR status comment saying what remains (the failed recheck pass drops coalesced targets; the first-subscriber race) and the session archived via the orchestrator.
+- #319 (#245): PARKED 11:53 (status comment posted). - #319 old note: REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48, no reply yet. If it's blocked or silent, park it: a PR status comment saying what remains (the failed recheck pass drops coalesced targets; the first-subscriber race) and the session archived via the orchestrator.
 - #150: the user's own; don't touch it.
 
 ### #85 track
@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:53 cycle: #337 r1 security APPROVE; the reviewer merged main (head 19adda1); CI is running; forward when the reviewer reports and it's verified. #339 (#85 item 7, nextest, 497d2a9) → reviewer session_01M1x7FtZWcCLrDbWZJUsE1n (default model, adversarial CI). NEW #340 (#241 sync lock, by the #319 author session_012T1MW3bqBQbQPoRqYR2z4G, 4a3faa0) → adversarial reviewer session_01SiREyJgcEqyaYMtTmBd3Zd; treated as in-flight (pre-wind-down claim) and flagged to the orchestrator. #319 PARKED (status comment: failed recheck drops coalesced targets; first-subscriber race); the author stays live for #340. Main cold run 37616027435 (2755a5c) is in progress.
 11:44: orchestrator MERGED #338 (2755a5c); worker archived. #85 item 7 (cargo-nextest) worker session_01QwMebKjPFE9rJAckNQapM4 (also ticks items 5 and 6). WATCH: main's cold run for 2755a5c must end green.
 11:44: #338 READY (r2 APPROVE on 9dcc8f5 = head; CI result green, run 37613747443; verified on GitHub). Forwarded to the orchestrator with caveats (first main run after merge is cold; the gain is cache storage). r2 reviewer archived. After the merge: #85 item 7 (cargo-nextest) worker.
 11:42: #338 fixed at 9dcc8f5 (warm step gated; description honest; CI green, run 37613747443) → delta reviewer r2 session_01PeHu5zVtft2A3h7cKziEKJ (sonnet).
