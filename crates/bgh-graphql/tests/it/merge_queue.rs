@@ -313,6 +313,24 @@ async fn auto_merge_waits_for_requirements_then_enqueues() {
     let bob = app.create_user("bob").await;
     let pr = setup(&app, &alice).await;
     require_approval(&app, &alice).await;
+    // A required check nobody reports keeps the entry queued once added,
+    // instead of the queue service merging it right away.
+    rest(
+        &app,
+        &alice,
+        "POST",
+        "/api/v3/repos/alice/hello/rulesets",
+        json!({
+            "name": "CI",
+            "target": "branch",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+            "rules": [{"type": "required_status_checks",
+                       "parameters": {"strict_required_status_checks_policy": false,
+                                      "required_status_checks": [{"context": "ci"}]}}],
+        }),
+    )
+    .await;
     collaborator(&app, &alice, &bob, "push").await;
     app.drain_jobs().await;
 

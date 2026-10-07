@@ -216,4 +216,9 @@ pub fn register(reg: &mut Registry) {
     reg.on_event("pulls.push", jobs::on_event);
     reg.on_event("pulls.checks", jobs::on_checks_event);
     reg.on_event("pulls.merge_queue", merge_queue::on_event);
+    reg.job(merge_queue::service::process);
+    reg.service(
+        "pulls.merge_queue_sweep",
+        merge_queue::service::sweep_service,
+    );
 }

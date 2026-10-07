@@ -579,7 +579,15 @@ Site-level account changes also emit `UserAccountChanged` /
   its source and bypassed per source; required checks only count
   statuses/check runs posted to the base repository. A `merge_queue` rule
   makes that evaluator refuse every direct merge; only the merge queue
-  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges. Push protection
+  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges: its
+  `pulls.merge_queue` job (one per queue under an advisory lock, kicked by
+  queue changes, checks on group commits, base pushes and a deadline
+  sweep service) stacks queued PRs on the base tip as
+  `gh-readonly-queue/{base}/pr-{n}-{sha}` refs, emits
+  `MergeGroupChecksRequested`, and once the base's required checks pass
+  on them fast-forwards the base (CAS) and marks the PRs merged; failures
+  and timeouts eject the entry and rebuild (`MergeGroupDestroyed`). See
+  `docs/packages/pulls.md`. Push protection
   (`bgh_security::push`, P65) is one more object check combined into
   `PushPolicy::object_check` by both transports: it scans only the blobs
   the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,
