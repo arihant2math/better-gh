@@ -338,6 +338,16 @@ pub async fn diff_file(
     let raw = cmd::run(bin, Some(&dir), &args, literal, None).await?;
     let entries = parse_raw_numstat(&raw)?;
     let Some(idx) = entries.iter().position(|e| e.path == path) else {
+        // Newer git (2.5x) drops whitespace-only changes from `-w --raw`;
+        // older git lists them with 0/0. Report them the same way.
+        if ignore_whitespace {
+            let e = RawEntry {
+                additions: 0,
+                deletions: 0,
+                ..entry
+            };
+            return Ok(Some(file_diff(e, None, max_patch_bytes)));
+        }
         return Ok(None);
     };
     let mut args: Vec<&str> = DIFF_FLAGS.to_vec();
