@@ -1119,6 +1119,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
+ "hex",
  "http",
  "http-body-util",
  "metrics",
@@ -1141,6 +1142,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

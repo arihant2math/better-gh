@@ -62,7 +62,7 @@ FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 # git: smart HTTP / SSH transport and write plumbing. tini: PID 1 that
 # forwards signals and reaps orphaned git subprocesses. libssl: WebAuthn.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git git-lfs tini \
+ && apt-get install -y --no-install-recommends ca-certificates git git-lfs postgresql-client tini \
  && (apt-get install -y --no-install-recommends libssl3t64 \
      || apt-get install -y --no-install-recommends libssl3) \
  && rm -rf /var/lib/apt/lists/* \

@@ -16,6 +16,9 @@
 //!                                               pull requests)
 //! bgh import resume --id N                      resume (or rerun) an import
 //! bgh healthcheck                               exit 0 if the local server is healthy
+//! bgh backup --to DIR                           pg_dump + hard-link-incremental data snapshot
+//! bgh backup verify --from DIR                  check a snapshot's checksums and dump
+//! bgh restore --from DIR [--force]              restore a snapshot (server stopped)
 //! ```
 //! Configuration comes from environment variables (see `bgh_core::config`).
 
@@ -47,6 +50,30 @@ enum Command {
     Import {
         #[command(subcommand)]
         command: ImportCommand,
+    },
+    /// Back up the database and data directory into a new snapshot under
+    /// DIR (unchanged files are hard links to the previous snapshot).
+    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
+    Backup {
+        /// Backup directory (one timestamped snapshot per run).
+        #[arg(long, required = true)]
+        to: Option<std::path::PathBuf>,
+        #[command(subcommand)]
+        command: Option<BackupCommand>,
+    },
+    /// Restore a backup snapshot into the configured database and data
+    /// directory (stop the server first), then apply newer migrations and
+    /// `git fsck --connectivity-only` a sample of repositories.
+    Restore {
+        /// A snapshot directory, or a backup directory (its newest snapshot).
+        #[arg(long)]
+        from: std::path::PathBuf,
+        /// Replace a non-empty database and data directory.
+        #[arg(long)]
+        force: bool,
+        /// Number of repositories to fsck after restoring.
+        #[arg(long, default_value_t = 10)]
+        fsck_sample: usize,
     },
     /// Probe `GET /healthz` on the local server (BGH_LISTEN); exit status 0
     /// when it answers 200. For container and service-manager health checks.
@@ -98,6 +125,17 @@ enum AdminCommand {
         /// Lifetime in days (default: never expires).
         #[arg(long)]
         expires_in_days: Option<i64>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BackupCommand {
+    /// Check every file of a snapshot against its manifest checksums and
+    /// that `pg_restore` can read the dump.
+    Verify {
+        /// A snapshot directory, or a backup directory (its newest snapshot).
+        #[arg(long)]
+        from: std::path::PathBuf,
     },
 }
 
@@ -194,6 +232,109 @@ async fn main() -> anyhow::Result<()> {
         Command::Admin { command } => admin(config, command).await,
         Command::Import { command } => import(config, command).await,
         Command::Healthcheck { timeout } => healthcheck(&config, timeout).await,
+        Command::Backup { to, command } => backup(config, to, command).await,
+        Command::Restore {
+            from,
+            force,
+            fsck_sample,
+        } => {
+            use bgh_server::backup;
+            let tools = backup::Tools::from_config(&config);
+            backup::require_tool(&tools.pg_restore)?;
+            let db = connect_db(&config).await?;
+            let report = backup::restore(
+                &config,
+                &db,
+                &tools,
+                &from,
+                &backup::RestoreOptions { force, fsck_sample },
+            )
+            .await?;
+            println!(
+                "restored {} (migration {}): {} files into {}; migrations applied",
+                report.snapshot.display(),
+                report.manifest_version,
+                report.files,
+                config.data_dir.display()
+            );
+            println!(
+                "git fsck --connectivity-only ok on {} sampled repositories",
+                report.fsck_checked.len()
+            );
+            Ok(())
+        }
+    }
+}
+
+/// A database pool without Redis or migrations (backup and restore).
+async fn connect_db(config: &Config) -> anyhow::Result<sqlx::PgPool> {
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&config.database_url)
+        .await
+        .context("connecting to DATABASE_URL")
+}
+
+async fn backup(
+    config: Config,
+    to: Option<std::path::PathBuf>,
+    command: Option<BackupCommand>,
+) -> anyhow::Result<()> {
+    use bgh_server::backup;
+    let tools = backup::Tools::from_config(&config);
+    match command {
+        Some(BackupCommand::Verify { from }) => {
+            let snapshot = backup::resolve_snapshot(&from)?;
+            let (manifest, report) = backup::verify(&snapshot, &tools)?;
+            for p in &report.problems {
+                eprintln!("{p}");
+            }
+            anyhow::ensure!(
+                report.problems.is_empty(),
+                "{}: {} problems",
+                snapshot.display(),
+                report.problems.len()
+            );
+            println!(
+                "{} ok: bgh {}, migration {}, {} files ({}) and the database dump verified",
+                snapshot.display(),
+                manifest.bgh_version,
+                manifest.migration_version,
+                report.files,
+                backup::human_bytes(report.bytes)
+            );
+            Ok(())
+        }
+        None => {
+            let to = to.context("--to DIR is required")?;
+            backup::require_tool(&tools.pg_dump)?;
+            let db = connect_db(&config).await?;
+            let (path, m) = backup::backup(&config, &db, &tools, &to).await?;
+            let s = &m.stats;
+            println!(
+                "backup {} complete: migration {}, database {}, {} files ({}), {} unchanged \
+                 files hard-linked ({}){}",
+                path.display(),
+                m.migration_version,
+                backup::human_bytes(m.database.size),
+                s.files,
+                backup::human_bytes(s.bytes),
+                s.linked_files,
+                backup::human_bytes(s.linked_bytes),
+                if s.vanished > 0 {
+                    format!(", {} files vanished while copying", s.vanished)
+                } else {
+                    String::new()
+                }
+            );
+            if m.server_key_from_env {
+                eprintln!(
+                    "note: the server key comes from BGH_ACTIONS_SECRET_KEY and is not in the \
+                     backup; keep it with your configuration"
+                );
+            }
+            Ok(())
+        }
     }
 }
 

@@ -33,5 +33,6 @@ mod push_hardening;
 mod push_rules;
 mod settings;
 mod signatures;
+mod slash_refs;
 mod social;
 mod ssh;

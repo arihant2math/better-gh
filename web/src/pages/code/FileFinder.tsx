@@ -8,7 +8,7 @@ import { Kbd } from '../../ui/Badge';
 import { Spinner } from '../../ui/Spinner';
 import styles from './Code.module.css';
 import { prefetchBlob, useFileList } from './data';
-import { codeUrl, type CodeTarget } from './util';
+import { codeUrl, isSettled, type CodeTarget } from './util';
 
 const MAX_RESULTS = 60;
 
@@ -38,7 +38,7 @@ export function rankPaths(paths: readonly string[], query: string, limit = MAX_R
 
 /** `t` file finder over every path of the current commit (lazy chunk). */
 export default function FileFinder({ t, open, onClose }: { t: CodeTarget; open: boolean; onClose: () => void }) {
-  const { data, error } = useFileList(t, open);
+  const { data, error } = useFileList(t, open && isSettled(t));
   const [query, setQuery] = useState('');
   const deferred = useDeferredValue(query);
   const [active, setActive] = useState(0);

@@ -14,8 +14,9 @@
 #   web/src/ui/markdown/render.golden.test.ts) and
 #   web/src/ui/markdown/emoji.json (bgh-core include_str!s it). Otherwise the
 #   web job needs no server (vitest only; the viewport matrix isn't in CI).
-# * docker: Dockerfile, .dockerignore, or any backend/frontend change (the
-#   image builds the server with `embed-web`, i.e. it embeds web/dist).
+# * docker: Dockerfile, .dockerignore or Cargo.lock only. The release image
+#   build is ~28 min, so other backend/frontend changes skip it on PRs; it
+#   still runs on every push to main and workflow_dispatch (#85).
 # * release-binary embeds web/dist too; it only runs off pull requests, where
 #   everything runs.
 # * .github/workflows/ and scripts/ci-changes.sh run everything. Docs-only
