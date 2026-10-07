@@ -37,6 +37,7 @@ import {
 } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Select } from '../../ui/Input';
+import { resultsHeading } from './heading';
 import { fragmentLines, highlightRanges, toPath } from './highlight';
 import styles from './SearchPage.module.css';
 
@@ -276,7 +277,7 @@ export default observer(function SearchPage() {
             <>
               <header className={styles.resultsHeader}>
                 <h1 className={styles.resultsTitle}>
-                  {result.data ? `${total.toLocaleString()} ${TYPES.find((t) => t.id === type)!.label.toLowerCase()} result${total === 1 ? '' : 's'}` : result.loading ? 'Searching…' : ''}
+                  {result.data ? resultsHeading(type, total) : result.loading ? 'Searching…' : ''}
                   {result.data?.incomplete_results && <span className={styles.incomplete}> (incomplete)</span>}
                 </h1>
                 {SORTS[type].length > 1 && (
@@ -417,9 +418,9 @@ function IssueResult({ i, href }: { i: SearchIssueItem; href: string }) {
       </span>
       <div className={styles.main}>
         <div className={styles.repoLine}>
-          <Link to={`/${repo}`} className={styles.subtle}>
+          <Link to={`/${repo}`} className={cx(styles.subtle, styles.ellipsis)}>
             {repo}
-          </Link>{' '}
+          </Link>
           <span className={styles.subtle}>#{i.number}</span>
         </div>
         <Link to={href} className={styles.title}>
@@ -434,7 +435,7 @@ function IssueResult({ i, href }: { i: SearchIssueItem; href: string }) {
           ))}
           {i.user && (
             <span>
-              <Avatar user={{ login: i.user.login, avatarUrl: i.user.avatar_url }} size={14} /> {i.user.login}
+              <Avatar user={{ login: i.user.login, avatarUrl: i.user.avatar_url }} size={14} /> <span className={styles.ellipsis}>{i.user.login}</span>
             </span>
           )}
           <span>
@@ -518,7 +519,7 @@ function CodeResult({ c, href }: { c: SearchCodeItem; href: string }) {
     <div className={styles.code}>
       <div className={styles.codeHeader}>
         <FileCodeIcon size={16} />
-        <Link to={`/${c.repository.full_name}`} className={styles.subtle}>
+        <Link to={`/${c.repository.full_name}`} className={cx(styles.subtle, styles.ellipsis)}>
           {c.repository.full_name}
         </Link>
         <span className={styles.subtle}>·</span>
@@ -558,7 +559,7 @@ function CommitResult({ c, href }: { c: SearchCommitItem; href: string }) {
       </span>
       <div className={styles.main}>
         <div className={styles.repoLine}>
-          <Link to={`/${c.repository.full_name}`} className={styles.subtle}>
+          <Link to={`/${c.repository.full_name}`} className={cx(styles.subtle, styles.ellipsis)}>
             {c.repository.full_name}
           </Link>
         </div>
@@ -569,10 +570,10 @@ function CommitResult({ c, href }: { c: SearchCommitItem; href: string }) {
         <div className={styles.meta}>
           {c.author ? (
             <span>
-              <Avatar user={{ login: c.author.login, avatarUrl: c.author.avatar_url }} size={14} /> {c.author.login}
+              <Avatar user={{ login: c.author.login, avatarUrl: c.author.avatar_url }} size={14} /> <span className={styles.ellipsis}>{c.author.login}</span>
             </span>
           ) : (
-            <span>{c.commit.author.name}</span>
+            <span className={styles.ellipsis}>{c.commit.author.name}</span>
           )}
           <span>
             committed <RelativeTime date={c.commit.author.date} />

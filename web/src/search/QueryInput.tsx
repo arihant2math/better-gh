@@ -51,11 +51,13 @@ export function QueryInput({
   const [caret, setCaret] = useState(value.length);
   const [focused, setFocused] = useState(!!autoFocus);
   const [dismissed, setDismissed] = useState(false);
+  // Suggestions open only once the user types or presses ↓, never on (auto)focus alone (#59).
+  const [engaged, setEngaged] = useState(false);
   const [active, setActive] = useState(0);
   const [navigated, setNavigated] = useState(false);
   const listId = useMemo(() => `qi-${Math.random().toString(36).slice(2, 8)}`, []);
 
-  const items = useMemo(() => (focused && !dismissed ? suggest(set, value, Math.min(caret, value.length), source) : []), [focused, dismissed, set, value, caret, source]);
+  const items = useMemo(() => (focused && engaged && !dismissed ? suggest(set, value, Math.min(caret, value.length), source) : []), [focused, engaged, dismissed, set, value, caret, source]);
   const open = items.length > 0;
   const current = items[Math.min(active, items.length - 1)];
 
@@ -83,6 +85,13 @@ export function QueryInput({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (!open && e.key === 'ArrowDown' && (!engaged || dismissed)) {
+      e.preventDefault();
+      syncCaret();
+      setEngaged(true);
+      setDismissed(false);
+      return;
+    }
     if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
       setNavigated(true);
@@ -131,6 +140,7 @@ export function QueryInput({
         onChange={(e) => {
           onChange(e.target.value);
           setCaret(e.target.selectionStart ?? e.target.value.length);
+          setEngaged(true);
           setDismissed(false);
           setActive(0);
           setNavigated(false);
@@ -146,6 +156,7 @@ export function QueryInput({
         }}
         onBlur={() => {
           setFocused(false);
+          setEngaged(false);
           setDismissed(false);
           onBlur?.();
         }}
