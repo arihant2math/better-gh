@@ -38,3 +38,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 22:14Z: A opened #352 (#226), awaiting green. #150 no longer open (owner merged/closed).
 - 22:24Z: #351 APPROVE @d1e0c6f (=head), CI green; sent to coordinator. Nit: window.fetch/globalThis.fetch not caught.
 - 22:25Z: #351 merged as e26be86; B worker+reviewer archived; fresh B worker for #213. Filed #353 (nits: window.fetch, observer alias, ubuntu-24.04 pin). #150 merged by owner 22:05.
+- 22:31Z: #352 Rust tests running; C in gate for #341; hourly status sent.
