@@ -27,7 +27,7 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 | #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | #93 | in review (session_0138qu5VQL9FTrSUSvCkrMCm) |
 | #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | #88 | in review (session_01By5xV53cQckCS8sQpYfvSC) |
 | #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | #82 | MERGED, archived |
-| #42 bundle budget | session_01EqGtoarvzLipstEVahMUUk | #147 | S-NeedsReview; reviewer held pending orchestrator |
+| #42 bundle budget | session_01EqGtoarvzLipstEVahMUUk | #147 | in review (session_018z5wVqspWwUoapxgfs2FHb, started by orchestrator) |
 | #52+#51+#53 command palette | session_013fSYvtqc39XjY3386rsMor | — | working |
 | #68+#69+#70 PR timeline | session_01QpEnrtN98FRjCg8vGgLuZj | — | working |
 | #76 slash branch names | session_01ULxkjyqgpub6jn2a4ZR4oB | — | working |
