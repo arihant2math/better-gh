@@ -14,6 +14,7 @@ use super::git::{self, Commit};
 use super::issue::{
     self, Conversation, IssueConnection, ListFilter, association, html_to_text, render_html,
 };
+use super::merge_queue::PullMergeQueue;
 use super::misc::{ReactionGroup, load_reaction_groups};
 use super::repo::{self, Ref, Repository};
 use super::{Actor, RepositoryOwner, nid};
@@ -31,11 +32,16 @@ pub struct PullOnly {
 
 /// A repository pull request.
 #[derive(MergedObject, Clone)]
-pub struct PullRequest(pub PullOnly, pub Conversation);
+pub struct PullRequest(pub PullOnly, pub Conversation, pub PullMergeQueue);
 
 impl PullRequest {
     pub fn new(i: Arc<db::Issue>, p: Arc<db::PullRequest>) -> Self {
-        Self(PullOnly { i: i.clone(), p }, Conversation { i })
+        let mq = PullMergeQueue {
+            pull_id: i.id,
+            repo_id: p.repo_id,
+            base_ref: p.base_ref.clone(),
+        };
+        Self(PullOnly { i: i.clone(), p }, Conversation { i }, mq)
     }
     pub fn issue(&self) -> &db::Issue {
         &self.0.i

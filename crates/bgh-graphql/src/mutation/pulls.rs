@@ -821,6 +821,23 @@ impl PullMutations {
     ) -> GResult<EnablePullRequestAutoMergePayload> {
         let a = guard(ctx)?;
         let (issue, repo) = pull_by_node(ctx, &input.pull_request_id).await?;
+        // Like GitHub (and what `gh pr merge --auto` relies on): a base
+        // branch with a merge queue adds the PR to the queue instead.
+        if super::merge_queue::queue_required(ctx, &issue).await? {
+            super::merge_queue::enqueue(
+                ctx,
+                a,
+                &issue,
+                &repo,
+                false,
+                input.expected_head_oid.as_ref(),
+            )
+            .await?;
+            return Ok(EnablePullRequestAutoMergePayload {
+                pull_request: Some(pr(ctx, issue.id).await?),
+                client_mutation_id: input.client_mutation_id,
+            });
+        }
         let (o, r) = owner_repo(&repo);
         into_json(
             bgh_pulls::automerge::put(

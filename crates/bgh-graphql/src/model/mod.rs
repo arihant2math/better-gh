@@ -9,6 +9,7 @@ pub mod enums;
 pub mod git;
 pub mod issue;
 pub mod issue_type;
+pub mod merge_queue;
 pub mod misc;
 pub mod moderation;
 pub mod project;
@@ -59,6 +60,8 @@ pub enum Node {
     ProjectV2SingleSelectField(project::ProjectV2SingleSelectField),
     ProjectV2IterationField(project::ProjectV2IterationField),
     ProjectV2View(project::ProjectV2View),
+    MergeQueue(merge_queue::MergeQueue),
+    MergeQueueEntry(merge_queue::MergeQueueEntry),
 }
 
 /// Represents an object which can take actions on GitHub.
