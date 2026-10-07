@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MockServer } from '../mock/server';
 import { SyncClient } from '../sync/client';
 import { setSyncClient } from '../sync/index';
 import { MemoryPersistence } from '../sync/persistence';
 import { SUDO_REQUIRED_PREFIX, requestSudo, setSudoHandler } from './client';
 import { deleteRepo, transferRepo } from './repoSettings';
 import type { Transport } from './transport';
+import { newServer } from '../test/mockServer';
 
 // #242: repo delete/transfer go through the sync tx queue; an expired sudo
 // mode must prompt and retry, never log the user out.
@@ -26,7 +26,7 @@ afterEach(() => {
 
 /** Mock server whose sudo mode has expired: `path` answers 401 SUDO_REQUIRED until `grant()`. */
 async function setup(method: string, path: string) {
-  const server = new MockServer(null, {});
+  const server = newServer();
   let sudo = false;
   const hits: number[] = [];
   const transport: Transport = {

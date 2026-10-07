@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
+import { newServer } from '../../test/mockServer';
 
 describe('upload mocks', () => {
-  const s = new MockServer(null, {});
+  const s = newServer();
   const up = (name: string, body: BodyInit) => s.fetch(`/_bgh/uploads?name=${encodeURIComponent(name)}`, { method: 'POST', body });
 
   it('stores images as renderable markdown', async () => {

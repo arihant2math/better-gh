@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Environment, PendingDeployment, WorkflowRun } from '../api/actions';
 import { actionsMock } from './actions';
-import { MockServer } from './server';
+import type { MockServer } from './server';
+import { call, newServer } from '../test/mockServer';
 
 const NOW = Date.parse('2026-10-05T12:00:00Z');
 const BASE = '/api/v3/repos/acme/api';
@@ -12,15 +13,9 @@ afterEach(() => {
   server = null;
 });
 
-async function call<T>(s: MockServer, method: string, path: string, body?: unknown): Promise<{ status: number; body: T }> {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
-  const text = await res.text();
-  return { status: res.status, body: (text ? JSON.parse(text) : null) as T };
-}
-
 describe('mock environment protection', () => {
   it('renders and updates protection rules and branch policies', async () => {
-    const s = (server = new MockServer(null, { now: NOW }));
+    const s = (server = newServer({ now: NOW }));
     const prod = await call<Environment>(s, 'GET', `${BASE}/environments/production`);
     expect(prod.body.protection_rules?.map((r) => r.type)).toEqual(['required_reviewers', 'branch_policy']);
     expect(prod.body.deployment_branch_policy).toEqual({ protected_branches: true, custom_branch_policies: false });
@@ -44,7 +39,7 @@ describe('mock environment protection', () => {
   });
 
   it('holds production deploys until approved', async () => {
-    const s = (server = new MockServer(null, { now: NOW }));
+    const s = (server = newServer({ now: NOW }));
     const ok = await call<{ workflow_run_id: number }>(s, 'POST', `${BASE}/actions/workflows/deploy.yml/dispatches`, { ref: 'main', inputs: {}, return_run_details: true });
     const queued = { id: ok.body.workflow_run_id };
     const mock = actionsMock(s)!;

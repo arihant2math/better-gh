@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
-
-const get = async (s: MockServer, path: string, accept?: string) => {
-  const r = await s.fetch(path, accept ? { headers: { accept } } : {});
-  return { status: r.status, body: r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text() };
-};
+import { get, newServer } from '../test/mockServer';
 
 describe('mock code tab backend', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const repo = [...s.db.tables.repo.values()][0]!;
   const base = `/_bgh/repos/${repo.owner}/${repo.name}`;
 
@@ -43,7 +38,7 @@ describe('mock code tab backend', () => {
     expect(cmp.body.files.length).toBeGreaterThan(0);
     const commit = await get(s, `/api/v3/repos/${repo.owner}/${repo.name}/commits/${feat.commit.sha}`);
     expect(commit.body.files.length).toBe(1);
-    const diff = await get(s, `/api/v3/repos/${repo.owner}/${repo.name}/commits/${feat.commit.sha}`, 'application/vnd.github.diff');
+    const diff = await get(s, `/api/v3/repos/${repo.owner}/${repo.name}/commits/${feat.commit.sha}`, { accept: 'application/vnd.github.diff' });
     expect(diff.body).toContain('diff --git');
   });
 });

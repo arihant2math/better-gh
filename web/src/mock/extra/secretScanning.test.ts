@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as unknown) : null, headers: res.headers };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('secret scanning mocks', () => {
   it('lists, filters, closes and reopens alerts', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const open = await call(s, 'GET', '/api/v3/repos/acme/api/secret-scanning/alerts?state=open');
     expect(open.status).toBe(200);
     const alerts = open.body as Json[];
@@ -31,7 +23,7 @@ describe('secret scanning mocks', () => {
   });
 
   it('answers 404 with a message when disabled, and enables through security_and_analysis', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const off = await call(s, 'GET', '/api/v3/repos/acme/design-system/secret-scanning/alerts');
     expect(off.status).toBe(404);
     expect((off.body as Json).message).toBe('Secret scanning is disabled on this repository.');
@@ -50,7 +42,7 @@ describe('secret scanning mocks', () => {
   });
 
   it('bypasses a push block once and records an alert for "fix later"', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const P = '/_bgh/repos/acme/api/secret-scanning/push-blocks/2mQ8xVnR1kPq7sT3A9';
     const block = await call(s, 'GET', P);
     expect(block.body).toMatchObject({ secret_type: 'aws_access_key_id', path: 'deploy/terraform.tfvars', bypassed_at: null });
@@ -66,7 +58,7 @@ describe('secret scanning mocks', () => {
   });
 
   it('manages and tests custom patterns, and lists org alerts', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const t = await call(s, 'POST', '/_bgh/secret-scanning/custom-patterns/test', { pattern: 'key_[0-9]+', test_string: 'a key_12 b key_9' });
     expect(t.body).toEqual({ valid: true, error: null, matches: [{ start: 2, end: 8, text: 'key_12' }, { start: 11, end: 16, text: 'key_9' }] });
     expect(((await call(s, 'POST', '/_bgh/secret-scanning/custom-patterns/test', { pattern: '(', test_string: '' })).body as Json).valid).toBe(false);

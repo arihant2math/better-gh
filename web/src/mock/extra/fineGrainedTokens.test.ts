@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
+import type { MockServer } from '../server';
+import { call, newServer } from '../../test/mockServer';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : null, link: res.headers.get('link') };
-}
-
 const create = (s: MockServer, over: Record<string, unknown> = {}) =>
   call(s, 'POST', '/_bgh/fine-grained-tokens', {
     name: 'deploy bot',
@@ -25,7 +16,7 @@ const create = (s: MockServer, over: Record<string, unknown> = {}) =>
 
 describe('fine-grained token mocks', () => {
   it('serves owners and the permission catalog', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const owners = await call(s, 'GET', '/_bgh/fine-grained-tokens/owners');
     expect(owners.status).toBe(200);
     expect(owners.body[0].type).toBe('User');
@@ -37,7 +28,7 @@ describe('fine-grained token mocks', () => {
   });
 
   it('validates and creates tokens (active without approval)', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await create(s, { name: '' })).status).toBe(422);
     expect((await create(s, { expires_in_days: undefined })).body.errors[0].field).toBe('expires_in_days');
     expect((await create(s, { expires_in_days: 400 })).status).toBe(422);
@@ -63,7 +54,7 @@ describe('fine-grained token mocks', () => {
   });
 
   it('rejects organization permissions for a personal resource owner and resolves repository names', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const me = (await call(s, 'GET', '/_bgh/fine-grained-tokens/owners')).body[0].login;
     expect((await create(s, { resource_owner: me })).status).toBe(422);
     const repos = (await call(s, 'GET', '/api/v3/orgs/acme/repos?per_page=100')).body;
@@ -73,7 +64,7 @@ describe('fine-grained token mocks', () => {
   });
 
   it('applies the org policy: approval, max lifetime, disallowed', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const pol = await call(s, 'GET', '/_bgh/orgs/acme/pat-policy');
     expect(pol.body).toEqual({ fine_grained_allowed: true, fine_grained_require_approval: false, fine_grained_max_lifetime_days: null, classic_allowed: true, classic_max_lifetime_days: null });
     expect((await call(s, 'PATCH', '/_bgh/orgs/acme/pat-policy', { fine_grained_max_lifetime_days: 0 })).status).toBe(422);
@@ -93,7 +84,7 @@ describe('fine-grained token mocks', () => {
   });
 
   it('lists, approves, denies and revokes org tokens', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     await call(s, 'PATCH', '/_bgh/orgs/acme/pat-policy', { fine_grained_require_approval: true });
     const a = (await create(s, { name: 'a', reason: 'needs it' })).body;
     const b = (await create(s, { name: 'b' })).body;
@@ -107,7 +98,7 @@ describe('fine-grained token mocks', () => {
     expect(mineA.access_granted_at).toBeUndefined();
     const paged = await call(s, 'GET', '/api/v3/orgs/acme/personal-access-token-requests?per_page=1');
     expect(paged.body).toHaveLength(1);
-    expect(paged.link).toContain('rel="next"');
+    expect(paged.headers.get('link')).toContain('rel="next"');
 
     expect((await call(s, 'POST', `/api/v3/orgs/acme/personal-access-token-requests/${a.id}`, { action: 'maybe' })).status).toBe(422);
     expect((await call(s, 'POST', `/api/v3/orgs/acme/personal-access-token-requests/${a.id}`, { action: 'approve' })).status).toBe(204);

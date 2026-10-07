@@ -1,21 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return {
-    status: res.status,
-    headers: res.headers,
-    body: text ? (JSON.parse(text) as Json & Json[]) : null,
-  };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 const R = '/api/v3/repos/acme/api';
 const release = {
@@ -35,7 +19,7 @@ const release = {
 
 describe('rulesets mock', () => {
   it('creates, reads, updates and deletes repository rulesets', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const created = await call(s, 'POST', `${R}/rulesets`, release);
     expect(created.status).toBe(201);
     const id = created.body!.id as number;
@@ -51,13 +35,13 @@ describe('rulesets mock', () => {
       allowed_merge_methods: ['merge', 'squash', 'rebase'],
     });
 
-    const list = await call(s, 'GET', `${R}/rulesets`);
-    const names = list.body!.map((r) => r.name);
+    const list = await call<Json[]>(s, 'GET', `${R}/rulesets`);
+    const names = list.body.map((r) => r.name);
     expect(names).toContain('Releases');
     expect(names).toContain('Default branch baseline'); // org ruleset (includes_parents)
-    expect(list.body![0]).not.toHaveProperty('rules');
-    expect((await call(s, 'GET', `${R}/rulesets?includes_parents=false`)).body!.map((r) => r.name)).not.toContain('Default branch baseline');
-    expect((await call(s, 'GET', `${R}/rulesets?targets=tag`)).body!.every((r) => r.target === 'tag')).toBe(true);
+    expect(list.body[0]).not.toHaveProperty('rules');
+    expect((await call<Json[]>(s, 'GET', `${R}/rulesets?includes_parents=false`)).body.map((r) => r.name)).not.toContain('Default branch baseline');
+    expect((await call<Json[]>(s, 'GET', `${R}/rulesets?targets=tag`)).body.every((r) => r.target === 'tag')).toBe(true);
 
     const one = await call(s, 'GET', `${R}/rulesets/${id}`);
     expect(one.body!.bypass_actors).toEqual(release.bypass_actors);
@@ -75,7 +59,7 @@ describe('rulesets mock', () => {
   });
 
   it('validates like the backend', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const err = async (body: Json) => {
       const r = await call(s, 'POST', `${R}/rulesets`, body);
       expect(r.status).toBe(422);
@@ -117,23 +101,23 @@ describe('rulesets mock', () => {
   });
 
   it('serves branch rules and marks branches protected', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     await call(s, 'POST', `${R}/rulesets`, {
       ...release,
       conditions: { ref_name: { include: ['~ALL'], exclude: [] } },
     });
-    const rules = await call(s, 'GET', `${R}/rules/branches/main`);
+    const rules = await call<Json[]>(s, 'GET', `${R}/rules/branches/main`);
     expect(rules.status).toBe(200);
-    expect(rules.body!.find((r) => r.type === 'deletion')).toMatchObject({
+    expect(rules.body.find((r) => r.type === 'deletion')).toMatchObject({
       ruleset_source_type: 'Repository',
       ruleset_source: 'acme/api',
     });
-    const branches = await call(s, 'GET', `${R}/branches`);
-    expect(branches.body!.every((b) => b.protected)).toBe(true);
+    const branches = await call<Json[]>(s, 'GET', `${R}/branches`);
+    expect(branches.body.every((b) => b.protected)).toBe(true);
   });
 
   it('manages organization rulesets with repository targeting', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const O = '/api/v3/orgs/acme/rulesets';
     expect((await call(s, 'POST', O, release)).status).toBe(422); // needs a repository condition
     const c = await call(s, 'POST', O, {
@@ -153,27 +137,27 @@ describe('rulesets mock', () => {
       exclude: [],
       protected: false,
     });
-    expect((await call(s, 'GET', `${R}/rulesets`)).body!.map((r) => r.name)).toContain('Releases');
-    expect((await call(s, 'GET', '/api/v3/repos/acme/web/rulesets')).body!.map((r) => r.name)).not.toContain('Releases');
+    expect((await call<Json[]>(s, 'GET', `${R}/rulesets`)).body.map((r) => r.name)).toContain('Releases');
+    expect((await call<Json[]>(s, 'GET', '/api/v3/repos/acme/web/rulesets')).body.map((r) => r.name)).not.toContain('Releases');
     expect((await call(s, 'GET', O)).body!.length).toBe(2);
     expect((await call(s, 'DELETE', `${O}/${c.body!.id as number}`)).status).toBe(204);
     expect((await call(s, 'GET', '/api/v3/orgs/nobody-org/rulesets')).status).toBe(404);
   });
 
   it('serves rule suites with filters', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const all = await call(s, 'GET', `${R}/rulesets/rule-suites?time_period=month`);
     expect(all.status).toBe(200);
     expect(all.body!.length).toBeGreaterThan(3);
     expect(all.body![0]).not.toHaveProperty('rule_evaluations');
-    const failed = await call(s, 'GET', `${R}/rulesets/rule-suites?time_period=month&rule_suite_result=fail`);
-    expect(failed.body!.every((x) => x.result === 'fail')).toBe(true);
-    const tag = await call(s, 'GET', `${R}/rulesets/rule-suites?time_period=month&ref=v1.2.0`);
-    expect(tag.body!.map((x) => x.ref)).toEqual(['refs/tags/v1.2.0']);
-    const detail = await call(s, 'GET', `${R}/rulesets/rule-suites/${failed.body![0]!.id as number}`);
+    const failed = await call<Json[]>(s, 'GET', `${R}/rulesets/rule-suites?time_period=month&rule_suite_result=fail`);
+    expect(failed.body.every((x) => x.result === 'fail')).toBe(true);
+    const tag = await call<Json[]>(s, 'GET', `${R}/rulesets/rule-suites?time_period=month&ref=v1.2.0`);
+    expect(tag.body.map((x) => x.ref)).toEqual(['refs/tags/v1.2.0']);
+    const detail = await call(s, 'GET', `${R}/rulesets/rule-suites/${failed.body[0]!.id as number}`);
     expect(detail.body!.rule_evaluations).toBeInstanceOf(Array);
     expect((await call(s, 'GET', `${R}/rulesets/rule-suites?time_period=year`)).status).toBe(422);
-    const org = await call(s, 'GET', '/api/v3/orgs/acme/rulesets/rule-suites?time_period=month&repository_name=api');
-    expect(org.body!.every((x) => x.repository_name === 'api')).toBe(true);
+    const org = await call<Json[]>(s, 'GET', '/api/v3/orgs/acme/rulesets/rule-suites?time_period=month&repository_name=api');
+    expect(org.body.every((x) => x.repository_name === 'api')).toBe(true);
   });
 });

@@ -1,23 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
 import { fakeSshKey } from './developer';
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return {
-    status: res.status,
-    body: text ? (JSON.parse(text) as Record<string, unknown> & Record<string, unknown>[]) : null,
-  };
-}
+import { call, newServer } from '../../test/mockServer';
 
 describe('developer mocks', () => {
   it('validates and de-duplicates SSH keys', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const list = await call(s, 'GET', '/api/v3/user/keys');
     expect(list.body).toHaveLength(2);
     const bad = await call(s, 'POST', '/api/v3/user/keys', {
@@ -41,14 +28,14 @@ describe('developer mocks', () => {
   });
 
   it('manages SSH signing keys', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/api/v3/user/ssh_signing_keys')).body).toEqual([]);
     const missing = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { title: 'x' });
     expect(missing.status).toBe(422);
     const key = fakeSshKey('ed25519', 42);
     const created = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { key: `${key} me@box` });
     expect(created.status).toBe(201);
-    expect(Object.keys(created.body!).sort()).toEqual(['created_at', 'id', 'key', 'title']);
+    expect(Object.keys(created.body).sort()).toEqual(['created_at', 'id', 'key', 'title']);
     expect(created.body!.title).toBe('me@box');
     const dup = await call(s, 'POST', '/api/v3/user/ssh_signing_keys', { key });
     expect(dup.status).toBe(422);
@@ -60,7 +47,7 @@ describe('developer mocks', () => {
   });
 
   it('creates tokens that show the secret once', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const t = await call(s, 'POST', '/_bgh/tokens', {
       name: 'ci',
       scopes: ['repo'],
@@ -75,7 +62,7 @@ describe('developer mocks', () => {
   });
 
   it('manages OAuth apps and secrets', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/_bgh/applications', { name: 'A' })).status).toBe(422);
     const a = await call(s, 'POST', '/_bgh/applications', {
       name: 'A',
@@ -90,7 +77,7 @@ describe('developer mocks', () => {
   });
 
   it('patches notification settings partially', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const before = await call(s, 'GET', '/_bgh/notifications/settings');
     expect((before.body!.web as Record<string, boolean>).mention).toBe(true);
     const after = await call(s, 'PUT', '/_bgh/notifications/settings', {

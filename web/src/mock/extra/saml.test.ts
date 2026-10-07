@@ -1,23 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, {
-    method,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 const SCIM = '/api/v3/scim/v2/enterprises/enterprise';
 
 describe('SAML / SCIM mock', () => {
   it('advertises SAML on the site info and keeps the SP key write-only', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/_bgh/site')).body!.saml).toEqual({ display_name: 'Okta', login_url: '/_bgh/saml/login' });
     const kp = await call(s, 'POST', '/_bgh/admin/saml/keypair');
     expect(kp.status).toBe(201);
@@ -38,7 +26,7 @@ describe('SAML / SCIM mock', () => {
   });
 
   it('validates SAML settings like the backend', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const ap = (await call(s, 'GET', '/_bgh/admin/settings')).body!.auth_providers as Json;
     const r = await call(s, 'PATCH', '/_bgh/admin/settings', { auth_providers: { ...ap, saml: { ...(ap.saml as Json), idp_sso_url: 'nope' } } });
     expect(r.status).toBe(422);
@@ -46,7 +34,7 @@ describe('SAML / SCIM mock', () => {
   });
 
   it('parses IdP metadata', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const xml = `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.test"><md:IDPSSODescriptor>
       <md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIBAAAA</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>
       <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://idp.test/post"/>
@@ -63,7 +51,7 @@ describe('SAML / SCIM mock', () => {
   });
 
   it('lists SCIM users and groups with filters and paging, 404 when disabled', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const all = (await call(s, 'GET', `${SCIM}/Users?startIndex=1&count=2`)).body!;
     expect(all).toMatchObject({ totalResults: 4, itemsPerPage: 2, startIndex: 1 });
     const next = (await call(s, 'GET', `${SCIM}/Users?startIndex=3&count=2`)).body!;

@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
 import { authState, normalizeUserCode, parseScopes } from './auth';
-
-async function call(server: MockServer, method: string, path: string, body?: unknown) {
-  const res = await server.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'content-type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Record<string, unknown>) : null };
-}
+import { call, newServer } from '../../test/mockServer';
 
 describe('auth mocks', () => {
   it('login magic passwords and 2fa', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     s.signedIn = false;
     expect((await call(s, 'POST', '/_bgh/auth/login', { login: 'x', password: 'throttle' })).status).toBe(429);
     expect((await call(s, 'POST', '/_bgh/auth/login', { login: 'x', password: 'wrong' })).status).toBe(422);
@@ -25,7 +19,7 @@ describe('auth mocks', () => {
   });
 
   it('sso two-factor session endpoint', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     s.signedIn = false;
     expect((await call(s, 'POST', '/_bgh/session/two_factor', { two_factor_token: 'nope', code: '123456' })).status).toBe(401);
     expect((await call(s, 'POST', '/_bgh/session/two_factor', { two_factor_token: 'sso-2fa-token', code: 'abcde-12345' })).status).toBe(200);
@@ -33,7 +27,7 @@ describe('auth mocks', () => {
   });
 
   it('password reset', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/_bgh/password_reset', { email: '' })).status).toBe(422);
     expect((await call(s, 'POST', '/_bgh/password_reset', { email: 'who@ever.com' })).status).toBe(202);
     expect((await call(s, 'GET', '/_bgh/password_reset/nope')).status).toBe(404);
@@ -50,14 +44,14 @@ describe('auth mocks', () => {
   });
 
   it('email verification is single use', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/_bgh/emails/verify', { token: 'bad' })).status).toBe(404);
     expect((await call(s, 'POST', '/_bgh/emails/verify', { token: 'valid' })).body).toMatchObject({ verified: true });
     expect((await call(s, 'POST', '/_bgh/emails/verify', { token: 'valid' })).status).toBe(404);
   });
 
   it('device flow', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/_bgh/device/ZZZZ-ZZZZ')).status).toBe(404);
     const info = await call(s, 'GET', '/_bgh/device/abcd1234');
     expect(info.body).toMatchObject({ user_code: 'ABCD-1234', app: { name: 'GitHub CLI' } });
@@ -68,7 +62,7 @@ describe('auth mocks', () => {
   });
 
   it('oauth consent', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'GET', '/_bgh/oauth/authorize')).status).toBe(422);
     expect((await call(s, 'GET', '/_bgh/oauth/authorize?client_id=unknown')).status).toBe(422);
     const q = '/_bgh/oauth/authorize?client_id=abc&redirect_uri=http%3A%2F%2Flocalhost%3A9%2Fcb&scope=repo%20bogus%20read:org&state=xyz';
@@ -93,7 +87,7 @@ describe('auth mocks', () => {
   });
 
   it('serves public site info', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     s.signedIn = false;
     const r = await call(s, 'GET', '/_bgh/site');
     expect(r.status).toBe(200);
