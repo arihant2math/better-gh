@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
-| B frontend | session_01WmJgQQUXw6fzN2GtxWckvE | #203 | — | — |
+| B frontend | session_01WmJgQQUXw6fzN2GtxWckvE | #203 | #351 (Part of #203) | session_01Fv73PPpsXiAcvHkbbChpHD (sonnet) |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -34,3 +34,4 @@ C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open f
 - 21:54Z: #347 REQUEST_CHANGES @e5f13c0: file follow-up issues for 61 hooks-v7 warnings + 21 switch-exhaustiveness hits; relayed to B.
 - 21:55Z: #347 re-review APPROVE @e5f13c0 (=head; follow-ups #349 #350); CI green; sent to coordinator.
 - 21:56Z: #347 merged as 44226d1; B worker+reviewer archived; fresh B worker for #203 (max-warnings-0 deferred until #349/#213).
+- 22:10Z: B opened #351 (Part of #203), green; sonnet reviewer spawned.
