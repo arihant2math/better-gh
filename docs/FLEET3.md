@@ -36,3 +36,4 @@ C: #150 DONE (approved, awaiting owner merge) → #341 → #343 → other open f
 - 21:56Z: #347 merged as 44226d1; B worker+reviewer archived; fresh B worker for #203 (max-warnings-0 deferred until #349/#213).
 - 22:10Z: B opened #351 (Part of #203), green; sonnet reviewer spawned.
 - 22:14Z: A opened #352 (#226), awaiting green. #150 no longer open (owner merged/closed).
+- 22:24Z: #351 APPROVE @d1e0c6f (=head), CI green; sent to coordinator. Nit: window.fetch/globalThis.fetch not caught.
