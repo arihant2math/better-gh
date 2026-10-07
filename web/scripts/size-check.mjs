@@ -96,6 +96,15 @@ for (const [f, g] of lazy) {
 if (diagramFiles.size) console.log(`Diagram chunks (on demand, budget ${kb(BUDGET.diagramChunkGzip)} each): ${diagramFiles.size}`);
 if (!entry) failures.push('no index.html entry in manifest');
 
+// index.html must modulepreload every chunk the entry statically imports, so
+// the browser fetches them alongside the entry rather than after parsing it
+// (#268). Preload only downloads; the chunks still execute on import.
+const html = readFileSync(join(dist, 'index.html'), 'utf8');
+const preloaded = new Set([...html.matchAll(/<link\b[^>]*\brel="modulepreload"[^>]*>/g)].map((m) => /\bhref="\/?([^"]+)"/.exec(m[0])?.[1]));
+const missing = [...initialJs].filter((f) => f !== entry?.file && !preloaded.has(f));
+console.log(`Entry modulepreloads: ${initialJs.size - 1 - missing.length}/${initialJs.size - 1}`);
+if (missing.length) failures.push(`index.html lacks <link rel="modulepreload"> for entry deps:\n    ${missing.join('\n    ')}`);
+
 if (failures.length) {
   console.error(`\n✗ Bundle budget exceeded:\n  ${failures.join('\n  ')}\n`);
   process.exit(1);

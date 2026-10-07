@@ -34,6 +34,11 @@ function bareFor(pathname: string): BarePage | undefined {
   return BARE.find((b) => b.re.test(pathname));
 }
 
+/** Rendered without the shell and router (so it has no route chunks to preload). */
+export function isBarePath(pathname: string): boolean {
+  return !!bareFor(pathname);
+}
+
 /** Where users without 2FA are sent when the site requires it. */
 export const TWO_FACTOR_SETUP_PATH = '/settings/security';
 

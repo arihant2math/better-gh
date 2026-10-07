@@ -2,8 +2,9 @@ import './ui/global.css';
 import { configure } from 'mobx';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './app/App';
+import { App, isBarePath } from './app/App';
 import { registerRoutes } from './app/routes';
+import { preloadRoute } from './router';
 import { dropShellCache, session } from './app/session';
 import { bootIsStale, getBoot, isMockMode, setBoot, type BootData } from './boot';
 import { shortcuts } from './shortcuts/manager';
@@ -41,6 +42,9 @@ async function main() {
   }
 
   registerRoutes();
+  // Fetch the current page's chunks while the store opens/hydrates/bootstraps
+  // (bare pages such as /login render without waiting for the store).
+  if (getBoot().user && !isBarePath(location.pathname)) void preloadRoute(location.pathname);
   document.addEventListener('keydown', shortcuts.handleKeyDown);
 
   // Boot data is final now.

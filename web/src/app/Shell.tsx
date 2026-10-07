@@ -28,7 +28,7 @@ function startLazy<M>(load: () => Promise<M>, start: (m: M) => () => void): () =
   };
 }
 
-function GlobalShortcuts() {
+const GlobalShortcuts = observer(function GlobalShortcuts() {
   useShortcuts('Global', {
     'mod+k': { handler: () => ui.openPalette(), description: 'Command palette', group: 'General', allowInInput: true },
     'mod+shift+p': { handler: () => ui.openPalette('commands'), description: 'Run a command', group: 'General', allowInInput: true },
@@ -51,9 +51,13 @@ function GlobalShortcuts() {
       group: 'Issues',
     },
   });
-  useEffect(() => startLazy(loadCommands, (m) => m.registerGlobalCommands()), []);
+  // Off the critical path: wait for the store (and the route chunks it gates).
+  const ready = session.ready;
+  useEffect(() => {
+    if (ready) return startLazy(loadCommands, (m) => m.registerGlobalCommands());
+  }, [ready]);
   return null;
-}
+});
 
 /**
  * Palette command lists (titles, keywords, icons) are only needed once the
@@ -90,7 +94,11 @@ const NewIssueDialog = lazy(loadNewIssue);
  */
 const Overlays = observer(function Overlays() {
   const [ready, setReady] = useState(false);
+  // Idle time before the store is ready is still the critical path (bootstrap
+  // and the route chunks), so start counting only once it is.
+  const storeReady = session.ready;
   useEffect(() => {
+    if (!storeReady) return;
     let live = true;
     const load = () =>
       void Promise.all([loadPalette(), loadHelp(), loadNewIssue()]).then(
@@ -109,7 +117,7 @@ const Overlays = observer(function Overlays() {
       live = false;
       cancel();
     };
-  }, []);
+  }, [storeReady]);
   // One boundary each: a sibling mounting later must not hide an open one.
   return (
     <>
@@ -127,7 +135,10 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
     site.start();
     return () => site.stop();
   }, []);
-  useEffect(() => startLazy(() => import('./unread'), (m) => m.startUnreadIndicators()), []);
+  const ready = session.ready;
+  useEffect(() => {
+    if (ready) return startLazy(() => import('./unread'), (m) => m.startUnreadIndicators());
+  }, [ready]);
   return (
     <div className={styles.shell} data-sidebar={ui.sidebarCollapsed ? 'collapsed' : 'open'}>
       <a href="#content" className={styles.skip}>
@@ -144,7 +155,7 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
         )}
         <TopBar />
         <main id="content" ref={setContent} className={styles.content} tabIndex={-1}>
-          {session.ready ? (
+          {ready ? (
             children
           ) : (
             <div className={styles.loading}>
