@@ -10,7 +10,8 @@ import { Tooltip } from '../../ui/Tooltip';
 import styles from './Code.module.css';
 import { CodeLines } from './CodeLines';
 import { useBlame } from './data';
-import { codeUrl, type CodeTarget, type LineRange } from './util';
+import { type CodeTarget, type LineRange } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 interface LineInfo {
   commit: BlameCommit | undefined;

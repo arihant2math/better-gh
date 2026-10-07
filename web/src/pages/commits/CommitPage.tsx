@@ -8,6 +8,7 @@ import type { RestUser } from '../../api/types';
 import type { DiffSource } from '../../components/diff/DiffView';
 import { DiffViewer } from '../../components/diff/DiffViewer';
 import { Link, navigate, useParams } from '../../router';
+import { repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
@@ -96,7 +97,7 @@ function CommitHeader({ repo, c }: { repo: Repo; c: RestCommitDetail }) {
     <div className={styles.commitHeader}>
       <div className={styles.commitTitleRow}>
         <h1 className={styles.commitTitle}>{summary}</h1>
-        <Button size="sm" leadingIcon={CodeIcon} onClick={() => navigate(`${base}/tree/${c.sha}`)}>
+        <Button size="sm" leadingIcon={CodeIcon} onClick={() => navigate(treeUrl(repoRefOf(repo), c.sha))}>
           Browse files
         </Button>
       </div>

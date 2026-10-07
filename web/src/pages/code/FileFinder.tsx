@@ -8,7 +8,8 @@ import { Kbd } from '../../ui/Badge';
 import { Spinner } from '../../ui/Spinner';
 import styles from './Code.module.css';
 import { prefetchBlob, useFileList } from './data';
-import { codeUrl, isSettled, type CodeTarget } from './util';
+import { isSettled, type CodeTarget } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 const MAX_RESULTS = 60;
 
