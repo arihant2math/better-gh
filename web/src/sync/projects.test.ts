@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { setTransport } from '../api/transport';
-import { MockServer } from '../mock/server';
 import { loadSnapshot } from '../pages/projects/data';
 import { keyForIndex } from '../pages/projects/dnd';
 import { SyncClient } from './client';
@@ -8,6 +7,7 @@ import { compareKeys } from './fractional';
 import { setSyncClient } from './index';
 import { MemoryPersistence } from './persistence';
 import { addDraftItem, compareItems, fieldsForProject, itemsForProject, moveItem, projectByNumber, viewsForProject } from './projects';
+import { newServer } from '../test/mockServer';
 
 const until = async (cond: () => boolean, ms = 3000) => {
   const start = Date.now();
@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 async function setup() {
-  const server = new MockServer(null, { now: Date.parse('2026-10-01T12:00:00Z') });
+  const server = newServer({ now: Date.parse('2026-10-01T12:00:00Z') });
   const a = new SyncClient({ userId: server.db.viewerId, transport: server, persistence: new MemoryPersistence() });
   const b = new SyncClient({ userId: server.db.viewerId, transport: server, persistence: new MemoryPersistence() });
   clients.push(a, b);

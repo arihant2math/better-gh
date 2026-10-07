@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, headers: res.headers, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('repo nav mocks', () => {
   it('forks, lists forks, syncs the fork and reports its parent', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const before = s.repo('acme', 'api')!.forks;
     const f = await call(s, 'POST', '/api/v3/repos/acme/api/forks', { name: 'api-fork', default_branch_only: true });
     expect(f.status).toBe(202);
@@ -31,7 +23,7 @@ describe('repo nav mocks', () => {
   });
 
   it('paginates stargazers with a Link header', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const r = await call(s, 'GET', '/api/v3/repos/acme/api/stargazers?per_page=1');
     expect(r.status).toBe(200);
     expect((r.body as Json[]).length).toBeLessThanOrEqual(1);

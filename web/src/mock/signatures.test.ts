@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
+import { newServer } from '../test/mockServer';
 
 describe('mock commit signatures', () => {
   it('serves badges for signed commits only, consistent with the REST commit', async () => {
-    const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+    const s = newServer({ now: Date.UTC(2026, 9, 1) });
     const repo = [...s.db.tables.repo.values()][0]!;
     const base = `/${repo.owner}/${repo.name}`;
     const hist = await (await s.fetch(`/_bgh/repos${base}/history/${repo.defaultBranch}?per_page=20`)).json();

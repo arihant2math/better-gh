@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { browserTransport, setTransport } from '../../api/transport';
 import type { RestCommit } from '../../api/types';
-import { MockServer } from '../../mock/server';
 import { SyncClient } from '../../sync/client';
 import { setSyncClient } from '../../sync/index';
 import type { Issue, Review } from '../../sync/models';
@@ -10,6 +9,7 @@ import { addReviewComment, applySuggestions, setFileViewed } from '../../sync/pu
 import { threadsForPull } from '../../sync/pullSelectors';
 import { formatRange, inRange, lastReviewCommit, parseRange, rangeRefs, resolveRange, toggleCommit } from './range';
 import { addToBatch, batchOf, clearBatch, defaultSuggestionMessage, inBatch, removeFromBatch } from './suggestionBatch';
+import { newServer } from '../../test/mockServer';
 
 const commit = (sha: string, msg: string, parent?: string): RestCommit => ({
   sha,
@@ -117,7 +117,7 @@ describe('viewed files and suggestions (mock backend)', () => {
   });
 
   async function setup() {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     setTransport(server);
     c = new SyncClient({ userId: server.db.viewerId, transport: server, persistence: new MemoryPersistence() });
     setSyncClient(c);

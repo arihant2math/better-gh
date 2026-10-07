@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MergeQueue, MergeQueueEntry, PullRequirements } from '../../api/types';
-import { MockServer } from '../server';
-
-async function call<T = Record<string, unknown>>(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: (text ? JSON.parse(text) : null) as T };
-}
+import type { MockServer } from '../server';
+import { call, newServer } from '../../test/mockServer';
 
 const Q = '/_bgh/repos/nebula-labs/quark';
 
@@ -17,7 +12,7 @@ function openPulls(s: MockServer, owner: string, name: string) {
 
 describe('merge queue mocks', () => {
   it('serves the seeded queue and requirements.merge_queue', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const q = await call<MergeQueue>(s, 'GET', `${Q}/queue/main`);
     expect(q.status).toBe(200);
     expect(q.body.enabled).toBe(true);
@@ -35,7 +30,7 @@ describe('merge queue mocks', () => {
   });
 
   it('enqueues and dequeues with validation', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const queued = (await call<MergeQueue>(s, 'GET', `${Q}/queue/main`)).body.entries.map((e) => e.pull.number);
     const pulls = openPulls(s, 'nebula-labs', 'quark').filter((p) => !queued.includes(p.number) && !p.draft);
     const ok = pulls.find((p) => p.reviewDecision === 'approved' && p.checks !== 'failure' && p.mergeableState !== 'dirty');

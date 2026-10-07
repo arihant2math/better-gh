@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ActionsCache } from '../api/caches';
 import { refLabel } from '../pages/actions/caches/CachesPage';
-import { MockServer } from './server';
+import type { MockServer } from './server';
+import { get, newServer } from '../test/mockServer';
 
 const BASE = '/api/v3/repos/acme/api/actions';
 
@@ -13,14 +14,9 @@ afterEach(() => {
 
 type List = { total_count: number; actions_caches: ActionsCache[] };
 
-async function get<T>(s: MockServer, path: string): Promise<{ status: number; body: T }> {
-  const res = await s.fetch(path);
-  return { status: res.status, body: (await res.json()) as T };
-}
-
 describe('actions caches mock', () => {
   it('lists, filters, sorts and deletes caches', async () => {
-    const s = (server = new MockServer(null, { now: Date.parse('2026-10-05T12:00:00Z') }));
+    const s = (server = newServer({ now: Date.parse('2026-10-05T12:00:00Z') }));
     const all = await get<List>(s, `${BASE}/caches`);
     expect(all.status).toBe(200);
     expect(all.body.total_count).toBe(all.body.actions_caches.length);

@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
-
-const call = async (s: MockServer, method: string, path: string, body?: unknown) => {
-  const r = await s.fetch(path, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const ct = r.headers.get('content-type') ?? '';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose JSON in tests
-  const data: any = ct.includes('json') ? await r.json() : await r.text();
-  return { status: r.status, body: data };
-};
+import { call, newServer } from '../test/mockServer';
 
 const b64 = (text: string) => {
   const bytes = new TextEncoder().encode(text);
@@ -17,7 +9,7 @@ const b64 = (text: string) => {
 };
 
 describe('mock contents writes', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const repo = [...s.db.tables.repo.values()].find((r) => {
     const p = s.db.tables.viewerRepo.get(r.id)?.permission;
     return (p === 'admin' || p === 'write' || p === 'maintain') && !r.name.includes('protected');

@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
-
-
-const call = async (s: MockServer, method: string, path: string, body?: unknown) => {
-  const init: RequestInit = { method, headers: body === undefined ? {} : { 'content-type': 'application/json' } };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  const r = await s.fetch(path, init);
-  const text = await r.text();
-  return { status: r.status, body: text ? JSON.parse(text) : null };
-};
+import { call, newServer } from '../test/mockServer';
 
 describe('mock insights backend', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const repo = [...s.db.tables.repo.values()][0]!;
   const base = `/api/v3/repos/${repo.owner}/${repo.name}`;
 

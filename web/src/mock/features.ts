@@ -1,7 +1,7 @@
 /**
  * Feature areas of the mock backend, each its own lazy chunk (keeps every
  * mock chunk under the lazy-chunk budget). `MockServer.create` loads them
- * before constructing a server; tests load them once in `src/test/setup.ts`.
+ * before constructing a server; tests load them via `src/test/mockServer.ts`.
  */
 import type { installActionsRoutes } from './actions';
 import type { installCodeRoutes } from './code';

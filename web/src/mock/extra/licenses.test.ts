@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from '../server';
-
-type Json = Record<string, unknown>;
-
-async function call(s: MockServer, method: string, path: string, body?: unknown) {
-  const res = await s.fetch(path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-  const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as Json & Json[]) : null };
-}
+import { call, newServer, type Json } from '../../test/mockServer';
 
 describe('template mocks', () => {
   it('serves .gitignore templates and licenses', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     const names = (await call(s, 'GET', '/api/v3/gitignore/templates')).body as unknown as string[];
     expect(names).toContain('Go');
     const go = await call(s, 'GET', '/api/v3/gitignore/templates/Go');
@@ -30,7 +22,7 @@ describe('template mocks', () => {
   });
 
   it('creates repositories from templates', async () => {
-    const s = new MockServer(null, {});
+    const s = newServer();
     expect((await call(s, 'POST', '/api/v3/user/repos', { name: 'bad-tpl', gitignore_template: 'Cobol' })).status).toBe(422);
     expect((await call(s, 'POST', '/api/v3/user/repos', { name: 'bad-lic', license_template: 'wtfpl' })).status).toBe(422);
     const created = await call(s, 'POST', '/api/v3/user/repos', { name: 'templated', gitignore_template: 'Go', license_template: 'apache-2.0' });

@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MockServer } from './server';
-
-type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-const call = async (s: MockServer, method: string, path: string, body?: unknown) => {
-  const init: RequestInit = { method, headers: body === undefined ? {} : { 'content-type': 'application/json' } };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  const r = await s.fetch(path, init);
-  return { status: r.status, body: (await r.json()) as Json };
-};
+import { call, newServer, type Json } from '../test/mockServer';
 
 describe('mock deployments backend', () => {
-  const s = new MockServer(null, { now: Date.UTC(2026, 9, 1) });
+  const s = newServer({ now: Date.UTC(2026, 9, 1) });
   const repo = [...s.db.tables.repo.values()][0]!;
   const web = `/_bgh/repos/${repo.owner}/${repo.name}/deployments`;
   const rest = `/api/v3/repos/${repo.owner}/${repo.name}/deployments`;

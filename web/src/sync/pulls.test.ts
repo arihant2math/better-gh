@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildRows, type DiffAnnotations } from '../components/diff/DiffView';
 import { parsePatch, splitHunk } from '../components/diff/parseDiff';
-import { MockServer } from '../mock/server';
 import { splitSuggestions } from '../pages/pulls/ReviewThread';
 import { SyncClient } from './client';
 import { setSyncClient } from './index';
@@ -9,6 +8,7 @@ import type { Issue } from './models';
 import { MemoryPersistence } from './persistence';
 import { addPendingComment, addReviewComment, discardPendingReview, replyToThread, setThreadResolved, submitReview } from './pullMutations';
 import { checksSummary, pendingComments, pendingReview, threadsForPull } from './pullSelectors';
+import { newServer } from '../test/mockServer';
 
 const until = async (cond: () => boolean, ms = 3000) => {
   const start = Date.now();
@@ -78,7 +78,7 @@ describe('pull request review flow (mock backend)', () => {
   });
 
   async function setup() {
-    const server = new MockServer(null, { now });
+    const server = newServer({ now });
     c = new SyncClient({ userId: server.db.viewerId, transport: server, persistence: new MemoryPersistence() });
     setSyncClient(c);
     await c.start();
