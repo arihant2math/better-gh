@@ -1,6 +1,6 @@
 //! Sync scopes (`repo:{id}`, `org:{id}`, `user:{id}`) and who may read them.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::str::FromStr;
 
@@ -88,61 +88,127 @@ pub async fn check(
     auth: &AuthContext,
     requested: &[String],
 ) -> Result<Access, sqlx::Error> {
-    let mut access = Access::default();
-    let mut parsed = BTreeSet::new();
-    for raw in requested {
-        match raw.parse::<Scope>() {
-            Ok(s) => {
-                parsed.insert(s);
-            }
-            Err(()) => access.denied.push(raw.clone()),
-        }
-    }
-    let uid = auth.user.id;
-    let org_ids: Vec<i64> = parsed
-        .iter()
-        .filter_map(|s| match s {
-            Scope::Org(id) => Some(*id),
-            _ => None,
-        })
-        .collect();
-    let repo_ids: Vec<i64> = parsed
-        .iter()
-        .filter_map(|s| match s {
-            Scope::Repo(id) => Some(*id),
-            _ => None,
-        })
-        .collect();
+    let mut out = check_many(conn, &[(auth, requested)]).await?;
+    Ok(out.pop().unwrap_or_default())
+}
 
-    let member_of: BTreeSet<i64> = if org_ids.is_empty() {
+/// [`check`] for many viewers at once (one result per request, in order).
+/// Org memberships and repository rows are loaded once for the union of
+/// all requests, raw permissions once per distinct user, so the number of
+/// queries is `2 + users` however many sockets and scopes there are.
+pub async fn check_many(
+    conn: &mut PgConnection,
+    requests: &[(&AuthContext, &[String])],
+) -> Result<Vec<Access>, sqlx::Error> {
+    let mut parsed: Vec<(Access, BTreeSet<Scope>)> = Vec::with_capacity(requests.len());
+    let mut users = BTreeSet::new();
+    let mut org_ids = BTreeSet::new();
+    // Repositories wanted per user (raw permissions are per user).
+    let mut user_repos: BTreeMap<i64, BTreeSet<i64>> = BTreeMap::new();
+    for (auth, requested) in requests {
+        let mut access = Access::default();
+        let mut set = BTreeSet::new();
+        for raw in requested.iter() {
+            match raw.parse::<Scope>() {
+                Ok(s) => {
+                    match s {
+                        Scope::Org(id) => {
+                            org_ids.insert(id);
+                        }
+                        Scope::Repo(id) => {
+                            user_repos.entry(auth.user.id).or_default().insert(id);
+                        }
+                        Scope::User(_) => {}
+                    }
+                    set.insert(s);
+                }
+                Err(()) => access.denied.push(raw.clone()),
+            }
+        }
+        users.insert(auth.user.id);
+        parsed.push((access, set));
+    }
+
+    let member_of: BTreeSet<(i64, i64)> = if org_ids.is_empty() {
         BTreeSet::new()
     } else {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT org_id FROM org_members WHERE user_id = $1 AND org_id = ANY($2)",
+        let users: Vec<i64> = users.iter().copied().collect();
+        let orgs: Vec<i64> = org_ids.into_iter().collect();
+        sqlx::query_as::<_, (i64, i64)>(
+            "SELECT user_id, org_id FROM org_members WHERE user_id = ANY($1) AND org_id = ANY($2)",
         )
-        .bind(uid)
-        .bind(&org_ids)
+        .bind(&users)
+        .bind(&orgs)
         .fetch_all(&mut *conn)
         .await?
         .into_iter()
         .collect()
     };
-    let repo_perms = repo_permissions(conn, auth, &repo_ids).await?;
 
-    for scope in parsed {
-        let ok = match scope {
-            Scope::User(id) => id == uid,
-            Scope::Org(id) => member_of.contains(&id),
-            Scope::Repo(id) => repo_perms.contains_key(&id),
-        };
-        if ok {
-            access.allowed.push(scope);
-        } else {
-            access.denied.push(scope.to_string());
+    let all_repos: Vec<i64> = user_repos
+        .values()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let repos: HashMap<i64, db::Repository> = if all_repos.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_, db::Repository>(&format!(
+            "SELECT {} FROM repositories WHERE id = ANY($1)",
+            db::Repository::COLUMNS
+        ))
+        .bind(&all_repos)
+        .fetch_all(&mut *conn)
+        .await?
+        .into_iter()
+        .map(|r| (r.id, r))
+        .collect()
+    };
+    let mut raw: HashMap<i64, HashMap<i64, Permission>> = HashMap::new();
+    for (uid, ids) in &user_repos {
+        let rows: Vec<db::Repository> =
+            ids.iter().filter_map(|id| repos.get(id).cloned()).collect();
+        if rows.is_empty() {
+            continue;
         }
+        raw.insert(
+            *uid,
+            perms::repo_permissions(&mut *conn, Some(*uid), &rows).await?,
+        );
     }
-    access.repo_perms = repo_perms;
-    Ok(access)
+
+    let mut out = Vec::with_capacity(parsed.len());
+    for ((auth, _), (mut access, set)) in requests.iter().zip(parsed) {
+        let uid = auth.user.id;
+        let user_raw = raw.get(&uid);
+        for scope in set {
+            let ok = match scope {
+                Scope::User(id) => id == uid,
+                Scope::Org(id) => member_of.contains(&(uid, id)),
+                Scope::Repo(id) => match (repos.get(&id), user_raw.and_then(|m| m.get(&id))) {
+                    (Some(repo), Some(&p)) => {
+                        let p = perms::effective(Some(*auth), repo, p);
+                        if p >= Permission::Read {
+                            access.repo_perms.insert(id, p);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                },
+            };
+            if ok {
+                access.allowed.push(scope);
+            } else {
+                access.denied.push(scope.to_string());
+            }
+        }
+        out.push(access);
+    }
+    Ok(out)
 }
 
 /// Effective permissions of the viewer on `repo_ids`; repositories they
@@ -152,24 +218,11 @@ pub async fn repo_permissions(
     auth: &AuthContext,
     repo_ids: &[i64],
 ) -> Result<HashMap<i64, Permission>, sqlx::Error> {
-    if repo_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let repos: Vec<db::Repository> = sqlx::query_as(&format!(
-        "SELECT {} FROM repositories WHERE id = ANY($1)",
-        db::Repository::COLUMNS
-    ))
-    .bind(repo_ids)
-    .fetch_all(&mut *conn)
-    .await?;
-    let raw = perms::repo_permissions(&mut *conn, Some(auth.user.id), &repos).await?;
-    Ok(repos
+    let scopes: Vec<String> = repo_ids
         .iter()
-        .filter_map(|r| {
-            let p = perms::effective(Some(auth), r, raw.get(&r.id).copied()?);
-            (p >= Permission::Read).then_some((r.id, p))
-        })
-        .collect())
+        .map(|id| Scope::Repo(*id).to_string())
+        .collect();
+    Ok(check(conn, auth, &scopes).await?.repo_perms)
 }
 
 /// The viewer's default scope set: `user:{viewer}`, every org they belong
