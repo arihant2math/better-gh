@@ -320,9 +320,9 @@ impl GitRepo {
     }
 
     /// Split `{ref}/{path}` where the ref itself may contain slashes
-    /// (`feature/x/src/lib.rs`): a full commit SHA, `HEAD`, or the shortest
-    /// prefix naming a branch, then a tag (also `refs/...` names), then an
-    /// abbreviated SHA. Returns `(ref, commit sha, path)`.
+    /// (`feature/x/src/lib.rs`): a full commit SHA, `HEAD`, or the longest
+    /// prefix naming a branch or tag (branch first at equal length; also
+    /// `refs/...` names), like GitHub, then an abbreviated SHA. Returns `(ref, commit sha, path)`.
     pub fn split_ref_path(&self, spec: &str) -> GitResult<(String, String, String)> {
         let spec = spec.trim_matches('/');
         let parts: Vec<&str> = spec.split('/').collect();
@@ -334,7 +334,7 @@ impl GitRepo {
             let commit = self.resolve_commit(parts[0])?;
             return Ok((parts[0].to_string(), commit, rest(1)));
         }
-        for i in 1..=parts.len() {
+        for i in (1..=parts.len()).rev() {
             let cand = parts[..i].join("/");
             if !crate::is_valid_ref_name(&cand) {
                 continue;
