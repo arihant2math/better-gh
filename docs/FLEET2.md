@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:05: orchestrator MERGED #315 (4e4be6a); lead stays live. The lead was told #316 must merge main and update auto_merge_waits_for_requirements_then_enqueues before its r3 review.
 10:05: #315 READY (r2 APPROVE on 9a96154; then only main merges edddec1 and a9c887f; CI result green, run 37603710378). Forwarded to the orchestrator; reviewer archived. #309 CI is green on fb5b052, waiting on the r3 reviewer.
 09:54: orchestrator MERGED #332 (9611f57); #331 fixed. #331 fixer archived. #315 branch updated from main (its reviewer reports when CI is green). The #330 and #312 reviewers, the merge-queue lead and the #319 author were told to merge main instead of re-running.
 09:53: #332 READY (APPROVE on da622ff = head; base is current main; CI result green). Forwarded to the orchestrator; reviewer archived. #309 author ported the #332 seed fix as fb5b052; the r3 reviewer was told to confirm it is test-only.
