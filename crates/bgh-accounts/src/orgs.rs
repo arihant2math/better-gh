@@ -14,7 +14,7 @@ use bgh_core::error::unique_violation;
 use bgh_core::events::Event;
 use bgh_core::mail;
 use bgh_core::models::api::{OrganizationFull, OrganizationSimple, SimpleUser};
-use bgh_core::perms;
+use bgh_core::perms::{self, OrgRole};
 use bgh_core::prelude::*;
 use bgh_core::sync;
 use bgh_core::views;
@@ -34,8 +34,8 @@ use crate::{social, teams, users, validate};
 pub struct OrgAccess {
     pub org: db::User,
     pub settings: db::OrgSettings,
-    /// The caller's role: `admin` | `member`.
-    pub role: Option<String>,
+    /// The caller's role.
+    pub role: Option<OrgRole>,
     pub auth: Option<AuthContext>,
 }
 
@@ -79,7 +79,7 @@ impl OrgAccess {
 
     /// Organization owner (or site admin).
     pub fn is_admin(&self) -> bool {
-        self.role.as_deref() == Some("admin") || self.site_admin()
+        self.role.is_some_and(OrgRole::is_admin) || self.site_admin()
     }
 
     /// Member or site admin: may see members-only data.
@@ -742,7 +742,7 @@ async fn member_row(
     db: impl sqlx::PgExecutor<'_>,
     org_id: i64,
     user_id: i64,
-) -> Result<Option<(i64, String, bool)>, sqlx::Error> {
+) -> Result<Option<(i64, OrgRole, bool)>, sqlx::Error> {
     sqlx::query_as("SELECT id, role, is_public FROM org_members WHERE org_id = $1 AND user_id = $2")
         .bind(org_id)
         .bind(user_id)
@@ -847,7 +847,7 @@ pub async fn remove_member(
     user: &db::User,
 ) -> ApiResult<bool> {
     let mut tx = Tx::begin(state).await?;
-    let Some((membership_id, role, _)) = sqlx::query_as::<_, (i64, String, bool)>(
+    let Some((membership_id, role, _)) = sqlx::query_as::<_, (i64, OrgRole, bool)>(
         "SELECT id, role, is_public FROM org_members WHERE org_id = $1 AND user_id = $2 FOR UPDATE",
     )
     .bind(org.id)
@@ -857,7 +857,7 @@ pub async fn remove_member(
     else {
         return Ok(false);
     };
-    if role == "admin" && admin_count(&mut tx, org.id).await? <= 1 {
+    if role.is_admin() && admin_count(&mut tx, org.id).await? <= 1 {
         return Err(ApiError::forbidden(
             "You cannot remove the last owner of an organization.",
         ));
@@ -925,8 +925,8 @@ pub async fn delete_member(
 // Memberships
 // ---------------------------------------------------------------------------
 
-fn can_create_repository(settings: &db::OrgSettings, role: &str) -> bool {
-    role == "admin" || settings.members_can_create_repositories
+fn can_create_repository(settings: &db::OrgSettings, role: OrgRole) -> bool {
+    role.is_admin() || settings.members_can_create_repositories
 }
 
 fn membership_json(
@@ -934,7 +934,7 @@ fn membership_json(
     access: &OrgAccess,
     user: &db::User,
     state_: &str,
-    role: &str,
+    role: OrgRole,
 ) -> OrgMembership {
     OrgMembership::new(
         &state.urls,
@@ -972,10 +972,10 @@ async fn pending_invitation(
 /// `direct_member` invitations grant a membership (`billing_manager` is
 /// not supported and rejected when inviting; legacy rows never match
 /// [`pending_invitation`]).
-fn invitation_member_role(role: &str) -> &'static str {
+fn invitation_member_role(role: &str) -> OrgRole {
     match role {
-        "admin" => "admin",
-        _ => "member",
+        "admin" => OrgRole::Admin,
+        _ => OrgRole::Member,
     }
 }
 
@@ -997,7 +997,7 @@ pub async fn get_membership(
     }
     if let Some((_, role, _)) = member_row(&state.db, access.org.id, user.id).await? {
         return Ok(Json(membership_json(
-            &state, &access, &user, "active", &role,
+            &state, &access, &user, "active", role,
         )));
     }
     if (is_self || access.is_admin())
@@ -1030,7 +1030,8 @@ pub async fn set_membership(
     let access = OrgAccess::load(&state, Some(&auth), &org).await?;
     access.require_admin()?;
     let role = match body.role.as_deref().unwrap_or("member") {
-        r @ ("admin" | "member") => r.to_string(),
+        "admin" => OrgRole::Admin,
+        "member" => OrgRole::Member,
         _ => {
             return Err(ApiError::invalid_field(FieldError::invalid(
                 "Membership",
@@ -1040,7 +1041,7 @@ pub async fn set_membership(
     };
     let user = util::find_user(&state, &username).await?;
     let mut tx = Tx::begin(&state).await?;
-    let existing = sqlx::query_as::<_, (i64, String)>(
+    let existing = sqlx::query_as::<_, (i64, OrgRole)>(
         "SELECT id, role FROM org_members WHERE org_id = $1 AND user_id = $2 FOR UPDATE",
     )
     .bind(access.org.id)
@@ -1049,14 +1050,14 @@ pub async fn set_membership(
     .await?;
     if let Some((id, old_role)) = existing {
         if old_role != role {
-            if old_role == "admin" && admin_count(&mut tx, access.org.id).await? <= 1 {
+            if old_role.is_admin() && admin_count(&mut tx, access.org.id).await? <= 1 {
                 return Err(ApiError::unprocessable(
                     "Cannot demote the last owner of the organization.",
                 ));
             }
             sqlx::query("UPDATE org_members SET role = $2 WHERE id = $1")
                 .bind(id)
-                .bind(&role)
+                .bind(role)
                 .execute(&mut *tx)
                 .await?;
             tx.sync_model(SyncModel::Membership, id, SyncAction::Update)
@@ -1072,10 +1073,10 @@ pub async fn set_membership(
         }
         tx.commit().await?;
         return Ok(Json(membership_json(
-            &state, &access, &user, "active", &role,
+            &state, &access, &user, "active", role,
         )));
     }
-    let inv_role = if role == "admin" {
+    let inv_role = if role.is_admin() {
         "admin"
     } else {
         "direct_member"
@@ -1103,7 +1104,7 @@ pub async fn set_membership(
     }
     tx.commit().await?;
     Ok(Json(membership_json(
-        &state, &access, &user, "pending", &role,
+        &state, &access, &user, "pending", role,
     )))
 }
 
@@ -1159,7 +1160,7 @@ pub async fn my_memberships(
         )));
     }
     // (org_id, state, role)
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
+    let rows: Vec<(i64, String, OrgRole)> = sqlx::query_as(&format!(
         "SELECT org_id, state, role FROM (
              SELECT m.org_id, 'active' AS state, m.role FROM org_members m WHERE m.user_id = $1
              UNION ALL
@@ -1207,8 +1208,8 @@ pub async fn my_memberships(
                 s.description.as_deref(),
                 &auth.user,
                 st,
-                role,
-                can_create_repository(s, role),
+                *role,
+                can_create_repository(s, *role),
             ))
         })
         .collect();
@@ -1226,7 +1227,7 @@ pub async fn my_membership(
 ) -> ApiResult<Json<OrgMembership>> {
     auth.require_scope("read:org")?;
     let access = OrgAccess::load(&state, Some(&auth), &org).await?;
-    if let Some(role) = &access.role {
+    if let Some(role) = access.role {
         return Ok(Json(membership_json(
             &state, &access, &auth.user, "active", role,
         )));
@@ -1264,7 +1265,7 @@ pub async fn accept_membership(
         )));
     }
     let access = OrgAccess::load(&state, Some(&auth), &org).await?;
-    if let Some(role) = &access.role {
+    if let Some(role) = access.role {
         return Ok(Json(membership_json(
             &state, &access, &auth.user, "active", role,
         )));
@@ -1322,7 +1323,7 @@ pub async fn add_member(
     tx: &mut Tx,
     org: &db::User,
     user: &db::User,
-    role: &str,
+    role: OrgRole,
     team_ids: &[i64],
     actor_id: i64,
 ) -> ApiResult<()> {
@@ -1821,7 +1822,7 @@ pub async fn convert_to_outside_collaborator(
             "User is not a member of the organization.",
         ));
     };
-    if role == "admin" {
+    if role.is_admin() {
         return Err(ApiError::forbidden(
             "Owners can't be converted to outside collaborators.",
         ));
@@ -1985,8 +1986,8 @@ pub struct ViewerInvitation {
     pub state: &'static str,
     pub organization: OrganizationSimple,
     pub organization_name: Option<String>,
-    /// Membership role on acceptance: `admin` | `member`.
-    pub role: String,
+    /// Membership role on acceptance.
+    pub role: OrgRole,
     pub invitation_id: Option<i64>,
     pub inviter: Option<SimpleUser>,
     pub created_at: Option<Timestamp>,
@@ -2008,12 +2009,12 @@ pub async fn viewer_invitation(
         access.settings.description.as_deref(),
     );
     let organization_name = access.org.name.clone();
-    if let Some(role) = &access.role {
+    if let Some(role) = access.role {
         return Ok(Json(ViewerInvitation {
             state: "active",
             organization,
             organization_name,
-            role: role.clone(),
+            role,
             invitation_id: None,
             inviter: None,
             created_at: None,
@@ -2038,7 +2039,7 @@ pub async fn viewer_invitation(
         state: "pending",
         organization,
         organization_name,
-        role: invitation_member_role(&inv.role).to_string(),
+        role: invitation_member_role(&inv.role),
         invitation_id: Some(inv.id),
         inviter: inviter.map(|u| SimpleUser::new(&state.urls, &u)),
         created_at: Some(inv.created_at.into()),
@@ -2085,8 +2086,7 @@ pub async fn decline_invitation(
 pub struct ViewerOrganization {
     pub organization: OrganizationSimple,
     pub organization_name: Option<String>,
-    /// `admin` | `member`
-    pub role: String,
+    pub role: OrgRole,
     /// Membership is publicized.
     pub public: bool,
     /// The viewer is the only owner, so they can't leave.
@@ -2101,7 +2101,7 @@ pub async fn viewer_organizations(
     auth: RequireUser,
 ) -> ApiResult<Json<Vec<ViewerOrganization>>> {
     // (org_id, role, is_public, admins, members, description)
-    let rows: Vec<(i64, String, bool, i64, i64, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(i64, OrgRole, bool, i64, i64, Option<String>)> = sqlx::query_as(
         "SELECT m.org_id, m.role, m.is_public,
                 (SELECT count(*) FROM org_members a WHERE a.org_id = m.org_id AND a.role = 'admin'),
                 (SELECT count(*) FROM org_members c WHERE c.org_id = m.org_id),
@@ -2123,7 +2123,7 @@ pub async fn viewer_organizations(
                 Some(ViewerOrganization {
                     organization: OrganizationSimple::new(&state.urls, org, description.as_deref()),
                     organization_name: org.name.clone(),
-                    sole_owner: role == "admin" && admins <= 1,
+                    sole_owner: role.is_admin() && admins <= 1,
                     role,
                     public,
                     members_count: members,

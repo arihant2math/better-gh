@@ -126,11 +126,8 @@ pub async fn can_create_with_visibility(
         return Ok(false);
     }
     Ok(
-        match perms::org_role(&state.db, target.id, user.id)
-            .await?
-            .as_deref()
-        {
-            Some("admin") => true,
+        match perms::org_role(&state.db, target.id, user.id).await? {
+            Some(perms::OrgRole::Admin) => true,
             Some(_) => match db::OrgSettings::find(&state.db, target.id).await? {
                 Some(s) => {
                     s.members_can_create_repositories

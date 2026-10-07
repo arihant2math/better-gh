@@ -555,7 +555,15 @@ async fn apply(
             let member = bgh_core::perms::org_role(&state.db, org.id, user.id).await?;
             if f.active && member.is_none() {
                 let mut tx = Tx::begin(state).await?;
-                orgs::add_member(&mut tx, org, &user, "member", &[], actor.user.id).await?;
+                orgs::add_member(
+                    &mut tx,
+                    org,
+                    &user,
+                    bgh_core::perms::OrgRole::Member,
+                    &[],
+                    actor.user.id,
+                )
+                .await?;
                 tx.commit().await?;
             } else if !f.active && member.is_some() {
                 orgs::remove_member(state, &actor.user, org, &user).await?;

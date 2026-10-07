@@ -196,7 +196,7 @@ pub async fn org_auth(
         .filter(|o| o.is_org())
         .ok_or_else(ScimError::not_found)?;
     let role = bgh_core::perms::org_role(&state.db, org.id, a.user.id).await?;
-    if role.as_deref() != Some("admin") && !a.user.site_admin {
+    if !role.is_some_and(|r| r.is_admin()) && !a.user.site_admin {
         return Err(if role.is_some() {
             ScimError::new(
                 StatusCode::FORBIDDEN,

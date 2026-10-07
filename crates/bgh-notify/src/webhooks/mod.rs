@@ -206,7 +206,7 @@ pub async fn org_owner(state: &AppState, auth: &AuthContext, org: &str) -> ApiRe
         .filter(|u| u.is_org())
         .ok_or(ApiError::NotFound)?;
     let role = bgh_core::perms::org_role(&state.db, org.id, auth.id()).await?;
-    if role.as_deref() != Some("admin") && !auth.user.site_admin {
+    if !role.is_some_and(|r| r.is_admin()) && !auth.user.site_admin {
         return Err(if role.is_some() {
             ApiError::forbidden("Must be an organization owner.")
         } else {

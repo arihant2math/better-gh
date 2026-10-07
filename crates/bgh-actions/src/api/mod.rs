@@ -59,7 +59,7 @@ pub async fn require_org_admin(
         return Ok(());
     }
     match bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await? {
-        Some(r) if r == "admin" => {
+        Some(r) if r.is_admin() => {
             auth.require_scope("admin:org")?;
             Ok(())
         }

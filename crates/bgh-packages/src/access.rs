@@ -107,7 +107,7 @@ pub async fn role(
     } else {
         None
     };
-    if org_role.as_deref() == Some("admin") {
+    if org_role.is_some_and(|r| r.is_admin()) {
         return Ok(Role::Admin);
     }
     let Some(p) = pkg else {

@@ -554,8 +554,7 @@ async fn managed_app(state: &AppState, auth: &AuthContext, slug: &str) -> ApiRes
         || app.owner_id == auth.user.id
         || bgh_core::perms::org_role(&state.db, app.owner_id, auth.user.id)
             .await?
-            .as_deref()
-            == Some("admin");
+            .is_some_and(|r| r.is_admin());
     if ok { Ok(app) } else { Err(ApiError::NotFound) }
 }
 

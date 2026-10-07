@@ -100,7 +100,9 @@ access.scope()                            // "repo:{id}" sync scope
 ```
 
 Org-level checks: `perms::org_role(&state.db, org_id, user_id)` →
-`Some("admin" | "member")`. For lists, never compute permissions per row:
+`Option<perms::OrgRole>` (`Admin` | `Member`); test with `.is_admin()` or
+match on the variants, never compare role strings. Read `org_members.role`
+as `OrgRole` in queries too. For lists, never compute permissions per row:
 use `perms::repo_permissions(db, user_id, &repos)` (one query) or the
 render helper `bgh_core::views::minimal_repos(&state, auth, rows)`, which
 also drops repositories the caller can't read. Batch-load users with

@@ -87,8 +87,7 @@ async fn may_import_into(state: &AppState, user: &db::User, owner: &db::User) ->
     if owner.kind == "Organization" {
         return Ok(bgh_core::perms::org_role(&state.db, owner.id, user.id)
             .await?
-            .as_deref()
-            == Some("admin"));
+            .is_some_and(|r| r.is_admin()));
     }
     Ok(false)
 }
@@ -100,8 +99,7 @@ async fn may_manage(state: &AppState, user: &db::User, row: &ImportRow) -> ApiRe
     }
     Ok(bgh_core::perms::org_role(&state.db, row.owner_id, user.id)
         .await?
-        .as_deref()
-        == Some("admin"))
+        .is_some_and(|r| r.is_admin()))
 }
 
 /// Validate, check the source, create the target repository (with P11's
@@ -644,7 +642,7 @@ pub async fn list_org(
         .filter(|o| o.kind == "Organization")
         .ok_or(ApiError::NotFound)?;
     let role = bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await?;
-    if !auth.user.site_admin && role.as_deref() != Some("admin") {
+    if !auth.user.site_admin && !role.is_some_and(|r| r.is_admin()) {
         return Err(match role {
             Some(_) => ApiError::forbidden("Must be an organization owner."),
             None => ApiError::NotFound,
