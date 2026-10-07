@@ -118,6 +118,11 @@ impl Work {
     }
 }
 
+/// Author/committer date of the commit made by [`seeded`]. Fixed so tests
+/// that bucket commits by time (e.g. the stats punch card) don't depend on
+/// the wall clock; it is a Friday that predates every fixture date.
+pub const SEED_DATE: &str = "2023-12-01T00:00:00Z";
+
 /// Create `user/name` through the API and a local repository on `main`
 /// with `files` committed and pushed. Background jobs are drained.
 pub async fn seeded(app: &TestApp, user: &TestUser, name: &str, files: &[(&str, &str)]) -> Work {
@@ -127,7 +132,14 @@ pub async fn seeded(app: &TestApp, user: &TestUser, name: &str, files: &[(&str, 
         remote: app.git_remote(user, &user.login, name),
     };
     ok(git(work.dir.path(), &["init", "-q", "-b", "main"]).await);
-    work.commit(files, "initial commit").await;
+    work.commit_as(
+        files,
+        "initial commit",
+        "Test",
+        "test@example.com",
+        Some(SEED_DATE),
+    )
+    .await;
     ok(work.push("main").await);
     app.drain_jobs().await;
     work
