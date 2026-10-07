@@ -183,6 +183,7 @@
 }
 
 .topbar {
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -198,6 +199,10 @@
   gap: 4px;
   min-width: 0;
   flex: 1;
+  /* Never paint under the search box; the padding keeps focus rings visible. */
+  overflow: hidden;
+  padding: 3px;
+  margin: 0 -3px;
   font-weight: var(--fw-medium);
   white-space: nowrap;
 }
@@ -210,7 +215,18 @@
   height: 26px;
   padding: 0 6px;
   border-radius: var(--radius);
+  flex-shrink: 0;
+  max-width: 16em;
   color: var(--fg-muted);
+}
+
+.crumb > * {
+  flex-shrink: 0;
+}
+
+.crumb > .crumbText {
+  flex-shrink: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -222,10 +238,13 @@
 }
 
 .crumbCurrent {
+  flex-shrink: 1;
+  max-width: none;
   color: var(--fg);
 }
 
 .crumbSep {
+  flex-shrink: 0;
   color: var(--fg-faint);
 }
 
@@ -233,6 +252,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   width: 260px;
   height: 30px;
   padding: 0 6px 0 10px;
@@ -254,6 +274,36 @@
 .searchText {
   flex: 1;
   text-align: left;
+}
+
+/* Narrow top bar: the search box gives its room to the breadcrumbs first. */
+@container (max-width: 800px) {
+  .search {
+    justify-content: center;
+    width: 30px;
+    padding: 0;
+  }
+
+  .searchText,
+  .search kbd {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .crumb {
+    height: 32px;
+  }
+
+  .search {
+    height: 32px;
+  }
+
+  @container (max-width: 800px) {
+    .search {
+      width: 32px;
+    }
+  }
 }
 
 .syncDot {
