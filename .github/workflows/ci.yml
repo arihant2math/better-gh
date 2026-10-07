@@ -56,7 +56,7 @@ jobs:
     steps:
       # On pull_request the checkout is the test merge commit, whose first
       # parent is the base branch tip: HEAD^1..HEAD is exactly the PR's diff.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 2
       - id: filter
@@ -93,7 +93,7 @@ jobs:
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # openssl-sys (via webauthn-rs) links the system OpenSSL.
       - name: Install native deps (Linux)
         if: runner.os == 'Linux'
@@ -152,7 +152,7 @@ jobs:
       # shared x86_64-debug cache key matches. Not set for release builds.
       CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -242,7 +242,7 @@ jobs:
             echo "|---|---|---|"
             jq -r '.results[] | select(.kind == "gh") | "| \(.status) | `\(.name)` | \(.detail | gsub("\\|"; "\\\\|")) |"' gh-compat.json
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() && steps.compat.outcome != 'skipped' }}
         continue-on-error: true
         with:
@@ -269,8 +269,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -281,7 +281,7 @@ jobs:
       - run: npm test
       # Includes the bundle budget check (scripts/size-check.mjs).
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: web-dist
           path: web/dist
@@ -294,19 +294,19 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: web-dist
           path: web/dist
       - run: cargo build --release --locked -p bgh-server --bin bgh --features embed-web
       - run: ./target/release/bgh --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: bgh-linux-x86_64
           path: target/release/bgh
@@ -326,16 +326,16 @@ jobs:
     env:
       PREBUILT: ${{ github.event_name != 'pull_request' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: actions/download-artifact@v7
         if: env.PREBUILT == 'true'
         with:
           name: bgh-linux-x86_64
           path: ${{ runner.temp }}/bgh-bin
       - name: Build from source
         if: env.PREBUILT != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -352,7 +352,7 @@ jobs:
           docker cp "$id:/usr/local/bin/bgh" "$RUNNER_TEMP/bgh-bin/bgh"
           docker rm "$id"
       - name: Build from the prebuilt binary
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           build-contexts: bin=${{ runner.temp }}/bgh-bin
@@ -378,7 +378,7 @@ jobs:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: shellcheck -x -S warning scripts/dev.sh scripts/gh-compat.sh scripts/api-smoke.sh scripts/check-test-layout.sh scripts/ci-changes.sh scripts/lib/*.sh
       # One integration-test binary per crate (tests/it/main.rs).
       - run: ./scripts/check-test-layout.sh
