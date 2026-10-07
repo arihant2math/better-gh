@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { load, peek, refresh, useResource, type ResourceState } from './cache';
+import { ApiError } from './client';
 
 /**
  * "Load more" pagination over the resource cache, shared by every paged
@@ -8,8 +9,10 @@ import { load, peek, refresh, useResource, type ResourceState } from './cache';
  * - Page 1 goes through `useResource` (renders synchronously after a route
  *   prefetch, revalidates like any other resource).
  * - Pages still in the cache (back navigation) are restored on mount.
- * - A failed page is retried automatically with backoff (`RETRY_DELAYS_MS`),
- *   then stops in `error` until the user calls `retry()`. `loadMore()` is a
+ * - A transient failure (network, 5xx, 408, 429) is retried automatically
+ *   with backoff (`RETRY_DELAYS_MS`, or the server's `Retry-After` when
+ *   longer, up to `MAX_RETRY_DELAY_MS`), then stops in `error` until the
+ *   user calls `retry()`. Other 4xx go straight to `error`. `loadMore()` is a
  *   no-op unless `idle`, so an infinite-scroll sentinel that fires whenever a
  *   load settles can never turn a failing request into a hot loop.
  * - Changing `id` starts over (new list, new pager).
@@ -30,6 +33,22 @@ export interface PagerSpec<T> {
 
 /** Automatic retries after a failed page; then the user has to retry. */
 export const RETRY_DELAYS_MS: readonly number[] = [1000, 4000];
+/** Upper bound for an automatic retry's delay (a long `Retry-After` waits for the user instead). */
+export const MAX_RETRY_DELAY_MS = 30_000;
+
+/** Worth retrying by itself: offline/network errors, 5xx, 408 and 429; not other 4xx (permanent). */
+export function retryable(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status >= 500 || error.status === 408 || error.status === 429;
+}
+
+/** Delay before automatic retry number `attempt` (0-based); `undefined` = stop and wait for the user. */
+export function retryDelay(error: unknown, attempt: number, delays: readonly number[] = RETRY_DELAYS_MS): number | undefined {
+  const base = delays[attempt];
+  if (base === undefined || !retryable(error)) return undefined;
+  const after = error instanceof ApiError ? (error.retryAfterMs ?? 0) : 0;
+  return Math.min(Math.max(base, after), MAX_RETRY_DELAY_MS);
+}
 
 /** Framework-free state of pages 2..n (page 1 is the caller's). */
 export class PageLoader<T> {
@@ -98,7 +117,7 @@ export class PageLoader<T> {
       },
       (error: unknown) => {
         this.error = error;
-        const delay = this.delays[this.failures++];
+        const delay = retryDelay(error, this.failures++, this.delays);
         if (delay === undefined) return this.set('error');
         this.set('backoff');
         this.timer = setTimeout(() => {

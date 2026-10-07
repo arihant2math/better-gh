@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { load } from './cache';
-import { PageLoader, RETRY_DELAYS_MS, type PagerSpec } from './pager';
+import { ApiError, parseRetryAfter } from './client';
+import { MAX_RETRY_DELAY_MS, PageLoader, RETRY_DELAYS_MS, type PagerSpec } from './pager';
 
 let n = 0;
 /** Unique cache namespace per test (the resource cache is module-global). */
@@ -95,5 +96,56 @@ describe('PageLoader', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(loader).toHaveBeenCalledTimes(1);
     expect(pager.status).toBe('idle');
+  });
+
+  it('does not retry a permanent 4xx: one request, straight to error', async () => {
+    for (const status of [400, 401, 403, 404, 410, 422]) {
+      const loader = vi.fn(() => Promise.reject(new ApiError('nope', status, null)));
+      const pager = new PageLoader(spec(loader));
+      mountSentinel(pager);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(loader, `status ${status}`).toHaveBeenCalledTimes(1);
+      expect(pager.status).toBe('error');
+    }
+  });
+
+  it('retries 5xx and offline errors with backoff', async () => {
+    for (const err of [new ApiError('down', 503, null), new ApiError('bad gateway', 502, null), new TypeError('Failed to fetch')]) {
+      const loader = vi.fn(() => Promise.reject(err));
+      const pager = new PageLoader(spec(loader));
+      mountSentinel(pager);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(loader).toHaveBeenCalledTimes(1 + RETRY_DELAYS_MS.length);
+      expect(pager.status).toBe('error');
+    }
+  });
+
+  it('honours Retry-After on 429', async () => {
+    const loader = vi.fn(() => Promise.reject(new ApiError('slow down', 429, null, 3000)));
+    const pager = new PageLoader(spec(loader));
+    mountSentinel(pager);
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(loader).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('caps a long Retry-After', async () => {
+    const loader = vi.fn(() => Promise.reject(new ApiError('later', 503, null, 3_600_000)));
+    const pager = new PageLoader(spec(loader));
+    mountSentinel(pager);
+    await vi.advanceTimersByTimeAsync(MAX_RETRY_DELAY_MS);
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('parseRetryAfter', () => {
+  it('reads delay-seconds and HTTP-dates', () => {
+    const now = Date.parse('2026-10-07T07:00:00Z');
+    expect(parseRetryAfter('3', now)).toBe(3000);
+    expect(parseRetryAfter('Wed, 07 Oct 2026 07:00:10 GMT', now)).toBe(10_000);
+    expect(parseRetryAfter('Wed, 07 Oct 2026 06:59:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter(null, now)).toBeUndefined();
+    expect(parseRetryAfter('soon', now)).toBeUndefined();
   });
 });

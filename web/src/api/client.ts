@@ -6,9 +6,20 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly body: unknown,
+    /** The response's `Retry-After`, in ms from when it arrived (429/503). */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
   }
+}
+
+/** `Retry-After` (delay-seconds or HTTP-date) → ms from `now`; `undefined` when absent or invalid. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | undefined {
+  if (!value) return undefined;
+  const v = value.trim();
+  if (/^\d+$/.test(v)) return Number(v) * 1000;
+  const at = Date.parse(v);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
 export interface RequestOptions {
@@ -111,7 +122,7 @@ export class ApiClient {
     if (!res.ok) {
       const body = data as { message?: unknown } | null;
       const message = body && typeof body === 'object' && body.message ? String(body.message) : `${method} ${path} failed (${res.status})`;
-      throw new ApiError(message, res.status, data);
+      throw new ApiError(message, res.status, data, parseRetryAfter(res.headers.get('retry-after')));
     }
     const etag = res.headers.get('etag');
     if (method === 'GET' && etag) {
