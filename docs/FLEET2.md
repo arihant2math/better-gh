@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:21: #316 REQUEST_CHANGES (main conflict; dequeue/head-push race on merge_prefix; double-merge on retry after CAS; PostReceive enqueued outside the tx). Lead session_01Kq9BfEn4RqooYm2643Ah6e told; reviewer archived. #309 fixed (d1cafe7) → adversarial security r2 reviewer session_01Mgvsx8ABCZHLFeU4x5VMdn. Alias-cap follow-up is #321.
 08:15: orchestrator MERGED #304 (0c5db5f) and archived its worker. I confirmed the takeover, so the orchestrator archives foreman2.
 08:15: #314 fixed (413 propagation + test, head ab338fc) → r2 reviewer (sonnet) session_0186Ho5AEnrVzi1soBuCWL7e.
 08:15: #304 READY (APPROVE at 4fb8add; head 31df601 is a main merge only; CI result green). Sent to the orchestrator; reviewer archived. Foreman2 has stopped.
