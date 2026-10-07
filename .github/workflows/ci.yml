@@ -15,9 +15,11 @@
 #   web/src/ui/markdown/render.golden.test.ts) and
 #   web/src/ui/markdown/emoji.json (bgh-core include_str!s it). Otherwise the
 #   web job needs no server (vitest only; the viewport matrix isn't in CI).
-# * docker: Dockerfile, .dockerignore or Cargo.lock only. The release image
-#   build is ~28 min, so other backend/frontend changes skip it on PRs; it
-#   still runs on every push to main and workflow_dispatch (#85).
+# * docker: Dockerfile, .dockerignore or Cargo.lock only. On PRs the image
+#   compiles bgh itself (~28 min release build), so other backend/frontend
+#   changes skip it. Off pull requests (main, workflow_dispatch) it packages
+#   the release-binary artifact instead, so release + thin LTO compiles once
+#   per push and the image holds the exact uploaded binary (#85).
 # * release-binary embeds web/dist too; it only runs off pull requests, where
 #   everything runs.
 # * .github/workflows/ and scripts/ci-changes.sh run everything. Docs-only
@@ -275,29 +277,67 @@ jobs:
           path: target/release/bgh
           retention-days: 14
 
+  # Off pull requests the image packages release-binary's artifact through
+  # the Dockerfile's `bin` build context (no Rust build here). On PRs, where
+  # release-binary doesn't run, it compiles from source, then also rebuilds
+  # from the binary it extracted so the prebuilt path is covered too.
   docker:
     name: Docker image
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    needs: [changes, release-binary]
+    if: >-
+      !cancelled() && needs.changes.outputs.docker == 'true'
+      && (github.event_name == 'pull_request' || needs.release-binary.result == 'success')
     runs-on: ubuntu-latest
+    env:
+      PREBUILT: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/download-artifact@v4
+        if: env.PREBUILT == 'true'
+        with:
+          name: bgh-linux-x86_64
+          path: ${{ runner.temp }}/bgh-bin
+      - name: Build from source
+        if: env.PREBUILT != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
+          tags: bgh:source
+          # One named scope; only main writes it, PRs restore it read-only so
+          # they don't add multi-GB entries that evict main's cargo caches.
+          cache-from: type=gha,scope=bgh
+      - name: Extract the binary from the source-built image
+        if: env.PREBUILT != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/bgh-bin"
+          id=$(docker create bgh:source)
+          docker cp "$id:/usr/local/bin/bgh" "$RUNNER_TEMP/bgh-bin/bgh"
+          docker rm "$id"
+      - name: Build from the prebuilt binary
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-contexts: bin=${{ runner.temp }}/bgh-bin
+          push: false
+          load: true
           tags: bgh:ci
-          # One named scope; only main writes it (mode=max keeps the cooked
-          # deps layer), PRs restore it read-only so they don't add
-          # multi-GB entries that evict main's cargo caches (#85).
+          # On main this caches the runtime stage's apt layer (#85).
           cache-from: type=gha,scope=bgh
           cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=bgh,mode=max' || '' }}
       - name: Smoke-test the image
+        env:
+          BIN: ${{ runner.temp }}/bgh-bin/bgh
         run: |
           docker run --rm bgh:ci --version
           docker run --rm --entrypoint git bgh:ci --version
+          # The image must carry exactly the binary it was built from.
+          id=$(docker create bgh:ci)
+          docker cp "$id:/usr/local/bin/bgh" "$RUNNER_TEMP/bgh-image"
+          docker rm "$id"
+          cmp "$BIN" "$RUNNER_TEMP/bgh-image"
 
   scripts:
     name: Shell scripts
@@ -316,7 +356,7 @@ jobs:
   ci-result:
     name: CI result
     if: always()
-    needs: [changes, rust-lint, rust-test, web, docker, scripts]
+    needs: [changes, rust-lint, rust-test, web, release-binary, docker, scripts]
     runs-on: ubuntu-latest
     steps:
       - env:
