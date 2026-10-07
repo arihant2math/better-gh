@@ -8,7 +8,7 @@ import type { Issue, Review } from '../../sync/models';
 import { MemoryPersistence } from '../../sync/persistence';
 import { addReviewComment, applySuggestions, setFileViewed } from '../../sync/pullMutations';
 import { threadsForPull } from '../../sync/pullSelectors';
-import { formatRange, inRange, lastReviewCommit, parseRange, resolveRange, toggleCommit } from './range';
+import { formatRange, inRange, lastReviewCommit, parseRange, rangeRefs, resolveRange, toggleCommit } from './range';
 import { addToBatch, batchOf, clearBatch, defaultSuggestionMessage, inBatch, removeFromBatch } from './suggestionBatch';
 
 const commit = (sha: string, msg: string, parent?: string): RestCommit => ({
@@ -45,6 +45,21 @@ describe('commit range selection', () => {
     // Since the last review: the reviewed head → PR head.
     expect(resolveRange({ kind: 'review' }, commits, C, A)).toEqual({ base: A, atHead: true, label: 'Changes since your last review (2 commits)' });
     expect(resolveRange({ kind: 'review' }, commits, C, C)).toEqual({ atHead: true, label: 'All changes' });
+  });
+
+  it('points the diff source at the selected range (#41)', () => {
+    const P = 'f'.repeat(40);
+    // Whole PR: merge base → head.
+    expect(rangeRefs(null, P, C)).toEqual({ oldRef: `${P}...${C}`, newRef: C });
+    // One commit / a range: its base → its head, compared directly.
+    const one = resolveRange({ kind: 'commits', from: B, to: B }, commits, C, null);
+    expect(rangeRefs({ base: one.base, head: one.head }, P, C)).toEqual({ oldRef: A, newRef: B });
+    // The first commit: merge base → that commit.
+    const first = resolveRange({ kind: 'commits', from: A, to: A }, commits, C, null);
+    expect(rangeRefs({ base: first.base, head: first.head }, P, C)).toEqual({ oldRef: `${P}...${A}`, newRef: A });
+    // Since the last review: reviewed head → PR head.
+    const review = resolveRange({ kind: 'review' }, commits, C, A);
+    expect(rangeRefs({ base: review.base, head: review.head }, P, C)).toEqual({ oldRef: A, newRef: C });
   });
 
   it('toggles and extends the selection', () => {
