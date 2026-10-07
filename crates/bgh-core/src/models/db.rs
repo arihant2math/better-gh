@@ -103,8 +103,15 @@ impl User {
 #[derive(Debug, Clone, Default)]
 pub struct NewUser<'a> {
     pub login: &'a str,
-    /// Primary email; stored verified in `user_emails` when given.
+    /// Primary email, stored in `user_emails` when given.
     pub email: Option<&'a str>,
+    /// Whether the primary email is already proven to belong to the user.
+    /// Only trusted sources (site admins, LDAP, SCIM, SAML, an IdP's
+    /// `email_verified`) pass `true`; self-service sign-up must pass `false`
+    /// and send a verification mail. Callers inserting a verified address
+    /// release other accounts' unverified claims on it first
+    /// (`bgh_accounts::emails::release_unverified`).
+    pub email_verified: bool,
     pub name: Option<&'a str>,
     /// Argon2 PHC hash (see `crypto::hash_password`).
     pub password_hash: Option<&'a str>,
@@ -129,10 +136,11 @@ impl NewUser<'_> {
         if let Some(email) = self.email {
             sqlx::query(
                 "INSERT INTO user_emails (user_id, email, verified, is_primary, visibility)
-                 VALUES ($1, $2, true, true, 'private')",
+                 VALUES ($1, $2, $3, true, 'private')",
             )
             .bind(user.id)
             .bind(email)
+            .bind(self.email_verified)
             .execute(&mut *conn)
             .await?;
             crate::signatures::forget_email(&mut *conn, email).await?;

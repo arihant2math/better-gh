@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client';
 import { browseKeys, compareRefs, mergeUpstream } from '../../api/endpoints';
 import type { RestCompare } from '../../api/types';
 import { Link } from '../../router';
+import { compareUrl } from '../../components/code/urls';
 import { Button } from '../../ui/Button';
 import { AlertIcon, ChevronDownIcon, GitPullRequestIcon, SyncIcon } from '../../ui/icons';
 import { Popover } from '../../ui/Popover';
@@ -68,7 +69,7 @@ export function SyncFork({ owner, name, branch, upstream, canPush }: { owner: st
             </p>
             <p className={styles.muted}>{conflict} Open a pull request to merge the upstream changes and resolve the conflicts.</p>
             <div className={styles.syncActions}>
-              <Link to={`/${owner}/${name}/compare/${encodeURIComponent(branch)}...${encodeURIComponent(`${upstream.owner}:${branch}`)}?expand=1`} className={styles.linkButton} onClick={() => setOpen(false)}>
+              <Link to={compareUrl({ owner, repo: name }, branch, `${upstream.owner}:${branch}`, { expand: true })} className={styles.linkButton} onClick={() => setOpen(false)}>
                 <GitPullRequestIcon size={16} /> Open pull request
               </Link>
             </div>
@@ -78,7 +79,7 @@ export function SyncFork({ owner, name, branch, upstream, canPush }: { owner: st
             <p className={styles.syncTitle}>{syncSummary(ahead, behind, upstreamLabel)}</p>
             <p className={styles.muted}>{behind > 0 ? 'Update your branch to keep it up to date with the upstream repository.' : 'No new commits to fetch. Enjoy your day!'}</p>
             <div className={styles.syncActions}>
-              <Link to={`/${owner}/${name}/compare/${encodeURIComponent(`${upstream.owner}:${branch}`)}...${encodeURIComponent(branch)}`} className={styles.linkButton} onClick={() => setOpen(false)}>
+              <Link to={compareUrl({ owner, repo: name }, `${upstream.owner}:${branch}`, branch)} className={styles.linkButton} onClick={() => setOpen(false)}>
                 Compare
               </Link>
               {canPush && (

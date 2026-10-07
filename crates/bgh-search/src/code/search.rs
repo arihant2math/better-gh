@@ -97,6 +97,34 @@ fn compile_regex(pattern: &str) -> ApiResult<regex::Regex> {
         .map_err(|_| invalid("Invalid regular expression"))
 }
 
+/// The content side of one term, written so `code_blobs_content_trgm_idx`
+/// drives it (#277): wrapping `b.content` in `coalesce()` hides it from the
+/// index and turns every search into a probe per file.
+///
+/// * positive, content only: plain `b.content <op> $1`. The term sits under
+///   AND/OR only, so the NULL of an unindexed blob (LEFT JOIN) filters the
+///   row out exactly as `coalesce(…, false)` did.
+/// * positive, OR-ed with the path: `b.content <op> $1 OR <path>` spans two
+///   tables, so nothing can drive it; a hashed sub-select of the matching
+///   blob SHAs uses the content index and costs one hash probe per file.
+/// * negated: `coalesce` stays so unindexed blobs still match `NOT`; no
+///   index helps a negation anyway.
+fn content_cond(s: &mut Sql, op: &str, value: String, negated: bool, with_path: bool) {
+    if negated {
+        s.raw(format!("coalesce(b.content {op} "))
+            .text(value)
+            .raw(", false)");
+    } else if with_path {
+        s.raw(format!(
+            "f.blob_sha IN (SELECT sha FROM code_blobs WHERE content {op} "
+        ))
+        .text(value)
+        .raw(")");
+    } else {
+        s.raw(format!("b.content {op} ")).text(value);
+    }
+}
+
 /// One content/path predicate.
 fn term_cond(s: &mut Sql, t: &Term, in_path: bool, in_file: bool) -> ApiResult<Option<Matcher>> {
     match t {
@@ -104,15 +132,11 @@ fn term_cond(s: &mut Sql, t: &Term, in_path: bool, in_file: bool) -> ApiResult<O
             let pat = format!("%{}%", like_escape(text));
             let not = if *negated { "NOT " } else { "" };
             s.raw(format!("{not}("));
-            let mut first = true;
             if in_file {
-                s.raw("coalesce(b.content ILIKE ")
-                    .text(pat.clone())
-                    .raw(", false)");
-                first = false;
+                content_cond(s, "ILIKE", pat.clone(), *negated, in_path);
             }
             if in_path {
-                if !first {
+                if in_file {
                     s.raw(" OR ");
                 }
                 s.raw("lower(f.path) LIKE ").text(pat.to_lowercase());
@@ -124,15 +148,11 @@ fn term_cond(s: &mut Sql, t: &Term, in_path: bool, in_file: bool) -> ApiResult<O
             let re = compile_regex(pattern)?;
             let not = if *negated { "NOT " } else { "" };
             s.raw(format!("{not}("));
-            let mut first = true;
             if in_file {
-                s.raw("coalesce(b.content ~* ")
-                    .text(pattern.clone())
-                    .raw(", false)");
-                first = false;
+                content_cond(s, "~*", pattern.clone(), *negated, in_path);
             }
             if in_path {
-                if !first {
+                if in_file {
                     s.raw(" OR ");
                 }
                 s.raw("f.path ~* ").text(pattern.clone());
@@ -499,6 +519,40 @@ fn content_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cond(q: &str, in_path: bool, in_file: bool) -> String {
+        let t = crate::query::parse(q).terms.remove(0);
+        let mut s = Sql::new();
+        term_cond(&mut s, &t, in_path, in_file).unwrap();
+        s.render()
+    }
+
+    /// Positive content terms must reach `code_blobs_content_trgm_idx`; a
+    /// `coalesce()` around `b.content` hides it (#277).
+    #[test]
+    fn content_terms_are_index_shaped() {
+        assert_eq!(cond("foo", false, true), "(b.content ILIKE $1)");
+        assert_eq!(cond("/fo+/", false, true), "(b.content ~* $1)");
+        assert_eq!(
+            cond("foo", true, true),
+            "(f.blob_sha IN (SELECT sha FROM code_blobs WHERE content ILIKE $1) \
+             OR lower(f.path) LIKE $2)"
+        );
+        assert_eq!(
+            cond("/fo+/", true, true),
+            "(f.blob_sha IN (SELECT sha FROM code_blobs WHERE content ~* $1) OR f.path ~* $2)"
+        );
+        assert_eq!(cond("foo", true, false), "(lower(f.path) LIKE $1)");
+        // Negations keep coalesce: an unindexed blob matches NOT foo.
+        assert_eq!(
+            cond("-foo", false, true),
+            "NOT (coalesce(b.content ILIKE $1, false))"
+        );
+        assert_eq!(
+            cond("-foo", true, true),
+            "NOT (coalesce(b.content ILIKE $1, false) OR lower(f.path) LIKE $2)"
+        );
+    }
 
     #[test]
     fn path_patterns() {

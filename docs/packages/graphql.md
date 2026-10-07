@@ -82,7 +82,15 @@ DISCUSSION empty), `rateLimit`.
   (`RequestedReviewer` = User|Team|Bot|Mannequin), `reviewThreads`,
   `commits` (gh's `statusCheckRollup: commits(last: 1)` alias works),
   `files`, `autoMergeRequest`, `closingIssuesReferences`, `mergeCommit`,
-  `mergedBy`, `baseRef`/`headRef` (`compare`), `viewerCan*`.
+  `mergedBy`, `baseRef`/`headRef` (`compare`), `viewerCan*`,
+  `isInMergeQueue`, `isMergeQueueEnabled`, `mergeQueue`,
+  `mergeQueueEntry`.
+* **Merge queue** (`bgh_pulls::merge_queue`): `Repository.mergeQueue(branch)`
+  (null without a `merge_queue` rule) → `MergeQueue` (`entries`,
+  `configuration` = `MergeQueueConfiguration`, `url`; node id key
+  `"{repo_id}:{branch}"`), `MergeQueueEntry` (node; `position`, `state`,
+  `enqueuer`, `headCommit`, `baseCommit`, `pullRequest`, `jump`, `solo`;
+  `estimatedTimeToMerge` is null until estimated).
 * **Checks**: `StatusCheckRollup` (`state`, `contexts` =
   `CheckRun | StatusContext`, `checkRunCount`, `checkRunCountsByState`,
   `statusContextCount`, `statusContextCountsByState`), `CheckSuite`
@@ -105,7 +113,11 @@ convertPullRequestToDraft, addPullRequestReview (pending or with event,
 comments/threads), submitPullRequestReview, dismissPullRequestReview,
 requestReviews (union or replace), requestReviewsByLogin,
 enablePullRequestAutoMerge, disablePullRequestAutoMerge,
-resolveReviewThread, unresolveReviewThread, updatePullRequestBranch;
+resolveReviewThread, unresolveReviewThread, updatePullRequestBranch,
+enqueuePullRequest (jump, expectedHeadOid), dequeuePullRequest (entry
+id). `enablePullRequestAutoMerge` on a base branch with a merge queue adds
+the PR to the queue instead (GitHub's behaviour, used by `gh pr merge
+--auto`).
 createRepository (user or org owner), updateRepository,
 cloneTemplateRepository, archiveRepository, unarchiveRepository, addStar,
 removeStar, createRef, updateRef, deleteRef.

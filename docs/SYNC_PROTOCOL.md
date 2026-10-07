@@ -619,7 +619,11 @@ Content-Type: application/json
      flicker), or until `lastSyncId ≥ N`, or 30 s passed.
    * `4xx` (except 408/429) → roll back: drop the overlay (base values
      reappear), delete the tx, show the error message.
-   * `401` → pause the queue, keep txs, route to login.
+   * `401` "Sudo mode required…" (sensitive action, e.g. repo delete or
+     transfer) → hold the queue, show the sudo prompt (`TxHooks.onSudoRequired`
+     → `requestSudo()`), retry the tx once on success, roll it back on cancel
+     or a second sudo 401. Never pauses the queue or expires the session.
+   * any other `401` → pause the queue, keep txs, route to login.
    * `5xx`, `408`, `429`, network error → keep the overlay, retry with
      backoff (1 s ×2, max 60 s; honour `Retry-After`). Pending txs are
      reloaded and resent after a page reload.
@@ -671,6 +675,7 @@ refreshes it in the background from `GET /_bgh/boot` (same JSON).
 | `GET /_bgh/repos/{owner}/{repo}/commits/{sha}/annotations` | — | Every check-run annotation of the commit (≤ 1000, by path and line): `[{check_run_id, check_run_name, path, start_line, end_line, start_column, end_column, annotation_level, title, message, raw_details}]` |
 | `DELETE /_bgh/notifications/threads/{id}/read` | `X-Client-Tx` | `204`; marks a thread unread (GitHub's REST API has no endpoint for this) |
 | `GET /_bgh/repos/{owner}/{repo}/issue-templates[?ref=]` | — | `{commit_sha, templates: [{filename, type: "markdown"\|"form", name, about, title, labels, assignees, body, form}], config: {blank_issues_enabled, contact_links}, errors}`; the client addresses templates by basename (`?template=bug_report.yml`) |
+| `GET /_bgh/repos/{owner}/{repo}/pull-templates[?ref=]` | — | `{commit_sha, source: "repo"\|"org"\|null, default: {filename, name, body}\|null, templates: [{filename, name, body}]}` — `pull_request_template.md` and `PULL_REQUEST_TEMPLATE/*.md` in `.github/`, the root or `docs/` (any case); when the repo has none, the owner's public `.github` repo (read concurrently). Cached in Redis by commit SHA; the compare page picks templates by basename (`?template=feature.md`) |
 | `PUT\|DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/pin` | `X-Client-Tx` | `204`; pin / unpin (max 3 per repo → `422`) |
 | `GET /_bgh/repos/{owner}/{repo}/issues/{n}/viewer-reactions` | — | `{"issue": ["+1"], "comments": {"<comment id>": ["heart"]}}` — the viewer's own reactions (rows only carry counts) |
 | `DELETE /_bgh/repos/{owner}/{repo}/issues/{n}/reactions/{content}` | `X-Client-Tx` | `204`; removes the viewer's reaction with that content (GitHub's REST API needs the reaction id); `204` when there is none |

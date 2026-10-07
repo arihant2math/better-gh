@@ -1,11 +1,12 @@
 /* Shared pieces of the releases pages: release card, assets, badges, helpers. */
 import { observer } from 'mobx-react-lite';
 import type { MouseEvent, ReactNode } from 'react';
-import { invalidate, prefetch, useResource } from '../../api/cache';
+import { invalidate, prefetch, useResource, type ResourceState } from '../../api/cache';
 import { codeKeys, findReleaseByTag, getLatestRelease, type RestAsset, type RestRelease } from '../../api/code';
 import { browseKeys } from '../../api/endpoints';
 import { useRefs } from '../../components/code/RefPicker';
 import { Link, navigate, prefetch as prefetchRoute } from '../../router';
+import { archiveUrl, treeUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
@@ -30,8 +31,18 @@ export function useCanPush(owner: string, name: string): boolean {
   return p === 'admin' || p === 'maintain' || p === 'write';
 }
 
-export function useLatestRelease(owner: string, repo: string) {
-  return useResource(codeKeys.latestRelease(owner, repo), () => getLatestRelease(owner, repo));
+const NO_LATEST: ResourceState<RestRelease | null> = { data: null, error: undefined, loading: false };
+
+/** A repository that was never pushed has no commits, so no releases: `releases/latest` would only 404. */
+export function skipLatestRelease(repo: { pushedAt: string | null } | undefined): boolean {
+  return !!repo && !repo.pushedAt;
+}
+
+/** `releases/latest`; `data` is `null` when there is none. Call from an observer. */
+export function useLatestRelease(owner: string, repo: string): ResourceState<RestRelease | null> {
+  const skip = skipLatestRelease(repoByName(owner, repo));
+  const res = useResource(skip ? null : codeKeys.latestRelease(owner, repo), () => getLatestRelease(owner, repo));
+  return skip ? NO_LATEST : res;
 }
 
 /** Drop every cached release list/detail (+ tags, which publishing may create). */
@@ -141,7 +152,7 @@ export function Assets({ owner, repo, release, open }: { owner: string; repo: st
   const source = !release.draft;
   const count = release.assets.length + (source ? 2 : 0);
   if (!count) return null;
-  const archive = (ext: string) => `/${owner}/${repo}/archive/refs/tags/${encodeURIComponent(release.tag_name)}.${ext}`;
+  const archive = (ext: 'zip' | 'tar.gz') => archiveUrl({ owner, repo }, `refs/tags/${release.tag_name}`, ext);
   return (
     <details className={styles.assets} open={open}>
       <summary className={styles.assetsSummary}>
@@ -198,7 +209,7 @@ export const ReleaseMeta = observer(function ReleaseMeta({
         </Link>
       )}
       {sha ? (
-        <Link to={`/${owner}/${repo}/tree/${encodeURIComponent(release.tag_name)}`} className={cx(styles.metaItem, styles.mono)}>
+        <Link to={treeUrl({ owner, repo }, release.tag_name)} className={cx(styles.metaItem, styles.mono)}>
           <TagIcon size={14} />
           {release.tag_name}
         </Link>

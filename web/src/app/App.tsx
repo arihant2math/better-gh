@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
 import { setSudoHandler } from '../api/client';
 import { navigate, returnTo, RouterView, useLocation } from '../router';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
 import { session } from './session';
@@ -34,6 +35,11 @@ function bareFor(pathname: string): BarePage | undefined {
   return BARE.find((b) => b.re.test(pathname));
 }
 
+/** Rendered without the shell and router (so it has no route chunks to preload). */
+export function isBarePath(pathname: string): boolean {
+  return !!bareFor(pathname);
+}
+
 /** Where users without 2FA are sent when the site requires it. */
 export const TWO_FACTOR_SETUP_PATH = '/settings/security';
 
@@ -60,7 +66,12 @@ export const App = observer(function App() {
   let content = null;
   if (bare) {
     const Page = bare.page;
-    if (bare.public || signedIn) content = <Suspense fallback={null}>{!(signedIn && bare.guestOnly) && <Page />}</Suspense>;
+    if (bare.public || signedIn)
+      content = (
+        <ErrorBoundary name="page" variant="page" resetKey={pathname}>
+          <Suspense fallback={null}>{!(signedIn && bare.guestOnly) && <Page />}</Suspense>
+        </ErrorBoundary>
+      );
   } else if (signedIn && session.started) {
     content = (
       <Shell>

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     CACHE_VERSION, CachedCommit, CommitSummary, Target, cache_get, cache_put, json_response,
-    precheck, resolve, summarize,
+    precheck, resolve_or_empty, summarize,
 };
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +28,9 @@ pub struct History {
     pub per_page: usize,
     pub has_more: bool,
     pub commits: Vec<CommitSummary>,
+    /// The repository has no commits yet.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub empty: bool,
 }
 
 pub async fn root(
@@ -37,8 +40,8 @@ pub async fn root(
     q: Query<HistoryQuery>,
     req: HeaderMap,
 ) -> ApiResult<Response> {
-    let t = resolve(&state, auth.as_ref(), &owner, &repo, None).await?;
-    respond(&state, t, q.0, req).await
+    let (t, empty) = resolve_or_empty(&state, auth.as_ref(), &owner, &repo, None).await?;
+    respond(&state, t, empty, q.0, req).await
 }
 
 pub async fn get(
@@ -48,19 +51,33 @@ pub async fn get(
     q: Query<HistoryQuery>,
     req: HeaderMap,
 ) -> ApiResult<Response> {
-    let t = resolve(&state, auth.as_ref(), &owner, &repo, Some(&spec)).await?;
-    respond(&state, t, q.0, req).await
+    let (t, empty) = resolve_or_empty(&state, auth.as_ref(), &owner, &repo, Some(&spec)).await?;
+    respond(&state, t, empty, q.0, req).await
 }
 
 async fn respond(
     state: &AppState,
     t: Target,
+    empty: bool,
     q: HistoryQuery,
     req: HeaderMap,
 ) -> ApiResult<Response> {
     let page = q.page.unwrap_or(1).max(1);
     let per_page = q.per_page.unwrap_or(30).clamp(1, 100);
     let key = format!("history:{}:{}:{page}:{per_page}", t.commit, t.path);
+    if empty {
+        let body = History {
+            refname: t.refname.clone(),
+            commit: String::new(),
+            path: String::new(),
+            page,
+            per_page,
+            has_more: false,
+            commits: Vec::new(),
+            empty: true,
+        };
+        return json_response(&req, &t, &key, &body);
+    }
     if let Some(r) = precheck(&req, &t, &key) {
         return Ok(r);
     }
@@ -100,6 +117,7 @@ async fn respond(
             .iter()
             .filter_map(|c| rendered.get(&c.sha).cloned())
             .collect(),
+        empty: false,
     };
     json_response(&req, &t, &key, &body)
 }

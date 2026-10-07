@@ -13,7 +13,8 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import styles from './Code.module.css';
 import { prefetchBlob, prefetchTree, useTree } from './data';
 import { LastCommitBar } from './LastCommitBar';
-import { codeUrl, parentPath, routeLinks, type CodeTarget } from './util';
+import { parentPath, routeLinks, type CodeTarget } from './util';
+import { codeUrl } from '../../components/code/urls';
 
 /** Directory listing (+ last commit per entry) and the rendered README. */
 export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTarget; repo: Repo; root: boolean }) {
@@ -21,7 +22,7 @@ export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTar
   // Last commit per entry: inlined when the server has it cached, otherwise
   // fetched by commit SHA (immutable).
   const commits = useResource<LastCommits>(
-    data && !data.last_commits ? browseKeys.treeCommits(t.owner, t.repo, data.commit, data.path) : null,
+    data && !data.empty && !data.last_commits ? browseKeys.treeCommits(t.owner, t.repo, data.commit, data.path) : null,
     () => getTreeCommits(t.owner, t.repo, data!.commit, data!.path),
     { immutable: true },
   );
@@ -36,7 +37,9 @@ export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTar
     backspace: { handler: () => (t.path ? navigate(codeUrl(t, 'tree', t.ref, parentPath(t.path))) : false), description: 'Parent directory', group: 'Code' },
   });
 
+  if (data?.empty) return <EmptyRepo repo={repo} />;
   if (error) {
+    // Older servers answer an empty repository with a 404.
     const empty = root && (error as { status?: number }).status === 404;
     return empty ? <EmptyRepo repo={repo} /> : <EmptyState icon={AlertIcon} title="This path does not exist" />;
   }

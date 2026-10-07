@@ -14,6 +14,7 @@ import { installImportMocks } from './imports';
 import { installInvitationMocks } from './invitations';
 import { installLicenseMocks } from './licenses';
 import { installMannequinMocks } from './mannequins';
+import { installMergeQueueMocks } from './mergeQueue';
 import { installMetadataImportMocks } from './metadataImports';
 import { installPackageMocks } from './packages';
 import { installProfileMocks } from './profile';
@@ -33,6 +34,7 @@ export function installExtraMocks(server: MockServer): void {
   installLicenseMocks(server);
   installRepoSettingsMocks(server);
   installRulesetMocks(server);
+  installMergeQueueMocks(server);
   installInvitationMocks(server);
   installRepoNavMocks(server);
   installUploadMocks(server);

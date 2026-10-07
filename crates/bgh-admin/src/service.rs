@@ -56,12 +56,17 @@ pub async fn create_user(
         )));
     }
     let mut tx = Tx::begin(state).await?;
+    if let Some(email) = email {
+        bgh_accounts::emails::release_unverified(&mut tx, email).await?;
+    }
     let mut user = db::NewUser {
         login,
         email,
         name: None,
         password_hash: None,
         site_admin: false,
+        // Site admins vouch for the address they type in.
+        email_verified: true,
     }
     .insert(&mut tx)
     .await

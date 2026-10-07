@@ -292,6 +292,12 @@ pub async fn synchronize(state: &AppState, pull_id: i64, actor_id: Option<i64>) 
             .execute(&mut *tx)
             .await?;
     }
+    if head_changed && !externally_merged {
+        // The queued head is gone: the PR must be queued again. (Merged
+        // PRs leave the queue through the merge queue / `PullRequestMerged`.)
+        crate::merge_queue::remove_in_tx(&mut tx, repo_id, pull.id(), actor_id, "head changed")
+            .await?;
+    }
     if force_pushed {
         timeline::record(
             &mut tx,
