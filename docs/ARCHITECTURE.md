@@ -155,7 +155,11 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 GROUP/PROJECT --owner <login> …` / `bgh import resume --id N`
 (metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
 the log), `bgh healthcheck` (probes `/healthz`
-on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
+on `BGH_LISTEN`; container health checks), `bgh backup --to DIR` /
+`bgh backup verify --from DIR` / `bgh restore --from DIR [--force]`
+(`bgh_server::backup`: `pg_dump` + a hard-link-incremental copy of the data
+directory with a checksummed manifest; restore checks the manifest's
+migration level against the binary, migrates and fscks a sample). Deployment (Docker, systemd,
 reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
 ## HTTP surface

@@ -298,3 +298,47 @@ async fn wiki_store_and_diff() {
     wiki.delete(7).await.unwrap();
     assert!(!wiki.exists(7) && store.exists(7));
 }
+
+#[tokio::test]
+async fn split_ref_path_prefers_the_longest_ref() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = store(&tmp);
+    store.init(8, "main").await.unwrap();
+    let c1 = commit(&store, 8, None, &[("src/a.rs", "a\n")], "one").await;
+    let c2 = commit(&store, 8, Some(&c1), &[("src/a.rs", "b\n")], "two").await;
+    // Branch `release` and tag `release/v2` can coexist; a branch with a
+    // slash (`feature/big-refactor`) must not be read as `feature` + path.
+    for (name, sha) in [
+        ("refs/heads/release", &c1),
+        ("refs/tags/release/v2", &c2),
+        ("refs/heads/feature/big-refactor", &c2),
+    ] {
+        write::update_ref(&store, 8, name, sha, None).await.unwrap();
+    }
+    let split = |spec: &'static str| store.read(8, move |r| r.split_ref_path(spec));
+    let s = |a: &str, b: &str, c: &str| (a.to_string(), b.to_string(), c.to_string());
+    assert_eq!(
+        split("feature/big-refactor/src/a.rs").await.unwrap(),
+        s("feature/big-refactor", &c2, "src/a.rs")
+    );
+    assert_eq!(
+        split("feature/big-refactor").await.unwrap(),
+        s("feature/big-refactor", &c2, "")
+    );
+    assert_eq!(
+        split("release/v2/src").await.unwrap(),
+        s("release/v2", &c2, "src")
+    );
+    assert_eq!(
+        split("release/src").await.unwrap(),
+        s("release", &c1, "src")
+    );
+    assert_eq!(
+        split("main/src/a.rs").await.unwrap(),
+        s("main", &c2, "src/a.rs")
+    );
+    assert!(matches!(
+        split("feature/src").await,
+        Err(GitError::NotFound(_))
+    ));
+}

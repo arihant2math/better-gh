@@ -15,7 +15,7 @@ import {
   listReleases,
   listTags,
 } from '../../api/code';
-import { getHistory, isSha } from '../../api/endpoints';
+import { browseKeys, getHistory, getRefs, isSha } from '../../api/endpoints';
 import type { Params } from '../../router';
 import { hasSync } from '../../sync';
 import { repoByName } from '../../sync/selectors';
@@ -40,6 +40,8 @@ export function prefetchCodeRoute(kind: string, p: Params): void {
       const ref = defaultRef(p);
       // Same normalisation as CommitsPage (keys must match).
       const path = (p['*'] ?? '').replace(/\/+$/, '');
+      // The ref list splits `{ref}/{path}` for the header (slash refs).
+      if (p.ref) prefetch(browseKeys.refs(o, r), () => getRefs(o, r));
       if (ref) prefetch(codeKeys.history(o, r, ref, path, 1), () => getHistory(o, r, ref, path, { page: 1, perPage: COMMITS_PER_PAGE }), { immutable: isSha(ref) });
       break;
     }

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { listSsoProviders, ssoLoginHref, type SsoProvider } from '../../api/auth';
 import { api } from '../../api/client';
-import { returnTo } from '../../app/App';
 import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
 import { passkeySignIn, securityKeyTwoFactor, webauthnError } from '../../api/webauthn';
 import { getBoot, isMockMode, type BootData } from '../../boot';
-import { Link, navigate, useLocation } from '../../router';
+import { Link, navigate, returnTo, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { ArrowLeftIcon, DeviceMobileIcon, KeyIcon, ShieldLockIcon } from '../../ui/icons';

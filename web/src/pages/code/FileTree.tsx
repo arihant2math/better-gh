@@ -17,7 +17,7 @@ import {
 import { Kbd } from '../../ui/Badge';
 import styles from './Code.module.css';
 import { prefetchBlob, prefetchFileList, prefetchTree, useTree } from './data';
-import { codeUrl, type CodeTarget } from './util';
+import { codeUrl, isSettled, type CodeTarget } from './util';
 
 /** Lazily expanding file tree (left panel); every directory is cached by commit SHA. */
 export function FileTree({ t, onCollapse, onFind }: { t: CodeTarget; onCollapse: () => void; onFind: () => void }) {
@@ -40,7 +40,7 @@ export function FileTree({ t, onCollapse, onFind }: { t: CodeTarget; onCollapse:
 }
 
 function TreeDir({ t, path, depth }: { t: CodeTarget; path: string; depth: number }) {
-  const { data, error } = useTree(t, path);
+  const { data, error } = useTree(t, path, isSettled(t));
   if (error) return null;
   if (!data) {
     return (

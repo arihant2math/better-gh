@@ -1,4 +1,5 @@
 import { makeObservable, observable, runInAction } from 'mobx';
+import { SUDO_REQUIRED_PREFIX } from '../api/client';
 import type { OverlayOp } from './overlay';
 import type { Persistence } from './persistence';
 import type { ObjectPool } from './pool';
@@ -52,6 +53,17 @@ export interface TxHooks {
   onRollback?(tx: PendingTx, message: string): void;
   /** 401: queue paused until `resume()`. */
   onUnauthorized?(): void;
+  /**
+   * 401 "Sudo mode required" (sensitive action, session still valid): ask the
+   * user to re-authenticate; resolve true to retry the tx, false to roll it
+   * back. Without this hook the tx is rolled back. Never pauses the queue.
+   */
+  onSudoRequired?(): Promise<boolean>;
+}
+
+/** Whether a tx result is the server asking for sudo mode rather than a dead session. */
+export function isSudoRequiredResult(result: TxResult): boolean {
+  return result.status === 401 && (result.message ?? '').startsWith(SUDO_REQUIRED_PREFIX);
 }
 
 export class TxRejectedError extends Error {
@@ -93,6 +105,8 @@ export class TxQueue {
   private waiters = new Map<string, { resolve: (r: TxResult) => void; reject: (e: Error) => void }>();
   private inflight: string | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Txs already retried after a sudo prompt (a second sudo 401 rolls back). */
+  private sudoRetried = new Set<string>();
   private echoTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Per-tx result handlers (in memory only: functions can't be persisted). */
   private appliers = new Map<string, TxApply>();
@@ -246,6 +260,8 @@ export class TxQueue {
           setTimeout(() => this.finish(t), ECHO_TIMEOUT_MS),
         );
       }
+    } else if (result && isSudoRequiredResult(result)) {
+      await this.handleSudo(t, result);
     } else if (result && result.status === 401) {
       runInAction(() => (this.paused = true));
       this.hooks.onUnauthorized?.();
@@ -263,7 +279,36 @@ export class TxQueue {
     this.kick();
   }
 
+  /**
+   * Prompt for sudo while holding the queue (later txs may depend on this
+   * one), then retry once; a second sudo 401 or a cancel rolls it back.
+   */
+  private async handleSudo(t: PendingTx, result: TxResult): Promise<void> {
+    if (!this.hooks.onSudoRequired || this.sudoRetried.has(t.tx)) {
+      this.sudoRetried.delete(t.tx);
+      this.rollback(t, result);
+      return;
+    }
+    this.inflight = t.tx;
+    let granted: boolean;
+    try {
+      granted = await this.hooks.onSudoRequired();
+    } catch {
+      granted = false;
+    } finally {
+      this.inflight = null;
+    }
+    if (!this.txs.includes(t)) return;
+    if (granted) {
+      this.sudoRetried.add(t.tx);
+      t.nextAttemptAt = Date.now();
+    } else {
+      this.rollback(t, result);
+    }
+  }
+
   private finish(t: PendingTx): void {
+    this.sudoRetried.delete(t.tx);
     const i = this.txs.indexOf(t);
     if (i >= 0) this.txs.splice(i, 1);
     const timer = this.echoTimers.get(t.tx);
