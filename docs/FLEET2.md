@@ -1,33 +1,33 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: foreman5 session_01G3Ks4npv6a4V2K5s4yXtqm (since 11:17; see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
+Foreman: foreman6 (see HANDOFF 12:46; foreman5 was session_01G3Ks4npv6a4V2K5s4yXtqm, 11:17-12:46; see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## HANDOFF (11:17, foreman4 session_01QGXdRWZfRg2trNCsoy9GjA → foreman5; context ~310k)
-Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow: the reviewer APPROVEs, sets S-Approved, updates the branch, then send_messages the foreman. The foreman verifies on GitHub (get_reviews, get_commits, get_check_runs) that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, approved SHA, head SHA and CI to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
+## HANDOFF (12:46, foreman5 session_01G3Ks4npv6a4V2K5s4yXtqm → foreman6; context ~310k)
+Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow is unchanged: the reviewer posts an APPROVE COMMENT review, sets S-Approved, updates the branch from main, then send_messages the foreman. The foreman verifies on GitHub (get_reviews, get_commits with perPage 100, get_check_runs): the APPROVE commit must be followed only by main merges, and `CI result` must be green on the head. Then forward the PR#, approved SHA, head SHA and CI run to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
 
-### Merged by the orchestrator since 09:22
-#332 (#331 flake), #315, #330 (#85 item 4), #312 (#138 + #329), #309 (#275), #334 (#85 item 5, 223214d).
+### Merged by the orchestrator since 11:17
+#338 (#85 item 6, 2755a5c), #337 (#335 P-Critical GraphQL depth guard, 4351428), #339 (#85 item 7 nextest, b92d546), #319 (#245 hub recheck, 6a0a8c0).
 
-### FIRST ACTIONS for foreman5
-1. Main CI run 37611075666 (223214d, the #334 merge) is the first real run of the Docker image built from the Ubuntu release binary on trixie. Check that the `Release binary (embed-web)` and `Docker image` jobs succeeded. If either failed, getting a fix PR up is TOP priority (the orchestrator asked); tell the orchestrator. If both are green, record the main timings for the #85 summary.
-2. Notify the live sessions of the new foreman id: the lead session_01Kq9BfEn4RqooYm2643Ah6e, the #319 author session_012T1MW3bqBQbQPoRqYR2z4G, the #335 fixer session_016RmaisDuJy7A79V54oB1mV, the #85 item 6 worker session_01BWCia78jFZoT3pq4UrYS1p, and reviewers session_015ZZYEzuEpDGu6JFJwPhAFm (#316), session_01XfyDSac15aDmCTGBNKoYtZ (#322) and session_016gCE3Ek4pZduRqtPbeHwTQ (#337).
+### FIRST ACTIONS for foreman6
+1. Main CI run 37622793134 (6a0a8c0, #319) is the first run of the new bgh-sync code under nextest; run 37622619342 (b92d546, #339) is the first main nextest run. Confirm both end green and tell the orchestrator (it asked). If either is red, find out whether the failure is a real regression or a flake (#341 is a known flake that also happens on main) and tell the orchestrator.
+3. Tell the live sessions the new foreman id: the lead session_01Kq9BfEn4RqooYm2643Ah6e; the #319/#340 author session_012T1MW3bqBQbQPoRqYR2z4G; the #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA; reviewers session_01SiREyJgcEqyaYMtTmBd3Zd (#340) and session_01EQC8yBZ3rfDQDgPJEhpinM (#316 r4 + #322 delta).
 
 ### Open
-- #337 (#335 P-Critical GraphQL pre-parse depth/length guard, fixer session_016RmaisDuJy7A79V54oB1mV): adversarial security reviewer session_016gCE3Ek4pZduRqtPbeHwTQ on 378faba. The orchestrator wants it forwarded as soon as it's approved and green.
-- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e; do NOT archive the lead): adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm on ee81558.
-- #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 merges and the lead retargets it to main (then re-verify CI on the retargeted head). The reviewer says whether #328 can close.
-- #338 (#85 item 6, share clippy/test deps, worker session_01BWCia78jFZoT3pq4UrYS1p): r1 REQUEST_CHANGES on 236372d (11:23): gate the main-only clippy warm step on cache-hit != 'true' (~1m wasted on main otherwise); the description must say the gain is cache storage (~344 MB), not PR wall-clock. Author told; reviewer archived. Fresh delta reviewer (sonnet) when the author pings.
-- #319 (#245): UN-PARKED 11:54 per the orchestrator; author fixing (ETA ~12:55), then a fresh reviewer. Old note: REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48, no reply yet. If it's blocked or silent, park it: a PR status comment saying what remains (the failed recheck pass drops coalesced targets; the first-subscriber race) and the session archived via the orchestrator.
+- #316 (#288 merge-queue service; lead session_01Kq9BfEn4RqooYm2643Ah6e, do NOT archive the lead): deadlock fix at 9ab35b6 (PR rows locked before entries everywhere). Adversarial r4 reviewer session_01EQC8yBZ3rfDQDgPJEhpinM, which also delta-checks #322.
+- #322 (#289 merge_group; same lead; STACKED on #316): r2 APPROVE on 510558b; head is now 0664135 (carried #316's fix plus merges); the r4 reviewer reports whether #322's own logic changed. It merges only after #316 merges and the lead retargets it to main; then re-verify CI on the retargeted head. #328 can close once #322 merges.
+- #340 (#241 sync lock, by session_012T1MW3bqBQbQPoRqYR2z4G, 4a3faa0, CI green): adversarial reviewer session_01SiREyJgcEqyaYMtTmBd3Zd is running (at 12:45 it was isolating an intermittent race-test failure). ORCHESTRATOR RULE: if approved and green, forward as usual; if it needs more than a small fix, PARK it for the user (a PR status comment, no r2) and tell the orchestrator. The author stays live until #340 is resolved.
+- #85 item 8 (CI-only CARGO_PROFILE_DEV_DEBUG=0): worker session_01NqrbwhRpn4xG962rpZyFTA, branch agent/85-ci-dev-debug. No PR yet. When it pings, start a reviewer (default model, adversarial CI): the cache key must stay identical between the tests and x86_64 clippy jobs, backtraces must keep function names, and timings must be honest. The worker also ticks item 7 on #85.
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-6 merged (#152, #311, #320, #330, #334, #338=2755a5c); item 7 merged (#339=b92d546); item 8 (CARGO_PROFILE_DEV_DEBUG=0) worker session_01NqrbwhRpn4xG962rpZyFTA, branch agent/85-ci-dev-debug (it ticks item 7). Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
+Items 1-7 merged (#152, #311, #320, #330, #334, #338, #339). Item 8 is in progress. Then item 9 (optional sccache; may be skipped with a justification comment, ask the orchestrator), then item 10 (Node 24 action majors: checkout@v5, upload/download-artifact@v5, setup-node@v5), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). Close #85 at the end with a summary including honest timings.
+Timings so far (main): baseline ~29 min PR wall-clock at issue time. Main run 37611075666 (after item 5, warm) ~12m: tests job 11m42s (--no-run 3m27s, test run 6m55s), release binary 7m, Docker from prebuilt 38s. Item 6: main cold run 2755a5c ~18m15s (cache rename); gain is ~344 MB less cache, not wall-clock. Item 7 (nextest): test run step 6m55s → 4m52s (−30%) incl. doctests; 1320 tests, matching main. Get warm-main numbers from the post-#339 runs for the final summary.
 
-### Follow-ups filed today (backlog, unassigned)
-#321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed in #337).
+### Follow-ups for the final #46 status
+Backlog: #321, #324 (P-High), #325, #326, #327, #328 (closes after #322), #333 (double-@ parser, P-Medium), #336 (pg_notify commit serialization), #341 (flake, also on main), #340 if parked, #280 #286 #237 (audit umbrellas). #319 r2 non-blocking notes: `failed_recheck_is_retried` covers only the cache-drop half, not the retry; access is not fail-closed while a recheck keeps failing (same as main); fixed uncapped 1 s backoff. #338: old `test`/`clippy-linux-x86_64` cache entries age out in 7 days.
 
 ### Finish
-When every open PR is merged or parked: post the final #46 status (merged today; open/parked; backlog #324 #325 #326 #333 #241/#245 if unfinished, #280 #286 #237, and other follow-ups), report to the orchestrator, archive the remaining sessions, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
+When every open PR is merged or parked and #85 is closed: post the final #46 status (merged today; open/parked; backlog above), report to the orchestrator, archive the remaining sessions, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
 
 ## WIND DOWN (08:53, user via orchestrator; effective now)
 1. No new workers, auditors or QA, and no new claims. Reviewers are still allowed for open PRs (#309, #312, #323, #315, #316, #322, #319) and for the #85 track.
@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:46: foreman5 context ~310k → handoff to foreman6. Main runs 37622619342 (b92d546) and 37622793134 (6a0a8c0) in progress.
 12:42: orchestrator MERGED #319 (6a0a8c0; closes #245). WATCH main run for 6a0a8c0 (first run of the new bgh-sync code under nextest). Final #46 follow-ups: #319 r2 notes (retry-only test gap; not fail-closed while a recheck fails; uncapped 1 s backoff). The author stays live for #340.
 12:42: #319 READY (r2 APPROVE on 946d517; then only the main merge d92a1b4 = head; CI result green, run 37621134947; verified). Forwarded; reviewer archived. Non-blocking follow-ups for #46: the test covers only the cache-drop half; not fail-closed during a persistent recheck failure (same as main); fixed 1 s backoff.
 12:40: orchestrator MERGED #339 (b92d546); worker archived. #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA.
