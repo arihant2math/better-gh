@@ -68,6 +68,30 @@ async fn runner_artifact_upload_is_hashed_and_moved() {
 }
 
 #[tokio::test]
+async fn runner_artifact_upload_over_the_cap_is_413() {
+    let (app, _alice, runner, job) = job().await;
+    bgh_actions::server::set_max_artifact_size_for_tests(&app.state, 1000);
+    let res = app
+        .put(&format!("/_bgh/actions/runner/jobs/{job}/artifacts/big"))
+        .header("authorization", &format!("RunnerToken {}", runner.token))
+        .body(vec![0u8; 1001])
+        .send()
+        .await;
+    res.assert_status(413);
+    // Nothing stored, nothing left in the upload temp dir.
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM actions_artifacts")
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+    let tmp = app.state.config.data_dir.join("actions").join("tmp");
+    let left = std::fs::read_dir(&tmp).map(|d| d.count()).unwrap_or(0);
+    assert_eq!(left, 0);
+    // At the cap is fine.
+    runner.upload(&app, job, "big", vec![0u8; 1000]).await;
+}
+
+#[tokio::test]
 async fn job_log_download_supports_ranges() {
     let (app, alice, runner, job) = job().await;
     runner.log(&app, job, 1, "first step\n").await;

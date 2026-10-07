@@ -246,7 +246,7 @@ async fn upload_artifact(
     let dir = state.config.data_dir.join("actions").join("tmp");
     tokio::fs::create_dir_all(&dir).await?;
     let tmp = dir.join(format!("{}.zip", uuid::Uuid::new_v4()));
-    let spooled = spool_artifact(body, &tmp, server::MAX_ARTIFACT_SIZE).await;
+    let spooled = spool_artifact(body, &tmp, server::max_artifact_size(&state)).await;
     let res = match spooled {
         Ok(digest) => {
             server::store_artifact(&state, &job, &name, &tmp, Some(digest), q.retention_days)
@@ -256,7 +256,8 @@ async fn upload_artifact(
         Err(e) => Err(e),
     };
     let _ = tokio::fs::remove_file(&tmp).await;
-    let row = res.map_err(ApiError::internal)?;
+    // Keep the spool's 413 / 400; only store failures are internal.
+    let row = res?;
     Ok((
         StatusCode::CREATED,
         Json(ArtifactInfo {

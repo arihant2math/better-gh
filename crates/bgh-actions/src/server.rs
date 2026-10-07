@@ -634,6 +634,33 @@ pub fn artifact_path(state: &AppState, id: i64) -> PathBuf {
 /// Largest artifact accepted on any upload path.
 pub const MAX_ARTIFACT_SIZE: u64 = 10 << 30;
 
+fn size_overrides() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, u64>> {
+    static O: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, u64>>> =
+        std::sync::OnceLock::new();
+    O.get_or_init(Default::default)
+}
+
+/// The artifact upload cap for this server: [`MAX_ARTIFACT_SIZE`] unless a
+/// test lowered it with [`set_max_artifact_size_for_tests`].
+pub fn max_artifact_size(state: &AppState) -> u64 {
+    size_overrides()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&state.config.data_dir)
+        .copied()
+        .unwrap_or(MAX_ARTIFACT_SIZE)
+}
+
+/// Lower the artifact cap of one test app (keyed by its data dir) so the
+/// limit can be exercised without a 10 GiB body.
+#[doc(hidden)]
+pub fn set_max_artifact_size_for_tests(state: &AppState, max: u64) {
+    size_overrides()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(state.config.data_dir.clone(), max);
+}
+
 /// Buffer for hashing and copying artifact files.
 const FILE_BUF: usize = 256 << 10;
 
@@ -687,10 +714,8 @@ pub async fn store_artifact(
     retention_days: Option<i64>,
 ) -> anyhow::Result<ArtifactRow> {
     let size = tokio::fs::metadata(tmp).await?.len();
-    anyhow::ensure!(
-        size <= MAX_ARTIFACT_SIZE,
-        "artifact exceeds the {MAX_ARTIFACT_SIZE} byte limit"
-    );
+    let cap = max_artifact_size(state);
+    anyhow::ensure!(size <= cap, "artifact exceeds the {cap} byte limit");
     let digest = match digest {
         Some(d) => d,
         None => hash_file(tmp).await?,
