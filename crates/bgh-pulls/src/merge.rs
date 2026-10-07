@@ -88,8 +88,26 @@ pub struct MergeResult {
     pub message: String,
 }
 
+/// `owner/branch` of a PR's head (merge commit titles).
+pub(crate) async fn head_label(state: &AppState, pull: &Pull) -> ApiResult<String> {
+    let head_owner = match pull.pr.head_repo_id {
+        Some(id) => match db::Repository::find(&state.db, id).await? {
+            Some(r) => db::User::find(&state.db, r.owner_id)
+                .await?
+                .map(|u| u.login),
+            None => None,
+        },
+        None => None,
+    };
+    Ok(format!(
+        "{}/{}",
+        head_owner.as_deref().unwrap_or("unknown"),
+        pull.pr.head_ref
+    ))
+}
+
 /// Commit title and message for a merge per repository settings.
-async fn messages(
+pub(crate) async fn messages(
     state: &AppState,
     repo: &db::Repository,
     pull: &Pull,
@@ -223,20 +241,7 @@ pub async fn perform_merge(
         return Err(not_allowed(protection::violation_message(&blocking)));
     }
 
-    let head_owner = match pull.pr.head_repo_id {
-        Some(id) => match db::Repository::find(&state.db, id).await? {
-            Some(r) => db::User::find(&state.db, r.owner_id)
-                .await?
-                .map(|u| u.login),
-            None => None,
-        },
-        None => None,
-    };
-    let head_label = format!(
-        "{}/{}",
-        head_owner.as_deref().unwrap_or("unknown"),
-        pull.pr.head_ref
-    );
+    let head_label = head_label(state, pull).await?;
     let (title, message) = messages(state, repo, pull, &head_label, req).await?;
     let full_message = if message.is_empty() {
         format!("{title}\n")

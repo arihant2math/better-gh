@@ -413,9 +413,13 @@ optimistic-mutation reconciliation) is specified normatively in
   order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
   from `sync_actions`; a socket subscribing at hub position `L` replays
   `(since, L]` from the log and receives `> L` live. Access changes
-  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
-  `membership`/`team`/`viewerRepo` deltas, sign-outs via
-  `sync:!access`) trigger permission rechecks and `revoke`s.
+  (`Event::AccessChanged`, repo updates/deletes and sign-outs via
+  `sync:!access`; `org`/`team`/`membership`/`viewerRepo` deltas; `repo`
+  deltas only when the repo's visibility/owner differs from the hub's
+  cached key, so counter refreshes are free) trigger permission rechecks
+  and `revoke`s. Repo-level triggers check only that scope; rechecks are
+  coalesced by one worker per hub and batched per chunk of users
+  (`scopes::check_many`) with bounded pool use.
 * Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
   actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
   `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
@@ -577,7 +581,15 @@ Site-level account changes also emit `UserAccountChanged` /
   its source and bypassed per source; required checks only count
   statuses/check runs posted to the base repository. A `merge_queue` rule
   makes that evaluator refuse every direct merge; only the merge queue
-  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges. Push protection
+  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges: its
+  `pulls.merge_queue` job (one per queue under an advisory lock, kicked by
+  queue changes, checks on group commits, base pushes and a deadline
+  sweep service) stacks queued PRs on the base tip as
+  `gh-readonly-queue/{base}/pr-{n}-{sha}` refs, emits
+  `MergeGroupChecksRequested`, and once the base's required checks pass
+  on them fast-forwards the base (CAS) and marks the PRs merged; failures
+  and timeouts eject the entry and rebuild (`MergeGroupDestroyed`). See
+  `docs/packages/pulls.md`. Push protection
   (`bgh_security::push`, P65) is one more object check combined into
   `PushPolicy::object_check` by both transports: it scans only the blobs
   the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,

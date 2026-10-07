@@ -11,5 +11,7 @@ mod commit_bench;
 mod compact;
 mod middleware;
 mod order;
+mod recheck;
+mod recheck_bench;
 mod shapes;
 mod ws;
