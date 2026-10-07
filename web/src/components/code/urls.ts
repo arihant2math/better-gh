@@ -38,6 +38,19 @@ export const rawUrl = (t: RepoRef, ref: string, path: string) => codeUrl(t, 'raw
 /** Commit list of `ref`, or the history of `path` on it. */
 export const historyUrl = (t: RepoRef, ref: string, path = '') => codeUrl(t, 'commits', ref, path);
 
+/**
+ * `/{owner}/{repo}/compare/{base}...{head}[?expand=1]`. Each side is encoded
+ * per segment (`head` may be `owner:branch`); the `...` stays literal.
+ */
+export function compareUrl(t: RepoRef, base: string, head: string, opts: { expand?: boolean } = {}): string {
+  return `${repoBase(t)}/compare/${encPath(base)}...${encPath(head)}${opts.expand ? '?expand=1' : ''}`;
+}
+
+/** Source archive of `ref` (`refs/heads/x`, `refs/tags/x` or a SHA). */
+export function archiveUrl(t: RepoRef, ref: string, ext: 'zip' | 'tar.gz'): string {
+  return `${repoBase(t)}/archive/${encPath(ref)}.${ext}`;
+}
+
 function repoBase(t: RepoRef): string {
   return `/${encodeURIComponent(t.owner)}/${encodeURIComponent(t.repo)}`;
 }

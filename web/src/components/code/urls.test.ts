@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { splitRefPath } from '../../pages/code/util';
-import { blameUrl, blobUrl, codeUrl, historyUrl, parseCodeUrl, rawUrl, treeUrl } from './urls';
+import { archiveUrl, blameUrl, blobUrl, codeUrl, compareUrl, historyUrl, parseCodeUrl, rawUrl, treeUrl } from './urls';
 
 const t = { owner: 'acme', repo: 'api' };
 
@@ -18,6 +18,21 @@ describe('code URL builders', () => {
   it('drops leading and trailing slashes of the path', () => {
     expect(treeUrl(t, 'main', '/src/')).toBe('/acme/api/tree/main/src');
     expect(treeUrl(t, 'main', '')).toBe('/acme/api/tree/main');
+  });
+});
+
+describe('compareUrl / archiveUrl', () => {
+  it('keeps `...` literal and encodes each side', () => {
+    expect(compareUrl(t, 'main', 'feature/x', { expand: true })).toBe('/acme/api/compare/main...feature/x?expand=1');
+    expect(compareUrl(t, 'fix/#1', 'up:main')).toBe('/acme/api/compare/fix/%231...up%3Amain');
+    // The route's splat is decoded as a whole, then split on `...`.
+    const spec = decodeURIComponent(compareUrl(t, 'a b', 'org:feat/50%').slice('/acme/api/compare/'.length));
+    expect(spec.split('...')).toEqual(['a b', 'org:feat/50%']);
+  });
+
+  it('encodes archive refs per segment', () => {
+    expect(archiveUrl(t, 'refs/tags/v1.0', 'zip')).toBe('/acme/api/archive/refs/tags/v1.0.zip');
+    expect(archiveUrl(t, 'refs/heads/feat/#2', 'tar.gz')).toBe('/acme/api/archive/refs/heads/feat/%232.tar.gz');
   });
 });
 

@@ -10,7 +10,7 @@ import { Popover } from '../../ui/Popover';
 import { toast } from '../../ui/Toast';
 import styles from './Code.module.css';
 import { copyText, type CodeTarget } from './util';
-import { codeUrl } from '../../components/code/urls';
+import { archiveUrl, codeUrl } from '../../components/code/urls';
 
 type CloneTab = 'https' | 'ssh' | 'cli';
 const TAB_KEY = 'bgh:clone-tab';
@@ -19,10 +19,10 @@ export function useFullRepo(owner: string, repo: string) {
   return useResource<RestFullRepo>(codeKeys.repo(owner, repo), () => getFullRepo(owner, repo), { ttlMs: 60_000 });
 }
 
-/** Archive URL for a ref (`refs/heads/x`, `refs/tags/x` or a SHA). */
-export function archiveUrl(t: CodeTarget, ext: 'zip' | 'tar.gz'): string {
+/** Archive URL of the target's ref (`refs/heads/x`, `refs/tags/x` or a SHA). */
+function targetArchiveUrl(t: CodeTarget, ext: 'zip' | 'tar.gz'): string {
   const ref = t.kind === 'branch' ? `refs/heads/${t.ref}` : t.kind === 'tag' ? `refs/tags/${t.ref}` : t.ref;
-  return `/${t.owner}/${t.repo}/archive/${ref}.${ext}`;
+  return archiveUrl(t, ref, ext);
 }
 
 /** Green "Code" dropdown: HTTPS / SSH / CLI clone URLs and Download ZIP. */
@@ -85,7 +85,7 @@ export function CloneMenu({ repo, t }: { repo: Repo; t: CodeTarget }) {
                 ? 'Use a password-protected SSH key.'
                 : 'Work fast with the official CLI pointed at this server (GH_HOST).'}
           </p>
-          <a className={styles.cloneZip} href={archiveUrl(t, 'zip')} download>
+          <a className={styles.cloneZip} href={targetArchiveUrl(t, 'zip')} download>
             <FileZipIcon size={16} /> Download ZIP
           </a>
         </div>

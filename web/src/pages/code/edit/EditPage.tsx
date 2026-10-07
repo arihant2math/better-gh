@@ -221,7 +221,7 @@ const FileEditor = observer(function FileEditor({ t, mode, original, eol, origin
     }
   };
 
-  const latestUrl = `/${owner}/${repoName}/blob/${t.ref}/${originalPath ?? path}`;
+  const latestUrl = blobUrl(repoRefOf(t), t.ref, originalPath ?? path);
 
   return (
     <>
