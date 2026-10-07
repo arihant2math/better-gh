@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+14:41: #340 delta APPROVE on 981e363 (= head, merged dc4d48a): (a) recheck targets are computed under the delivered-advancing lock and are never held back by W; (b) no nested locks, no guard across an await, no blocking send, and failed passes requeue all; bgh-sync tests 5/5; CI result green run 37635385771. Verified and forwarded; delta reviewer archived. Main run 37636881093 (ac616a3) in progress.
 14:28: orchestrator MERGED #344 (ac616a3); item 10 worker archived by orchestrator; reviewer archived. WATCH main run for ac616a3 (release-binary + Docker with new artifact actions; fixer pre-authorized if it fails). Then: tick item 10, close #85 with timings (after item 8 warm numbers), archive item 8 worker. Then only #340 remains → final #46 status → report → stop.
 14:28: #344 READY (APPROVE on 52efaf2; then only main merge 89785ba = head; CI result green run 37633731127; clean; verified). Forwarded; reviewer archived. After merge: WATCH the first main run (release binary + Docker artifact handoff only run on main), tick item 10, close #85 with timings once item 8 warm numbers are posted.
 14:27: main 37633419003 (dc4d48a) GREEN (~12m30s); told orchestrator. #344 S-Approved, CI green on 89785ba; reviewer still reporting. #340 head 981e363 (delta reviewer merged main), delta check running.
