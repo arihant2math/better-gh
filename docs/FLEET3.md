@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | — | — |
-| B frontend | session_01WovmUdjyfUvU4e4m1onfKn | #213 | #354 | session_018n1pQcChYft3WGC95MQgpY (sonnet) |
+| B frontend | session_01BwaskUuqbHfPo6oZuGr6nd | #257 | — | — |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (done: #258, #256, #203-part; now #213; next #257, #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350 → web of the backlog.
+B: #280 items in order (done: #258, #256, #203-part; #213; now #257; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test issues.
 
 ## Log
@@ -43,3 +43,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 22:41Z: B opened #354 (Fixes #213), green; sonnet reviewer spawned.
 - 22:46Z: #352 APPROVE @3bf255b (=head), CI green; sent to coordinator. Doc nits (BACKEND_PATTERNS:35, ARCHITECTURE:115) → fold into #353. Next A item: #181 (+#158).
 - 22:47Z: #352 merged as da2aa56; A original worker + reviewer archived; fresh A worker for #181. #354 APPROVE @048c777 (=head), CI green; sent to coordinator. #353 updated with #352/#354 nits.
+- 22:48Z: #354 merged as 0385b15; B worker+reviewer archived; fresh B worker for #257.
