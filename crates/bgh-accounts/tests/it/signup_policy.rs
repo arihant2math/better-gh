@@ -3,10 +3,15 @@
 //! just-in-time provisioning are covered in `sso_avatars_ratelimit.rs` and
 //! `saml.rs`.
 
+use crate::common::*;
 use bgh_core::testing::{TestApp, TestResponse, TestUser};
 use serde_json::{Value, json};
 
 const ROUTES: [&str; 2] = ["/_bgh/signup", "/_bgh/auth/signup"];
+
+/// The policy only saw a *claimed* address (#329).
+pub const GATED: &str =
+    "Confirm your email address before signing in: open the link we emailed you.";
 
 pub async fn set_signup(app: &TestApp, admin: &TestUser, signup: Value) {
     app.patch("/_bgh/admin/settings")
@@ -27,6 +32,28 @@ async fn signup(app: &TestApp, path: &str, login: &str, email: &str) -> TestResp
 fn assert_refused(res: &TestResponse, message: &str) {
     res.assert_status(403);
     assert_eq!(res.json()["message"], message);
+}
+
+/// A sign-up the policy let through but gated on the unproven address: no
+/// session, no password sign-in until the mailed link is followed, then
+/// sign-in works.
+async fn assert_gated_until_verified(app: &TestApp, res: TestResponse, login: &str, email: &str) {
+    assert_refused(&res, GATED);
+    assert!(res.header("set-cookie").is_none(), "{login}");
+    assert!(user_exists(app, login).await, "{login}");
+    let sign_in = || {
+        app.post("/_bgh/session")
+            .json(&json!({"login": login, "password": "s3cret-password"}))
+            .send()
+    };
+    assert_refused(&sign_in().await, GATED);
+    let token = token_after(&last_mail_to(app, email).await.text, "token=");
+    app.post("/_bgh/emails/verify")
+        .json(&json!({"token": token}))
+        .send()
+        .await
+        .assert_status(200);
+    sign_in().await.assert_status(200);
 }
 
 async fn user_exists(app: &TestApp, login: &str) -> bool {
@@ -71,9 +98,9 @@ async fn invite_policy_requires_a_pending_invitation() {
             .send()
             .await
             .assert_status(201);
-        signup(&app, path, &login, &email.to_uppercase())
-            .await
-            .assert_status(201);
+        let upper = email.to_uppercase();
+        let res = signup(&app, path, &login, &upper).await;
+        assert_gated_until_verified(&app, res, &login, &upper).await;
     }
 }
 
@@ -94,9 +121,9 @@ async fn domain_allowlist_limits_self_service_signup() {
         assert!(!user_exists(&app, &login).await, "{path}");
 
         let login = format!("bob{i}");
-        signup(&app, path, &login, &format!("{login}@EXAMPLE.com"))
-            .await
-            .assert_status(201);
+        let email = format!("{login}@EXAMPLE.com");
+        let res = signup(&app, path, &login, &email).await;
+        assert_gated_until_verified(&app, res, &login, &email).await;
     }
 }
 

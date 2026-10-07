@@ -452,6 +452,7 @@ impl TestApp {
             name: None,
             password_hash: Some(&hash),
             site_admin,
+            email_verified: true,
         }
         .insert(&mut conn)
         .await

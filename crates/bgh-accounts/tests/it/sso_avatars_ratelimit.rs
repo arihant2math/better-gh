@@ -651,3 +651,82 @@ async fn rate_limits_are_enforced() {
     assert_eq!(v["resources"]["core"]["remaining"], 0);
     assert_eq!(v["resources"]["search"]["limit"], 10);
 }
+
+/// Account pre-hijacking (#138): an attacker who signs up first with
+/// Alice's address must not end up owning the account her SSO login lands
+/// in, and must not block that login.
+#[tokio::test]
+async fn oidc_ignores_unverified_signup_email() {
+    let app = bgh_server::test_app().await;
+    let issuer = mock_provider().await;
+    configure(&app, &issuer, json!({})).await;
+    app.create_user("root").await;
+
+    let res = app
+        .post("/_bgh/signup")
+        .json(&json!({"login": "mallory", "email": "alice@corp.example",
+                      "password": "s3cret-password"}))
+        .send()
+        .await;
+    res.assert_status(201);
+    let mallory_id = res.json()["id"].clone();
+    let mallory = cookie_from(&res);
+    // A squat published before unverified primaries became unpublishable.
+    sqlx::query("UPDATE users SET email = 'alice@corp.example' WHERE login = 'mallory'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
+
+    let (st, nonce) = start(&app, "/").await;
+    let res = app
+        .get(&format!(
+            "/_bgh/sso/corp/callback?state={st}&code={}",
+            code(
+                &issuer,
+                &nonce,
+                "alice-sub",
+                "alice@corp.example",
+                json!({})
+            )
+        ))
+        .send()
+        .await;
+    res.assert_status(303);
+    let alice = cookie_from(&res);
+    let me = app.get("/api/v3/user").cookie(&alice).send().await.json();
+    assert_ne!(
+        me["id"], mallory_id,
+        "SSO attached to the attacker's account"
+    );
+    assert_eq!(me["login"], "Jane-Doe");
+    let emails = app
+        .get("/api/v3/user/emails")
+        .cookie(&alice)
+        .send()
+        .await
+        .json();
+    assert_eq!(emails[0]["email"], "alice@corp.example");
+    assert_eq!(emails[0]["verified"], true);
+
+    // The attacker's account gained nothing and lost the squatted claim.
+    let ids = app
+        .get("/_bgh/user/identities")
+        .cookie(&mallory)
+        .send()
+        .await
+        .json();
+    assert_eq!(ids, json!([]));
+    let emails = app
+        .get("/api/v3/user/emails")
+        .cookie(&mallory)
+        .send()
+        .await
+        .json();
+    assert_eq!(emails, json!([]));
+    let profile = app.get("/api/v3/users/mallory").send().await.json();
+    assert_eq!(
+        profile["email"],
+        json!(null),
+        "squatter keeps publishing it"
+    );
+}

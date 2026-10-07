@@ -488,9 +488,18 @@ async fn resolve_user(
             }
             let wanted = ident.login.clone().unwrap_or_else(|| email.to_string());
             let login = available_login(state, &wanted).await?;
-            let user =
-                users::insert_user(&mut tx, &login, email, ident.name.as_deref(), None, None)
-                    .await?;
+            // The IdP vouched for `email` (`email_verified`), which also
+            // releases an unverified claim on it by another account.
+            let user = users::insert_user(
+                &mut tx,
+                &login,
+                email,
+                ident.name.as_deref(),
+                None,
+                None,
+                true,
+            )
+            .await?;
             audit::log(
                 &mut *tx,
                 Some(&user),

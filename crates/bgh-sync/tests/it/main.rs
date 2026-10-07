@@ -9,5 +9,7 @@ mod bench;
 mod bootstrap;
 mod compact;
 mod middleware;
+mod recheck;
+mod recheck_bench;
 mod shapes;
 mod ws;

@@ -18,9 +18,9 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+pub(crate) type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-async fn connect(app: &TestApp, user: Option<&TestUser>, query: &str) -> Ws {
+pub(crate) async fn connect(app: &TestApp, user: Option<&TestUser>, query: &str) -> Ws {
     let mut req = format!("ws://{}/_bgh/sync/ws{query}", app.addr)
         .into_client_request()
         .unwrap();
@@ -52,7 +52,7 @@ async fn next_frame(ws: &mut Ws) -> Frame {
     }
 }
 
-async fn next(ws: &mut Ws) -> Value {
+pub(crate) async fn next(ws: &mut Ws) -> Value {
     match next_frame(ws).await {
         Frame::Json(v) => v,
         Frame::Close(c) => panic!("socket closed ({c:?})"),
@@ -65,7 +65,11 @@ async fn send(ws: &mut Ws, v: Value) {
 
 /// Connect, read `hello`, subscribe and read up to `ready`; returns the
 /// replayed deltas (flattened from batches) and the ready message.
-async fn subscribe(ws: &mut Ws, scopes: &[String], since: i64) -> (Vec<Value>, Value, Vec<Value>) {
+pub(crate) async fn subscribe(
+    ws: &mut Ws,
+    scopes: &[String],
+    since: i64,
+) -> (Vec<Value>, Value, Vec<Value>) {
     send(ws, json!({"t": "sub", "scopes": scopes, "since": since})).await;
     let mut items = Vec::new();
     let mut other = Vec::new();
@@ -81,7 +85,7 @@ async fn subscribe(ws: &mut Ws, scopes: &[String], since: i64) -> (Vec<Value>, V
 }
 
 /// Next delta (unwrapping batches), skipping pongs.
-async fn next_deltas(ws: &mut Ws) -> Vec<Value> {
+pub(crate) async fn next_deltas(ws: &mut Ws) -> Vec<Value> {
     loop {
         let m = next(ws).await;
         match m["t"].as_str().unwrap() {
@@ -94,7 +98,7 @@ async fn next_deltas(ws: &mut Ws) -> Vec<Value> {
 }
 
 /// Ping and expect the pong as the very next message (nothing else queued).
-async fn assert_quiet(ws: &mut Ws) {
+pub(crate) async fn assert_quiet(ws: &mut Ws) {
     tokio::time::sleep(Duration::from_millis(150)).await;
     send(ws, json!({"t": "ping"})).await;
     let m = next(ws).await;

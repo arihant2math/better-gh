@@ -32,7 +32,7 @@ else
       Cargo.lock)
         backend=true docker=true ;;
       # Rust workspace, its fixtures, and the scripts the compat job runs.
-      crates/* | migrations/* | scripts/* | .cargo/* \
+      crates/* | migrations/* | scripts/* | .cargo/* | .config/nextest.toml \
         | Cargo.toml | rust-toolchain* | rustfmt.toml \
         | .rustfmt.toml | clippy.toml | .clippy.toml)
         backend=true ;;

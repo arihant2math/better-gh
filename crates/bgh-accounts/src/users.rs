@@ -24,6 +24,10 @@ pub struct NewAccount<'a> {
     pub name: Option<&'a str>,
     /// `None`: site admin iff this is the first user account.
     pub site_admin: Option<bool>,
+    /// `false` for self-service sign-up: the address starts unverified and
+    /// a verification mail is sent. `true` only when a trusted party (a
+    /// site admin) vouches for it.
+    pub email_verified: bool,
 }
 
 /// Validate and create a user account. The first account ever created
@@ -66,8 +70,17 @@ pub async fn create_user(
         input.name,
         Some(&hash),
         input.site_admin,
+        input.email_verified,
     )
     .await?;
+    if !input.email_verified {
+        let email_id: i64 =
+            sqlx::query_scalar("SELECT id FROM user_emails WHERE user_id = $1 AND is_primary")
+                .bind(user.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        crate::emails::send_verification(state, &mut tx, &user, email_id, input.email).await?;
+    }
     audit::log(
         &mut *tx,
         actor.or(Some(&user)),
@@ -87,7 +100,8 @@ pub async fn create_user(
     Ok(user)
 }
 
-/// Insert a user (and its verified primary email) inside `tx`. `site_admin:
+/// Insert a user (and its primary email, verified iff `email_verified`; see
+/// [`db::NewUser::email_verified`]) inside `tx`. `site_admin:
 /// None` makes the first user account a site admin. Unique violations map to
 /// 422 `already_exists`.
 pub async fn insert_user(
@@ -97,11 +111,15 @@ pub async fn insert_user(
     name: Option<&str>,
     password_hash: Option<&str>,
     site_admin: Option<bool>,
+    email_verified: bool,
 ) -> ApiResult<db::User> {
     // Serialize sign-ups so exactly one "first user" becomes admin.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('bgh_create_user'))")
         .execute(&mut **tx)
         .await?;
+    if email_verified {
+        crate::emails::release_unverified(tx, email).await?;
+    }
     let site_admin = match site_admin {
         Some(v) => v,
         None => {
@@ -118,6 +136,7 @@ pub async fn insert_user(
         name,
         password_hash,
         site_admin,
+        email_verified,
     }
     .insert(tx)
     .await
