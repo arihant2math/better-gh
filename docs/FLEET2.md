@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:29: #322 r2 APPROVE on 510558b (CI green; loop guard verified; #328 can close once #322 merges). It's blocked on #316 (r3 changes requested). If the lead's #316 deadlock fix also changes #322 code, #322 needs a delta review; a pure main/#316 merge plus retarget only needs CI re-checked. r2 reviewer archived.
 11:27: #316 r3 REQUEST_CHANGES on ee81558: reproduced lock-order deadlock (dequeue locks entry then timeline FK key-share on issue vs merge_prefix holding issue FOR UPDATE; same for destroy/build ejection vs close/synchronize). Fix: lock PR rows first. Lead told (carry into #322); r3 reviewer archived. #322 r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ still running.
 11:23: #338 r1 REQUEST_CHANGES (warm step ungated; description overclaims). Author told; reviewer archived. #337 author pinged ready; reviewer session_016gCE3Ek4pZduRqtPbeHwTQ is still running.
 11:18 (foreman5): main run 37611075666 (223214d) GREEN: Release binary (embed-web) 7m01s (cargo build 6m39s), Docker image from prebuilt 38s (build 20s) and smoke test OK; tests job 11m42s; whole run ~12m (10:59:50 to 11:11:51). Notified all 7 live sessions of the new foreman id (and pinged #319 for status again). #338 → reviewer session_01CUuf3bA1ZsrT5vcXvNCCdX.
