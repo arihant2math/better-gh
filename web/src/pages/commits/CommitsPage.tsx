@@ -16,7 +16,9 @@ import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizon
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
+import { useRefsData } from '../code/data';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
+import { resolveTarget } from '../code/util';
 import { commitDate, groupByDay, splitMessage, type CommitListRow } from './group';
 import { CiIcon, Person, copyText, samePerson } from './parts';
 import { SignatureBadge, useSignatures, type CommitSignature } from './Signature';
@@ -24,23 +26,31 @@ import styles from './Commits.module.css';
 
 const enc = encodeURIComponent;
 
-/** `/commits/{ref}/{path}` URL. */
+const encPath = (p: string) => p.split('/').map(enc).join('/');
+
+/** `/commits/{ref}/{path}` URL (a ref's slashes stay literal, as on GitHub). */
 export function commitsUrl(owner: string, repo: string, ref: string, path = ''): string {
-  return `/${owner}/${repo}/commits/${enc(ref)}${path ? `/${path.split('/').map(enc).join('/')}` : ''}`;
+  return `/${owner}/${repo}/commits/${encPath(ref)}${path ? `/${encPath(path)}` : ''}`;
 }
 
 /** Commits list / file history: `/:owner/:repo/commits[/:ref/*path]`. */
 export default observer(function CommitsPage() {
   const params = useParams<{ owner: string; repo: string; ref?: string; '*'?: string }>();
   const repo = repoByName(params.owner, params.repo);
+  // Splits `{ref}/{path}` once the ref list arrives (refs may contain slashes).
+  useRefsData(params.owner, params.repo);
   if (!repo) return null;
+  // The history fetch keeps the URL's split (the server resolves the joined
+  // spec itself, and the route prefetch uses the same key); the header shows
+  // the resolved ref and path.
   const ref = params.ref || repo.defaultBranch;
   const path = (params['*'] ?? '').replace(/\/+$/, '');
+  const t = resolveTarget(repo.owner, repo.name, ref, path);
   return (
     <div className={styles.page}>
-      <Header repo={repo} refName={ref} path={path} />
+      <Header repo={repo} refName={t.ref} path={t.path} />
       {/* Remount per ref/path: page state (loaded pages, cursor) starts fresh. */}
-      <CommitList key={`${ref}:${path}`} repo={repo} refName={ref} path={path} />
+      <CommitList key={`${ref}:${path}`} repo={repo} refName={ref} path={path} label={`${t.ref}${t.path ? `:${t.path}` : ''}`} />
     </div>
   );
 });
@@ -150,7 +160,7 @@ function useCiStatuses(repo: Repo, pages: History[]): Record<string, CommitStatu
 
 type Row = CommitListRow | { kind: 'more' };
 
-function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
+function CommitList({ repo, refName, path, label }: { repo: Repo; refName: string; path: string; label: string }) {
   const { first, pages, hasMore, loadMore, loadingMore, moreError } = useHistoryPages(repo, refName, path);
   const ci = useCiStatuses(repo, pages);
   const sigs = useSignatures(
@@ -191,7 +201,7 @@ function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path
     const missing = first.error instanceof ApiError && (first.error.status === 404 || first.error.status === 422);
     return (
       <EmptyState icon={AlertIcon} title={missing ? 'Nothing to show' : 'Couldn’t load the commit history'}>
-        {missing ? `${refName}${path ? `:${path}` : ''} doesn’t exist in this repository.` : 'Try again in a moment.'}
+        {missing ? `${label} doesn’t exist in this repository.` : 'Try again in a moment.'}
       </EmptyState>
     );
   }
