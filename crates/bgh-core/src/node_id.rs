@@ -61,6 +61,9 @@ pub enum NodeType {
     DeploymentBranchPolicy,
     /// An environment protection rule (GitHub's `Gate`).
     EnvironmentProtectionRule,
+    MergeQueueEntry,
+    /// A branch's merge queue (string key `"{repo_id}:{branch}"`).
+    MergeQueue,
 }
 
 impl NodeType {
@@ -112,6 +115,8 @@ impl NodeType {
         Self::UserContentEdit,
         Self::DeploymentBranchPolicy,
         Self::EnvironmentProtectionRule,
+        Self::MergeQueueEntry,
+        Self::MergeQueue,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -163,6 +168,8 @@ impl NodeType {
             Self::UserContentEdit => "UserContentEdit",
             Self::DeploymentBranchPolicy => "DeploymentBranchPolicy",
             Self::EnvironmentProtectionRule => "Gate",
+            Self::MergeQueueEntry => "MergeQueueEntry",
+            Self::MergeQueue => "MergeQueue",
         }
     }
 
