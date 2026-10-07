@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:29: #294 READY (APPROVE on 34144b6; head 79dbe28 is a main merge; CI result green). Forwarded to the orchestrator; r2 reviewer archived.
 08:28: filed #312 follow-ups at the orchestrator's request (backlog, no workers): #324 (P-High SAML JIT links by login), #325 (unverified email squat DoS), #326 (backfill for pre-fix verified=true).
 08:21: #316 REQUEST_CHANGES (main conflict; dequeue/head-push race on merge_prefix; double-merge on retry after CAS; PostReceive enqueued outside the tx). Lead session_01Kq9BfEn4RqooYm2643Ah6e told; reviewer archived. #309 fixed (d1cafe7) → adversarial security r2 reviewer session_01Mgvsx8ABCZHLFeU4x5VMdn. Alias-cap follow-up is #321.
 08:15: orchestrator MERGED #304 (0c5db5f) and archived its worker. I confirmed the takeover, so the orchestrator archives foreman2.
