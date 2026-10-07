@@ -7,6 +7,7 @@ import { registerRoutes } from './app/routes';
 import { dropShellCache, session } from './app/session';
 import { bootIsStale, getBoot, isMockMode, setBoot, type BootData } from './boot';
 import { shortcuts } from './shortcuts/manager';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 
 configure({ enforceActions: 'never' });
 
@@ -49,7 +50,9 @@ async function main() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <ErrorBoundary name="root" variant="page">
+        <App />
+      </ErrorBoundary>
     </StrictMode>,
   );
 
