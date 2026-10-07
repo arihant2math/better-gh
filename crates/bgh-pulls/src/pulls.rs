@@ -735,7 +735,8 @@ pub async fn update(
     ))
 }
 
-/// Close an open PR inside `tx` (state, counters, auto-merge, timeline).
+/// Close an open PR inside `tx` (state, counters, auto-merge, merge
+/// queue, timeline).
 pub async fn close_in_tx(
     tx: &mut Tx,
     access: &RepoAccess,
@@ -772,6 +773,8 @@ pub async fn close_in_tx(
         )
         .await?;
     }
+    crate::merge_queue::remove_in_tx(tx, access.repo.id, pull.id(), Some(actor_id), "closed")
+        .await?;
     timeline::record(
         tx,
         access.repo.id,

@@ -137,7 +137,9 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
     };
     let rules = protection::rules_for(&state.db, repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(state, &repo, &pull, &rules).await?;
-    // Auto-merge waits for every requirement and for pending checks.
+    // Auto-merge waits for every requirement and for pending checks. With
+    // a `merge_queue` rule the queue blocker never clears: auto-merge never
+    // merges such a PR directly.
     let pending = protection::check_outcomes(&state.db, repo.id, &pull.pr.head_sha)
         .await?
         .any_pending();
@@ -174,6 +176,7 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
             .and_then(|v| v.as_str())
             .map(str::to_string),
         sha: Some(pull.pr.head_sha.clone()),
+        via_merge_queue: false,
     };
     match perform_merge(
         state,

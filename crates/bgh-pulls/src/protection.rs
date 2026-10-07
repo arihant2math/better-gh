@@ -123,8 +123,10 @@ pub struct SourceRules {
     pub conversation_resolution: bool,
     pub linear_history: bool,
     /// Every PR commit must have a verified signature (P25).
-    /// `merge_queue` (P39) plugs in next to it in [`evaluate_source`].
     pub required_signatures: bool,
+    /// The `merge_queue` rule applies (P39): PRs are merged by the queue
+    /// only, a direct merge gets [`MERGE_QUEUE_REQUIRED`].
+    pub merge_queue: bool,
     /// Environments whose latest deployment of the head commit must have
     /// succeeded (`required_deployments` rule, classic
     /// `required_deployment_environments`).
@@ -187,6 +189,7 @@ impl SourceRules {
             linear_history: p.required_linear_history,
             required_signatures: p.required_signatures,
             required_deployments: p.required_deployment_environments.clone(),
+            merge_queue: false,
         }
     }
 
@@ -227,6 +230,7 @@ impl SourceRules {
             conversation_resolution,
             linear_history: r.find_rule("required_linear_history").is_some(),
             required_signatures: r.find_rule("required_signatures").is_some(),
+            merge_queue: r.find_rule("merge_queue").is_some(),
             required_deployments: r
                 .find_rule("required_deployments")
                 .and_then(|rule| rule["parameters"]["required_deployment_environments"].as_array())
@@ -474,6 +478,22 @@ pub async fn check_outcomes(
     Ok(out)
 }
 
+/// Message of the blocker added by a `merge_queue` rule.
+pub const MERGE_QUEUE_REQUIRED: &str = "Changes must be made through the merge queue";
+
+/// What kind of requirement a [`Blocker`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockerKind {
+    /// Reviews (bypassable via `bypass_pull_request_allowances`).
+    Review,
+    /// Required status checks, including "out of date" (strict).
+    Check,
+    /// The `merge_queue` rule: only the queue may merge.
+    MergeQueue,
+    /// Conversations, deployments, signatures.
+    Other,
+}
+
 /// One unmet requirement.
 #[derive(Debug, Clone, Serialize)]
 pub struct Blocker {
@@ -487,6 +507,8 @@ pub struct Blocker {
     /// A review requirement (bypassable via `bypass_pull_request_allowances`).
     #[serde(skip)]
     pub review: bool,
+    #[serde(skip)]
+    pub kind: BlockerKind,
 }
 
 /// Result of evaluating merge requirements.
@@ -506,6 +528,13 @@ impl Evaluation {
     /// Distinct blocker messages, in order.
     pub fn messages(&self) -> Vec<String> {
         dedup_messages(self.blockers.iter())
+    }
+
+    /// Drop the `merge_queue` blocker: the merge queue itself merges
+    /// (`MergeRequest::via_merge_queue`).
+    pub fn without_merge_queue(mut self) -> Self {
+        self.blockers.retain(|b| b.kind != BlockerKind::MergeQueue);
+        self
     }
 
     /// Blockers `actor` can't bypass.
@@ -535,7 +564,7 @@ pub fn merge_suite(
         let Source::Ruleset(r) = &src.source else {
             continue;
         };
-        for ty in ["pull_request", "required_status_checks"] {
+        for ty in ["pull_request", "required_status_checks", "merge_queue"] {
             if r.find_rule(ty).is_none() {
                 continue;
             }
@@ -544,8 +573,11 @@ pub fn merge_suite(
                 .iter()
                 .filter(|b| b.source_index == i)
                 .filter(|b| {
+                    if b.kind == BlockerKind::MergeQueue {
+                        return ty == "merge_queue";
+                    }
                     let review = b.review || b.message.contains("conversation");
-                    review == (ty == "pull_request")
+                    ty != "merge_queue" && review == (ty == "pull_request")
                 })
                 .map(|b| b.message.clone())
                 .collect();
@@ -815,20 +847,21 @@ pub async fn evaluate(
 
 fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Blocker>) {
     let ruleset = matches!(s.source, Source::Ruleset(_));
-    let mut push = |message: String, review: bool| {
+    let mut push = |message: String, kind: BlockerKind| {
         out.push(Blocker {
             message,
             source: s.source.label(),
             source_type: s.source.kind(),
             source_index: index,
-            review,
+            review: kind == BlockerKind::Review,
+            kind,
         })
     };
     if let Some(r) = &s.reviews {
         if f.changes_requested {
             push(
                 "Changes requested by a reviewer with write access.".into(),
-                true,
+                BlockerKind::Review,
             );
         }
         let n = r.required_approving_review_count;
@@ -838,7 +871,7 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
                     "At least {n} approving review{} is required by reviewers with write access.",
                     if n == 1 { "" } else { "s" }
                 ),
-                true,
+                BlockerKind::Review,
             );
         }
         if r.require_code_owner_reviews && !f.missing_owners.is_empty() {
@@ -847,13 +880,13 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
                     "Waiting on code owner review from {}.",
                     f.missing_owners.join(", ")
                 ),
-                true,
+                BlockerKind::Review,
             );
         }
         if r.require_last_push_approval && !f.last_push_approved {
             push(
                 "Approval from someone other than the last pusher is required.".into(),
-                true,
+                BlockerKind::Review,
             );
         }
     }
@@ -863,15 +896,15 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
             match f.outcomes.get(ctx, k.app_id) {
                 None => push(
                     format!("Required status check \"{ctx}\" is expected."),
-                    false,
+                    BlockerKind::Check,
                 ),
                 Some(CheckOutcome::Pending) => push(
                     format!("Required status check \"{ctx}\" is in progress."),
-                    false,
+                    BlockerKind::Check,
                 ),
                 Some(CheckOutcome::Failure) => push(
                     format!("Required status check \"{ctx}\" is failing."),
-                    false,
+                    BlockerKind::Check,
                 ),
                 Some(CheckOutcome::Success) => {}
             }
@@ -879,7 +912,7 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
         if c.strict && f.behind {
             push(
                 "Head branch is out of date with the base branch.".into(),
-                false,
+                BlockerKind::Check,
             );
         }
     }
@@ -891,7 +924,7 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
                 "All comments must be resolved."
             }
             .into(),
-            false,
+            BlockerKind::Other,
         );
     }
     for env in &s.required_deployments {
@@ -900,22 +933,27 @@ fn evaluate_source(index: usize, s: &SourceRules, f: &Facts, out: &mut Vec<Block
             Some(Some(state)) if matches!(state.as_str(), "success" | "inactive") => {}
             Some(Some(state)) if matches!(state.as_str(), "failure" | "error") => push(
                 format!("Required deployment to \"{env}\" has failed."),
-                false,
+                BlockerKind::Other,
             ),
             Some(_) => push(
                 format!("Required deployment to \"{env}\" is in progress."),
-                false,
+                BlockerKind::Other,
             ),
             None => push(
                 format!("Required deployment to \"{env}\" is expected."),
-                false,
+                BlockerKind::Other,
             ),
         }
     }
     if s.required_signatures && f.unverified_commits > 0 {
-        push("Commits must have verified signatures.".into(), false);
+        push(
+            "Commits must have verified signatures.".into(),
+            BlockerKind::Other,
+        );
     }
-    // P39 (merge_queue) adds its check here.
+    if s.merge_queue {
+        push(MERGE_QUEUE_REQUIRED.into(), BlockerKind::MergeQueue);
+    }
 }
 
 /// `mergeable_state` from the pieces (GitHub precedence).

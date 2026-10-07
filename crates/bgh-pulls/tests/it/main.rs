@@ -8,6 +8,7 @@ mod checks;
 mod diffview;
 mod governance;
 mod merge;
+mod merge_queue;
 mod pulls;
 mod required_deployments;
 mod rest_compat;
