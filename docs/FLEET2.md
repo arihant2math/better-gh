@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:29 cycle: main 37618590481 (4351428) GREEN; told the orchestrator. #339 S-Approved; the reviewer merged main (c3bf1e8) and is waiting for CI. #319 r2 S-Approved; the reviewer merged main (d92a1b4) and is waiting for CI. #316 deadlock fix 9ab35b6 → adversarial r4 reviewer session_01EQC8yBZ3rfDQDgPJEhpinM, which also delta-checks #322 (0664135 vs the 510558b approval). #340 review is still running.
 12:10 cycle (context 230k): #316 pushed 9ab35b6 (lead hasn't pinged yet). Reviewers running on #339, #340 and #319. #322 is blocked on #316. Main run 37618590481 (4351428) is in progress.
 12:08: #319 fixed at 946d517 (re-queues failed rechecks with backoff, invalidates cache, targets computed under the delivered lock, regression test) → adversarial r2 reviewer session_01HQ7wB2Tpau9PtZMJ7LJFsz. #340 is ready (not draft); its reviewer is still running.
 12:07: orchestrator MERGED #337 (4351428); #335 closed; fixer archived. Main cold run 37616027435 (2755a5c) GREEN, ~18m15s (cold after the #338 cache rename). Main run 37618590481 (4351428) queued; confirm it next cycle.
