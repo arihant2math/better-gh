@@ -145,7 +145,7 @@ impl Query {
     }
 
     /// The client's rate limit information (the shared `graphql` budget;
-    /// this request is already counted by the root middleware).
+    /// this request's cost is already charged, see `cost.rs`).
     pub async fn rate_limit(
         &self,
         ctx: &Context<'_>,
@@ -165,10 +165,14 @@ impl Query {
         .await
         .gql()?;
         let reset = chrono::DateTime::from_timestamp(q.reset, 0).unwrap_or_else(chrono::Utc::now);
+        let cost = ctx
+            .data_opt::<std::sync::Arc<crate::cost::CostCell>>()
+            .and_then(|c| c.cost())
+            .unwrap_or_default();
         Ok(RateLimit {
-            cost: 1,
+            cost: cost.points() as i32,
             limit: q.limit as i32,
-            node_count: 0,
+            node_count: cost.nodes.min(i64::from(i32::MAX)) as i32,
             remaining: q.remaining as i32,
             reset_at: DateTime(reset),
             used: q.used as i32,

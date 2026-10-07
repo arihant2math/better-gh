@@ -15,6 +15,17 @@ PASS**; extended matrix `crates/bgh-graphql/scripts/gh-extended.sh`:
   middleware; requests count against the shared `graphql` budget of
   `bgh_core::ratelimit` (headers set by its root middleware), which the
   `rateLimit` object reports.
+* Resource limits (`src/cost.rs`, a schema extension run after
+  validation), as on GitHub: connections selecting `nodes`/`edges` need
+  `first`/`last` (`MISSING_PAGINATION_BOUNDARIES`), at most 100
+  (`EXCESSIVE_PAGINATION`); a query may request at most 500,000 nodes
+  (product of page sizes down each connection path, summed;
+  `MAX_NODE_LIMIT_EXCEEDED`). The cost is the number of connection fetches
+  / 100, rounded, at least 1: the middleware counts 1 point, the extension
+  charges the rest (`ratelimit::charge`) and refreshes the `X-RateLimit-*`
+  headers; with enforcement on, an over-budget query is rejected with
+  `RATE_LIMITED`. `rateLimit { cost nodeCount }` report the computed
+  values (`dryRun` is accepted but still charges).
 * `GET /api/v3/meta` (GHES shape, `installed_version: "3.17.0"` =
   `bgh_graphql::COMPAT_GHES_VERSION`). `gh` gates GraphQL feature detection
   on it: 3.17 = classic issue-search syntax, no classic projects.
@@ -284,7 +295,7 @@ Runs the gh-compat fixtures, then:
 * `isRequired` on checks is always false, `potentialMergeCommit` is null,
   review `reactionGroups` are empty, comment edit history (`lastEditedAt`,
   `editor`) is approximated.
-* Every GraphQL request costs 1 (`rateLimit.cost`); query depth is
-  limited (32) but there is no node-count cost model.
+* The cost model is static (page sizes requested, not items returned),
+  like GitHub's; query depth is also limited (32).
 * `deleteIssue`, `revertPullRequest`, discussions, gists and sponsorships
   are not implemented.
