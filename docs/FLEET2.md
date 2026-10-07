@@ -21,7 +21,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 - #150: the user's own; don't touch it.
 
 ### #85 track
-Items 1-6 merged (#152, #311, #320, #330, #334, #338=2755a5c); item 7 (nextest) worker session_01QwMebKjPFE9rJAckNQapM4, branch agent/85-nextest. Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
+Items 1-6 merged (#152, #311, #320, #330, #334, #338=2755a5c); item 7 merged (#339=b92d546); item 8 (CARGO_PROFILE_DEV_DEBUG=0) worker session_01NqrbwhRpn4xG962rpZyFTA, branch agent/85-ci-dev-debug (it ticks item 7). Then items 7 (cargo-nextest), 8 (CARGO_PROFILE_DEV_DEBUG=0), 9 (optional sccache; may be skipped with justification), 10 (Node 24 action majors), one worker at a time ("Part of #85", T-Perf A-Ops; each worker ticks the previous item). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
 
 ### Follow-ups filed today (backlog, unassigned)
 #321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed in #337).
@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:40: orchestrator MERGED #339 (b92d546); worker archived. #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA.
 12:40: #339 READY (APPROVE on 497d2a9; then only the main merge c3bf1e8 = head; CI result green, run 37619882426; verified). Counts match main (1320 passed, 5 skipped, 11 ignored doctests); test run step 6m55s → 4m52s, about −30%. Forwarded; reviewer archived. Next: #85 item 8 (CARGO_PROFILE_DEV_DEBUG=0) after the merge.
 12:29 cycle: main 37618590481 (4351428) GREEN; told the orchestrator. #339 S-Approved; the reviewer merged main (c3bf1e8) and is waiting for CI. #319 r2 S-Approved; the reviewer merged main (d92a1b4) and is waiting for CI. #316 deadlock fix 9ab35b6 → adversarial r4 reviewer session_01EQC8yBZ3rfDQDgPJEhpinM, which also delta-checks #322 (0664135 vs the 510558b approval). #340 review is still running.
 12:10 cycle (context 230k): #316 pushed 9ab35b6 (lead hasn't pinged yet). Reviewers running on #339, #340 and #319. #322 is blocked on #316. Main run 37618590481 (4351428) is in progress.
