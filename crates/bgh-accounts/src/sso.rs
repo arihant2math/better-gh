@@ -412,6 +412,21 @@ pub(crate) async fn available_login(state: &AppState, wanted: &str) -> ApiResult
     Ok(format!("user-{}", crypto::random_token(8).to_lowercase()))
 }
 
+/// The site sign-up policy ([`bgh_core::settings::check_signup`]) for an
+/// account an SSO provider is about to create just in time (OIDC, SAML).
+/// `Err` carries the refusal for the sign-in page. LDAP and SCIM are
+/// directory-authoritative and do not call this.
+pub(crate) async fn jit_signup_allowed(
+    state: &AppState,
+    email: &str,
+) -> ApiResult<Result<(), String>> {
+    match bgh_core::settings::check_signup(state, email).await {
+        Ok(()) => Ok(Ok(())),
+        Err(ApiError::Forbidden(message)) => Ok(Err(message)),
+        Err(e) => Err(e),
+    }
+}
+
 /// Find or create the local account for `ident`.
 async fn resolve_user(
     state: &AppState,
@@ -468,6 +483,9 @@ async fn resolve_user(
                     "The identity provider did not return a verified email address.".into(),
                 ));
             };
+            if let Err(denied) = jit_signup_allowed(state, email).await? {
+                return Ok(Err(denied));
+            }
             let wanted = ident.login.clone().unwrap_or_else(|| email.to_string());
             let login = available_login(state, &wanted).await?;
             // The IdP vouched for `email` (`email_verified`), which also

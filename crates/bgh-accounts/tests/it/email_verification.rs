@@ -120,15 +120,6 @@ async fn admin_created_users_are_verified() {
     assert_eq!(mails_to(&app, "carol@corp.example").await, 0);
 }
 
-async fn set_signup(app: &TestApp, admin: &bgh_core::testing::TestUser, signup: serde_json::Value) {
-    app.patch("/_bgh/admin/settings")
-        .auth(admin)
-        .json(&json!({ "signup": signup }))
-        .send()
-        .await
-        .assert_status(200);
-}
-
 /// #329: an org invitation by email must not be claimable by someone who
 /// merely types the invited address at sign-up, and on an invite-only
 /// instance that claim must not yield a usable account.
@@ -143,12 +134,12 @@ async fn invited_address_claim_cannot_take_over_invitation() {
         .send()
         .await
         .assert_status(201);
-    let gated = "Confirm your email address before signing in: open the link we emailed you.";
+    let gated = crate::signup_policy::GATED;
 
     // Invite-only: the pending invitation lets the sign-up through, but the
     // claimed address is unproven, so neither sign-up nor sign-in yields a
     // session, on either sign-up endpoint.
-    set_signup(&app, &admin, json!({"policy": "invite"})).await;
+    crate::signup_policy::set_signup(&app, &admin, json!({"policy": "invite"})).await;
     for (path, login, email) in [
         ("/_bgh/signup", "mallory", "VICTIM@x.test"),
         ("/_bgh/auth/signup", "mallory2", "eve@x.test"),
@@ -180,7 +171,7 @@ async fn invited_address_claim_cannot_take_over_invitation() {
 
     // Even with a session (open policy), the unverified claim doesn't
     // match the invitation: it can be neither seen nor accepted.
-    set_signup(&app, &admin, json!({"policy": "open"})).await;
+    crate::signup_policy::set_signup(&app, &admin, json!({"policy": "open"})).await;
     let res = app
         .post("/_bgh/session")
         .json(&json!({"login": "mallory", "password": "s3cret-password"}))
@@ -207,12 +198,4 @@ async fn invited_address_claim_cannot_take_over_invitation() {
         .send()
         .await
         .assert_status(404);
-
-    // The web sign-up endpoint honours the policy too.
-    set_signup(&app, &admin, json!({"policy": "closed"})).await;
-    app.post("/_bgh/auth/signup")
-        .json(&json!({"login": "trent", "email": "trent@x.test", "password": "s3cret-password"}))
-        .send()
-        .await
-        .assert_status(403);
 }

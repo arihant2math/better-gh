@@ -158,15 +158,43 @@ pub async fn signup(
     client: ClientInfo,
     Json(body): Json<SignupBody>,
 ) -> ApiResult<Response> {
+    let user = create_signup(&state, &client, &body).await?;
+    start_session(&state, &client, &user, StatusCode::CREATED).await
+}
+
+/// Gate shared by every self-service password sign-up route
+/// (`/_bgh/signup`, `/_bgh/auth/signup`): `BGH_SIGNUP_ENABLED`, the per-IP
+/// rate limit (429) and the site sign-up policy
+/// ([`bgh_core::settings::check_signup`], 403). Call before creating the
+/// account.
+pub(crate) async fn admit_signup(
+    state: &AppState,
+    client: &ClientInfo,
+    email: &str,
+) -> ApiResult<()> {
     if !state.config.signup_enabled {
         return Err(ApiError::forbidden("Sign up is disabled on this instance."));
     }
-    if ratelimit::hit(&state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
+    if ratelimit::hit(state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
         return Err(too_many("Too many sign ups. Please try again later."));
     }
-    bgh_core::settings::check_signup(&state, body.email.trim()).await?;
+    bgh_core::settings::check_signup(state, email).await
+}
+
+/// The self-service password sign-up shared by `/_bgh/signup` and
+/// `/_bgh/auth/signup`: [`admit_signup`], then the account with an
+/// unverified primary email (and its verification mail), then
+/// [`bgh_core::settings::check_email_gate`]. Under an `invite` policy or a
+/// domain allow-list the claimed address is unproven, so that last step
+/// answers 403 instead of a session until the mailed link is followed.
+pub(crate) async fn create_signup(
+    state: &AppState,
+    client: &ClientInfo,
+    body: &SignupBody,
+) -> ApiResult<db::User> {
+    admit_signup(state, client, body.email.trim()).await?;
     let user = users::create_user(
-        &state,
+        state,
         NewAccount {
             login: body.login.trim(),
             email: body.email.trim(),
@@ -179,8 +207,8 @@ pub async fn signup(
         None,
     )
     .await?;
-    bgh_core::settings::check_email_gate(&state, &user).await?;
-    start_session(&state, &client, &user, StatusCode::CREATED).await
+    bgh_core::settings::check_email_gate(state, &user).await?;
+    Ok(user)
 }
 
 fn login_key(login: &str) -> String {

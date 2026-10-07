@@ -125,8 +125,11 @@ names in `docs/SELF_HOSTING.md` "Monitoring". CI settings `BGH_ACTIONS_*` (see
 Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
 cached 5 s per process): sign-up policy (`open|invite|closed` + allowed
-email domains), default repository visibility, max repository size and
-per-owner `storage_quotas` (git + LFS storage; checked on push, in the
+email domains; `settings::check_signup`, enforced on both password sign-up
+routes via `session::admit_signup` and on OIDC/SAML just-in-time accounts
+via `sso::jit_signup_allowed`; site admins, the CLI, LDAP and SCIM (which
+has its own org-tenant rule) are exempt), default repository visibility,
+max repository size and per-owner `storage_quotas` (git + LFS storage; checked on push, in the
 pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
 auth providers (password login, OIDC, LDAP, SAML, SCIM), SMTP, maintenance mode, and push
@@ -155,7 +158,8 @@ trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
 address (and unpublishes it from their profiles). An unverified primary
 can't be made public. When the sign-up policy gates on the address (`invite`
 or an `allowed_email_domains` list), `settings::check_email_gate` refuses
-sign-up and password sign-in (403) until the account has a verified email.
+sign-up (`session::create_signup`, right after `admit_signup`) and password
+sign-in (403) until the account has a verified email.
 
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
