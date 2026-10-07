@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | #352 | session_01BcKaYHuvUeY4scjTCn3f4Y (opus) |
-| B frontend | session_01WovmUdjyfUvU4e4m1onfKn | #213 | — | — |
+| B frontend | session_01WovmUdjyfUvU4e4m1onfKn | #213 | #354 | session_018n1pQcChYft3WGC95MQgpY (sonnet) |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -40,3 +40,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 22:25Z: #351 merged as e26be86; B worker+reviewer archived; fresh B worker for #213. Filed #353 (nits: window.fetch, observer alias, ubuntu-24.04 pin). #150 merged by owner 22:05.
 - 22:31Z: #352 Rust tests running; C in gate for #341; hourly status sent.
 - 22:32Z: #352 green; opus reviewer spawned. #348 filed for rules-engine move (from #226).
+- 22:41Z: B opened #354 (Fixes #213), green; sonnet reviewer spawned.
