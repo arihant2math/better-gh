@@ -14,6 +14,7 @@ import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { EmptyRepoState } from '../code/EmptyRepoState';
 import { AlertIcon, CopyIcon, GitBranchIcon, GitPullRequestIcon, PlusIcon, SearchIcon, ShieldIcon, ShieldLockIcon, TrashIcon } from '../../ui/icons';
 import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
@@ -146,6 +147,9 @@ const Branches = observer(function Branches({ repo, view }: { repo: Repo; view: 
     body = <EmptyState icon={AlertIcon} title="Couldn’t load branches" />;
   } else if (!data) {
     body = <SkeletonSection />;
+  } else if (!data.branches.length) {
+    // No branches at all: the repository has no commits yet.
+    body = <EmptyRepoState repo={repo} />;
   } else if (view === 'overview') {
     const groups = (['yours', 'active', 'stale'] as const).filter((g) => (g !== 'yours' || viewer) && sections[g].length > 0);
     body = (

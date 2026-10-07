@@ -13,7 +13,7 @@ import { toast } from '../../ui/Toast';
 import { AboutSidebar } from './AboutSidebar';
 import { AddFileMenu, CloneMenu } from './CloneMenu';
 import styles from './Code.module.css';
-import { prefetchFileList, useRefsData } from './data';
+import { prefetchFileList, useRefsData, useTree } from './data';
 import { DirView } from './DirView';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
@@ -57,6 +57,10 @@ const CodeView = observer(function CodeView({ repo, t, mode }: { repo: Repo; t: 
     });
   };
   const root = !t.path && mode === 'tree';
+  // Shares DirView's request; `empty` is the server's "no commits yet" signal.
+  const homeRes = useTree(t, '', root);
+  const home = homeRes.data;
+  const empty = root && home?.empty === true;
   const permission = store().get('viewerRepo', repo.id)?.permission;
   const canPush = permission === 'admin' || permission === 'maintain' || permission === 'write';
   const switchRef = (ref: string) => navigate(codeUrl(t, mode, ref, t.path) + (mode === 'tree' ? '' : window.location.hash));
@@ -109,14 +113,16 @@ const CodeView = observer(function CodeView({ repo, t, mode }: { repo: Repo; t: 
           {!showTree && !root && <IconButton icon={SidebarExpandIcon} label="Show file tree" shortcut="shift+." size="sm" variant="ghost" onClick={toggleTree} />}
           <RefPicker owner={t.owner} repo={t.repo} value={t.ref} onSelect={switchRef} allowCreate={canPush} open={picker} onOpenChange={setPicker} />
           {root ? (
-            <RepoNav repo={repo} t={t} />
+            !empty && <RepoNav repo={repo} t={t} />
           ) : (
             <PathCrumbs t={t} mode={mode} />
           )}
           <span className={styles.grow} />
-          <Button size="sm" leadingIcon={SearchIcon} kbd="t" onClick={() => setFinder(true)} onMouseEnter={() => prefetchFileList(t)}>
-            Go to file
-          </Button>
+          {!empty && (
+            <Button size="sm" leadingIcon={SearchIcon} kbd="t" onClick={() => setFinder(true)} onMouseEnter={() => prefetchFileList(t)}>
+              Go to file
+            </Button>
+          )}
           {canPush && mode === 'tree' && <AddFileMenu t={t} />}
           {root && <CloneMenu repo={repo} t={t} />}
         </div>
@@ -124,7 +130,7 @@ const CodeView = observer(function CodeView({ repo, t, mode }: { repo: Repo; t: 
           <div className={styles.content}>
             {mode === 'tree' ? <DirView t={t} repo={repo} root={root} /> : <FileView t={t} repo={repo} blame={mode === 'blame'} canPush={canPush} />}
           </div>
-          {root && <AboutSidebar repo={repo} />}
+          {root && <AboutSidebar repo={repo} empty={home?.empty} loaded={!!home || !!homeRes.error} hasReadme={!!home?.readme} />}
         </div>
       </div>
       {finder && (
