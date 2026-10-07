@@ -27,7 +27,7 @@ Queue: #42 bundle budget (P-High perf), #63 (check after #73), #22 web perf, #23
 ## Reviewers
 | PR | Session | Status |
 |---|---|---|
-| #81 branch cleanup (orchestrator's) | session_01ALeBwbtYSGHLijgBq11T8x (re-review) | running; foreman merges with MERGE then runs branch-cleanup.yml min_age_hours=12 |
+| #81 branch cleanup (orchestrator authored; further changes → fixer session, not orchestrator) | session_01JeQnHGDV7zqsAiRgxDE9pU (re-review 2) | running; foreman merges with MERGE then runs branch-cleanup.yml min_age_hours=12 |
 
 ## QA
 | Focus (pass 1 → pass 2) | Session | Status |
@@ -43,3 +43,4 @@ Next QA rotation: issues & PRs & review; dashboard/inbox/search/command palette.
 Every worker/reviewer/QA prompt: "Follow docs/AGENT_WORKFLOW.md 'Operating principles' (context discipline)." Fresh reviewer per round; one issue (or tightly coupled pair) per worker, archive on merge; track via labels/PR state, get_session only for liveness. Status: comment on #46 every ~2h + message orchestrator. Design questions: Discussions if enabled, else issue T-Docs + S-Blocked.
 Branches: reviewers squash-merge, branch-cleanup workflow deletes heads (once #81 lands); workers delete abandoned branches; on handoff copy FLEET2.md into a docs PR and delete bgh/foreman2 (or leave for successor).
 Self-handoff: when own context > ~350k tokens, write full handoff here, start successor foreman with the original foreman2 prompt (orchestrator holds it) + "Resume from docs/FLEET2.md on branch bgh/foreman2" + these rules; send orchestrator the id; cancel own send_later triggers; stop.
+Orchestrator is coordination-only (03:31): all code/doc changes go through worker/fixer sessions.
