@@ -393,12 +393,14 @@ function DesktopToggle() {
       label={on ? 'Desktop notifications on (click to turn off)' : 'Enable desktop notifications'}
       aria-pressed={on}
       className={cx(on && styles.toggleOn)}
-      onClick={async () => {
-        const next = await enableDesktop(!on);
-        setOn(next);
-        if (!on && !next) toast({ kind: 'error', title: 'Desktop notifications are blocked', description: 'Allow notifications for this site in your browser settings.' });
-        else toast({ kind: 'success', title: next ? 'Desktop notifications on' : 'Desktop notifications off', description: next ? 'You’ll get a notification when new activity arrives while this tab is in the background.' : undefined });
-      }}
+      onClick={() =>
+        void (async () => {
+          const next = await enableDesktop(!on);
+          setOn(next);
+          if (!on && !next) toast({ kind: 'error', title: 'Desktop notifications are blocked', description: 'Allow notifications for this site in your browser settings.' });
+          else toast({ kind: 'success', title: next ? 'Desktop notifications on' : 'Desktop notifications off', description: next ? 'You’ll get a notification when new activity arrives while this tab is in the background.' : undefined });
+        })()
+      }
     />
   );
 }

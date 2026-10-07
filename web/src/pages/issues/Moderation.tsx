@@ -115,7 +115,7 @@ export function EditHistory({
             onClose();
           }}
           onDelete={() =>
-            deleteEdit(owner, repo, kind, id, viewing.editId).then(
+            void deleteEdit(owner, repo, kind, id, viewing.editId).then(
               () => {
                 toast({ kind: 'success', title: 'Revision deleted' });
                 setViewing(null);

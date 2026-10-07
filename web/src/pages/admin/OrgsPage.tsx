@@ -73,7 +73,7 @@ export default function OrgsPage() {
         onSort={(s) => setQuery({ sort: s.key, direction: s.direction })}
         loading={list.loading}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         empty={
           list.error ? (
             <EmptyState icon={OrganizationIcon} title="Could not load organizations">

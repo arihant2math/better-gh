@@ -6,7 +6,6 @@ import { keyForIndex } from '../pages/projects/dnd';
 import { SyncClient } from './client';
 import { compareKeys } from './fractional';
 import { setSyncClient } from './index';
-import type { ProjectItem } from './models';
 import { MemoryPersistence } from './persistence';
 import { addDraftItem, compareItems, fieldsForProject, itemsForProject, moveItem, projectByNumber, viewsForProject } from './projects';
 
@@ -72,7 +71,7 @@ describe('project board moves (optimistic + reconciliation against the mock)', (
     // Still in place after the overlay was dropped (base now has the server row).
     expect(column(done!.id)[1]!.id).toBe(card.id);
     // The other client got the delta.
-    await until(() => (b.pool.get('projectItem', card.id) as ProjectItem | undefined)?.viewPositions[String(board.id)] === key);
+    await until(() => b.pool.get('projectItem', card.id)?.viewPositions[String(board.id)] === key);
   });
 
   it('reorders within a column with a key between the neighbours', async () => {

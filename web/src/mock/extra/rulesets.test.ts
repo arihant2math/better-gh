@@ -79,7 +79,7 @@ describe('rulesets mock', () => {
     const err = async (body: Json) => {
       const r = await call(s, 'POST', `${R}/rulesets`, body);
       expect(r.status).toBe(422);
-      return ((r.body!.errors as Json[])[0] ?? {}) as Json;
+      return (r.body!.errors as Json[])[0] ?? {};
     };
     expect((await err({ ...release, name: undefined })).code).toBe('missing_field');
     expect((await err({ ...release, enforcement: 'sometimes' })).field).toBe('enforcement');

@@ -87,7 +87,7 @@ function orgByLogin(server: MockServer, login: string): Org | undefined {
 
 function appliesToRepo(r: StoredRuleset, repo: Repo): boolean {
   if (r.orgId === null) return r.repoId === repo.id;
-  return r.orgId === repo.ownerId && selectsRepo(r.conditions as never, { id: repo.id, name: repo.name });
+  return r.orgId === repo.ownerId && selectsRepo(r.conditions, { id: repo.id, name: repo.name });
 }
 
 function appliesToRef(r: StoredRuleset, refname: string, repo: Repo): boolean {
@@ -522,7 +522,7 @@ export function installRulesetMocks(server: MockServer): void {
     if (isRepoResp(repo)) return repo;
     if (repo.archived) return forbidden('Repository was archived so is read-only.');
     const orgOwner = !!t.org.get(repo.ownerId);
-    const f = validate(server, (ctx.body ?? {}) as Input, false, orgOwner, orgOwner ? repo.ownerId : null);
+    const f = validate(server, ctx.body ?? {}, false, orgOwner, orgOwner ? repo.ownerId : null);
     if (isResp(f)) return f;
     if (nameTaken(f.name, { repoId: repo.id, orgId: null })) return taken();
     const now = server.now();
@@ -553,7 +553,7 @@ export function installRulesetMocks(server: MockServer): void {
     const r = S(server).rulesets.find((x) => x.id === Number(param(ctx, 3)) && x.repoId === repo.id && x.orgId === null);
     if (!r) return notFound();
     const orgOwner = !!t.org.get(repo.ownerId);
-    const f = validate(server, (ctx.body ?? {}) as Input, false, orgOwner, orgOwner ? repo.ownerId : null, r);
+    const f = validate(server, ctx.body ?? {}, false, orgOwner, orgOwner ? repo.ownerId : null, r);
     if (isResp(f)) return f;
     if (nameTaken(f.name, { repoId: repo.id, orgId: null }, r.id)) return taken();
     Object.assign(r, f, { updatedAt: server.now() });
@@ -600,7 +600,7 @@ export function installRulesetMocks(server: MockServer): void {
   R('POST', '/api/v3/orgs/:org/rulesets', (ctx) => {
     const org = orgAccess(ctx);
     if (isOrgResp(org)) return org;
-    const f = validate(server, (ctx.body ?? {}) as Input, true, true, org.id);
+    const f = validate(server, ctx.body ?? {}, true, true, org.id);
     if (isResp(f)) return f;
     if (nameTaken(f.name, { repoId: null, orgId: org.id })) return taken();
     const now = server.now();
@@ -626,7 +626,7 @@ export function installRulesetMocks(server: MockServer): void {
     if (isOrgResp(org)) return org;
     const r = S(server).rulesets.find((x) => x.id === Number(param(ctx, 2)) && x.orgId === org.id);
     if (!r) return notFound();
-    const f = validate(server, (ctx.body ?? {}) as Input, true, true, org.id, r);
+    const f = validate(server, ctx.body ?? {}, true, true, org.id, r);
     if (isResp(f)) return f;
     if (nameTaken(f.name, { repoId: null, orgId: org.id }, r.id)) return taken();
     Object.assign(r, f, { updatedAt: server.now() });

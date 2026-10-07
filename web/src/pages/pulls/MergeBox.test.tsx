@@ -50,7 +50,7 @@ function pullIssue(): Issue {
     mergeableState: 'clean',
     reviewDecision: 'approved',
     checks: 'success',
-  } as Issue;
+  };
 }
 
 function entry(position: number): MergeQueueEntry {
@@ -91,7 +91,7 @@ function requirements(e: MergeQueueEntry | null): PullRequirements {
 }
 
 function queueEvent(id: number, issueId: number, event: IssueEvent['event']): IssueEvent {
-  return { id, repoId: 1, issueId, actorId: 11, event, data: {}, createdAt: T } as IssueEvent;
+  return { id, repoId: 1, issueId, actorId: 11, event, data: {}, createdAt: T };
 }
 
 let root: Root;
@@ -154,7 +154,7 @@ describe('MergeBox merge queue', () => {
     expect(api.getPullRequirements).toHaveBeenCalledTimes(1);
     expect(el.textContent).toContain('Add to merge queue');
 
-    await act(async () => pool.current.loadRows({ issueEvent: [queueEvent(500, issue.id, 'added_to_merge_queue')] } as unknown as ModelRows, { persist: false }));
+    await act(async () => pool.current.loadRows({ issueEvent: [queueEvent(500, issue.id, 'added_to_merge_queue')] }, { persist: false }));
     await flush();
     expect(api.getPullRequirements).toHaveBeenCalledTimes(2);
     expect(el.querySelector('[data-testid="merge-queue-status"]')?.textContent).toContain('Next to merge');

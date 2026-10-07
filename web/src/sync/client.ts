@@ -1,6 +1,6 @@
 import { makeObservable, observable, runInAction } from 'mobx';
 import type { SocketLike, Transport } from '../api/transport';
-import type { ID, Reaction } from './models';
+import type { ID } from './models';
 import type { Persistence } from './persistence';
 import { ObjectPool } from './pool';
 import {
@@ -189,7 +189,7 @@ export class SyncClient {
           this.pool.loadRows(res.models, { notNewerThan: res.lastSyncId });
           // Per-user reaction rows only tell which reactions are the viewer's.
           const comments = (res.models.reviewComment ?? []) as { id: ID }[];
-          setReviewCommentReactions((res.models.reaction ?? []) as Reaction[], this.pool.viewerId, comments.map((c) => c.id));
+          setReviewCommentReactions(res.models.reaction ?? [], this.pool.viewerId, comments.map((c) => c.id));
           runInAction(() => this.loadedPulls.add(key));
         })
         .finally(() => this.partials.delete(key));
@@ -435,7 +435,7 @@ export class SyncClient {
     let data: unknown = null;
     if (res.status !== 204) data = await res.json().catch(() => null);
     const message =
-      data && typeof data === 'object' && 'message' in data ? String((data as { message: unknown }).message) : undefined;
+      data && typeof data === 'object' && 'message' in data ? String(data.message) : undefined;
     return {
       status: res.status,
       syncId: syncHeader ? Number(syncHeader) : undefined,

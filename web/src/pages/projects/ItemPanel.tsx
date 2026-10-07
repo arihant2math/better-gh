@@ -51,7 +51,7 @@ const ItemBody = observer(function ItemBody({
   const row = resolveRow(item, ctx);
   const issue = row.issue;
   const inStore = !!issue && ctx.issueInStore(issue.id);
-  const loaded = useIssueDetails(inStore ? issue!.id : undefined);
+  const loaded = useIssueDetails(inStore ? issue.id : undefined);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState<string | null>(null);
   const isDraft = row.kind === 'draft';
@@ -139,8 +139,8 @@ const ItemBody = observer(function ItemBody({
               </>
             )
           ) : inStore ? (
-            loaded || issue!.body !== undefined ? (
-              <Markdown source={issue!.body ?? ''} repo={row.repo ? `${row.repo.owner}/${row.repo.name}` : undefined} />
+            loaded || issue.body !== undefined ? (
+              <Markdown source={issue.body ?? ''} repo={row.repo ? `${row.repo.owner}/${row.repo.name}` : undefined} />
             ) : (
               <div className={styles.skeletons}>
                 <Skeleton width="90%" />

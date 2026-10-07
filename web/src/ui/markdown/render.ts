@@ -177,7 +177,7 @@ function isExternal(src: string): boolean {
   return !imageOrigin || !src.toLowerCase().startsWith(`${imageOrigin.toLowerCase()}/`);
 }
 purify.addHook('afterSanitizeAttributes', (node) => {
-  const el = node as Element;
+  const el = node;
   switch (el.tagName) {
     case 'INPUT':
       if (!tasksEnabled || !el.classList.contains('task-list-item-checkbox')) el.setAttribute('disabled', '');

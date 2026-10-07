@@ -9,7 +9,7 @@ async function call(s: MockServer, method: string, path: string, body?: unknown)
     headers: { 'Content-Type': 'application/json' },
   });
   const text = await res.text();
-  return { status: res.status, body: text ? (JSON.parse(text) as any) : null, link: res.headers.get('link') };
+  return { status: res.status, body: text ? JSON.parse(text) : null, link: res.headers.get('link') };
 }
 
 const create = (s: MockServer, over: Record<string, unknown> = {}) =>

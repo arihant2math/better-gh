@@ -339,7 +339,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       variant="secondary"
       label={copied ? 'Copied' : label}
       onClick={() =>
-        navigator.clipboard.writeText(text).then(
+        void navigator.clipboard.writeText(text).then(
           () => setCopied(true),
           (e: unknown) => toast({ kind: 'error', title: "Couldn't copy", description: errorMessage(e) }),
         )

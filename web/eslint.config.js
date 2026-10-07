@@ -11,11 +11,23 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       globals: { ...globals.browser },
+      // Type-aware rules: each file is checked against the tsconfig that owns it.
+      parserOptions: {
+        project: ['./tsconfig.json', './tsconfig.sw.json', './tsconfig.node.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     plugins: { 'react-hooks': reactHooks },
     rules: {
+      // React Compiler-era rules (v7) warn until their hits are burned down (#256).
+      ...Object.fromEntries(Object.entries(reactHooks.configs['recommended-latest'].rules).map(([k, v]) => [k, v === 'error' ? 'warn' : v])),
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      eqeqeq: ['error', 'smart'],
+      'no-console': ['error', { allow: ['warn', 'error'] }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       'no-restricted-imports': [

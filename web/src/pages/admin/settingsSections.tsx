@@ -80,7 +80,7 @@ function DomainChips({ value, onChange, error }: { value: string[]; onChange: (v
       error={shown}
       hint="Leave empty to allow any domain. Press Enter or comma to add; applies to self-service sign-up."
     >
-      <div className={s.chips} data-invalid={shown ? '' : undefined} onClick={(e) => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}>
+      <div className={s.chips} data-invalid={shown ? '' : undefined} onClick={(e) => e.currentTarget.querySelector('input')?.focus()}>
         {value.map((d) => (
           <span key={d} className={s.chip} data-invalid={domainError(d) ? '' : undefined}>
             {d}

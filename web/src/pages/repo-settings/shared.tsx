@@ -144,7 +144,7 @@ export function ChipInput({
   };
   return (
     <Field label={label} htmlFor={id} error={error} hint={hint}>
-      <div className={cx(styles.chips, error && styles.chipsInvalid, disabled && styles.chipsDisabled)} onClick={(e) => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}>
+      <div className={cx(styles.chips, error && styles.chipsInvalid, disabled && styles.chipsDisabled)} onClick={(e) => e.currentTarget.querySelector('input')?.focus()}>
         {values.map((v) => (
           <span key={v} className={styles.chip}>
             {v}

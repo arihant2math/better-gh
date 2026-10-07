@@ -115,7 +115,7 @@ function useSearch<T extends SearchType>(type: T, q: string, page: number, sort:
     search(type, { q, page, perPage: PER_PAGE, sort: s || undefined, order: o }, ctrl.signal).then(
       (data) => {
         recordPerf(`search.${type}`, performance.now() - t0);
-        pageCache.set(key, data as Page<unknown>);
+        pageCache.set(key, data);
         if (pageCache.size > 60) pageCache.delete(pageCache.keys().next().value!);
         if (!ctrl.signal.aborted) setState({ key, data });
       },

@@ -256,7 +256,7 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
       label={label}
       size="sm"
       onClick={() =>
-        navigator.clipboard.writeText(text).then(
+        void navigator.clipboard.writeText(text).then(
           () => toast({ kind: 'success', title: 'Copied to clipboard' }),
           () => toast({ kind: 'error', title: 'Could not copy' }),
         )

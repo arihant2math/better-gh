@@ -335,7 +335,7 @@ function Login({ search }: { search: string }) {
             {samlHref && (
               <a href={samlHref} className={styles.ssoButton} aria-busy={ssoBusy === 'saml'} onClick={startSso('saml', samlHref)}>
                 <ShieldLockIcon size={16} />
-                Sign in with {saml!.display_name}
+                Sign in with {saml.display_name}
               </a>
             )}
             {providers.map((p) => (

@@ -100,7 +100,7 @@ function getList<T>(path: string): PagedList<T> {
   let l = lists.get(path) as PagedList<T> | undefined;
   if (!l) {
     l = new PagedList<T>(path);
-    lists.set(path, l as PagedList<unknown>);
+    lists.set(path, l);
     if (lists.size > 50) lists.delete(lists.keys().next().value!);
   }
   return l;

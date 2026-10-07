@@ -37,9 +37,9 @@ export function splitSuggestions(body: string): ({ kind: 'md'; text: string } | 
   const out: ({ kind: 'md'; text: string } | { kind: 'suggestion'; text: string })[] = [];
   let last = 0;
   for (const m of body.matchAll(SUGGESTION_RE)) {
-    if (m.index! > last) out.push({ kind: 'md', text: body.slice(last, m.index) });
+    if (m.index > last) out.push({ kind: 'md', text: body.slice(last, m.index) });
     out.push({ kind: 'suggestion', text: m[1]! });
-    last = m.index! + m[0].length;
+    last = m.index + m[0].length;
   }
   if (last < body.length) out.push({ kind: 'md', text: body.slice(last) });
   return out;

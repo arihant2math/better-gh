@@ -49,7 +49,7 @@ export default observer(function CachesPage() {
   const canWrite = !!perm && ['admin', 'maintain', 'write'].includes(perm);
   const workflows = useResource(workflowsKey(owner, name), loadWorkflows(owner, name));
 
-  const sort = (SORTS.find((s) => s.id === query.get('sort'))?.id ?? 'last_accessed_at') as CacheSort;
+  const sort = SORTS.find((s) => s.id === query.get('sort'))?.id ?? 'last_accessed_at';
   const filters: CacheFilters = {
     key: query.get('key') ?? undefined,
     ref: query.get('ref') ?? undefined,

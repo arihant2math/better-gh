@@ -212,7 +212,7 @@ export default function JobsPage() {
         onOpen={(x) => setOpenId(x.id)}
         loading={list.loading && list.items.length === 0}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         rowHeight={40}
         empty={
           list.error ? (

@@ -60,7 +60,7 @@ export function BadgeDialog({
       onClose={onClose}
       title="Create status badge"
       footer={
-        <Button variant="primary" leadingIcon={CopyIcon} onClick={copy}>
+        <Button variant="primary" leadingIcon={CopyIcon} onClick={() => void copy()}>
           Copy status badge Markdown
         </Button>
       }

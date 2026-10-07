@@ -324,7 +324,7 @@ async function rawRequest<T>(method: 'PUT' | 'DELETE', path: string, body?: Blob
   const isJson = (res.headers.get('content-type') ?? '').includes('json');
   const data: unknown = res.status === 204 ? null : isJson ? await res.json().catch(() => null) : await res.text();
   if (!res.ok) {
-    const msg = data && typeof data === 'object' && 'message' in data ? String((data as { message: unknown }).message) : `${method} ${path} failed (${res.status})`;
+    const msg = data && typeof data === 'object' && 'message' in data ? String(data.message) : `${method} ${path} failed (${res.status})`;
     throw new ApiError(msg, res.status, data);
   }
   return data as T;

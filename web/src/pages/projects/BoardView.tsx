@@ -180,11 +180,11 @@ export const Card = observer(function Card({
         setDragging(id);
         e.dataTransfer.setData(DND_TYPE, String(id));
         e.dataTransfer.effectAllowed = 'move';
-        (e.currentTarget as HTMLElement).classList.add(styles.cardDragging!);
+        e.currentTarget.classList.add(styles.cardDragging!);
       }}
       onDragEnd={(e) => {
         setDragging(null);
-        (e.currentTarget as HTMLElement).classList.remove(styles.cardDragging!);
+        e.currentTarget.classList.remove(styles.cardDragging!);
       }}
       onPointerDown={() => onActivate(id)}
       onClick={() => onOpen(id)}

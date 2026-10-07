@@ -754,7 +754,7 @@ export function installProjectRoutes(R: RouteFn, s: MockServer): void {
     if (isResp(p)) return p;
     const v = t().projectView.get(Number(ctx.m[2]));
     if (!v || v.projectId !== p.id) return err(404, 'Not Found');
-    const next = { ...v, updatedAt: s.now() } as ProjectView;
+    const next = { ...v, updatedAt: s.now() };
     for (const k of VIEW_KEYS) if (k in ctx.body) (next as unknown as Record<string, unknown>)[k] = ctx.body[k];
     if (!String(next.name).trim() || String(next.name).includes('fail!'))
       return err(422, 'Validation Failed', [{ resource: 'ProjectView', field: 'name', code: 'invalid' }]);

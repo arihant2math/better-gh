@@ -97,7 +97,7 @@ export function installModerationMocks(server: MockServer): void {
     const model = KIND_MODEL[kind];
     const row = model ? server.db.tables[model].get(id) : undefined;
     if (!model || !row || row.repoId !== repo.id) return notFound();
-    server.put(model, { ...row, minimizedReason: reason } as never);
+    server.put(model, { ...row, minimizedReason: reason });
     return ok({ id, minimizedReason: reason });
   };
 

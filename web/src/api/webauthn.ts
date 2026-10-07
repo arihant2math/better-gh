@@ -74,7 +74,7 @@ function extensions(ext?: Record<string, unknown>): AuthenticationExtensionsClie
   if (!ext) return undefined;
   const out: Record<string, unknown> = {};
   for (const k of ['credProps', 'uvm', 'credentialProtectionPolicy', 'enforceCredentialProtectionPolicy']) if (k in ext && ext[k] != null) out[k] = ext[k];
-  return out as AuthenticationExtensionsClientInputs;
+  return out;
 }
 
 export function toCreationOptions(o: CreationOptionsJson): PublicKeyCredentialCreationOptions {
