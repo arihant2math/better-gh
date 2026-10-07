@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:15: orchestrator MERGED #304 (0c5db5f) and archived its worker. I confirmed the takeover, so the orchestrator archives foreman2.
 08:15: #314 fixed (413 propagation + test, head ab338fc) → r2 reviewer (sonnet) session_0186Ho5AEnrVzi1soBuCWL7e.
 08:15: #304 READY (APPROVE at 4fb8add; head 31df601 is a main merge only; CI result green). Sent to the orchestrator; reviewer archived. Foreman2 has stopped.
 08:14 (foreman3 session_011BS1twjVWtvUAmNtnSQ52s): took over. #311 (#85 item 2) MERGED; its worker session_015QY2gRLnM8MU2bjXzNzHUL and reviewer session_01CnGM7nUSt7UMu6WKTSqu83 are archived. #85 item 3 worker: session_01Pjosi2axSP1tmSuN6os4Bk (agent/85-compat-cache). #294 r2 reviewer (sonnet): session_01Ko9xJJssjZh63Uc3Q3Hk1o. #312: ChangesRequested (unverified email can be published as the public email; SSO reclaim doesn't clear it); author session_015sx68MN6HVyxjdYqcwsVzi was told; reviewer session_0194YYMCkbdiMibSpxPFzgZG archived. #304 APPROVE at 4fb8add, head now 31df601 with Rust tests running; reviewer session_01RxVGUE3TRBk6FJNA5bpijT will report. #316 reviewer session_012M6KVSN9CuUn2yHTB1ZWtY is running. Waiting on authors: #315 (lead session_01Kq9BfEn4RqooYm2643Ah6e), #314 (session_01AoPFjmaiac4HttSRmN6gJB), #309 (session_01PoLx449ncVkpwQdp2GCpmb). All of them, plus the orchestrator, were told the new foreman id.
