@@ -2,36 +2,28 @@
 
 Foreman: session_01QGXdRWZfRg2trNCsoy9GjA (foreman4, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## HANDOFF (09:22, foreman3 session_011BS1twjVWtvUAmNtnSQ52s → foreman4; context ~310k)
-Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Foreman2 is gone (archived by the orchestrator). WIND DOWN is in effect (section below).
-Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_message the foreman. The foreman verifies on GitHub that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, head SHA and CI status to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge. On ChangesRequested, message the author (session id is in the PR body link).
+## HANDOFF (10:48, foreman4 session_01QGXdRWZfRg2trNCsoy9GjA; context ~265k)
+Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow: the reviewer APPROVEs, sets S-Approved, updates the branch, then send_messages the foreman. The foreman verifies on GitHub that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, approved SHA, head SHA and CI to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
 
-### Open PRs at 09:05
-- #312 (#138 SECURITY, author session_015sx68MN6HVyxjdYqcwsVzi): S-Approved at 0a50a76, but the r2 security reviewer session_01SDYuLDtD7CYXTmwcLjoC1n was told to review only the FINAL head, after (a) a main merge following #323 (they overlap) and (b) the author covers the #329 org-invite repro (test, plus Fixes #329 if fully covered). Wait for its report and re-verify the SHA.
-- #309 (#275 SECURITY GraphQL cost, author session_01PoLx449ncVkpwQdp2GCpmb): r2 REQUEST_CHANGES at d1cafe7. Anonymous DoS also present on main: 30 doubling fragments pin a CPU for ~12 min, because async-graphql's validation expands spreads before MAX_VISITS. Fix is a memoized fragment-size pre-check in CostExt::parse_query plus a test. Start a fresh adversarial r3 when the author pings.
-- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e): r2 REQUEST_CHANGES at 055aef2. Round-1 items are fixed, but a flaky test (a dequeue destroys the whole group, and the rebuild SHA is timestamp-dependent) leaves CI red. The lead is fixing it by keeping the valid prefix. Start a fresh r3 reviewer when it pings.
-- #315 (#290 merge-queue GraphQL, same lead): r2 reviewer session_015Gpod5tzkrNKtz7Mi2ZxHc on 9a96154. It was told about the #322 loop (GITHUB_TOKEN auto-merge toggle).
-- #322 (#289 merge_group trigger, same lead, STACKED on #316): REQUEST_CHANGES at f53ad4f. Unbounded run loop: with #315, a job token's disable/enable auto-merge re-enqueues and the merge_group exemption re-runs. The lead must fix it (exempt only non-bot enqueuers, or cap runs) and add a test. Fresh adversarial reviewer when it pings. Merges only after #316, then retargets to main.
-- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES. A failed recheck pass drops targets, delaying revokes; plus a minor first-subscriber race. Fresh adversarial reviewer when it pings.
-- #330 (#85 item 4, worker session_011YDWD7b7snUjdLSGdr2vq4): REQUEST_CHANGES at 2790ae0. Pin CARGO_CHEF_VERSION to 0.1.78 and update SELF_HOSTING.md; put an honest cold timing (~12m23s) in the PR body. The worker was told; the reviewer is archived. Start a fresh sonnet reviewer when it pings.
+### Merged since 09:22
+#332 (#331 flake), #315, #330 (#85 item 4), #312 (#138 + #329), #309 (#275; doubling-fragment DoS).
+
+### Open
+- #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e; do NOT archive the lead): adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm on ee81558.
+- #322 (#289 merge_group, same lead, STACKED on #316): adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ on 510558b. It merges only after #316 and the lead's retarget to main; the reviewer also says whether #328 can close.
+- #334 (#85 item 5: Docker image from the release artifact, worker session_01DZesWKyJC6cAcCoaSNf8F2): reviewer session_01DGtHPF8b4fgLuBRs9d6FTH on 017af62.
+- #335 fix (P-Critical anonymous GraphQL parser stack overflow; orchestrator-approved exception): fixer session_016RmaisDuJy7A79V54oB1mV, branch agent/335-graphql-parse-depth. When it pings, start an ADVERSARIAL security reviewer (default model), then forward.
+- #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES since 08:50 and no push. Status asked at 10:48; park it (status comment) if the author is blocked.
 - #150: the user's own; don't touch it.
-- #331 fixer (orchestrator-approved CI health): session_01HiZuw5TZdK2DU9KPyfjtRs, branch agent/331-insights-time-flake. Start a reviewer when it pings.
-
-### Notes
-- main has a Wednesday 09:00-09:59 UTC flaky test (#331): any backend PR's `Rust (tests)` fails on insights::stats_accepted_then_computed in that hour. It isn't the PR's fault, so re-run after 10:00 or merge the #331 fix first.
-- #312 r2 reviewer session_01SDYuLDtD7CYXTmwcLjoC1n stays subscribed. It re-reviews the final head after the author fixes the #329 remainder (invite-mode unverified sign-up; allow-list uses the claimed address) and merges main (#323 overlap).
 
 ### #85 track
-Items 1 (#152), 2 (#311), 3 (#320, saves a runner but not wall-clock) and 4 (#330) are merged; item 5 worker session_01DZesWKyJC6cAcCoaSNf8F2. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
+Items 1-4 merged (#152, #311, #320, #330); item 5 is #334. Then items 6-10 in issue order, one worker at a time ("Part of #85", T-Perf A-Ops). The orchestrator confirmed the track runs to completion as a user-exempt exception. Close #85 at the end with a summary including honest before/after timings.
 
 ### Follow-ups filed today (backlog, unassigned)
-#321 (GraphQL alias cap), #324 (P-High SAML JIT links by login), #325 (unverified email squat DoS), #326 (backfill verified=true), #327 (actions cap polish), #328 (merge_group loop cap/test), #333 (double-@ parser, from #329), #329 (P-Critical: sign-up claims verified email → org-invite hijack; may be covered by #312).
-
-### Merged by foreman3/orchestrator since 08:12
-#311, #304, #294, #314, #320, #323 (plus #298, #302, #306 just before).
+#321, #324 (P-High), #325, #326, #327, #328, #333 (double-@ parser, P-Medium), #335 (being fixed).
 
 ### Finish
-When every open PR is merged or parked (parked = a PR status comment saying what remains, with its sessions archived): post the final #46 status (merged today; open/parked; backlog #324 #325 #326 #329 #241/#245 if unfinished #280 #286 #237 plus the other follow-ups), report to the orchestrator, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
+When every open PR is merged or parked: post the final #46 status (merged today; open/parked; backlog #324 #325 #326 #333 #241/#245 if unfinished, #280 #286 #237, and other follow-ups), report to the orchestrator, archive the remaining sessions, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
 
 ## WIND DOWN (08:53, user via orchestrator; effective now)
 1. No new workers, auditors or QA, and no new claims. Reviewers are still allowed for open PRs (#309, #312, #323, #315, #316, #322, #319) and for the #85 track.
@@ -49,6 +41,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+10:48 cycle: no new reports. Asked the #319 author for status. Handoff refreshed (context 265k).
 10:38: orchestrator MERGED #309 (2a45a56); author archived. #335 APPROVED as a wind-down exception and labelled P-Critical + C-Claimed. Fixer session_016RmaisDuJy7A79V54oB1mV, branch agent/335-graphql-parse-depth; start an adversarial security reviewer when it pings.
 10:38: #309 READY (r3 APPROVE on fb5b052; then only main merge 83dd0d6; CI result green, run 37607005921; #315 connections are cost-enforced). Forwarded; reviewer archived. ESCALATED #335 (pre-existing anonymous parser stack overflow that kills the whole process, suggested P-Critical) to the orchestrator; no fixer unless it approves one.
 10:36: the lead pinged. #316 fixed at ee81558 (prefix kept, auto_merge tests updated, main merged) → adversarial r3 reviewer session_015ZZYEzuEpDGu6JFJwPhAFm. #322 fixed at 510558b (bot-enqueued groups no longer bypass the loop guard) → adversarial r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ (stacked; merges after #316 and a retarget).
