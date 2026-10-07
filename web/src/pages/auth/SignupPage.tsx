@@ -1,11 +1,10 @@
 import { useRef, useState } from 'react';
 import { emailProblem, loginProblem, passwordProblem } from '../../api/auth';
 import { ApiError } from '../../api/client';
-import { returnTo } from '../../app/App';
 import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import { getBoot } from '../../boot';
-import { Link, navigate } from '../../router';
+import { Link, navigate, returnTo } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { CheckIcon, CircleSlashIcon } from '../../ui/icons';
