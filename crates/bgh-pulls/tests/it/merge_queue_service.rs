@@ -557,14 +557,26 @@ async fn headgreen_merges_up_to_last_green_entry() {
     );
 }
 
-#[tokio::test]
-async fn dequeue_after_green_is_not_merged() {
+/// Group `[a, b]`; b is dequeued after its checks passed. With
+/// `run_first` the queue already ran on the live group (a still pending)
+/// before a turns green and b leaves.
+async fn dequeue_second_after_green(run_first: bool) {
     let f = fixture().await;
     let app = &f.app;
     queue_with_ci(app, &f.alice, "MERGE").await;
     let (prs, shas) = queued_group(app, &f, 2).await;
-    for sha in &shas {
-        status(app, &f.alice, sha, "success").await;
+    let rb = entry(app, f.repo_id, prs[1]).await;
+    if run_first {
+        status(app, &f.alice, &shas[0], "pending").await;
+        status(app, &f.alice, &shas[1], "success").await;
+        settle(app).await;
+        assert_eq!(pull(app, prs[0]).await["merged"], false);
+        assert_eq!(entry(app, f.repo_id, prs[1]).await.state, "awaiting_checks");
+        status(app, &f.alice, &shas[0], "success").await;
+    } else {
+        for sha in &shas {
+            status(app, &f.alice, sha, "success").await;
+        }
     }
     // Dequeued after its checks passed, before the queue runs.
     app.delete(&format!("/_bgh/repos/alice/demo/pulls/{}/queue", prs[1]))
@@ -574,11 +586,149 @@ async fn dequeue_after_green_is_not_merged() {
         .assert_status(204);
     settle(app).await;
 
-    assert_eq!(pull(app, prs[0]).await["merged"], true);
+    // a keeps its group commit (and its checks) and merges at it.
+    let pa = pull(app, prs[0]).await;
+    assert_eq!(pa["merged"], true, "{pa}");
+    assert_eq!(pa["merge_commit_sha"], json!(shas[0]));
     assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    let ra = entry(app, f.repo_id, prs[0]).await;
+    assert_eq!(ra.state, "merged");
+    assert_eq!(ra.group_sha.as_ref(), Some(&shas[0]));
     let pb = pull(app, prs[1]).await;
     assert_eq!(pb["merged"], false);
     assert_eq!(pb["state"], "open");
+    assert_eq!(entry(app, f.repo_id, prs[1]).await.state, "removed");
+    assert!(!ref_exists(app, f.repo_id, rb.group_ref.as_deref().unwrap()).await);
+    let destroyed = outbox(app, "merge_group_destroyed").await;
+    let reasons: Vec<(&str, &str)> = destroyed
+        .iter()
+        .map(|d| {
+            (
+                d["head_sha"].as_str().unwrap(),
+                d["reason"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        reasons,
+        [(shas[1].as_str(), "dequeued"), (shas[0].as_str(), "merged")]
+    );
+}
+
+#[tokio::test]
+async fn dequeue_after_green_is_not_merged() {
+    dequeue_second_after_green(false).await;
+}
+
+#[tokio::test]
+async fn dequeue_after_green_is_not_merged_after_queue_ran() {
+    dequeue_second_after_green(true).await;
+}
+
+#[tokio::test]
+async fn dequeue_from_middle_keeps_prefix() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let (prs, shas) = queued_group(app, &f, 3).await;
+    let group = entry(app, f.repo_id, prs[0]).await.group_id;
+    let mut refs = Vec::new();
+    for &p in &prs {
+        refs.push(entry(app, f.repo_id, p).await.group_ref.unwrap());
+    }
+    status(app, &f.alice, &shas[0], "pending").await;
+    app.delete(&format!("/_bgh/repos/alice/demo/pulls/{}/queue", prs[1]))
+        .auth(&f.alice)
+        .send()
+        .await
+        .assert_status(204);
+    settle(app).await;
+
+    // a stays in its group at its commit; c (built on b) waits behind it.
+    let ra = entry(app, f.repo_id, prs[0]).await;
+    assert_eq!(ra.state, "awaiting_checks");
+    assert_eq!(ra.group_id, group);
+    assert_eq!(ra.group_sha.as_ref(), Some(&shas[0]));
+    let (ids, head_sha): (Vec<i64>, String) =
+        sqlx::query_as("SELECT entry_ids, head_sha FROM merge_groups WHERE id = $1")
+            .bind(group)
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+    assert_eq!(ids.len(), 1);
+    assert_eq!(head_sha, shas[0]);
+    let rc = entry(app, f.repo_id, prs[2]).await;
+    assert_eq!(rc.state, "queued");
+    for r in &refs[1..] {
+        assert!(!ref_exists(app, f.repo_id, r).await, "{r}");
+    }
+    assert!(ref_exists(app, f.repo_id, &refs[0]).await);
+    let destroyed = outbox(app, "merge_group_destroyed").await;
+    assert_eq!(destroyed.len(), 2);
+    assert!(destroyed.iter().all(|d| d["reason"] == "dequeued"));
+    assert_eq!(destroyed[0]["head_sha"], json!(shas[1]));
+    assert_eq!(destroyed[1]["head_sha"], json!(shas[2]));
+
+    // a merges at its commit; c is rebuilt on it.
+    status(app, &f.alice, &shas[0], "success").await;
+    settle(app).await;
+    assert_eq!(pull(app, prs[0]).await["merge_commit_sha"], json!(shas[0]));
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    let rc = entry(app, f.repo_id, prs[2]).await;
+    assert_eq!(rc.state, "awaiting_checks");
+    let sc = rc.group_sha.unwrap();
+    assert_ne!(sc, shas[2]);
+    status(app, &f.alice, &sc, "success").await;
+    settle(app).await;
+    assert_eq!(pull(app, prs[2]).await["merged"], true);
+    assert_eq!(pull(app, prs[1]).await["merged"], false);
+    assert_eq!(&history(app, f.repo_id).await[..2], [sc, shas[0].clone()]);
+}
+
+/// A dequeue whose transaction is still open when the queue merges: the
+/// merge waits for the entry's row lock, then re-checks and cuts the
+/// prefix before it.
+#[tokio::test]
+async fn dequeue_racing_merge_waits_and_cuts() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let (prs, shas) = queued_group(app, &f, 2).await;
+    for sha in &shas {
+        status(app, &f.alice, sha, "success").await;
+    }
+    let base = tip(app, f.repo_id, "main").await.unwrap();
+    let pb = pull_id(app, f.repo_id, prs[1]).await;
+    let mut dequeue = app.state.db.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE merge_queue_entries SET state = 'removed', failure_reason = 'dequeued'
+          WHERE pull_id = $1 AND state = 'awaiting_checks'",
+    )
+    .bind(pb)
+    .execute(&mut *dequeue)
+    .await
+    .unwrap();
+    let st = app.state.clone();
+    let rid = f.repo_id;
+    let run = tokio::spawn(async move {
+        bgh_pulls::merge_queue::service::run(&st, rid, "main")
+            .await
+            .unwrap()
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    assert!(!run.is_finished(), "merge must wait for the dequeue");
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), base);
+    dequeue.commit().await.unwrap();
+    run.await.unwrap();
+    settle(app).await;
+
+    let pa = pull(app, prs[0]).await;
+    assert_eq!(pa["merged"], true, "{pa}");
+    assert_eq!(pa["merge_commit_sha"], json!(shas[0]));
+    assert_eq!(tip(app, f.repo_id, "main").await.unwrap(), shas[0]);
+    let pbj = pull(app, prs[1]).await;
+    assert_eq!(pbj["merged"], false);
+    assert_eq!(pbj["state"], "open");
     assert_eq!(entry(app, f.repo_id, prs[1]).await.state, "removed");
 }
 

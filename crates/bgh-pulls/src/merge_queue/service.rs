@@ -14,7 +14,12 @@
 //!   batch (`deadline_at` = now + `check_response_timeout_minutes`) and
 //!   [`Event::MergeGroupChecksRequested`] is emitted per ref.
 //! * **Live group**: destroyed and rebuilt when the base tip moved
-//!   (`invalidated`) or one of its entries left the queue (`dequeued`).
+//!   (`invalidated`). When one of its entries left the queue (dequeue,
+//!   close, head push, merge outside the queue) the group is cut before
+//!   it: that entry and the ones behind it lose their commits
+//!   (`dequeued`, behind ones back to `queued`), the ones ahead keep
+//!   their commits and checks ([`truncate`]); the requeued entries are
+//!   built into the next group once this one is resolved.
 //!   Otherwise every entry's commit is evaluated ([`verdict`]): the
 //!   required status checks of the base branch, or, with none configured,
 //!   every check present on the commit (none at all = success). ALLGREEN
@@ -109,7 +114,8 @@ pub async fn process(state: AppState, job: ProcessQueue) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("merge queue {}:{}: {e:?}", job.repo_id, job.base))
 }
 
-/// Process one queue until nothing changes.
+/// Process one queue until nothing changes. Holds one pool connection for
+/// the whole run (the advisory lock's transaction).
 pub async fn run(state: &AppState, repo_id: i64, base: &str) -> ApiResult<()> {
     // One run per queue at a time; held until the run ends.
     let mut lock = state.db.begin().await?;
@@ -215,12 +221,22 @@ async fn step(state: &AppState, repo_id: i64, base: &str) -> ApiResult<bool> {
             destroy(state, repo_id, &g, &entries, "invalidated", None).await?;
             return Ok(true);
         };
-        let intact = entries.len() == g.entry_ids.len()
-            && entries.iter().all(|e| {
-                e.state == "awaiting_checks" && e.group_id == Some(g.id) && e.group_sha.is_some()
-            });
-        if !intact {
-            destroy(state, repo_id, &g, &entries, "dequeued", None).await?;
+        // An entry that left the queue invalidates itself and the entries
+        // behind it (their commits contain its changes); the ones ahead
+        // keep their commits and checks.
+        let kept = g
+            .entry_ids
+            .iter()
+            .zip(&entries)
+            .take_while(|(id, e)| {
+                e.id == **id
+                    && e.state == "awaiting_checks"
+                    && e.group_id == Some(g.id)
+                    && e.group_sha.is_some()
+            })
+            .count();
+        if kept < g.entry_ids.len() || g.entry_ids.is_empty() {
+            truncate(state, repo_id, &g, &entries, kept).await?;
             return Ok(true);
         }
         let required = rules
@@ -387,6 +403,61 @@ async fn destroy(
     }
     tx.commit().await?;
     remove_refs(state, repo_id, entries).await;
+    Ok(())
+}
+
+/// Cut group `g` before `entries[kept]` (it left the queue): that entry
+/// and every entry behind it lose their group commits
+/// (`MergeGroupDestroyed{reason: "dequeued"}`, refs deleted) and the
+/// active ones go back to `queued`; `entries[..kept]` stay in `g` with
+/// their commits and checks. With nothing kept the group is destroyed.
+async fn truncate(
+    state: &AppState,
+    repo_id: i64,
+    g: &Group,
+    entries: &[GroupEntry],
+    kept: usize,
+) -> ApiResult<()> {
+    if kept == 0 {
+        return destroy(state, repo_id, g, entries, "dequeued", None).await;
+    }
+    let (prefix, cut) = entries.split_at(kept);
+    let last = &prefix[kept - 1];
+    let mut tx = Tx::begin(state).await?;
+    let prefix_ids: Vec<i64> = prefix.iter().map(|e| e.id).collect();
+    sqlx::query(
+        "UPDATE merge_groups SET entry_ids = $2, head_ref = $3, head_sha = $4, updated_at = now()
+          WHERE id = $1 AND state = 'checking'",
+    )
+    .bind(g.id)
+    .bind(&prefix_ids)
+    .bind(last.group_ref.as_deref().unwrap_or_default())
+    .bind(last.group_sha.as_deref().unwrap_or_default())
+    .execute(&mut *tx)
+    .await?;
+    let cut_ids: Vec<i64> = cut.iter().map(|e| e.id).collect();
+    let reset: Vec<i64> = sqlx::query_scalar(
+        "UPDATE merge_queue_entries
+            SET state = 'queued', group_id = NULL, group_ref = NULL, group_sha = NULL,
+                updated_at = now()
+          WHERE id = ANY($1) AND group_id = $2 AND state IN ('awaiting_checks', 'mergeable')
+          RETURNING pull_id",
+    )
+    .bind(&cut_ids)
+    .bind(g.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for e in cut {
+        if let Some(ev) = destroyed_event(repo_id, g, e, "dequeued") {
+            tx.emit(ev);
+        }
+    }
+    let scope = bgh_core::sync::repo_scope(repo_id);
+    for pull_id in reset {
+        pull_json::sync_pull(&mut tx, &scope, pull_id).await?;
+    }
+    tx.commit().await?;
+    remove_refs(state, repo_id, cut).await;
     Ok(())
 }
 
@@ -653,24 +724,19 @@ async fn merge_prefix(
     }
     let pusher_id = merged.last().map(|(_, a)| *a);
     // pushed_at / size / Event::Push (re-syncs PRs targeting the base),
-    // atomically with the merge. A landed base that moved on since then
-    // was processed by that later push.
-    let pushed_now = match &landing {
-        Landing::Swap => true,
-        Landing::Landed { tip } => *tip == new_tip,
-    };
-    if pushed_now {
-        tx.enqueue(&bgh_repos::jobs::PostReceive {
-            repo_id: repo.id,
-            pusher_id,
-            updates: vec![RefUpdate {
-                old: g.base_sha.clone(),
-                new: new_tip,
-                refname: base_ref,
-            }],
-        })
-        .await?;
-    }
+    // atomically with the merge. Also for a landed base that moved on
+    // since: the queue's own update (group base -> prefix head) was never
+    // processed.
+    tx.enqueue(&bgh_repos::jobs::PostReceive {
+        repo_id: repo.id,
+        pusher_id,
+        updates: vec![RefUpdate {
+            old: g.base_sha.clone(),
+            new: new_tip,
+            refname: base_ref,
+        }],
+    })
+    .await?;
     tx.commit().await?;
     remove_refs(state, repo.id, prefix).await;
 
