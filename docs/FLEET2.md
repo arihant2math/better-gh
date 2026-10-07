@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+13:10: main 37622793134 (6a0a8c0) RED: 2/1331 failed: #341 flake (events shutdown webhook) + NEW triggers::issues_and_issue_comment_activity_types (bgh-actions triggers.rs:526, 3 vs 4 runs after in-memory emit(IssuePinned)+settle; likely timing race, not #319). Re-ran failed jobs ONCE; if it fails again → real, ask orchestrator for fixer. #342 worker filled Measurements honestly (cold-vs-cold within noise; local ~7%, target 11→8.2 GB) → sonnet delta reviewer session_01UTzTiNZ73uE8tMhfWk6b7i. Reported to orchestrator.
 13:02: main 37622619342 (b92d546) GREEN (12:39-12:52, ~12m20s warm); 37622793134 (6a0a8c0) still running. #342 r1 REQUEST_CHANGES: code fine (same env on rust-test/rust-lint, 1331 tests, CI green run 37622893086); only blocker is the PR body's Measurements section still saying "Pending" (the PR run was cold, main warm). Relayed to the worker; reviewer archived.
 12:47 (foreman6 session_017wTGe7UyNPrFGMVRm5Gtxx): took over; new id sent to lead, #340 author, item 8 worker, #340 and #316 reviewers. Main runs 37622619342 (b92d546) in progress and 37622793134 (6a0a8c0) pending. NEW #342 (#85 item 8, 20f9a00) → adversarial CI reviewer session_01Vq586jEBDyXpEhtQWgikiv. #316 r4, #340 reviews still running; #322 waits on #316.
 12:46: foreman6 = session_017wTGe7UyNPrFGMVRm5Gtxx. foreman5 context ~310k → handoff to foreman6. Main runs 37622619342 (b92d546) and 37622793134 (6a0a8c0) in progress.
