@@ -49,24 +49,25 @@ export const InboxPreview = observer(function InboxPreview({ n, onDone, onOpen, 
       <span className={styles.previewRepo}>
         {repo ? `${repo.owner}/${repo.name}` : ''} · {REASON_LABELS[n.reason]} · <RelativeTime date={n.updatedAt} />
       </span>
-      <span style={{ flex: 1 }} />
-      <IconButton icon={EyeIcon} size="sm" label="Watch settings" shortcut="W" onClick={onWatch} disabled={!repo} />
-      <IconButton
-        icon={subscribed ? BellSlashIcon : BellIcon}
-        size="sm"
-        label={subscribed ? 'Unsubscribe from this thread' : 'Subscribe to this thread'}
-        shortcut="S"
-        onClick={onToggleSubscription}
-      />
-      <Button size="sm" kbd="U" onClick={onToggleRead}>
-        {n.unread ? 'Read' : 'Unread'}
-      </Button>
-      <Button size="sm" leadingIcon={CheckIcon} kbd="E" onClick={onDone}>
-        Done
-      </Button>
-      <Button size="sm" variant="primary" leadingIcon={LinkExternalIcon} kbd="↵" onClick={onOpen}>
-        Open
-      </Button>
+      <div className={styles.previewButtons}>
+        <IconButton icon={EyeIcon} size="sm" label="Watch settings" shortcut="W" onClick={onWatch} disabled={!repo} />
+        <IconButton
+          icon={subscribed ? BellSlashIcon : BellIcon}
+          size="sm"
+          label={subscribed ? 'Unsubscribe from this thread' : 'Subscribe to this thread'}
+          shortcut="S"
+          onClick={onToggleSubscription}
+        />
+        <Button size="sm" kbd="U" onClick={onToggleRead}>
+          {n.unread ? 'Read' : 'Unread'}
+        </Button>
+        <Button size="sm" leadingIcon={CheckIcon} kbd="E" onClick={onDone}>
+          Done
+        </Button>
+        <Button size="sm" variant="primary" leadingIcon={LinkExternalIcon} kbd="↵" onClick={onOpen}>
+          Open
+        </Button>
+      </div>
     </div>
   );
 
