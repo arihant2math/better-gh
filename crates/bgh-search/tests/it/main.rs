@@ -11,4 +11,5 @@ mod palette;
 mod search_code;
 mod search_issues;
 mod search_other;
+mod search_predicates;
 mod smoke;

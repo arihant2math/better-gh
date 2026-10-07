@@ -560,7 +560,9 @@ Site-level account changes also emit `UserAccountChanged` /
   (`bgh_pulls::protection`): the classic rule protecting the base branch
   plus every active ruleset selecting it, each requirement reported with
   its source and bypassed per source; required checks only count
-  statuses/check runs posted to the base repository. Push protection
+  statuses/check runs posted to the base repository. A `merge_queue` rule
+  makes that evaluator refuse every direct merge; only the merge queue
+  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges. Push protection
   (`bgh_security::push`, P65) is one more object check combined into
   `PushPolicy::object_check` by both transports: it scans only the blobs
   the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,

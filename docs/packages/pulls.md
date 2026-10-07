@@ -137,6 +137,24 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   base; `@user`, `@org/team`, emails; gitignore-like patterns, last match
   wins; owners need write access (teams need a `team_repos` grant).
   Auto-requested on open (non-draft), ready-for-review and pushes.
+* Merge queue (P39, `merge_queue/`, migration `5100_merge_queue.sql`): an
+  active ruleset with a `merge_queue` rule adds the blocker "Changes must be
+  made through the merge queue" (`protection::BlockerKind::MergeQueue`), so
+  `PUT /merge`, `mergePullRequest` and auto-merge refuse direct merges
+  (405; `mergeable_state` `blocked`) unless the actor bypasses the ruleset.
+  Only the queue merges, passing `MergeRequest::via_merge_queue` (drops just
+  that blocker). Enqueue (`merge_queue::enqueue`, write access, `jump` =
+  admin) needs an open non-draft PR without conflicts whose requirements
+  other than status checks are met; idempotent. Entries are ordered jump
+  first, then by enqueue time; they leave the queue on dequeue, close
+  (`close_in_tx`, `PullRequestClosed` listener), a head push (synchronize,
+  reason `head changed`) or a merge outside the queue. Timeline:
+  `added_to_merge_queue` / `removed_from_merge_queue` `{reason}`.
+  `/_bgh`: `PUT|DELETE /repos/{o}/{r}/pulls/{n}/queue`,
+  `GET /repos/{o}/{r}/queue/{*branch}` (PUT: 201 new entry, 200 already
+  queued), and `merge_queue` in `/pulls/{n}/requirements` (whose
+  `blockers`/`requirements` omit the queue rule itself). Group building / merging: P39.2
+  (`merge_queue::schedule` is its entry point).
 * Diffs: parsed file diffs cached in Redis by `(repo, base, head)` for 7
   days (`pulls:diff:v1:*`); `.diff`/`.patch` streamed from git.
 
@@ -212,4 +230,4 @@ convert_to_draft endpoints (the mock backend implements them too).
 * `body_html`/`body_text` media types for reviews/comments not rendered.
 * Comments created against an older `commit_id` are positioned on that
   commit's diff and immediately outdated if the line changed since.
-* Merge queue not implemented.
+* Merge queue: groups, checks and merging land in P39.2 (entries only wait).
