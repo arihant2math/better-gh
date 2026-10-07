@@ -57,4 +57,7 @@ describe('isReplyOnlyReview', () => {
     expect(isReplyOnlyReview({ state: 'COMMENTED', body: '' }, [reply, root])).toBe(false);
     expect(isReplyOnlyReview({ state: 'APPROVED', body: '' }, [reply])).toBe(false);
   });
+  it('keeps reviews whose comments have not loaded yet', () => {
+    expect(isReplyOnlyReview({ state: 'COMMENTED', body: '' }, [])).toBe(false);
+  });
 });

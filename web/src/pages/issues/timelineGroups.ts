@@ -53,5 +53,6 @@ export function hideMergeCloses(events: IssueEvent[]): IssueEvent[] {
  * in their threads) renders nothing useful, so GitHub hides it.
  */
 export function isReplyOnlyReview(review: Pick<Review, 'state' | 'body'>, comments: Pick<ReviewComment, 'inReplyToId'>[]): boolean {
-  return review.state === 'COMMENTED' && !review.body?.trim() && comments.every((c) => c.inReplyToId != null);
+  // Comments load lazily: with none known yet, keep the review rather than hide it.
+  return review.state === 'COMMENTED' && !review.body?.trim() && comments.length > 0 && comments.every((c) => c.inReplyToId != null);
 }
