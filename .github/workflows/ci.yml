@@ -7,16 +7,19 @@
 #
 # Dependency rules (keep in sync with scripts/ci-changes.sh and
 # docs/AGENT_WORKFLOW.md "CI is the shared gate"):
-# * backend (rust-lint, rust-test, compat): crates/, migrations/, scripts/,
+# * backend (rust-lint, rust-test, which also runs the gh compat report):
+#   crates/, migrations/, scripts/,
 #   Cargo.*, rust toolchain/fmt/clippy config.
 # * frontend (web): web/.
 # * both: testdata/ (the markdown golden corpus is read by Rust tests and by
 #   web/src/ui/markdown/render.golden.test.ts) and
 #   web/src/ui/markdown/emoji.json (bgh-core include_str!s it). Otherwise the
 #   web job needs no server (vitest only; the viewport matrix isn't in CI).
-# * docker: Dockerfile, .dockerignore or Cargo.lock only. The release image
-#   build is ~28 min, so other backend/frontend changes skip it on PRs; it
-#   still runs on every push to main and workflow_dispatch (#85).
+# * docker: Dockerfile, .dockerignore or Cargo.lock only. On PRs the image
+#   compiles bgh itself (~28 min release build), so other backend/frontend
+#   changes skip it. Off pull requests (main, workflow_dispatch) it packages
+#   the release-binary artifact instead, so release + thin LTO compiles once
+#   per push and the image holds the exact uploaded binary (#85).
 # * release-binary embeds web/dist too; it only runs off pull requests, where
 #   everything runs.
 # * .github/workflows/ and scripts/ci-changes.sh run everything. Docs-only
@@ -67,19 +70,45 @@ jobs:
           fi
           cat "$GITHUB_OUTPUT"
 
+  # Lint on every platform we ship or develop on, so platform-specific code
+  # (cfg gates, Linux-only APIs) can't break other targets unnoticed. Tests
+  # stay Linux x86_64 only (rust-test).
   rust-lint:
-    name: Rust (fmt, clippy)
+    name: Rust (fmt, clippy, ${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: macos-arm64, os: macos-latest }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # openssl-sys (via webauthn-rs) links the system OpenSSL.
+      - name: Install native deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! pkg-config --exists openssl; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends pkg-config libssl-dev
+          fi
+      - name: Install native deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # rust-cache already keys on OS and arch; the name keeps it explicit.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: clippy
+          shared-key: clippy-${{ matrix.name }}
+          # Only main writes caches; PRs restore main's (#85).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -111,9 +140,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Only main writes caches; PRs restore main's. Tests are often red, so
+      # save on failure too, or the cache never warms (#85). The key has no
+      # ref in it, so a PR run hits the entry its base main run saved.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       # Integration tests drive the real git CLI (preinstalled, with git-lfs).
       - run: git config --global user.name ci && git config --global user.email ci@example.com
       # The suite's expected constraint violations and per-test DROP DATABASE
@@ -126,7 +160,11 @@ jobs:
           -c "ALTER SYSTEM SET log_min_error_statement = 'panic'"
           -c "ALTER SYSTEM SET log_checkpoints = off"
           -c "SELECT pg_reload_conf()"
-      - run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+      # Compile separately so the job timings split build from run time.
+      - id: build
+        run: cargo test --workspace --locked --no-run 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+        shell: bash
+      - run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee -a "$RUNNER_TEMP/cargo-test.log"
         shell: bash # -o pipefail: keep cargo's exit status through tee
       - name: Summarize test failures
         if: failure()
@@ -138,6 +176,54 @@ jobs:
               | grep -E '^test .* FAILED$|panicked at|^error(\[|:)|test result: FAILED' || true
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+      # Real gh CLI + REST smoke against a throwaway server, run here on the
+      # bgh binary the build step already linked for bgh-server's integration
+      # tests instead of on a separate, cold runner (#85). Informational until
+      # the domain packages land: it runs whether or not tests passed, and its
+      # failures are reported, not fatal (add --strict to gate on it).
+      # psql (creates the throwaway database), git, gh, jq and python3 are
+      # preinstalled on ubuntu-latest.
+      - name: gh compatibility (report)
+        id: compat
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          # gh is preinstalled on GitHub-hosted runners; keep it away from the
+          # workflow's own GitHub token.
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+        shell: bash
+        run: |
+          BGH_BIN="$PWD/target/debug/bgh"
+          [ -x "$BGH_BIN" ] || cargo build --locked -p bgh-server --bin bgh
+          export BGH_BIN
+          rc=0
+          ./scripts/api-smoke.sh --json api-smoke.json || rc=$?
+          # Port 443 needs root; the harness falls back to a high port (gh pr
+          # checkout and other remote-matching commands then can't match hosts).
+          ./scripts/gh-compat.sh --json gh-compat.json || rc=$?
+          exit "$rc"
+      - name: Summarize gh compatibility
+        if: ${{ !cancelled() && steps.compat.outcome != 'skipped' && hashFiles('gh-compat.json') != '' }}
+        continue-on-error: true
+        run: |
+          {
+            echo "## gh compatibility"
+            jq -r '"\(.summary.pass) passed, \(.summary.fail) failed, \(.summary.skip) skipped of \(.summary.total)"' gh-compat.json
+            echo
+            echo "| Result | Command | Detail |"
+            echo "|---|---|---|"
+            jq -r '.results[] | select(.kind == "gh") | "| \(.status) | `\(.name)` | \(.detail | gsub("\\|"; "\\\\|")) |"' gh-compat.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.compat.outcome != 'skipped' }}
+        continue-on-error: true
+        with:
+          name: compat-results
+          if-no-files-found: ignore
+          path: |
+            gh-compat.json
+            api-smoke.json
 
   web:
     name: Web (typecheck, lint, test, build)
@@ -178,6 +264,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/download-artifact@v4
         with:
           name: web-dist
@@ -190,26 +277,67 @@ jobs:
           path: target/release/bgh
           retention-days: 14
 
+  # Off pull requests the image packages release-binary's artifact through
+  # the Dockerfile's `bin` build context (no Rust build here). On PRs, where
+  # release-binary doesn't run, it compiles from source, then also rebuilds
+  # from the binary it extracted so the prebuilt path is covered too.
   docker:
     name: Docker image
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    needs: [changes, release-binary]
+    if: >-
+      !cancelled() && needs.changes.outputs.docker == 'true'
+      && (github.event_name == 'pull_request' || needs.release-binary.result == 'success')
     runs-on: ubuntu-latest
+    env:
+      PREBUILT: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/download-artifact@v4
+        if: env.PREBUILT == 'true'
+        with:
+          name: bgh-linux-x86_64
+          path: ${{ runner.temp }}/bgh-bin
+      - name: Build from source
+        if: env.PREBUILT != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           load: true
+          tags: bgh:source
+          # One named scope; only main writes it, PRs restore it read-only so
+          # they don't add multi-GB entries that evict main's cargo caches.
+          cache-from: type=gha,scope=bgh
+      - name: Extract the binary from the source-built image
+        if: env.PREBUILT != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/bgh-bin"
+          id=$(docker create bgh:source)
+          docker cp "$id:/usr/local/bin/bgh" "$RUNNER_TEMP/bgh-bin/bgh"
+          docker rm "$id"
+      - name: Build from the prebuilt binary
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-contexts: bin=${{ runner.temp }}/bgh-bin
+          push: false
+          load: true
           tags: bgh:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # On main this caches the runtime stage's apt layer (#85).
+          cache-from: type=gha,scope=bgh
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,scope=bgh,mode=max' || '' }}
       - name: Smoke-test the image
+        env:
+          BIN: ${{ runner.temp }}/bgh-bin/bgh
         run: |
           docker run --rm bgh:ci --version
           docker run --rm --entrypoint git bgh:ci --version
+          # The image must carry exactly the binary it was built from.
+          id=$(docker create bgh:ci)
+          docker cp "$id:/usr/local/bin/bgh" "$RUNNER_TEMP/bgh-image"
+          docker rm "$id"
+          cmp "$BIN" "$RUNNER_TEMP/bgh-image"
 
   scripts:
     name: Shell scripts
@@ -221,75 +349,14 @@ jobs:
       - run: ./scripts/check-test-layout.sh
       - run: python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' scripts/lib/tls-proxy.py
 
-  # Real gh CLI + REST smoke against a throwaway server. Informational until
-  # the domain packages land: failures are reported, not fatal (add --strict
-  # to gate on it).
-  compat:
-    name: gh compatibility (report)
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: bgh
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s --health-timeout 5s --health-retries 20
-      redis:
-        image: redis:7
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 5s --health-retries 20
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost/bgh
-      REDIS_URL: redis://127.0.0.1/
-      # gh is preinstalled on GitHub-hosted runners; keep it away from the
-      # workflow's own GitHub token.
-      GH_TOKEN: ""
-      GITHUB_TOKEN: ""
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: test
-          save-if: false
-      # psql (creates the throwaway database), git, gh, jq and python3 are
-      # preinstalled on ubuntu-latest.
-      - run: ./scripts/api-smoke.sh --json api-smoke.json
-      # Port 443 needs root; the harness falls back to a high port (gh pr
-      # checkout and other remote-matching commands then can't match hosts).
-      - run: ./scripts/gh-compat.sh --json gh-compat.json
-      - run: |
-          {
-            echo "## gh compatibility"
-            jq -r '"\(.summary.pass) passed, \(.summary.fail) failed, \(.summary.skip) skipped of \(.summary.total)"' gh-compat.json
-            echo
-            echo "| Result | Command | Detail |"
-            echo "|---|---|---|"
-            jq -r '.results[] | select(.kind == "gh") | "| \(.status) | `\(.name)` | \(.detail | gsub("\\|"; "\\\\|")) |"' gh-compat.json
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: compat-results
-          path: |
-            gh-compat.json
-            api-smoke.json
-
   # Single required check. Gated jobs that weren't needed are "skipped" (ok);
   # a failed or cancelled job, including `changes` itself, fails this. The
-  # informational compat report is left out on purpose.
+  # informational compat report (a continue-on-error step in rust-test) can't
+  # fail it.
   ci-result:
     name: CI result
     if: always()
-    needs: [changes, rust-lint, rust-test, web, docker, scripts]
+    needs: [changes, rust-lint, rust-test, web, release-binary, docker, scripts]
     runs-on: ubuntu-latest
     steps:
       - env:

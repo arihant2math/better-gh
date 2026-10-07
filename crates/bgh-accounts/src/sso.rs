@@ -208,18 +208,29 @@ fn callback_url(state: &AppState, provider: &str) -> String {
 ///
 /// Browsers treat `\` as `/` and strip tab/newline from URLs, so `/\x` and
 /// `/\t/x` would become the protocol-relative `//x`; reject those along with
-/// any other control character.
+/// any other control character. Dot segments are rejected too: `/..//x`
+/// normalizes to `//x`.
 pub(crate) fn safe_return_to(r: Option<&str>) -> String {
     match r {
         Some(p)
             if p.starts_with('/')
                 && !p.starts_with("//")
-                && !p.chars().any(|c| c == '\\' || c.is_control()) =>
+                && !p.chars().any(|c| c == '\\' || c.is_control())
+                && !has_dot_segment(p) =>
         {
             p.to_string()
         }
         _ => "/".to_string(),
     }
+}
+
+/// Whether the path part of `p` has a `.` or `..` segment (`%2e` included).
+fn has_dot_segment(p: &str) -> bool {
+    let path = p.split(['?', '#']).next().unwrap_or_default();
+    path.split('/').any(|seg| {
+        let seg = seg.to_ascii_lowercase().replace("%2e", ".");
+        seg == "." || seg == ".."
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -401,6 +412,21 @@ pub(crate) async fn available_login(state: &AppState, wanted: &str) -> ApiResult
     Ok(format!("user-{}", crypto::random_token(8).to_lowercase()))
 }
 
+/// The site sign-up policy ([`bgh_core::settings::check_signup`]) for an
+/// account an SSO provider is about to create just in time (OIDC, SAML).
+/// `Err` carries the refusal for the sign-in page. LDAP and SCIM are
+/// directory-authoritative and do not call this.
+pub(crate) async fn jit_signup_allowed(
+    state: &AppState,
+    email: &str,
+) -> ApiResult<Result<(), String>> {
+    match bgh_core::settings::check_signup(state, email).await {
+        Ok(()) => Ok(Ok(())),
+        Err(ApiError::Forbidden(message)) => Ok(Err(message)),
+        Err(e) => Err(e),
+    }
+}
+
 /// Find or create the local account for `ident`.
 async fn resolve_user(
     state: &AppState,
@@ -457,11 +483,23 @@ async fn resolve_user(
                     "The identity provider did not return a verified email address.".into(),
                 ));
             };
+            if let Err(denied) = jit_signup_allowed(state, email).await? {
+                return Ok(Err(denied));
+            }
             let wanted = ident.login.clone().unwrap_or_else(|| email.to_string());
             let login = available_login(state, &wanted).await?;
-            let user =
-                users::insert_user(&mut tx, &login, email, ident.name.as_deref(), None, None)
-                    .await?;
+            // The IdP vouched for `email` (`email_verified`), which also
+            // releases an unverified claim on it by another account.
+            let user = users::insert_user(
+                &mut tx,
+                &login,
+                email,
+                ident.name.as_deref(),
+                None,
+                None,
+                true,
+            )
+            .await?;
             audit::log(
                 &mut *tx,
                 Some(&user),
@@ -698,9 +736,19 @@ mod tests {
             "https://x",
             "javascript:alert(1)",
             "",
+            "/..//evil.com",
+            "/.//evil.com",
+            "/a/..//evil.com",
+            "/%2e%2e//evil.com",
+            "/%2E//evil.com",
+            "https://bgh.test//evil.com",
         ] {
             assert_eq!(safe_return_to(Some(bad)), "/", "{bad:?}");
         }
         assert_eq!(safe_return_to(Some("/acme/api?x=1#y")), "/acme/api?x=1#y");
+        assert_eq!(
+            safe_return_to(Some("/a/b.c?q=../..#..")),
+            "/a/b.c?q=../..#.."
+        );
     }
 }

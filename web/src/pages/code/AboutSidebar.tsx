@@ -13,11 +13,24 @@ import styles from './Code.module.css';
 import { useFullRepo } from './CloneMenu';
 import { languageColor } from './languages';
 
-/** Repository home sidebar: about, topics, stats, latest release, contributors, languages. */
-export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Repo }) {
+/**
+ * Whether to fetch `releases/latest`. A repository without commits has no
+ * releases, so the probe (a 404) is skipped; a never-pushed repository waits
+ * for the root tree to say whether it is empty.
+ */
+export function probeLatestRelease(loaded: boolean, empty: boolean | undefined, pushedAt: string | null): boolean {
+  if (empty) return false;
+  return loaded || !!pushedAt;
+}
+
+/**
+ * Repository home sidebar: about, topics, stats, latest release, contributors, languages.
+ * `loaded`/`empty`/`hasReadme` come from the root tree listing.
+ */
+export const AboutSidebar = observer(function AboutSidebar({ repo, loaded, empty, hasReadme }: { repo: Repo; loaded: boolean; empty?: boolean; hasReadme: boolean }) {
   const { owner, name } = repo;
   const full = useFullRepo(owner, name);
-  const release = useResource<RestRelease | null>(codeKeys.latestRelease(owner, name), () => getLatestRelease(owner, name), { ttlMs: 60_000 });
+  const release = useResource<RestRelease | null>(!probeLatestRelease(loaded, empty, repo.pushedAt) ? null : codeKeys.latestRelease(owner, name), () => getLatestRelease(owner, name), { ttlMs: 60_000 });
   const contributors = useResource<RestContributor[]>(codeKeys.contributors(owner, name), () => listContributors(owner, name), { ttlMs: 300_000 });
   const languages = useResource<Record<string, number>>(codeKeys.languages(owner, name), () => getLanguages(owner, name), { ttlMs: 300_000 });
   const base = `/${owner}/${name}`;
@@ -43,9 +56,11 @@ export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Rep
           </div>
         )}
         <ul className={styles.aboutStats}>
-          <li>
-            <BookIcon size={16} /> <a href="#readme">Readme</a>
-          </li>
+          {hasReadme && (
+            <li>
+              <BookIcon size={16} /> <a href="#readme">Readme</a>
+            </li>
+          )}
           {full.data?.license && (
             <li>
               <LawIcon size={16} /> {full.data.license.spdx_id && full.data.license.spdx_id !== 'NOASSERTION' ? `${full.data.license.spdx_id} license` : full.data.license.name}
@@ -67,7 +82,9 @@ export const AboutSidebar = observer(function AboutSidebar({ repo }: { repo: Rep
         <h2 className={styles.aboutTitle}>
           <Link to={`${base}/releases`}>Releases</Link>
         </h2>
-        {release.data === undefined ? (
+        {empty ? (
+          <p className={styles.muted}>No releases published</p>
+        ) : release.data === undefined ? (
           <Skeleton width="70%" />
         ) : release.data ? (
           <Link to={`${base}/releases/tag/${encodeURIComponent(release.data.tag_name)}`} className={styles.release}>

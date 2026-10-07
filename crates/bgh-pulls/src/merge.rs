@@ -75,6 +75,10 @@ pub struct MergeRequest {
     pub commit_message: Option<String>,
     /// Expected head SHA (409 if it differs).
     pub sha: Option<String>,
+    /// The merge queue merges this PR: the `merge_queue` rule's blocker
+    /// ("Changes must be made through the merge queue") does not apply.
+    /// Every other merge (REST, GraphQL, auto-merge) passes `false`.
+    pub via_merge_queue: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -199,7 +203,10 @@ pub async fn perform_merge(
     if rules.restricts(&actor) {
         return Err(not_allowed("You're not authorized to push to this branch."));
     }
-    let ev = protection::evaluate(state, repo, pull, &rules).await?;
+    let mut ev = protection::evaluate(state, repo, pull, &rules).await?;
+    if req.via_merge_queue {
+        ev = ev.without_merge_queue();
+    }
     if let Some(suite) = protection::merge_suite(
         repo.id,
         &rules,
@@ -574,6 +581,7 @@ pub async fn merge(
         commit_title: body.commit_title,
         commit_message: body.commit_message,
         sha: body.sha,
+        via_merge_queue: false,
     };
     let out = perform_merge(
         &state,

@@ -125,6 +125,8 @@ async fn reads_and_updates_settings() {
     assert!(!site.to_string().contains("xyz"));
 }
 
+const GATED: &str = "Confirm your email address before signing in: open the link we emailed you.";
+
 #[tokio::test]
 async fn enforces_signup_policy() {
     let app = bgh_server::test_app().await;
@@ -145,10 +147,11 @@ async fn enforces_signup_policy() {
         .send()
         .await
         .assert_status(403);
-    signup("bob", "bob@EXAMPLE.com")
-        .send()
-        .await
-        .assert_status(201);
+    // An allowed address passes the policy, but the account can't sign in
+    // until the address is proven by mail.
+    let res = signup("bob", "bob@EXAMPLE.com").send().await;
+    res.assert_status(403);
+    assert_eq!(res.json()["message"], GATED);
 
     patch_settings(&app, &admin, json!({"signup": {"policy": "closed"}})).await;
     let res = signup("carol", "carol@example.com").send().await;
@@ -170,10 +173,9 @@ async fn enforces_signup_policy() {
         .execute(&app.state.db)
         .await
         .unwrap();
-    signup("dave", "dave@example.com")
-        .send()
-        .await
-        .assert_status(201);
+    let res = signup("dave", "dave@example.com").send().await;
+    res.assert_status(403);
+    assert_eq!(res.json()["message"], GATED);
 
     // Admins can still create users when sign-up is closed.
     app.post("/api/v3/admin/users")

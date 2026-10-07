@@ -14,6 +14,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod conn;
+mod cost;
 mod ctx;
 mod loaders;
 mod model;
@@ -53,6 +54,7 @@ pub fn schema() -> &'static BghSchema {
         .register_output_type::<model::RepositoryOwner>()
         .limit_depth(32)
         .limit_recursive_depth(64)
+        .extension(cost::CostLimit)
         .finish()
     })
 }
@@ -160,13 +162,15 @@ async fn execute(
     method: Method,
 ) -> Response {
     let loaders = loaders::Loaders::new(&state, auth.as_ref());
+    let cost = std::sync::Arc::new(cost::CostCell::default());
     let mut request = request
         .data(Gql {
             state,
             auth,
             client_ip,
         })
-        .data(loaders);
+        .data(loaders)
+        .data(cost.clone());
     if method == Method::GET {
         request = request.data(mutation::ReadOnly);
     }
@@ -176,6 +180,9 @@ async fn execute(
     let mut resp = axum::Json(body).into_response();
     let h = resp.headers_mut();
     h.insert("x-github-media-type", HeaderValue::from_static("github.v4"));
+    if let Some(q) = cost.quota() {
+        q.apply(h);
+    }
     resp
 }
 

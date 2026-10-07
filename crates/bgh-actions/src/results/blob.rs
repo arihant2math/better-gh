@@ -29,6 +29,7 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::runtime::{BLOB_PREFIX, BlobPerm, check_blob_signature};
+use crate::server::MAX_ARTIFACT_SIZE;
 
 pub const X_MS_VERSION: &str = "2024-11-04";
 /// Azure's limit on a block id (decoded).
@@ -134,9 +135,6 @@ pub fn artifact_staging_path(state: &AppState, id: &str) -> PathBuf {
 pub fn artifact_blocks_dir(state: &AppState, id: &str) -> PathBuf {
     artifact_staging_dir(state).join(format!("{id}.blocks"))
 }
-
-/// Largest artifact accepted through the results service.
-const MAX_ARTIFACT_SIZE: u64 = 10 << 30;
 
 /// Errors are boxed: `Response` is large and these are cold paths.
 async fn write_target(
@@ -604,20 +602,25 @@ async fn put_block_list(target: &WriteTarget, body: Body) -> Response {
     let tmp = target
         .staging
         .with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
-    let result: std::io::Result<u64> = async {
-        let mut out = tokio::fs::File::create(&tmp).await?;
-        let mut total = 0u64;
-        for f in &files {
-            let mut src = tokio::fs::File::open(f).await?;
-            total += tokio::io::copy(&mut src, &mut out).await?;
-            if total > target.max_size {
-                return Err(std::io::Error::other("too large"));
+    // `std::io::copy` on the blocking pool: large buffers / `copy_file_range`
+    // instead of one 8 KiB blocking hop per read with `tokio::io::copy`.
+    let result: std::io::Result<u64> = {
+        let (tmp, max) = (tmp.clone(), target.max_size);
+        tokio::task::spawn_blocking(move || {
+            let mut out = std::fs::File::create(&tmp)?;
+            let mut total = 0u64;
+            for f in &files {
+                let mut src = std::fs::File::open(f)?;
+                total += std::io::copy(&mut src, &mut out)?;
+                if total > max {
+                    return Err(std::io::Error::other("too large"));
+                }
             }
-        }
-        out.flush().await?;
-        Ok(total)
-    }
-    .await;
+            Ok(total)
+        })
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(e)))
+    };
     if let Err(e) = result {
         let _ = tokio::fs::remove_file(&tmp).await;
         return if e.to_string() == "too large" {

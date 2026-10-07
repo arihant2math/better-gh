@@ -241,6 +241,8 @@ export type IssueEventType =
   | 'review_request_removed'
   | 'ready_for_review'
   | 'convert_to_draft'
+  | 'added_to_merge_queue'
+  | 'removed_from_merge_queue'
   | 'head_ref_force_pushed'
   | 'mentioned'
   | 'subscribed'
@@ -295,6 +297,8 @@ export interface IssueEvent {
     parentIssueNumber?: number;
     parentIssueRepository?: string;
     fromRepository?: string;
+    /** removed_from_merge_queue: why (e.g. failing checks). */
+    reason?: string;
     /** issue_type_added / _changed / _removed. */
     issueTypeName?: string;
     issueTypeColor?: string;

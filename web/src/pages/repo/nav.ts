@@ -38,7 +38,7 @@ export function currentRepoTab(section: string): string {
   if (section === '' || section === 'tree' || section === 'blob' || section === 'blame' || section === 'commits' || section === 'commit' || section === 'branches' || section === 'tags' || section === 'releases' || section === 'compare') {
     return section === 'compare' ? 'pulls' : 'code';
   }
-  if (section === 'pull') return 'pulls';
+  if (section === 'pull' || section === 'queue') return 'pulls';
   if (section === 'labels' || section === 'milestones' || section === 'milestone') return 'issues';
   if (section === 'graphs' || section === 'community' || section === 'network') return 'pulse';
   return section;

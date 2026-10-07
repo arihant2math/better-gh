@@ -1,7 +1,8 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
-import { navigate, useScrollContainer } from '../router';
+import { navigate, useLocation, useScrollContainer } from '../router';
 import { useShortcuts } from '../shortcuts/useShortcuts';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { Spinner } from '../ui/Spinner';
 import { session } from './session';
 import styles from './Shell.module.css';
@@ -28,7 +29,7 @@ function startLazy<M>(load: () => Promise<M>, start: (m: M) => () => void): () =
   };
 }
 
-function GlobalShortcuts() {
+const GlobalShortcuts = observer(function GlobalShortcuts() {
   useShortcuts('Global', {
     'mod+k': { handler: () => ui.openPalette(), description: 'Command palette', group: 'General', allowInInput: true },
     'mod+shift+p': { handler: () => ui.openPalette('commands'), description: 'Run a command', group: 'General', allowInInput: true },
@@ -51,9 +52,13 @@ function GlobalShortcuts() {
       group: 'Issues',
     },
   });
-  useEffect(() => startLazy(loadCommands, (m) => m.registerGlobalCommands()), []);
+  // Off the critical path: wait for the store (and the route chunks it gates).
+  const ready = session.ready;
+  useEffect(() => {
+    if (ready) return startLazy(loadCommands, (m) => m.registerGlobalCommands());
+  }, [ready]);
   return null;
-}
+});
 
 /**
  * Palette command lists (titles, keywords, icons) are only needed once the
@@ -82,6 +87,25 @@ const CommandPalette = lazy(loadPalette);
 const ShortcutHelp = lazy(loadHelp);
 const NewIssueDialog = lazy(loadNewIssue);
 
+/** Error + suspense boundary for a lazy overlay; reopening it retries. */
+function LazyOverlay({ name, open, children }: { name: string; open?: boolean; children: ReactNode }) {
+  return (
+    <ErrorBoundary name={name} variant="silent" resetKey={open}>
+      <Suspense fallback={null}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
+
+/** Keeps the sidebar, top bar and palette usable when a page throws; navigating away clears it. */
+function RouteBoundary({ children }: { children: ReactNode }) {
+  const { href } = useLocation();
+  return (
+    <ErrorBoundary name="route" resetKey={href}>
+      {children}
+    </ErrorBoundary>
+  );
+}
+
 /**
  * Mounts the lazy overlays (closed) once their chunks have loaded in idle
  * time, so opening one is as synchronous as with static imports (keys typed
@@ -90,7 +114,11 @@ const NewIssueDialog = lazy(loadNewIssue);
  */
 const Overlays = observer(function Overlays() {
   const [ready, setReady] = useState(false);
+  // Idle time before the store is ready is still the critical path (bootstrap
+  // and the route chunks), so start counting only once it is.
+  const storeReady = session.ready;
   useEffect(() => {
+    if (!storeReady) return;
     let live = true;
     const load = () =>
       void Promise.all([loadPalette(), loadHelp(), loadNewIssue()]).then(
@@ -109,13 +137,20 @@ const Overlays = observer(function Overlays() {
       live = false;
       cancel();
     };
-  }, []);
-  // One boundary each: a sibling mounting later must not hide an open one.
+  }, [storeReady]);
+  // One boundary each: a sibling mounting later must not hide an open one,
+  // and a failed overlay chunk must not take down the shell.
   return (
     <>
-      <Suspense fallback={null}>{(ready || ui.paletteOpen) && <CommandPalette />}</Suspense>
-      <Suspense fallback={null}>{(ready || ui.helpOpen) && <ShortcutHelp />}</Suspense>
-      <Suspense fallback={null}>{(ready || ui.newIssueRepoId != null) && <NewIssueDialog />}</Suspense>
+      <LazyOverlay name="palette" open={ui.paletteOpen}>
+        {(ready || ui.paletteOpen) && <CommandPalette />}
+      </LazyOverlay>
+      <LazyOverlay name="shortcut-help" open={ui.helpOpen}>
+        {(ready || ui.helpOpen) && <ShortcutHelp />}
+      </LazyOverlay>
+      <LazyOverlay name="new-issue" open={ui.newIssueRepoId != null}>
+        {(ready || ui.newIssueRepoId != null) && <NewIssueDialog />}
+      </LazyOverlay>
     </>
   );
 });
@@ -127,7 +162,10 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
     site.start();
     return () => site.stop();
   }, []);
-  useEffect(() => startLazy(() => import('./unread'), (m) => m.startUnreadIndicators()), []);
+  const ready = session.ready;
+  useEffect(() => {
+    if (ready) return startLazy(() => import('./unread'), (m) => m.startUnreadIndicators());
+  }, [ready]);
   return (
     <div className={styles.shell} data-sidebar={ui.sidebarCollapsed ? 'collapsed' : 'open'}>
       <a href="#content" className={styles.skip}>
@@ -138,14 +176,14 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
       <Sidebar />
       <div className={styles.main}>
         {site.hasBanner && (
-          <Suspense fallback={null}>
+          <LazyOverlay name="site-banners">
             <SiteBanners site={site} />
-          </Suspense>
+          </LazyOverlay>
         )}
         <TopBar />
         <main id="content" ref={setContent} className={styles.content} tabIndex={-1}>
-          {session.ready ? (
-            children
+          {ready ? (
+            <RouteBoundary>{children}</RouteBoundary>
           ) : (
             <div className={styles.loading}>
               <Spinner size={20} />
@@ -156,9 +194,9 @@ export const Shell = observer(function Shell({ children }: { children: ReactNode
       </div>
       <Overlays />
       {ui.watchRepoId != null && (
-        <Suspense fallback={null}>
+        <LazyOverlay name="watch">
           <WatchDialog repoId={ui.watchRepoId} onClose={() => ui.closeWatch()} />
-        </Suspense>
+        </LazyOverlay>
       )}
     </div>
   );

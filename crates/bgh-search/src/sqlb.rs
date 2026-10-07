@@ -59,6 +59,14 @@ impl Sql {
     }
 
     /// Emit into a query builder.
+    /// The SQL text with `$n` placeholders, for asserting on query shape.
+    #[cfg(test)]
+    pub fn render(&self) -> String {
+        let mut qb = QueryBuilder::<Postgres>::new("");
+        self.build(&mut qb);
+        qb.sql().to_string()
+    }
+
     pub fn build<'a>(&self, qb: &mut QueryBuilder<'a, Postgres>) {
         for p in &self.parts {
             match p {

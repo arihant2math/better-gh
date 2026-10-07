@@ -300,6 +300,8 @@ pub struct Requirements {
     /// Latest deployment of the head commit per environment ("This branch
     /// was successfully deployed").
     pub deployments: Vec<bgh_core::deployments::EnvironmentDeployment>,
+    /// The base branch's merge queue and this PR's entry in it.
+    pub merge_queue: crate::merge_queue::web::Requirement,
 }
 
 pub async fn requirements(
@@ -310,6 +312,9 @@ pub async fn requirements(
     let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
     let rules = protection::rules_for(&state.db, access.repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(&state, &access.repo, &pull, &rules).await?;
+    // The `merge_queue` rule is reported through `merge_queue` only (the
+    // merge box offers "Add to merge queue" while nothing else blocks).
+    let listed = ev.clone().without_merge_queue();
     // Whether the viewer may merge without meeting the requirements.
     let can_bypass = match auth.as_ref() {
         Some(a) if access.permission >= Permission::Write => {
@@ -339,8 +344,8 @@ pub async fn requirements(
         rebaseable: pull.pr.rebaseable,
         mergeable_state: pull.pr.mergeable_state.clone(),
         protected: rules.protected,
-        blockers: ev.messages(),
-        requirements: ev.blockers.clone(),
+        blockers: listed.messages(),
+        requirements: listed.blockers,
         approvals: ev.approvals,
         required_approvals: rules
             .reviews
@@ -364,6 +369,7 @@ pub async fn requirements(
             &pull.pr.head_sha,
         )
         .await?,
+        merge_queue: crate::merge_queue::web::requirement(&state, &rules, &pull).await?,
     }))
 }
 

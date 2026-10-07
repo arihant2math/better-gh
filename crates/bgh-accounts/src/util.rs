@@ -149,6 +149,22 @@ pub async fn primary_email(
         .await
 }
 
+/// The address a password reset may be mailed to: the primary email when
+/// verified, else the oldest verified one. Never an unverified address,
+/// which anyone could have typed in at sign-up.
+pub async fn verified_email(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: i64,
+) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT email FROM user_emails WHERE user_id = $1 AND verified
+          ORDER BY is_primary DESC, id LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await
+}
+
 /// Whether `user_id` has two-factor authentication enabled.
 pub async fn two_factor_enabled(
     db: impl sqlx::PgExecutor<'_>,
