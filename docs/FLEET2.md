@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:50: #322 reviewer APPROVED, but on stale a79fb11 (head is now f53ad4f) and assumed there is no GraphQL enqueue path, while #315 adds one. Asked it for a delta re-review plus a loop re-test with #315 applied. It filed #328 (T-Polish). Not forwarded yet.
 08:48 cycle: #315 (9a96154) and #316 (055aef2) are back to NeedsReview → adversarial r2 reviewers: #316 session_01BksntuTuL5AA8MnQapLdVo, #315 session_015Gpod5tzkrNKtz7Mi2ZxHc. #322 head is now f53ad4f (its reviewer was told). #320 is S-Approved, waiting for its reviewer's report. Still in review: #323, #319, #312 r2, #309 r2.
 08:42: orchestrator MERGED #314 (5bb337c) and archived its author. Filed #327 (T-Polish, unassigned) with the #314 nits.
 08:41: #314 READY (r2 APPROVE on ab338fc; head dadb6e4 is a main merge; CI result green). Forwarded to the orchestrator; r2 reviewer archived. #312 author told the follow-ups are already filed.
