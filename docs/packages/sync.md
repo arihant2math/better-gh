@@ -26,12 +26,10 @@ branch.
 * `bgh_core::sync::context` — task-local request context
   (`RequestSync`): `record` stores the request's `X-Client-Tx`
   automatically; committed ids are noted for `X-Bgh-Sync-Id`.
-* `bgh_core::sync::record` takes `pg_advisory_xact_lock(SYNC_LOCK)` in the
-  same statement as the insert (one round trip) so ids commit in order.
-  `Tx` collects its actions and writes them with `sync::record_all` (one
-  statement) right before committing, so the lock is never held while a
-  transaction still takes row locks (this removed lock-order deadlocks
-  between request handlers and event listeners).
+* `Tx` collects its actions and writes them with `sync::record_all` (one
+  statement) right before committing. Writers take no lock (#241 replaced
+  the global `SYNC_LOCK`); readers stop at the commit-order watermark
+  (`bgh_core::seqlog`, SYNC_PROTOCOL.md §2).
 * Extension models `reviewComment`, `checkRun`, `checkSuite`,
   `commitStatus` (delta-only, SYNC_PROTOCOL.md §3.2) and the issue / event
   extension fields are part of `shapes`.
@@ -66,7 +64,7 @@ it inlines).
 ## Shared-code changes (all additive)
 
 * `bgh-core`: `sync::{context, shapes}` modules; `SyncRecord.tx`
-  (`Option<Uuid>`, skipped when `None`); `record_with_tx`; `SYNC_LOCK`,
+  (`Option<Uuid>`, skipped when `None`); `record_with_tx`; `SYNC_LOCK` (removed in #241),
   `SCHEMA_VERSION`, `ACCESS_CHANNEL`, `signal_signed_out`; `notify` notes
   committed ids; `Event::AccessChanged { repo_id, org_id, user_id }`;
   `auth::destroy_session` / `destroy_user_sessions` signal sign-outs to the

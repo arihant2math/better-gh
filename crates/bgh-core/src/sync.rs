@@ -17,11 +17,6 @@ pub mod shapes;
 
 pub use context::{RequestSync, client_tx};
 
-/// Key of the transaction-scoped advisory lock taken by [`record`]: writers
-/// of synced data serialize on it, so sync ids commit (become visible) in
-/// id order (docs/SYNC_PROTOCOL.md section 2).
-pub const SYNC_LOCK: i64 = 0x6267_685f_7379_6e63; // "bgh_sync"
-
 /// Version of the client model shapes ([`shapes`]); bump with
 /// docs/SYNC_PROTOCOL.md.
 pub const SCHEMA_VERSION: i64 = 1;
@@ -85,9 +80,9 @@ pub struct SyncRecord {
 /// change (`&mut *tx`). The row carries the current request's
 /// `X-Client-Tx` ([`client_tx`]).
 ///
-/// Takes the [`SYNC_LOCK`] advisory lock (held until commit), so keep the
-/// time between the first `record` and the commit short: record sync
-/// actions at the end of the transaction.
+/// Writers don't serialize: ids may commit out of order and readers stop
+/// at the commit-order watermark ([`crate::seqlog`]). Prefer
+/// [`crate::db::Tx`], which writes all actions right before committing.
 pub async fn record(
     conn: &mut PgConnection,
     scope: &str,
@@ -109,31 +104,19 @@ pub async fn record_with_tx(
     data: &Value,
     tx: Option<Uuid>,
 ) -> Result<SyncRecord, sqlx::Error> {
-    // The lock is taken before the identity default is evaluated, so ids are
-    // allocated (and committed) in lock order.
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO sync_actions (scope, model, model_id, action, data, tx)
-         SELECT $1, $2, $3, $4, $5, $6 FROM (SELECT pg_advisory_xact_lock($7)) l
-         RETURNING id",
+    let rec = record_all(
+        conn,
+        vec![PendingSync {
+            scope: scope.to_string(),
+            model: model.to_string(),
+            model_id,
+            action,
+            data: data.clone(),
+            tx,
+        }],
     )
-    .bind(scope)
-    .bind(model)
-    .bind(model_id)
-    .bind(action.code())
-    .bind(data)
-    .bind(tx)
-    .bind(SYNC_LOCK)
-    .fetch_one(conn)
     .await?;
-    Ok(SyncRecord {
-        id,
-        scope: scope.to_string(),
-        model: model.to_string(),
-        model_id,
-        action,
-        data: data.clone(),
-        tx,
-    })
+    Ok(rec.into_iter().next().expect("one record"))
 }
 
 /// A sync action collected by [`crate::db::Tx`], written at commit by
@@ -149,8 +132,12 @@ pub struct PendingSync {
     pub tx: Option<Uuid>,
 }
 
-/// Append `pending` to `sync_actions` in order, in one statement taking the
-/// [`SYNC_LOCK`] (held until commit: call it right before committing).
+/// Append `pending` to `sync_actions` in order, in one statement. No lock:
+/// the ids may commit out of order relative to other transactions, and
+/// readers only consume up to the commit-order watermark
+/// ([`crate::seqlog`]). If a reader filled one of the drawn ids as a burned
+/// gap meanwhile (the row conflicts), the rows are re-inserted with fresh
+/// ids so a transaction's actions keep their own order.
 pub async fn record_all(
     conn: &mut PgConnection,
     pending: Vec<PendingSync>,
@@ -172,25 +159,42 @@ pub async fn record_all(
         data.push(&p.data);
         txs.push(p.tx);
     }
-    // Rows are inserted in `o` order, so identity values follow it.
-    let mut new_ids: Vec<i64> = sqlx::query_scalar(
-        "INSERT INTO sync_actions (scope, model, model_id, action, data, tx)
-         SELECT u.s, u.m, u.i, u.a, u.d, u.t
-           FROM (SELECT pg_advisory_xact_lock($7)) l,
-                unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::jsonb[], $6::uuid[])
-                    WITH ORDINALITY AS u(s, m, i, a, d, t, o)
-          ORDER BY u.o
-         RETURNING id",
-    )
-    .bind(&scopes)
-    .bind(&models)
-    .bind(&ids)
-    .bind(&actions)
-    .bind(&data)
-    .bind(&txs)
-    .bind(SYNC_LOCK)
-    .fetch_all(conn)
-    .await?;
+    let mut attempt = 0;
+    let mut new_ids: Vec<i64> = loop {
+        // Rows are inserted in `o` order, so identity values follow it.
+        // `created_at` is the insert time (gap age, see `seqlog`).
+        let new_ids: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO sync_actions (scope, model, model_id, action, data, tx, created_at)
+             SELECT u.s, u.m, u.i, u.a, u.d, u.t, clock_timestamp()
+               FROM unnest($1::text[], $2::text[], $3::bigint[], $4::text[], $5::jsonb[], $6::uuid[])
+                        WITH ORDINALITY AS u(s, m, i, a, d, t, o)
+              ORDER BY u.o
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id",
+        )
+        .bind(&scopes)
+        .bind(&models)
+        .bind(&ids)
+        .bind(&actions)
+        .bind(&data)
+        .bind(&txs)
+        .fetch_all(&mut *conn)
+        .await?;
+        if new_ids.len() == pending.len() {
+            break new_ids;
+        }
+        attempt += 1;
+        tracing::warn!(attempt, "sync ids taken by gap fillers; retrying");
+        sqlx::query("DELETE FROM sync_actions WHERE id = ANY($1)")
+            .bind(&new_ids)
+            .execute(&mut *conn)
+            .await?;
+        if attempt >= 5 {
+            return Err(sqlx::Error::Protocol(
+                "sync ids repeatedly taken by gap fillers".into(),
+            ));
+        }
+    };
     new_ids.sort_unstable();
     Ok(pending
         .into_iter()

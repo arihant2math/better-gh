@@ -132,6 +132,10 @@ pub async fn bootstrap(
     Query(q): Query<BootstrapQuery>,
 ) -> ApiResult<Response> {
     compact::ensure_scheduled(&state).await;
+    // The watermark before the snapshot: every action <= it is committed,
+    // so the snapshot reflects it (and maybe later ones, which replaying
+    // re-applies idempotently; SYNC_PROTOCOL.md §2).
+    let last_sync_id = delta::head(&state.db).await?;
     let mut tx = snapshot(&state).await?;
     let viewer = auth.user.id;
     let requested: Vec<String> = match q.scopes.as_deref() {
@@ -144,7 +148,6 @@ pub async fn bootstrap(
         None => scopes::default_scopes(&mut tx, viewer).await?,
     };
     let access = scopes::check(&mut tx, &auth, &requested).await?;
-    let last_sync_id = delta::head(&mut *tx).await?;
     let body = build(&state, &mut tx, viewer, &access, last_sync_id).await?;
     tx.commit().await?;
     sync_response(&headers, body).await
@@ -403,6 +406,8 @@ pub async fn partial(
         ))
     })?;
 
+    // Before the snapshot, as in `bootstrap`.
+    let last_sync_id = delta::head(&state.db).await?;
     let mut tx = snapshot(&state).await?;
     let repo_id: i64 = sqlx::query_scalar("SELECT repo_id FROM issues WHERE id = $1")
         .bind(issue_id)
@@ -423,7 +428,6 @@ pub async fn partial(
     if !readable {
         return Err(ApiError::NotFound);
     }
-    let last_sync_id = delta::head(&mut *tx).await?;
     let opts = Opts {
         issue_body: true,
         viewer: auth.user_id(),

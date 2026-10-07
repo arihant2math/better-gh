@@ -4,14 +4,17 @@
 //! `PSUBSCRIBE`s `{prefix}sync:*` and multiplexes deltas to every socket;
 //! sockets never talk to Redis themselves.
 //!
-//! Ordering and completeness: sync ids commit in id order (advisory lock in
-//! `bgh_core::sync::record`), so when the hub sees action `M`, every id
-//! `<= M` is committed. Redis messages are buffered for ~10 ms, then the hub
-//! delivers everything in `(delivered, M]` in ascending order — straight from
-//! the buffer when it is contiguous, otherwise re-read from `sync_actions`
-//! (out-of-order publishes, lost messages, ids burned by rollbacks). A
-//! 1-second poll of `max(id)` catches a lost tail, and a Redis reconnect is
-//! followed by the same catch-up. `delivered` only moves forward, under the
+//! Ordering and completeness: sync ids may commit out of order (writers
+//! take no lock), so the hub never delivers past the commit-order watermark
+//! (`bgh_core::seqlog`): every id `<=` it has a committed row, so nothing
+//! can appear below it later. Redis messages are buffered for ~10 ms; the
+//! highest buffered id is `M`. When `(delivered, M]` is all in the buffer
+//! (each message is published after its commit) it is delivered as is;
+//! otherwise the hub delivers `(delivered, min(M, watermark)]` re-read from
+//! `sync_actions` (out-of-order commits, lost messages, ids burned by
+//! rollbacks, which `seqlog` fills) and keeps the rest buffered, retrying
+//! every 20 ms. A 1-second poll of the watermark catches a lost tail, and a
+//! Redis reconnect is followed by the same catch-up. `delivered` only moves forward, under the
 //! same lock that registers subscriptions, so a socket that subscribes at
 //! `delivered = L` gets every later action live and replays `(since, L]`
 //! from the database without gaps or duplicates.
@@ -63,6 +66,8 @@ use crate::scopes;
 const WINDOW: Duration = Duration::from_millis(10);
 /// Poll interval for lost messages.
 const POLL: Duration = Duration::from_secs(1);
+/// Re-flush delay while buffered records wait for an in-flight lower id.
+const GAP_RETRY: Duration = Duration::from_millis(20);
 /// Interval of the safety-net permission recheck of every socket.
 const FULL_RECHECK: Duration = Duration::from_secs(300);
 /// Queue length (hub messages) per socket before it counts as slow.
@@ -453,24 +458,32 @@ impl Hub {
     }
 
     /// Flush buffered live records (see module docs).
+    /// Returns whether records stay buffered (above the watermark).
     async fn flush(
         self: &Arc<Self>,
         pending: &mut BTreeMap<i64, SyncRecord>,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<bool, sqlx::Error> {
         let l = self.delivered();
         *pending = pending.split_off(&(l + 1));
         let Some(&m) = pending.keys().next_back() else {
-            return Ok(());
+            return Ok(false);
         };
-        let contiguous = pending.len() as i64 == m - l;
-        let records: Vec<SyncRecord> = if contiguous {
-            pending.values().cloned().collect()
-        } else {
-            self.read_range(l, m).await?
-        };
-        self.deliver(records, m).await?;
-        pending.clear();
-        Ok(())
+        // Every buffered record was published after its commit, so a
+        // contiguous `(l, m]` is committed. Otherwise a missing id may still
+        // be in flight: deliver only up to the watermark.
+        if pending.len() as i64 == m - l {
+            let records = pending.values().cloned().collect();
+            self.deliver(records, m).await?;
+            pending.clear();
+            return Ok(false);
+        }
+        let upto = m.min(delta::head(&self.state.db).await?);
+        if upto > l {
+            let records = self.read_range(l, upto).await?;
+            self.deliver(records, upto).await?;
+            *pending = pending.split_off(&(upto + 1));
+        }
+        Ok(!pending.is_empty())
     }
 
     /// Catch up with the database head (lost messages, reconnects).
@@ -875,9 +888,14 @@ async fn run(weak: Weak<Hub>, state: AppState, mut stream: redis::aio::PubSubStr
             _ = sleep_until(flush_at.unwrap_or_else(far_future)), if flush_at.is_some() => {
                 flush_at = None;
                 let Some(hub) = weak.upgrade() else { return };
-                if let Err(err) = hub.flush(&mut pending).await {
-                    tracing::warn!(?err, "sync hub: flush failed; retrying");
-                    flush_at = Some(Instant::now() + POLL);
+                match hub.flush(&mut pending).await {
+                    Ok(false) => {}
+                    // A lower id is still in flight; look again shortly.
+                    Ok(true) => flush_at = Some(Instant::now() + GAP_RETRY),
+                    Err(err) => {
+                        tracing::warn!(?err, "sync hub: flush failed; retrying");
+                        flush_at = Some(Instant::now() + POLL);
+                    }
                 }
                 if !access.is_empty() {
                     hub.spawn_recheck(access.drain());

@@ -51,15 +51,51 @@ threads are deleted with a `D` action when the user loses read access
 
 ## 2. Server ordering guarantee (important for `bgh-sync`)
 
-Sync ids must become **visible in id order**. With concurrent transactions a
-plain `BIGSERIAL` can commit id 101 before id 100, and a client replaying
-`since=101` would silently miss 100. `bgh_core::sync::record` therefore takes
-`pg_advisory_xact_lock(<SYNC_LOCK>)` before inserting into `sync_actions`, so
-writers of synced data serialize on the insert and commit order equals id
-order. (Writes that do not touch synced models are unaffected.)
-`bgh_core::db::Tx` writes a transaction's actions in one statement right
-before its commit, so the lock is never held while a transaction still
-waits for row locks.
+Clients must see a **gap-free, strictly increasing** id sequence: a client
+at `lastSyncId = N` must eventually receive every action with id `> N`, and
+never one `<= N` later. Writers do **not** serialize (a global lock capped
+synced commits at a few hundred per second, #241): ids come from the
+`sync_actions` identity, and with concurrent transactions id 101 may commit
+before id 100, or id 100 may roll back and never commit.
+
+The server therefore delivers only up to the **commit-order watermark** `W`
+(`bgh_core::seqlog`):
+
+> **Invariant.** Every id `<= W` has a committed row in `sync_actions`, and
+> `W` never decreases. Hence no action with id `<= W` can ever commit
+> afterwards (the primary key already holds a committed row for it), and a
+> reader that consumes `(cursor, W]` in id order misses and reorders
+> nothing.
+
+* `W` advances over contiguous visible ids. A missing id is either in
+  flight or burned by a rollback. Once the row after it is older than a
+  grace period (250 ms) the reader inserts a filler row (scope `!gap`) for
+  it with `ON CONFLICT (id) DO NOTHING` and a short `lock_timeout`. If the
+  writer is still in flight the insert waits on the unique index: it times
+  out and the gap stays open, or the writer finishes meanwhile and its own
+  row stays (committed) or the filler goes in (rolled back). Fillers match
+  no client scope and are never sent.
+* A writer whose drawn id was filled first (only possible if it stalled
+  between drawing the id and inserting the row for longer than the grace
+  period) gets a short `ON CONFLICT DO NOTHING` insert back and re-inserts
+  the transaction's actions with fresh ids, so they stay contiguous and in
+  order.
+* `W` is persisted (`log_watermarks`), and compaction never deletes rows
+  above it.
+* Live delivery (the hub), replay (`(since, L]` with `L <= W`), `hello.head`
+  and every `lastSyncId` (bootstrap, partial sync, pull boot data) use `W`.
+  Bootstrap and partial sync read `W` *before* opening their snapshot, so
+  the snapshot reflects every action `<= W`. It may also reflect some
+  actions `> W`. The client replays those and re-applies them, which is
+  harmless because deltas carry the row's state (§5 merge semantics) and
+  every later change to the same key is replayed after them.
+* The event outbox (`event_outbox`) uses the same scheme (filler kind
+  `!gap`): durable listeners never read past its watermark.
+
+`X-Bgh-Sync-Id` and `lastSyncId` keep their meaning. Only the "visible ⇒
+every lower id committed" guarantee moved from the writers (lock) to the
+readers (watermark). A delta can arrive a few milliseconds later than
+before while a lower id is still committing.
 
 Retention: actions older than the retention window (default 7 days) may be
 pruned. The server must remember `min_retained_id`.
@@ -421,7 +457,7 @@ Response `200 application/json`:
 ```jsonc
 {
   "schemaVersion": 1,
-  "lastSyncId": 9123,            // max sync id included in this snapshot
+  "lastSyncId": 9123,            // sync watermark: every action <= it is reflected
   "userId": 3,
   "scopes": ["user:3", "org:2", "repo:1"],
   "denied": [],
@@ -440,9 +476,10 @@ Response `200 application/json`:
 }
 ```
 
-The snapshot must be consistent with `lastSyncId`: read it in a
-`REPEATABLE READ` transaction and take `lastSyncId = max(id)` from
-`sync_actions` in that same transaction. Missing model keys mean "no rows".
+The snapshot must reflect every action `<= lastSyncId`: take `lastSyncId =`
+the commit-order watermark (§2) *before* opening the `REPEATABLE READ`
+transaction the rows are read in. The snapshot may also reflect later
+actions; replaying them is idempotent. Missing model keys mean "no rows".
 
 The client stores the rows, `lastSyncId` and `scopes` in IndexedDB and
 then opens the WebSocket with `since = lastSyncId`. On later page loads it

@@ -35,10 +35,10 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
 ///
 /// Dropping a `Tx` without committing rolls back and discards side effects.
 ///
-/// Sync actions are written to `sync_actions` at [`Tx::commit`] (one
-/// statement, right before the commit), so the ordering lock
-/// ([`sync::SYNC_LOCK`]) is held only for the commit itself and never while
-/// the transaction still takes row locks.
+/// Sync actions and outbox events are written at [`Tx::commit`] (one
+/// statement each, right before the commit). They take no lock: concurrent
+/// commits may make ids visible out of order, and readers stop at the
+/// commit-order watermark ([`crate::seqlog`]).
 pub struct Tx {
     tx: Transaction<'static, Postgres>,
     state: AppState,

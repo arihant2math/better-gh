@@ -404,8 +404,8 @@ struct ReactionSyncRow {
 /// pending ones, reviews incl. the viewer's pending one, reactions on the
 /// comments, check suites/runs and commit statuses of the head, the
 /// viewer's viewed files, referenced users), read in one `REPEATABLE READ`
-/// snapshot whose `lastSyncId` is taken first, so applying deltas
-/// `> lastSyncId` afterwards is safe.
+/// snapshot; `lastSyncId` is the sync watermark taken just before it, so
+/// applying deltas `> lastSyncId` afterwards is safe.
 pub async fn pull_sync(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -414,12 +414,12 @@ pub async fn pull_sync(
     let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
     let viewer = auth.user_id();
     let repo_id = access.repo.id;
+    // The commit-order watermark, taken before the snapshot: every action
+    // <= it is committed, so the snapshot reflects it.
+    let last_sync_id = bgh_core::seqlog::advance(&state.db, bgh_core::seqlog::Log::Sync).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
-        .await?;
-    let last_sync_id: i64 = sqlx::query_scalar("SELECT coalesce(max(id), 0) FROM sync_actions")
-        .fetch_one(&mut *tx)
         .await?;
     // Re-read the head inside the snapshot (a push may have landed since).
     let head_sha: String =

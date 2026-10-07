@@ -10,9 +10,10 @@ into `claude/sleepy-cray-9jj0t3` with the full gate green (fmt, clippy,
 * **Transactional outbox** (`bgh_core::outbox`, migration
   `2100_event_outbox.sql`). `Tx::commit` appends queued events to
   `event_outbox(id bigserial, kind, payload jsonb, created_at)` in the
-  caller's transaction, right before commit, under the existing
-  `sync::SYNC_LOCK` advisory lock, so ids become visible in id order (a
-  consumer reading `id > cursor` never skips a later-committing lower id).
+  caller's transaction, right before commit. Since #241 there is no lock:
+  consumers read only up to the outbox's commit-order watermark
+  (`bgh_core::seqlog`), so a consumer reading `id > cursor` never skips a
+  later-committing lower id.
   The same statement `pg_notify('bgh_events')`; after commit the bus wakes
   local consumers and broadcasts in-process. `tx.emit` is unchanged.
 * **Direct `state.events.emit(e)`** (no `Tx`; a few production sites and
