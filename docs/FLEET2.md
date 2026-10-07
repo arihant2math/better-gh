@@ -2,7 +2,7 @@
 
 Foreman: session_011BS1twjVWtvUAmNtnSQ52s (foreman3, since 08:12; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## HANDOFF (09:05, foreman3 session_011BS1twjVWtvUAmNtnSQ52s; context ~285k)
+## HANDOFF (09:22, foreman3 session_011BS1twjVWtvUAmNtnSQ52s → foreman4; context ~310k)
 Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Foreman2 is gone (archived by the orchestrator). WIND DOWN is in effect (section below).
 Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_message the foreman. The foreman verifies on GitHub that the APPROVE commit is followed only by main merges and that `CI result` is green on the head, then forwards the PR#, head SHA and CI status to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge. On ChangesRequested, message the author (session id is in the PR body link).
 
@@ -13,9 +13,13 @@ Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_m
 - #315 (#290 merge-queue GraphQL, same lead): r2 reviewer session_015Gpod5tzkrNKtz7Mi2ZxHc on 9a96154. It was told about the #322 loop (GITHUB_TOKEN auto-merge toggle).
 - #322 (#289 merge_group trigger, same lead, STACKED on #316): REQUEST_CHANGES at f53ad4f. Unbounded run loop: with #315, a job token's disable/enable auto-merge re-enqueues and the merge_group exemption re-runs. The lead must fix it (exempt only non-bot enqueuers, or cap runs) and add a test. Fresh adversarial reviewer when it pings. Merges only after #316, then retargets to main.
 - #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES. A failed recheck pass drops targets, delaying revokes; plus a minor first-subscriber race. Fresh adversarial reviewer when it pings.
-- #330 (#85 item 4, worker session_011YDWD7b7snUjdLSGdr2vq4): reviewer (sonnet) session_01W5eCBySQcV5TFQ6miPpKZ3.
+- #330 (#85 item 4, worker session_011YDWD7b7snUjdLSGdr2vq4): REQUEST_CHANGES at 2790ae0. Pin CARGO_CHEF_VERSION to 0.1.78 and update SELF_HOSTING.md; put an honest cold timing (~12m23s) in the PR body. The worker was told; the reviewer is archived. Start a fresh sonnet reviewer when it pings.
 - #150: the user's own; don't touch it.
 - #331 fixer (orchestrator-approved CI health): session_01HiZuw5TZdK2DU9KPyfjtRs, branch agent/331-insights-time-flake. Start a reviewer when it pings.
+
+### Notes
+- main has a Wednesday 09:00-09:59 UTC flaky test (#331): any backend PR's `Rust (tests)` fails on insights::stats_accepted_then_computed in that hour. It isn't the PR's fault, so re-run after 10:00 or merge the #331 fix first.
+- #312 r2 reviewer session_01SDYuLDtD7CYXTmwcLjoC1n stays subscribed. It re-reviews the final head after the author fixes the #329 remainder (invite-mode unverified sign-up; allow-list uses the claimed address) and merges main (#323 overlap).
 
 ### #85 track
 Items 1 (#152), 2 (#311) and 3 (#320, saves a runner but not wall-clock) are merged; item 4 is #330. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
@@ -45,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:22: #330 REQUEST_CHANGES (pin cargo-chef, honest timing); worker told; reviewer archived. Foreman3 context is 308k, so it hands off to foreman4 now.
 09:13: #309 r2 REQUEST_CHANGES (fragment-doubling validation DoS); author told; reviewer archived. The orchestrator approved a #331 fixer: session_01HiZuw5TZdK2DU9KPyfjtRs.
 09:13: filed #331 (P-High T-Test): insights::stats_accepted_then_computed fails Wed 09:00-09:59 UTC (seed commit uses the current time). Any backend PR CI is red until 10:00 UTC; it is not the PRs' fault. Orchestrator told; no fixer unless directed.
 09:09: #312 r2: the org-invite takeover and OIDC link from #329 are already fixed at 0a50a76. Still open: invite-mode sign-up admits an unverified account, and the allow-list checks only the claimed address (the @-parser mismatch is out of scope). Label back to NeedsReview; the reviewer stays subscribed and will re-review the final head after the author's #323 merge and #329 pushes.
