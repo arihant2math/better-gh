@@ -173,8 +173,16 @@ immediately), `Tooltip`, `Dialog` (native modal), `TabNav` (links) / `Tabs`
 `toast()`, `VirtualList`, `Markdown` (GFM, sanitized, server-parity
 references/autolinks/emoji/alerts/footnotes, `onSourceChange` for editable
 task lists; lazy chunk, highlighting/math/Mermaid/camo applied by
-`ui/markdown/enhance.ts`), `RelativeTime`. Icons: `ui/icons.ts` (Octicons; add
-names there).
+`ui/markdown/enhance.ts`), `RelativeTime`, `ErrorBoundary` (Retry/Reload
+fallback; `variant` `page` | `content` | `silent`, `resetKey` clears it). Icons:
+`ui/icons.ts` (Octicons; add names there).
+
+Error boundaries: one around `<App />` (`main.tsx`), one around the routed
+page inside `Shell` (reset on navigation, so the sidebar, top bar and palette
+survive a page crash), one per bare auth page, and a silent one per lazy
+overlay. Failed lazy chunks (stale hashes after a deploy) reload the page
+once via `router/chunkError.ts`; a sessionStorage stamp stops reload loops,
+after which the boundary shows its error UI. Wrap new lazy UI in a boundary.
 
 Search/filter inputs with GitHub qualifier autocomplete (`is:`, `label:`,
 `author:@me`, `repo:`…): `search/QueryInput` with a qualifier set from

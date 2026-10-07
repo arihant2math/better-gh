@@ -63,7 +63,13 @@ function VirtualLines({ lines, selection, onSelect, gutter, rowClass, gutterWidt
     const el = ref.current;
     const sc = scrollParent(el);
     setScroller(sc);
-    if (el && sc) setMargin(el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    if (!el || !sc) return;
+    // Content above the table (commit bar, banners) can load later; keep the offset current.
+    const update = () => setMargin(el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    update();
+    const ro = new ResizeObserver(update);
+    for (const c of Array.from(sc.children)) ro.observe(c);
+    return () => ro.disconnect();
   }, []);
   const v = useVirtualizer({
     count: lines.length,
