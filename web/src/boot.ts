@@ -48,7 +48,7 @@ export function setBoot(next: BootData): void {
 }
 
 /** Boot data older than this (e.g. a shell served by the service worker) is refreshed in the background. */
-export const BOOT_MAX_AGE_MS = 5 * 60_000;
+const BOOT_MAX_AGE_MS = 5 * 60_000;
 
 export function bootIsStale(b: BootData = boot): boolean {
   if (!b.ts) return !b.user && !b.csrf; // no inline boot at all (dev server)

@@ -4,16 +4,8 @@
 // screenshots. `node scripts/smoke-developer-settings.mjs [baseUrl] [shotDir]`
 import { generateKeyPairSync } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:5183';
 const shots = process.argv[3] ?? '/tmp/shots/developer-settings';
 mkdirSync(shots, { recursive: true });

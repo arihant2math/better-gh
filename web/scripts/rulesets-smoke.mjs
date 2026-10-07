@@ -3,18 +3,11 @@
 // create / edit / export / import repository rulesets, organization push
 // rulesets with repository targeting, rule insights and the branches badge.
 // `node scripts/rulesets-smoke.mjs [baseUrl] [screenshotDir]`
-import { createRequire } from 'node:module';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:4173';
 const shots = process.argv[3] ?? join(tmpdir(), 'rulesets-shots');
 mkdirSync(shots, { recursive: true });

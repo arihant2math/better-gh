@@ -6,9 +6,7 @@
 // Accepts https bases (e.g. an h2 TLS proxy) with self-signed certs.
 //
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node web/scripts/start-waterfall.mjs [base] [runs]
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-const { chromium } = createRequire(import.meta.url)(join(process.execPath, '../../lib/node_modules/playwright'));
+import { chromium } from './lib/browser.mjs';
 const base = process.argv[2] ?? 'http://localhost:3000';
 const runs = Number(process.argv[3] ?? 3);
 const path = '/acme/api/issues';

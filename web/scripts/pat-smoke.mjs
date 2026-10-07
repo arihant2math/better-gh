@@ -16,17 +16,7 @@
 //
 // PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/pat-smoke.mjs http://localhost:5173
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let pw;
-try {
-  pw = require('playwright');
-} catch {
-  pw = require(join(process.execPath, '../../lib/node_modules/playwright'));
-}
-const { chromium, request } = pw;
+import { chromium, request } from './lib/browser.mjs';
 
 const base = (process.argv[2] ?? 'http://localhost:3000').replace(/\/$/, '');
 const shots = process.argv[3];

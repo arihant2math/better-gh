@@ -5,17 +5,7 @@
 // Seed: user ada/password123 with a private repo ada/demo and issue #1.
 //
 //   node web/scripts/attachments-e2e.mjs [baseUrl=http://127.0.0.1:3000] [shotsDir]
-import { createRequire } from "node:module";
-import { join } from "node:path";
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require("playwright"));
-} catch {
-  ({ chromium } = require(
-    join(process.execPath, "../../lib/node_modules/playwright"),
-  ));
-}
+import { chromium } from "./lib/browser.mjs";
 const base = process.argv[2] ?? "http://127.0.0.1:3000";
 const shots = process.argv[3];
 let failures = 0;

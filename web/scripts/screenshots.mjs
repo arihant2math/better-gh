@@ -4,19 +4,11 @@
 //   npx vite preview &            # or `npm run dev`
 //   node scripts/screenshots.mjs [baseUrl] [outDir]
 //
-// Uses a globally installed Playwright (no browser download): set
-// PLAYWRIGHT_BROWSERS_PATH if Chromium lives elsewhere.
+// Uses the pinned playwright-core via lib/browser.mjs (no browser download):
+// set PLAYWRIGHT_BROWSERS_PATH to the preinstalled Chromium.
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:4173';
 const out = process.argv[3] ?? 'screenshots';

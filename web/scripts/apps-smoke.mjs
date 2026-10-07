@@ -9,16 +9,8 @@
 // Needs a user that owns BGH_ORG, which has a repository BGH_REPO. Prints
 // `APP_ID=…` and `PEM_FILE=…` so callers can authenticate as the app.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:3000';
 const shots = process.argv[3];

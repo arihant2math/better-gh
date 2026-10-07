@@ -2,18 +2,11 @@
 // Smoke test for the personal settings sections (profile, avatar, emails,
 // password, 2FA, sessions, blocks, appearance) against a dev server in mock
 // mode. `node scripts/smoke-user-settings.mjs [baseUrl] [shotDir]`
-import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:5182';
 const shots = process.argv[3] ?? '/tmp/shots/user-settings';
 mkdirSync(shots, { recursive: true });

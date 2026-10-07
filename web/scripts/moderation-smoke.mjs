@@ -3,18 +3,11 @@
 // mock mode: hide / show / unhide a comment, the "edited ▾" revision list
 // and viewer, and deleting an issue from the sidebar.
 // `node scripts/moderation-smoke.mjs [baseUrl] [screenshotDir]`
-import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:4173';
 const shots = process.argv[3] ?? join(tmpdir(), 'moderation-shots');
 mkdirSync(shots, { recursive: true });

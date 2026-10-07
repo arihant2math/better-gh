@@ -9,16 +9,7 @@
 // Needs a site administrator, a second user (BGH_USER, default `alice`) and
 // an organization the admin owns (BGH_ORG). Every change it makes is undone.
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5174';
 const shots = process.argv[3];
