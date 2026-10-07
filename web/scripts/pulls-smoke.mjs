@@ -7,16 +7,8 @@
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/pulls-smoke.mjs [baseUrl] [outDir]
 //   ... node scripts/pulls-smoke.mjs http://localhost:5173 shots --real --pr /alice/demo/pull/1
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);

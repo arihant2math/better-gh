@@ -2,16 +2,7 @@
 // Actions UI end-to-end against a real bgh server (driven by
 // scripts/actions-e2e.sh, which pushes the workflow and waits for its run).
 // `node scripts/actions-e2e.mjs <baseUrl> <login> <password> <repo> <shotsDir> <token>`
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const [base, login, password, repo, shots, token] = process.argv.slice(2);
 const browser = await chromium.launch();

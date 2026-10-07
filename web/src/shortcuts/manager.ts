@@ -49,7 +49,7 @@ function normalizeChord(chord: string): string {
 export function chordFromEvent(e: KeyboardEvent): string | null {
   const key = e.key;
   if (!key || key === 'Shift' || key === 'Control' || key === 'Meta' || key === 'Alt' || key === 'Dead') return null;
-  let k = key.length === 1 ? key.toLowerCase() : key.toLowerCase();
+  let k = key.toLowerCase();
   if (k === ' ') k = 'space';
   const mods: string[] = [];
   if (isMac ? e.metaKey : e.ctrlKey) mods.push('mod');

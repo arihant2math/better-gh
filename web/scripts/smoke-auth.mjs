@@ -6,16 +6,9 @@
 // `<outDir>/<name>-{light,dark}.png`.
 // `node scripts/smoke-auth.mjs [baseUrl] [outDir]`
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:5181';
 const out = process.argv[3] ?? '/tmp/shots/auth';
 mkdirSync(out, { recursive: true });

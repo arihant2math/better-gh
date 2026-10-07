@@ -41,7 +41,7 @@ export function isBarePath(pathname: string): boolean {
 }
 
 /** Where users without 2FA are sent when the site requires it. */
-export const TWO_FACTOR_SETUP_PATH = '/settings/security';
+const TWO_FACTOR_SETUP_PATH = '/settings/security';
 
 export const App = observer(function App() {
   const { pathname, search } = useLocation();

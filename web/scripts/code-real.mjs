@@ -9,16 +9,7 @@
 //
 // Prints a JSON report: checks (pass/fail) and timings in ms (median of N).
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const [base = 'http://127.0.0.1:3000', login = 'alice', password = 'password', repo = 'alice/tokio', file = 'tokio/src/runtime/builder.rs', out = 'code-real'] = process.argv.slice(2);
 const RUNS = Number(process.env.RUNS ?? 7);

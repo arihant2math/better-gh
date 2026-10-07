@@ -4,18 +4,11 @@
 // add a "blocked by" relationship, close an issue as a duplicate, filter
 // the list with type: / is:blocked, and the org settings issue types page.
 // `node scripts/relationships-smoke.mjs [baseUrl] [screenshotDir]`
-import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:4173';
 const shots = process.argv[3] ?? join(tmpdir(), 'relationships-shots');
 mkdirSync(shots, { recursive: true });

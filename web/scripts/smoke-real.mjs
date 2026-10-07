@@ -13,18 +13,11 @@
 import { createHmac, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = (process.argv[2] ?? 'http://localhost:3000').replace(/\/$/, '');
 const dataDir = process.argv[3] ?? process.env.BGH_DATA_DIR ?? '/tmp/bgh-data';
 const shots = process.argv[4] ?? '/tmp/shots/real';

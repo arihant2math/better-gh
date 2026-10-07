@@ -6,16 +6,8 @@
 //   npx vite --port 5185 --strictPort &
 //   PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node scripts/smoke-repo-settings.mjs [baseUrl] [outDir]
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5185';
 const out = process.argv[3] ?? 'screenshots/repo-settings';

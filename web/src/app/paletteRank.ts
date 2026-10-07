@@ -22,7 +22,7 @@ const CONTEXTUAL = 2;
 /** Highest tier shown in the default (empty query, not `>`) list. */
 const DEFAULT_MAX_TIER = CONTEXTUAL;
 
-export function sectionTier(group: string): number {
+function sectionTier(group: string): number {
   return SECTION_TIER[group] ?? CONTEXTUAL;
 }
 

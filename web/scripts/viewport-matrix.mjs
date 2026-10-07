@@ -17,8 +17,8 @@
 // Playwright and the preinstalled Chromium (PLAYWRIGHT_BROWSERS_PATH);
 // never run `playwright install`.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 import { collectLayoutIssues } from './viewport-matrix/checks.mjs';
 import { RESIZE_STEPS, USAGE, allowLine, collapse, isAllowed, loadAllow, parseArgs, routeUrl, slug, summaryTable } from './viewport-matrix/lib.mjs';
 
@@ -32,14 +32,6 @@ try {
 if (opts.help) {
   console.log(USAGE);
   process.exit(0);
-}
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
 }
 
 const allowRules = loadAllow(opts.allow);

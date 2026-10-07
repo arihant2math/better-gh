@@ -12,16 +12,9 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const web = process.argv[2] ?? 'http://localhost:5173';
 const apiBase = process.argv[3] ?? 'http://localhost:3000';
 const shots = process.argv[4];

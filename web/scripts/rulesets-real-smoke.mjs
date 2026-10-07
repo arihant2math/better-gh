@@ -9,18 +9,11 @@
 // Needs bgh-server on :3000 with the rulesets backend (P23) and `npm run dev`
 // (proxying to it). Creates user ada / org acme / repo `rules-smoke` itself.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const web = (process.argv[2] ?? 'http://localhost:5173').replace(/\/$/, '');
 const api = (process.argv[3] ?? 'http://localhost:3000').replace(/\/$/, '');
 const shots = process.argv[4] ?? join(tmpdir(), 'rulesets-real-shots');

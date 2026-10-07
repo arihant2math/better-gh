@@ -3,16 +3,9 @@
 // `node scripts/smoke-profiles.mjs [baseUrl] [shotDir]`
 // (PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers; run vite first.)
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:5184';
 const dir = process.argv[3] ?? '/tmp/shots/profiles';
 mkdirSync(dir, { recursive: true });

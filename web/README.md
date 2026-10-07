@@ -69,9 +69,12 @@ clipped-text /acme/api/issues * dark *
 use the readable part of CSS-module class names, so they survive rebuilds.
 The default route set (`/`, `/notifications`, `/acme`, `/ada`, `/acme/api`,
 issues, an issue, pulls, `/settings`) at all viewports takes about 2–3
-minutes with `--jobs 4`. `--help` lists every option. Playwright and
-Chromium come preinstalled (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`);
-never run `playwright install`. The checks themselves are tested against
+minutes with `--jobs 4`. `--help` lists every option. Every browser
+script loads Playwright through `scripts/lib/browser.mjs`, which uses the
+exact-pinned `playwright-core` devDependency (no browser download);
+Chromium comes preinstalled (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`),
+so never run `playwright install`, and bump the pin only together with the
+preinstalled browser revision. The checks themselves are tested against
 fixture pages in `scripts/viewport-matrix/viewport-matrix.test.mjs` (part
 of `npm test`; skipped where Chromium isn't available).
 

@@ -18,16 +18,7 @@
 // thread, then reclaims bob's mannequin (org owner invites, bob accepts in
 // Settings → Imported contributions) and checks the attribution moved.
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:3000';
 const shots = process.argv[3];

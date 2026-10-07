@@ -5,17 +5,9 @@
 // highlights, pagination), dashboard feed (infinite scroll, context switch).
 //
 //   node scripts/inbox-search-e2e.mjs BASE_URL tokens.json OUT_DIR
-import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
+import { chromium } from './lib/browser.mjs';
 
 const [base, tokensFile, out] = process.argv.slice(2);
 const tokens = JSON.parse(readFileSync(tokensFile, 'utf8'));

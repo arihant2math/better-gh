@@ -2,16 +2,8 @@
 // Interaction smoke test against a running build in mock mode:
 // optimistic writes, rollback, persistence across reloads, hover prefetch,
 // keyboard navigation. `node scripts/smoke.mjs [baseUrl]`
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { chromium } from './lib/browser.mjs';
 
-const require = createRequire(import.meta.url);
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch {
-  ({ chromium } = require(join(process.execPath, '../../lib/node_modules/playwright')));
-}
 const base = process.argv[2] ?? 'http://localhost:4173';
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });

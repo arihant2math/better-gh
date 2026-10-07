@@ -4,11 +4,11 @@
 import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { chromium as pwChromium } from '../lib/browser.mjs';
 import { collectLayoutIssues } from './checks.mjs';
 import { DEFAULT_ROUTES, collapse, isAllowed, parseAllow, parseArgs, routeUrl, slug, summaryTable } from './lib.mjs';
 
@@ -101,17 +101,8 @@ describe('viewport-matrix baseline', () => {
 });
 
 // ---------------------------------------------------------------- browser
-const require = createRequire(import.meta.url);
-let chromium = null;
-for (const p of ['playwright', join(process.execPath, '../../lib/node_modules/playwright')]) {
-  try {
-    ({ chromium } = require(p));
-    if (!existsSync(chromium.executablePath())) chromium = null;
-    break;
-  } catch {
-    /* not installed */
-  }
-}
+// Skip the fixture tests where the pinned Chromium revision isn't installed.
+const chromium = existsSync(pwChromium.executablePath()) ? pwChromium : null;
 
 const PAGE = (body, css = '') => `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
   body { margin: 0; font: 16px sans-serif; } ${css}
