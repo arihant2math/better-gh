@@ -103,6 +103,23 @@ export function rulesetProtects(server: MockServer, repo: Repo, branch: string):
   );
 }
 
+/**
+ * Parameters of the `merge_queue` rule of the first active branch ruleset that
+ * targets `branch`, or null when merges into it don't go through a queue.
+ */
+export function mergeQueueRule(server: MockServer, repo: Repo, branch: string): Record<string, unknown> | null {
+  ensureRepoSeed(server, repo);
+  for (const r of S(server).rulesets) {
+    if (r.enforcement !== 'active' || r.target !== 'branch' || !appliesToRepo(r, repo) || !appliesToRef(r, `refs/heads/${branch}`, repo)) continue;
+    const rule = r.rules.find((x) => x.type === 'merge_queue');
+    if (rule) return { ...paramsFromJson('merge_queue', rule.parameters ?? {}) };
+  }
+  return null;
+}
+
+/** Repos seeded with a merge queue on the default branch (P39; `npm run dev:mock`). */
+const MERGE_QUEUE_REPOS = new Set(['nebula-labs/quark']);
+
 // ------------------------------------------------------------------ seed
 
 function ensureRepoSeed(server: MockServer, repo: Repo): void {
@@ -125,6 +142,21 @@ function ensureRepoSeed(server: MockServer, repo: Repo): void {
     updatedAt: iso(now - 86_400_000 * 3),
   };
   s.rulesets.push(tags);
+  if (MERGE_QUEUE_REPOS.has(`${repo.owner}/${repo.name}`)) {
+    s.rulesets.push({
+      id: server.nextId(),
+      repoId: repo.id,
+      orgId: null,
+      name: 'Merge queue',
+      target: 'branch',
+      enforcement: 'active',
+      conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+      rules: [ruleToJson('merge_queue', { ...paramsFromJson('merge_queue', {}), merge_method: 'SQUASH', max_entries_to_build: 3 })],
+      bypass_actors: [],
+      createdAt: iso(now - 86_400_000 * 12),
+      updatedAt: iso(now - 86_400_000 * 2),
+    });
+  }
   // A few recorded evaluations for Rule insights.
   const users = [...server.db.tables.user.values()].filter((u) => u.type === 'User').slice(0, 4);
   const refs = [

@@ -891,7 +891,7 @@ pub async fn load(state: &AppState) -> ApiResult<Arc<SiteSettings>> {
         return Ok(s.clone());
     }
     let s = Arc::new(load_uncached(&state.config, &state.db).await?);
-    crate::camo::set_enabled(s.markdown.image_proxy);
+    crate::camo::set_enabled(&state.config.base_url, s.markdown.image_proxy);
     cache()
         .lock()
         .expect("settings cache")

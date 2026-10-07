@@ -23,6 +23,7 @@ import {
 import { browseKeys, getBlob, getRefs, isSha } from '../../../api/endpoints';
 import { CommitError, type CommitRequest } from '../../../components/code/CommitDialog';
 import { navigate } from '../../../router';
+import { compareUrl } from '../../../components/code/urls';
 import { toast } from '../../../ui/Toast';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -246,5 +247,5 @@ export function finishCommit(owner: string, repo: string, req: CommitRequest, re
   invalidateRef(owner, repo, result.branch);
   if (req.newBranch) invalidateRef(owner, repo, req.branch);
   toast({ kind: 'success', title: req.newBranch ? `Committed to ${result.branch}` : 'Changes committed', description: `${result.sha.slice(0, 7)} · ${req.message}` });
-  navigate(req.newBranch ? `/${owner}/${repo}/compare/${req.branch}...${req.newBranch}?expand=1` : successPath);
+  navigate(req.newBranch ? compareUrl({ owner, repo }, req.branch, req.newBranch, { expand: true }) : successPath);
 }

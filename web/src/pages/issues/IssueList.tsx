@@ -24,6 +24,7 @@ import {
 import { Menu, SelectPanel } from '../../ui/Menu';
 import { toast } from '../../ui/Toast';
 import { VirtualList } from '../../ui/VirtualList';
+import { useEvent } from '../../ui/useEvent';
 import { QueryInput } from '../../search/QueryInput';
 import { storeValueSource } from '../../search/storeSource';
 import { applyFilter, parseQuery, serializeQuery, SORTS, type FilterContext, type IssueFilter } from './filters';
@@ -81,7 +82,7 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
   const selectedIssues = items.filter((i) => selected.has(i.id));
   const targets = selectedIssues.length ? selectedIssues : items[cursor] ? [items[cursor]] : [];
 
-  const toggleSelect = (index: number, e?: MouseEvent | KeyboardEvent) => {
+  const toggleSelect = useEvent((index: number, e?: MouseEvent | KeyboardEvent) => {
     const issue = items[index];
     if (!issue) return;
     setSelected((prev) => {
@@ -99,7 +100,7 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
       return next;
     });
     anchorIndex.current = index;
-  };
+  });
 
   // Pickers (bulk-capable)
   const labelBtn = useRef<HTMLButtonElement>(null);
@@ -348,8 +349,9 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
               showRepo={showRepo}
               active={index === cursor}
               selected={selected.has(issue.id)}
-              onActivate={() => setActive(index)}
-              onToggleSelect={(e) => toggleSelect(index, e)}
+              index={index}
+              onActivate={setActive}
+              onToggleSelect={toggleSelect}
             />
           )}
         />

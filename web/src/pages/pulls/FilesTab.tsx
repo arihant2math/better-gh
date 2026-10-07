@@ -2,6 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { load, useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
+import { usePager } from '../../api/pager';
 import { getPullFilePatch, listPullCommits, listPullFiles } from '../../api/endpoints';
 import type { RestCommit, RestDiffEntry } from '../../api/types';
 import { DiffView, type DiffAnnotations, type DiffFileEntry, type DiffSource, type LineSelection } from '../../components/diff/DiffView';
@@ -62,41 +63,17 @@ function usePullFiles(repo: Repo, pr: Issue, range: FileRange, enabled = true) {
   const rangeKey = range ? `~${range.base ?? ''}..${range.head ?? pr.headSha}` : '';
   const base = `files:${repo.owner}/${repo.name}#${pr.number}@${pr.baseSha}...${pr.headSha}${rangeKey}`;
   const total = range ? 0 : (pr.changedFiles ?? 0);
-  const [pages, setPages] = useState<{ key: string; list: RestDiffEntry[][]; error?: unknown; done: boolean }>({ key: base, list: [], done: false });
-  const loading = useRef(false);
-  const state = pages.key === base ? pages : { key: base, list: [], done: false };
-
-  const loadNext = useCallback(() => {
-    if (loading.current || !enabled) return;
-    const cur = pages.key === base ? pages : { key: base, list: [] as RestDiffEntry[][], done: false };
-    if (cur.done) return;
-    const page = cur.list.length + 1;
-    loading.current = true;
-    const fetchPage = () => (range ? listPullRangeFiles(repo.owner, repo.name, pr.number, page, PAGE, range.base, range.head) : listPullFiles(repo.owner, repo.name, pr.number, page, PAGE));
-    load(`${base}:${page}`, fetchPage, { immutable: true }).then(
-      (list) => {
-        loading.current = false;
-        setPages((p) => {
-          const prev = p.key === base ? p.list : [];
-          if (prev.length >= page) return p;
-          return { key: base, list: [...prev, list], done: list.length < PAGE };
-        });
-      },
-      (error: unknown) => {
-        loading.current = false;
-        setPages((p) => ({ ...(p.key === base ? p : { key: base, list: [] }), error, done: true }));
-      },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `range` is captured through `base`
-  }, [base, pages, enabled, repo.owner, repo.name, pr.number]);
-
-  useEffect(() => {
-    if (state.list.length === 0 && !state.done) loadNext();
-  }, [state.list.length, state.done, loadNext]);
-
-  const entries = useMemo(() => state.list.flat(), [state.list]);
-  const pending = state.done ? 0 : range ? 1 : Math.max(total - entries.length, entries.length === 0 ? 1 : 0);
-  return { entries, pending, error: state.error, loadNext, cacheKey: base };
+  const pager = usePager<RestDiffEntry[]>(enabled ? base : null, {
+    key: (page) => `${base}:${page}`,
+    loader: (page) => (range ? listPullRangeFiles(repo.owner, repo.name, pr.number, page, PAGE, range.base, range.head) : listPullFiles(repo.owner, repo.name, pr.number, page, PAGE)),
+    hasMore: (last) => last.length >= PAGE,
+    immutable: true,
+  });
+  const { first, pages, hasMore } = pager;
+  const entries = useMemo(() => pages.flat(), [pages]);
+  const done = !!first.data && !hasMore;
+  const pending = done ? 0 : range ? 1 : Math.max(total - entries.length, entries.length === 0 ? 1 : 0);
+  return { entries, pending, error: first.error, pager, cacheKey: base };
 }
 
 function toEntry(e: RestDiffEntry): DiffFileEntry {
@@ -142,7 +119,8 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
   const filterRef = useRef<HTMLInputElement>(null);
   const full = repoFullName(repo);
 
-  const { entries, pending, error, loadNext } = usePullFiles(repo, pr, fileRange, rangeReady);
+  const { entries, pending, error, pager } = usePullFiles(repo, pr, fileRange, rangeReady);
+  const loadNext = pager.loadMore;
   // Filtering needs the whole list: keep paging in the background.
   useEffect(() => {
     if ((filter || hideViewed) && pending > 0) loadNext();
@@ -458,7 +436,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
         )}
         annotations={annotations}
         pendingFiles={filter || hideViewed ? 0 : pending}
-        onNeedMoreFiles={loadNext}
+        moreFiles={pager}
         jumpTo={jumpTo}
         source={source}
         emptyText={filter ? 'No changed files match the filter.' : 'No files changed.'}
