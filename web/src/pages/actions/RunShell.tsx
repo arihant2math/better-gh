@@ -12,6 +12,7 @@ import {
 } from '../../api/actions';
 import { useResource } from '../../api/cache';
 import { Link, navigate, useLocation } from '../../router';
+import { blobUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
@@ -127,7 +128,7 @@ export const RunShell = observer(function RunShell({ data, jobId, children }: { 
         {run && (
           <>
             <div className={styles.sideTitle}>Run details</div>
-            <Link to={`${base}/blob/${run.head_sha}/${run.path}`} className={styles.sideItem}>
+            <Link to={blobUrl(data, run.head_sha, run.path)} className={styles.sideItem}>
               <FileCodeIcon size={16} />
               <span className={styles.sideText}>{workflowFile(run.path)}</span>
             </Link>

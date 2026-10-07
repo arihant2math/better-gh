@@ -6,6 +6,7 @@ import { browseKeys, getRefs, isSha } from '../../api/endpoints';
 import { activeBranchRulesets, type Ruleset } from '../../api/rulesets';
 import { RefPicker, refLabel } from '../../components/code/RefPicker';
 import { Link, useParams } from '../../router';
+import { compareUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
@@ -14,6 +15,7 @@ import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
+import { EmptyRepoState } from '../code/EmptyRepoState';
 import { AlertIcon, CopyIcon, GitBranchIcon, GitPullRequestIcon, PlusIcon, SearchIcon, ShieldIcon, ShieldLockIcon, TrashIcon } from '../../ui/icons';
 import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
@@ -24,7 +26,6 @@ import { selectsRef } from '../rulesets/match';
 import { OVERVIEW_LIMIT, barFraction, branchDate, classifyBranches, parseView, type BranchView } from './classify';
 import styles from './Branches.module.css';
 
-const enc = encodeURIComponent;
 const VIRTUALIZE_OVER = 100;
 const NO_RULESETS: Ruleset[] = [];
 
@@ -146,6 +147,9 @@ const Branches = observer(function Branches({ repo, view }: { repo: Repo; view: 
     body = <EmptyState icon={AlertIcon} title="Couldn’t load branches" />;
   } else if (!data) {
     body = <SkeletonSection />;
+  } else if (!data.branches.length) {
+    // No branches at all: the repository has no commits yet.
+    body = <EmptyRepoState repo={repo} />;
   } else if (view === 'overview') {
     const groups = (['yours', 'active', 'stale'] as const).filter((g) => (g !== 'yours' || viewer) && sections[g].length > 0);
     body = (
@@ -298,7 +302,7 @@ function BranchRow({
   return (
     <div className={styles.row} role="listitem">
       <div className={styles.nameCell}>
-        <Link to={`${base}/tree/${enc(b.name)}`} className={styles.name} title={b.name}>
+        <Link to={treeUrl(repoRefOf(repo), b.name)} className={styles.name} title={b.name}>
           {b.name}
         </Link>
         <IconButton icon={CopyIcon} label="Copy branch name" size="sm" onClick={() => copy(b.name)} />
@@ -324,7 +328,7 @@ function BranchRow({
           </Link>
         ) : (
           !isDefault && (
-            <Link to={`${base}/compare/${enc(defaultBranch)}...${enc(b.name)}?expand=1`} className={styles.newPr}>
+            <Link to={compareUrl(repoRefOf(repo), defaultBranch, b.name, { expand: true })} className={styles.newPr}>
               <GitPullRequestIcon size={14} />
               New pull request
             </Link>

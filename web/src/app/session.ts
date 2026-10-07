@@ -1,5 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
-import { ApiError, api } from '../api/client';
+import { ApiError, api, requestSudo } from '../api/client';
 import { transport } from '../api/transport';
 import { getBoot, isMockMode, setBoot, type BootData, type BootUser } from '../boot';
 import { navigate } from '../router';
@@ -54,6 +54,8 @@ class Session {
       hooks: {
         onRollback: (tx, message) => toast({ kind: 'error', title: `Couldn't save: ${tx.label}`, description: message }),
         onUnauthenticated: () => this.expired(),
+        // Sudo 401s from queued writes (repo delete/transfer) prompt instead of logging out.
+        onSudoRequired: requestSudo,
       },
     });
     setSyncClient(client);

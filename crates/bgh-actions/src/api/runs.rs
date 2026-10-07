@@ -3,7 +3,6 @@
 //! `/actions/jobs/{job_id}[/logs|/rerun]`.
 
 use std::collections::HashSet;
-use std::io::Write;
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -597,11 +596,14 @@ fn zip_name(s: &str) -> String {
 }
 
 /// Build the run-logs zip: `{n}_{job}.txt` plus `{job}/{step}_{name}.txt`.
+/// Written on the blocking pool from the step files into an unlinked temp
+/// file (log bytes stream through a fixed buffer, never all in memory);
+/// returns it rewound, with its length.
 pub async fn build_run_logs_zip(
     state: &AppState,
     run_id: i64,
     attempt: i32,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<(std::fs::File, u64)> {
     let jobs: Vec<JobRow> = sqlx::query_as(&format!(
         "SELECT {} FROM actions_jobs
           WHERE run_id = $1 AND run_attempt = $2 AND kind = 'job' ORDER BY id",
@@ -611,41 +613,74 @@ pub async fn build_run_logs_zip(
     .bind(attempt)
     .fetch_all(&state.db)
     .await?;
-    let mut entries: Vec<(String, String)> = Vec::new();
+    // (job entry, [(step entry, file)])
+    let mut plan: Vec<(String, Vec<(String, std::path::PathBuf)>)> = Vec::new();
     for (i, job) in jobs.iter().enumerate() {
         let owner_id = job.log_owner();
         let name = zip_name(&job.name);
-        entries.push((
-            format!("{i}_{name}.txt"),
-            crate::logs::read_job(state, owner_id).await,
-        ));
         let steps: Vec<crate::models::StepState> =
             serde_json::from_value(job.steps.clone()).unwrap_or_default();
-        for n in crate::logs::steps(state, owner_id).await {
-            let step_name = steps
-                .iter()
-                .find(|s| s.number == n)
-                .map(|s| zip_name(&s.name))
-                .unwrap_or_else(|| "step".into());
-            entries.push((
-                format!("{name}/{n}_{step_name}.txt"),
-                crate::logs::read_step(state, owner_id, n).await,
-            ));
-        }
+        let files = crate::logs::steps(state, owner_id)
+            .await
+            .into_iter()
+            .map(|n| {
+                let step_name = steps
+                    .iter()
+                    .find(|s| s.number == n)
+                    .map(|s| zip_name(&s.name))
+                    .unwrap_or_else(|| "step".into());
+                (
+                    format!("{name}/{n}_{step_name}.txt"),
+                    crate::logs::step_path(state, owner_id, n),
+                )
+            })
+            .collect();
+        plan.push((format!("{i}_{name}.txt"), files));
     }
-    tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
-        let mut buf = std::io::Cursor::new(Vec::new());
-        {
-            let mut zip = zip::ZipWriter::new(&mut buf);
-            let opts = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
-            for (name, content) in entries {
-                zip.start_file(name, opts)?;
-                zip.write_all(content.as_bytes())?;
+    let tmp_dir = state.config.data_dir.join("actions").join("tmp");
+    tokio::task::spawn_blocking(move || -> anyhow::Result<(std::fs::File, u64)> {
+        use std::io::{Read, Seek};
+        std::fs::create_dir_all(&tmp_dir)?;
+        let mut zip = zip::ZipWriter::new(tempfile::tempfile_in(&tmp_dir)?);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .large_file(true);
+        // Step files are cut at their length now, so the job entry and
+        // the step entries agree even while the job is still logging.
+        let open = |path: &std::path::Path| -> std::io::Result<Option<(std::fs::File, u64)>> {
+            match std::fs::File::open(path) {
+                Ok(f) => {
+                    let len = f.metadata()?.len();
+                    Ok(Some((f, len)))
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(e),
             }
-            zip.finish()?;
+        };
+        for (job_entry, steps) in plan {
+            let mut lens = Vec::with_capacity(steps.len());
+            zip.start_file(job_entry, opts)?;
+            for (_, path) in &steps {
+                let len = match open(path)? {
+                    Some((f, len)) => {
+                        std::io::copy(&mut f.take(len), &mut zip)?;
+                        len
+                    }
+                    None => 0,
+                };
+                lens.push(len);
+            }
+            for ((entry, path), len) in steps.into_iter().zip(lens) {
+                zip.start_file(entry, opts)?;
+                if let Some((f, _)) = open(&path)? {
+                    std::io::copy(&mut f.take(len), &mut zip)?;
+                }
+            }
         }
-        Ok(buf.into_inner())
+        let mut file = zip.finish()?;
+        let len = file.stream_position()?;
+        file.rewind()?;
+        Ok((file, len))
     })
     .await?
 }

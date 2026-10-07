@@ -779,9 +779,16 @@ where
         let (req, resp) = (dir.path().join("req"), dir.path().join("resp"));
         mkfifo(&req)?;
         mkfifo(&resp)?;
-        let rx = tokio::net::unix::pipe::OpenOptions::new()
-            .read_write(true)
-            .open_receiver(&req)?;
+        use std::os::unix::fs::OpenOptionsExt;
+        // Open the FIFO read-write (what tokio's Linux-only
+        // `OpenOptions::read_write` does) so the open doesn't block for a
+        // writer and reads don't hit EOF when the hook closes its end.
+        let rx = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&req)?;
+        let rx = tokio::net::unix::pipe::Receiver::from_file(rx)?;
         c.env("BGH_CHECK_DIR", dir.path());
         check_task = Some(tokio::spawn(serve_object_check(check, rx, resp)));
         _check_dir = Some(dir);
