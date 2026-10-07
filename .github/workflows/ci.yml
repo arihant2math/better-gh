@@ -150,7 +150,8 @@ jobs:
       # save on failure too, or the cache never warms (#85). The key has no
       # ref in it, so a PR run hits the entry its base main run saved. The
       # linux-x86_64 clippy job restores this entry too (see the last step).
-      - uses: Swatinem/rust-cache@v2
+      - id: cache
+        uses: Swatinem/rust-cache@v2
         with:
           shared-key: x86_64-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -231,11 +232,12 @@ jobs:
           path: |
             gh-compat.json
             api-smoke.json
-      # Main only: check the deps in clippy's mode too, so the saved
-      # x86_64-debug entry warms the linux-x86_64 clippy job (#85). Lint
-      # results come from rust-lint; this step only fills the cache.
+      # Main only, and only on a cache miss (an exact hit isn't re-saved, so
+      # the work would be thrown away): check the deps in clippy's mode too,
+      # so the saved x86_64-debug entry warms the linux-x86_64 clippy job
+      # (#85). Lint results come from rust-lint; this step only fills the cache.
       - name: Warm clippy deps for the shared cache
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         run: cargo clippy --workspace --all-targets --locked
 
