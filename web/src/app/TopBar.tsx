@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, matchPath, navigate, prefetch, useLocation } from '../router';
 import { store, sync } from '../sync';
 import { issueByNumber, milestoneByNumber, orgByLogin, repoByName, userByLogin } from '../sync/selectors';
@@ -10,6 +10,7 @@ import { Kbd } from '../ui/Kbd';
 import { Menu } from '../ui/Menu';
 import { Tooltip } from '../ui/Tooltip';
 import { formatKeys } from '../shortcuts/manager';
+import { crumbsToHide } from './crumbs';
 import styles from './Shell.module.css';
 import { theme } from './theme';
 import { currentRepo, ui } from './uiState';
@@ -33,9 +34,10 @@ const SECTION_TITLES: Record<string, string> = {
 
 const Crumbs = observer(function Crumbs() {
   const { pathname } = useLocation();
+  const navRef = useRef<HTMLElement>(null);
   const m = matchPath(pathname);
   const p = m?.params ?? {};
-  const parts: { to: string; label: ReactNode }[] = [];
+  const parts: { to: string; label: ReactNode; text?: string }[] = [];
   const top = pathname.split('/')[1] ?? '';
   if (pathname === '/') parts.push({ to: '/', label: 'Home' });
   else if (top === 'notifications') parts.push({ to: '/notifications', label: 'Inbox' });
@@ -55,9 +57,10 @@ const Crumbs = observer(function Crumbs() {
       label: (
         <>
           <Avatar user={owner ?? { login: p.owner, avatarUrl: '' }} size={16} square={!!orgByLogin(p.owner)} />
-          {p.owner}
+          <span className={styles.crumbText}>{p.owner}</span>
         </>
       ),
+      text: p.owner,
     });
     if (p.repo) {
       const base = `/${p.owner}/${p.repo}`;
@@ -79,19 +82,84 @@ const Crumbs = observer(function Crumbs() {
       }
     }
   }
+  const key = parts.map((part) => `${part.to}\u0000${part.text ?? String(part.label)}`).join('\u0001');
+  const hidden = useCrumbCollapse(navRef, key);
+  const last = parts.length - 1;
+  const shown = hidden > 0 && hidden < last ? hidden : 0;
+  const hiddenText = parts
+    .slice(0, shown)
+    .map((part) => part.text ?? String(part.label))
+    .join(' / ');
+  const visible = parts.map((part, i) => ({ ...part, i })).filter(({ i }) => i >= hidden);
   return (
-    <nav className={styles.crumbs} aria-label="Breadcrumbs">
-      {parts.map((part, i) => (
-        <span key={part.to + i} style={{ display: 'contents' }}>
-          {i > 0 && <span className={styles.crumbSep}>/</span>}
-          <Link to={part.to} className={`${styles.crumb} ${i === parts.length - 1 ? styles.crumbCurrent : ''}`} aria-current={i === parts.length - 1 ? 'page' : undefined}>
-            {part.label}
+    <nav ref={navRef} className={styles.crumbs} aria-label="Breadcrumbs">
+      {shown > 0 && (
+        <Link to={parts[shown - 1]?.to ?? '/'} className={styles.crumb} data-crumb-ellipsis="" aria-label={hiddenText} title={hiddenText}>
+          …
+        </Link>
+      )}
+      {visible.map((part, n) => (
+        <span key={part.to + part.i} style={{ display: 'contents' }}>
+          {(n > 0 || shown > 0) && <span className={styles.crumbSep}>/</span>}
+          <Link
+            to={part.to}
+            className={`${styles.crumb} ${part.i === last ? styles.crumbCurrent : ''}`}
+            data-crumb={part.i === last ? 'current' : part.i}
+            aria-current={part.i === last ? 'page' : undefined}
+            title={part.i === last ? (part.text ?? String(part.label)) : undefined}
+          >
+            {typeof part.label === 'string' ? <span className={styles.crumbText}>{part.label}</span> : part.label}
           </Link>
         </span>
       ))}
     </nav>
   );
 });
+
+/**
+ * Number of leading ancestor crumbs to hide so the rest keep their full text
+ * and the current page gets the ellipsis (#60, #66). Measures the rendered
+ * crumbs; widths of crumbs it has hidden are remembered from when they showed.
+ */
+function useCrumbCollapse(navRef: RefObject<HTMLElement | null>, key: string): number {
+  const [fit, setFit] = useState({ key: '', hidden: 0 });
+  const hidden = fit.key === key ? fit.hidden : 0;
+  const cache = useRef({ key: '', ancestors: [] as number[], current: 0, separator: 0, ellipsis: 28 });
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const measure = () => {
+      const c = cache.current;
+      if (c.key !== key) cache.current = { ...c, key, ancestors: [], current: 0 };
+      const gap = parseFloat(getComputedStyle(nav).columnGap) || 0;
+      nav.querySelectorAll<HTMLElement>('[data-crumb]').forEach((el) => {
+        if (el.dataset.crumb === 'current') {
+          const text = el.querySelector<HTMLElement>(`.${styles.crumbText}`);
+          cache.current.current = el.offsetWidth + (text ? text.scrollWidth - text.clientWidth : 0);
+        } else cache.current.ancestors[Number(el.dataset.crumb)] = el.offsetWidth;
+      });
+      const sep = nav.querySelector<HTMLElement>(`.${styles.crumbSep}`);
+      if (sep) cache.current.separator = sep.offsetWidth + 2 * gap;
+      const ellipsis = nav.querySelector<HTMLElement>('[data-crumb-ellipsis]');
+      if (ellipsis) cache.current.ellipsis = ellipsis.offsetWidth;
+      const style = getComputedStyle(nav);
+      const available = nav.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+      const next = crumbsToHide({ ...cache.current, ancestors: Array.from(cache.current.ancestors, (w) => w ?? 0), available });
+      if (next !== hidden || fit.key !== key) setFit({ key, hidden: next });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    // Web fonts change every width: start over from the fully expanded crumbs.
+    const refit = () => setFit({ key: '', hidden: 0 });
+    document.fonts?.addEventListener('loadingdone', refit);
+    return () => {
+      ro.disconnect();
+      document.fonts?.removeEventListener('loadingdone', refit);
+    };
+  }, [navRef, key, hidden, fit.key]);
+  return hidden;
+}
 
 const SyncStatus = observer(function SyncStatus() {
   const c = sync();
