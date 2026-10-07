@@ -4,7 +4,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_018QXmQxBA8SZy83jx2yjck9 | #220 (next #226) | #345 | session_01GifmJK4QD4TzLC5Ex88XK1 (opus) |
+| A backend | session_018QXmQxBA8SZy83jx2yjck9 | #226 (+CLAUDE.md:5 nit) | — | — |
 | B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | — | — |
 | C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 (main merged, CI running) | — |
 
@@ -21,3 +21,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:25Z: #346 merged as 6da3945; reviewer archived; B → #256.
 - 21:30Z: #345 green; opus reviewer spawned.
 - 21:32Z: #345 APPROVE @8b35d0e (=head), CI green; sent to coordinator. Nits for follow-up: CLAUDE.md:5 wording; up-to-date-branch requirement.
+- 21:33Z: #345 merged as 4a70e36; reviewer archived; A → #226; up-to-date-branch note posted on #46.
