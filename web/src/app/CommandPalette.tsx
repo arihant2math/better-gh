@@ -408,3 +408,5 @@ function weight(g: Result[]): number {
   if (!best) return -1;
   return best.score / (best.group === 'Commands' ? 2 : 1);
 }
+
+export default CommandPalette;
