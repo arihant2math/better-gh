@@ -50,13 +50,16 @@ function storedTab(): WorkTab {
 const CompactIssue = observer(function CompactIssue({ issue }: { issue: Issue }) {
   const repo = store().get('repo', issue.repoId);
   const labels = issue.labelIds.slice(0, 2).map((id) => store().get('label', id));
+  const ref = repo ? `${repo.owner}/${repo.name}#${issue.number}` : `#${issue.number}`;
   return (
     <Link to={issueHref(issue)} className={styles.issue}>
       <StateIcon issue={issue} />
       <span className={styles.issueMain}>
         <span className={styles.issueTitle}>{issue.title}</span>
         <span className={styles.issueMeta}>
-          {repo?.owner}/{repo?.name}#{issue.number}
+          <span className={styles.issueRef} title={ref}>
+            {ref}
+          </span>
           {labels.map((l) => l && <span key={l.id} className={styles.labelDot} style={{ background: `#${l.color}` }} title={l.name} />)}
         </span>
       </span>
@@ -290,11 +293,11 @@ export default observer(function DashboardPage() {
           </header>
           <div className={styles.repos}>
             {side.repos.slice(0, 12).map((r) => (
-              <Link key={r.id} to={`/${r.owner}/${r.name}`} className={styles.repo}>
+              <Link key={r.id} to={`/${r.owner}/${r.name}`} className={styles.repo} title={`${r.owner}/${r.name}`}>
                 {r.visibility === 'internal' ? <OrganizationIcon size={14} /> : r.private ? <LockIcon size={14} /> : <RepoIcon size={14} />}
                 <span className={styles.repoName}>
                   <span className={styles.repoOwner}>{r.owner}/</span>
-                  {r.name}
+                  <span className={styles.repoShort}>{r.name}</span>
                 </span>
                 {s.get('viewerRepo', r.id)?.starred && <StarFillIcon size={12} className={styles.star} />}
                 {r.pushedAt && (

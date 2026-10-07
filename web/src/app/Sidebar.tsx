@@ -55,7 +55,9 @@ const RepoGroup = observer(function RepoGroup({ title, repos, groupKey }: { titl
   return (
     <div className={styles.section}>
       <button type="button" className={styles.sectionHeader} aria-expanded={!collapsed} onClick={toggle}>
-        <span style={{ flex: 1 }}>{title}</span>
+        <span className={styles.sectionTitle} title={title}>
+          {title}
+        </span>
         <ChevronDownIcon size={12} className={styles.chevron} />
       </button>
       {!collapsed &&
