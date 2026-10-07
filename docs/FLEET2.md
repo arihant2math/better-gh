@@ -55,6 +55,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:54: The #323 author reports a security APPROVE (waiting on reviewer session_015XU9jpf2gN1d2vsSNDywG6 to report the SHA). #329 (P-Critical, filed by the #323 reviewer) shares #138's root cause; asked the #312 r2 reviewer to run its repro on #312, and commented on #329. The #312 and #309 authors acknowledged the wind-down.
 08:53: WIND DOWN received (see the section above).
 08:53: #322 → REQUEST_CHANGES at f53ad4f: with #315 applied, a GITHUB_TOKEN disable/enable auto-merge cycle plus the merge_group exemption makes an unbounded run loop (reproduced). The lead was told; the #322 reviewer is archived; the #315 r2 reviewer was given the context.
 08:50: #319 REQUEST_CHANGES (a failed recheck pass drops coalesced targets, so a revoke is delayed up to 5 min and private deltas leak; minor first-subscriber race). Author session_012T1MW3bqBQbQPoRqYR2z4G told; reviewer archived.
