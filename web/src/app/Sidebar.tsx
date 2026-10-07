@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Link, navigate, useLocation } from '../router';
 import { store } from '../sync';
 import type { Repo } from '../sync/models';
-import { Avatar } from '../ui/Badge';
+import { Avatar } from '../ui/Avatar';
 import {
   ChevronDownIcon,
   GearIcon,
@@ -55,7 +55,9 @@ const RepoGroup = observer(function RepoGroup({ title, repos, groupKey }: { titl
   return (
     <div className={styles.section}>
       <button type="button" className={styles.sectionHeader} aria-expanded={!collapsed} onClick={toggle}>
-        <span style={{ flex: 1 }}>{title}</span>
+        <span className={styles.sectionTitle} title={title}>
+          {title}
+        </span>
         <ChevronDownIcon size={12} className={styles.chevron} />
       </button>
       {!collapsed &&
