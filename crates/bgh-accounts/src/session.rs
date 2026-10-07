@@ -158,13 +158,7 @@ pub async fn signup(
     client: ClientInfo,
     Json(body): Json<SignupBody>,
 ) -> ApiResult<Response> {
-    if !state.config.signup_enabled {
-        return Err(ApiError::forbidden("Sign up is disabled on this instance."));
-    }
-    if ratelimit::hit(&state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
-        return Err(too_many("Too many sign ups. Please try again later."));
-    }
-    bgh_core::settings::check_signup(&state, body.email.trim()).await?;
+    admit_signup(&state, &client, body.email.trim()).await?;
     let user = users::create_user(
         &state,
         NewAccount {
@@ -178,6 +172,25 @@ pub async fn signup(
     )
     .await?;
     start_session(&state, &client, &user, StatusCode::CREATED).await
+}
+
+/// Gate shared by every self-service password sign-up route
+/// (`/_bgh/signup`, `/_bgh/auth/signup`): `BGH_SIGNUP_ENABLED`, the per-IP
+/// rate limit (429) and the site sign-up policy
+/// ([`bgh_core::settings::check_signup`], 403). Call before creating the
+/// account.
+pub(crate) async fn admit_signup(
+    state: &AppState,
+    client: &ClientInfo,
+    email: &str,
+) -> ApiResult<()> {
+    if !state.config.signup_enabled {
+        return Err(ApiError::forbidden("Sign up is disabled on this instance."));
+    }
+    if ratelimit::hit(state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
+        return Err(too_many("Too many sign ups. Please try again later."));
+    }
+    bgh_core::settings::check_signup(state, email).await
 }
 
 fn login_key(login: &str) -> String {

@@ -20,6 +20,7 @@ mod saml;
 mod scim;
 mod security;
 mod signing_keys;
+mod signup_policy;
 mod sso_avatars_ratelimit;
 mod teams;
 mod users;

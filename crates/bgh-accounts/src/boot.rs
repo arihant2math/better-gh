@@ -218,15 +218,7 @@ pub async fn signup(
     client: ClientInfo,
     Json(body): Json<SignupBody>,
 ) -> ApiResult<Response> {
-    if !state.config.signup_enabled {
-        return Err(ApiError::forbidden("Sign up is disabled on this instance."));
-    }
-    if bgh_core::ratelimit::hit(&state, &format!("signup_ip:{}", client.ip), 3600).await? > 50 {
-        return Err(ApiError::Status(
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many sign ups. Please try again later.".into(),
-        ));
-    }
+    session::admit_signup(&state, &client, body.email.trim()).await?;
     let user = users::create_user(
         &state,
         NewAccount {
