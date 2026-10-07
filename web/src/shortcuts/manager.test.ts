@@ -65,4 +65,49 @@ describe('ShortcutManager', () => {
     expect(k).toHaveBeenCalledOnce();
     expect(help).toHaveBeenCalledOnce();
   });
+
+  it('suspends earlier scopes while a modal layer is open', () => {
+    const m = new ShortcutManager();
+    const home = vi.fn();
+    const j = vi.fn();
+    const own = vi.fn();
+    m.register('global', [
+      { keys: 'g h', handler: home },
+      { keys: 'j', handler: j },
+    ]);
+    const pop = m.pushLayer();
+    const disposeOwn = m.register('dialog', [{ keys: 'mod+enter', handler: own }]);
+    m.handleKeyDown(key('g'));
+    m.handleKeyDown(key('h'));
+    m.handleKeyDown(key('j'));
+    m.handleKeyDown(key('Enter', { ctrlKey: true, metaKey: true }));
+    expect(home).not.toHaveBeenCalled();
+    expect(j).not.toHaveBeenCalled();
+    expect(own).toHaveBeenCalledOnce();
+    disposeOwn();
+    pop();
+    m.handleKeyDown(key('g'));
+    m.handleKeyDown(key('h'));
+    expect(home).toHaveBeenCalledOnce();
+  });
+
+  it('drops a closed layer\'s leftover scopes to the layer below', () => {
+    const m = new ShortcutManager();
+    const outer = vi.fn();
+    const inner = vi.fn();
+    const popOuter = m.pushLayer();
+    m.register('outer dialog', [{ keys: 'x', handler: outer }]);
+    const popInner = m.pushLayer();
+    m.register('late', [{ keys: 'y', handler: inner }]);
+    m.handleKeyDown(key('x'));
+    expect(outer).not.toHaveBeenCalled();
+    popInner();
+    m.handleKeyDown(key('x'));
+    m.handleKeyDown(key('y'));
+    expect(outer).toHaveBeenCalledOnce();
+    expect(inner).toHaveBeenCalledOnce();
+    popOuter();
+    m.handleKeyDown(key('y'));
+    expect(inner).toHaveBeenCalledTimes(2);
+  });
 });
