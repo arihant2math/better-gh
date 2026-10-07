@@ -134,17 +134,28 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   color: var(--fg-subtle);
   font-size: var(--fs-sm);
 }
 
+.issueRef {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .labelDot {
+  flex-shrink: 0;
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
 
 .time {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: var(--fg-subtle);
   font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
@@ -212,21 +223,36 @@
   color: var(--fg-subtle);
 }
 
+/* Owner and name ellipsize separately: a long owner gives way first so the
+   repository name (the part you need) stays visible. */
 .repoName {
+  display: flex;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: var(--fw-medium);
 }
 
+.repoOwner,
+.repoShort {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .repoOwner {
+  flex: 0 1 auto;
+  min-width: 3ch;
   color: var(--fg-subtle);
   font-weight: 400;
 }
 
+.repoShort {
+  flex: 0 0 auto;
+  max-width: calc(100% - 3ch);
+}
+
 .star {
+  flex-shrink: 0;
   color: #e3b341 !important;
 }
 

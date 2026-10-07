@@ -85,8 +85,15 @@ Enforced by `scripts/size-check.mjs`, run as part of `npm run build`:
 | Any lazily loaded chunk, gzip | ≤ 60 KB |
 | On-demand diagram chunks (only reachable through the Mermaid entry), gzip | ≤ 150 KB each |
 
-Current: ~122 KB gzip initial JS (React DOM ≈ 58 KB, MobX ≈ 14 KB, app shell
-+ sync engine ≈ 35 KB). Route pages, markdown (marked + DOMPurify), the
+Current: ~131 KB gzip initial JS (React DOM ≈ 63 KB, MobX ≈ 12 KB, app shell
++ route table + sync engine ≈ 50 KB). Keep shared code out of the entry:
+overlays (command palette, shortcut help, new-issue dialog), the palette's
+command lists, inbox indicators and REST-backed route prefetchers
+(`app/routePrefetch.ts`) are lazy chunks, and shell code imports small
+modules (`ui/Avatar`, `ui/Kbd`) rather than barrels that drag in page-only
+icons. `npm run analyze` lists the initial chunks; modulepreload lists skip
+chunks the entry already loaded (`bghPreloadDedupe` in `build/plugins.ts`).
+Route pages, markdown (marked + DOMPurify), the
 virtualizer and the mock backend are separate lazy chunks. The gemoji
 table (`ui/markdown/emoji.json`, shared with the server, regenerate with
 `node scripts/gen-emoji.mjs`) is its own chunk; math (temml, MathML output)

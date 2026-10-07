@@ -67,3 +67,5 @@ function Form({ repoId }: { repoId: number }) {
     </form>
   );
 }
+
+export default NewIssueDialog;
