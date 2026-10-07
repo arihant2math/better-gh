@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+13:29: #342 READY (r2 APPROVE on 20f9a00; then only main merge b4c9c4e = head; CI result green run 37626407568; verified). Forwarded; r2 reviewer archived. Asked orchestrator: item 9 (sccache) worker or skip-with-justification → item 10.
 13:22: orchestrator MERGED #316 (021164a). r4 reviewer already archived. Lead told: retarget #322 to main, merge main (take main for #316 files), confirm diff is #322-only, report head+CI → then a sonnet delta reviewer (merge resolution didn't change #316 code) → forward.
 13:22: #316 READY (r4 APPROVE on 9ab35b6; then only main merge 868c817 = head; CI result green run 37625489127; clean; verified). Forwarded; r4 reviewer archived. #322 approved on 0664135, still based on #316's branch: after #316 merges, lead retargets to main + merges main → re-verify CI → forward. Main 6a0a8c0 rerun (attempt 2) GREEN → triggers test is a flake: filed #343 (no fixer; add to #46 list). Told orchestrator.
 13:10 ORCHESTRATOR RULE for the 6a0a8c0 rerun: if triggers::issues_and_issue_comment_activity_types fails AGAIN → spawn one fixer immediately (pre-authorized): root-cause the emit/settle race in bgh-actions; no skip/retry/loosening; normal review → orchestrator merge. If the rerun PASSES → file a new flake issue (run link, 3-vs-4 detail, cross-ref #341, note it appeared right after the nextest switch: process-per-test timing), no fixer, list it in #46. Tell the orchestrator the outcome either way.
