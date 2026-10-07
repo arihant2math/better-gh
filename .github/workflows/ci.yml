@@ -9,7 +9,7 @@
 # docs/AGENT_WORKFLOW.md "CI is the shared gate"):
 # * backend (rust-lint, rust-test, which also runs the gh compat report):
 #   crates/, migrations/, scripts/,
-#   Cargo.*, rust toolchain/fmt/clippy config.
+#   Cargo.*, rust toolchain/fmt/clippy/nextest config.
 # * frontend (web): web/.
 # * both: testdata/ (the markdown golden corpus is read by Rust tests and by
 #   web/src/ui/markdown/render.golden.test.ts) and
@@ -168,12 +168,20 @@ jobs:
           -c "ALTER SYSTEM SET log_min_error_statement = 'panic'"
           -c "ALTER SYSTEM SET log_checkpoints = off"
           -c "SELECT pg_reload_conf()"
+      # Prebuilt binary, never `cargo install`. Profile: .config/nextest.toml.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       # Compile separately so the job timings split build from run time.
       - id: build
-        run: cargo test --workspace --locked --no-run 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+        run: cargo nextest run --workspace --locked --no-run 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
         shell: bash
-      - run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee -a "$RUNNER_TEMP/cargo-test.log"
+      - run: cargo nextest run --workspace --locked --profile ci --no-fail-fast 2>&1 | tee -a "$RUNNER_TEMP/cargo-test.log"
         shell: bash # -o pipefail: keep cargo's exit status through tee
+      # nextest doesn't run doctests.
+      - run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/cargo-test.log"
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
       - name: Summarize test failures
         if: failure()
         run: |
@@ -181,7 +189,8 @@ jobs:
             echo '### Rust test failures'
             echo '```'
             sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/cargo-test.log" \
-              | grep -E '^test .* FAILED$|panicked at|^error(\[|:)|test result: FAILED' || true
+              | grep -E '^ *(FAIL|TIMEOUT|SIGSEGV|SIGABRT|ABORT|LEAK-FAIL) \[|^test .* FAILED$|panicked at|^error(\[|:)|test result: FAILED' \
+              | awk '!seen[$0]++' || true
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       # Real gh CLI + REST smoke against a throwaway server, run here on the

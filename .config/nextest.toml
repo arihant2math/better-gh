@@ -1,0 +1,16 @@
+# cargo-nextest config (#85). CI runs `cargo nextest run --profile ci`.
+# Each test runs in its own process; bgh_core::testing serializes template
+# migration and database creation with a Postgres advisory lock, so that
+# works across processes as it does across test binaries.
+
+[profile.ci]
+# Report every failure, never hide one behind a retry.
+fail-fast = false
+retries = 0
+# Flag slow tests in the log; don't kill them.
+slow-timeout = { period = "60s" }
+# Print failed tests' output again in the final summary, which the
+# "Summarize test failures" step greps.
+failure-output = "immediate-final"
+status-level = "slow"
+final-status-level = "slow"
