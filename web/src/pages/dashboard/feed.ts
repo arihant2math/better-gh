@@ -167,6 +167,7 @@ export class Feed {
             this.events = [...this.events, ...res.events.filter((e) => !seen.has(e.id))];
             this.nextBefore = res.next_before;
             this.done = res.next_before == null;
+            this.error = null;
           }),
         (e: unknown) => {
           runInAction(() => (this.error = e instanceof Error ? e.message : 'Failed to load activity'));
@@ -181,6 +182,15 @@ export class Feed {
     this.inflight = p;
     return p;
   }
+}
+
+/**
+ * Whether the feed's trailing sentinel should fetch the next page by itself.
+ * Not after a failure: the user retries (otherwise a failing page refetches
+ * every time `loading` settles, a hot loop).
+ */
+export function shouldAutoLoad(f: Pick<Feed, 'done' | 'loading' | 'error' | 'events'>): boolean {
+  return !f.done && !f.loading && !f.error && f.events.length > 0;
 }
 
 const feeds = new Map<string, Feed>();

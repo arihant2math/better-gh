@@ -1,5 +1,5 @@
 //! bgh-pulls: pull requests, reviews, review comments, merging, commit
-//! statuses, check runs/suites, CODEOWNERS and auto-merge.
+//! statuses, check runs/suites, CODEOWNERS, auto-merge and the merge queue.
 //!
 //! Pull requests share the `issues` table (and numbering) with issues; the
 //! PR-only data lives in `pull_requests`. The head of every PR is mirrored
@@ -20,6 +20,7 @@ pub mod import;
 pub mod jobs;
 pub mod json;
 pub mod merge;
+pub mod merge_queue;
 pub mod mergeability;
 pub mod model;
 pub mod protection;
@@ -30,6 +31,7 @@ pub mod reviews;
 pub mod statuses;
 pub mod suggestions;
 pub mod synchronize;
+pub mod templates;
 pub mod timeline;
 pub mod viewed;
 pub mod web;
@@ -166,6 +168,14 @@ pub fn web_router() -> Router<AppState> {
             put(automerge::put).delete(automerge::delete),
         )
         .route(&p("/requirements"), get(web::requirements))
+        .route(
+            &p("/queue"),
+            put(merge_queue::web::put).delete(merge_queue::web::delete),
+        )
+        .route(
+            "/_bgh/repos/{owner}/{repo}/queue/{*branch}",
+            get(merge_queue::web::get_queue),
+        )
         .route(&p("/sync"), get(web::pull_sync))
         .route(
             &p("/reviews/pending/comments"),
@@ -179,6 +189,10 @@ pub fn web_router() -> Router<AppState> {
             get(viewed::list).put(viewed::put).delete(viewed::delete),
         )
         .route(&p("/suggestions/apply"), post(suggestions::apply_handler))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/pull-templates",
+            get(templates::get),
+        )
         .route(
             "/_bgh/repos/{owner}/{repo}/commits/{sha}/annotations",
             get(diffview::commit_annotations),
@@ -201,4 +215,10 @@ pub fn register(reg: &mut Registry) {
     reg.job(jobs::checks_changed);
     reg.on_event("pulls.push", jobs::on_event);
     reg.on_event("pulls.checks", jobs::on_checks_event);
+    reg.on_event("pulls.merge_queue", merge_queue::on_event);
+    reg.job(merge_queue::service::process);
+    reg.service(
+        "pulls.merge_queue_sweep",
+        merge_queue::service::sweep_service,
+    );
 }

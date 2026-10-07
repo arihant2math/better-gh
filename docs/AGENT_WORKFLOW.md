@@ -34,8 +34,9 @@ observable agents, state in files rather than in memory.
   viewport matrix themselves, rather than rebuilding everything. CI is
   path-filtered on PRs (`scripts/ci-changes.sh`): `web/`-only diffs skip the
   Rust jobs, backend-only diffs (`crates/`, `migrations/`, `scripts/`,
-  `Cargo.*`) skip the web job, Docker runs for either plus
-  `Dockerfile`/`.dockerignore`, and docs-only diffs skip all three.
+  `Cargo.*`) skip the web job, the Docker image job runs only for
+  `Dockerfile`, `.dockerignore` or `Cargo.lock` (on PRs it is a ~28 min release
+  build), and docs-only diffs skip all of them.
   `testdata/` (markdown golden corpus) and `web/src/ui/markdown/emoji.json`
   feed both sides and run both. Workflow changes, pushes to `main` and
   manual runs build everything. Skipped jobs count as passing, so the

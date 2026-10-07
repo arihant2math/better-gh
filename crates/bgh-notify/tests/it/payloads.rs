@@ -836,3 +836,90 @@ async fn push_payloads_from_real_git() {
         .unwrap();
     assert!(none.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Merge group
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn merge_group_payloads() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let repo = app.create_repo(&alice, "demo").await;
+    let repo_id = repo["id"].as_i64().unwrap();
+
+    let tmp = TempDir(std::env::temp_dir().join(format!("bgh-notify-{}", uuid::Uuid::new_v4())));
+    std::fs::create_dir_all(&tmp.0).unwrap();
+    let work = tmp.0.as_path();
+    git(work, &["init", "-q", "-b", "main"]).await;
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git(work, &["add", "."]).await;
+    git(work, &["commit", "-q", "-m", "Merge pull request #1"]).await;
+    let remote = app.git_remote(&alice, "alice", "demo");
+    let mut rx = app.state.events.subscribe();
+    git(work, &["push", "-q", &remote, "main"]).await;
+    app.drain_jobs().await;
+    let head = next_push(&mut rx).updates[0].new.clone();
+    let base = "b".repeat(40);
+    let head_ref = format!("refs/heads/gh-readonly-queue/main/pr-1-{head}");
+
+    let out = build(
+        &app,
+        Event::MergeGroupChecksRequested {
+            repo_id,
+            group_id: 1,
+            actor_id: Some(alice.id),
+            head_ref: head_ref.clone(),
+            head_sha: head.clone(),
+            base_ref: "refs/heads/main".into(),
+            base_sha: base.clone(),
+        },
+    )
+    .await;
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].event, "merge_group");
+    assert_eq!(out[0].action.as_deref(), Some("checks_requested"));
+    assert_eq!(out[0].repo_id, Some(repo_id));
+    let p = &out[0].payload;
+    assert_eq!(p["action"], "checks_requested");
+    assert!(p.get("reason").is_none());
+    let g = &p["merge_group"];
+    assert_eq!(g["head_sha"], head);
+    assert_eq!(g["head_ref"], head_ref);
+    assert_eq!(g["base_sha"], base);
+    assert_eq!(g["base_ref"], "refs/heads/main");
+    let c = &g["head_commit"];
+    assert_eq!(c["id"], head);
+    assert_eq!(c["tree_id"].as_str().unwrap().len(), 40);
+    assert_eq!(c["message"], "Merge pull request #1");
+    assert!(c["timestamp"].is_string());
+    let alice_sig = json!({"name": "Alice", "email": "alice@example.com"});
+    assert_eq!(c["author"], alice_sig);
+    assert_eq!(c["committer"], alice_sig);
+    assert_eq!(p["repository"]["full_name"], "alice/demo");
+    assert_eq!(p["sender"]["login"], "alice");
+
+    // `destroyed` carries the reason; no actor → ghost sender.
+    let out = build(
+        &app,
+        Event::MergeGroupDestroyed {
+            repo_id,
+            group_id: 1,
+            actor_id: None,
+            head_ref: head_ref.clone(),
+            head_sha: head.clone(),
+            base_ref: "refs/heads/main".into(),
+            base_sha: base.clone(),
+            reason: "invalidated".into(),
+        },
+    )
+    .await;
+    assert_eq!(out[0].event, "merge_group");
+    assert_eq!(out[0].action.as_deref(), Some("destroyed"));
+    let p = &out[0].payload;
+    assert_eq!(p["action"], "destroyed");
+    assert_eq!(p["reason"], "invalidated");
+    assert_eq!(p["merge_group"]["head_ref"], head_ref);
+    assert_eq!(p["merge_group"]["head_commit"]["id"], head);
+    assert_eq!(p["sender"]["login"], "ghost");
+}

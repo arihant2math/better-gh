@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useRef, type Key, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type Key, type ReactNode, type Ref } from 'react';
 import { cx } from './Button';
 import styles from './VirtualList.module.css';
 
@@ -45,12 +45,20 @@ export function VirtualList<T>({
   ...aria
 }: VirtualListProps<T>) {
   const parentRef = useRef<HTMLDivElement | null>(null);
+  // The virtualizer rebuilds its O(n) measurement list whenever the identity
+  // of `getItemKey` changes, so tie it to `items` (callers memoize them)
+  // instead of every render: cursor moves then don't touch all n rows.
+  // `getKey` is usually an inline lambda; the one current with `items` wins.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  const getItemKey = useMemo(() => (i: number) => getKey(items[i]!, i), [items]);
+  const estimate = useCallback(() => estimateSize, [estimateSize]);
+  const getScrollElement = useCallback(() => parentRef.current, []);
   const virtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => estimateSize,
+    getScrollElement,
+    estimateSize: estimate,
     overscan,
-    getItemKey: (i) => getKey(items[i]!, i),
+    getItemKey,
   });
 
   const count = useRef(items.length);

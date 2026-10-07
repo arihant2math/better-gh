@@ -313,6 +313,31 @@ pub enum Event {
         repo_id: i64,
         check_suite_id: i64,
     },
+    /// The merge queue built a merge group ref (`head_ref`, e.g.
+    /// `refs/heads/gh-readonly-queue/main/pr-1-<sha>`) on `base_ref` and
+    /// waits for its checks (webhook `merge_group` `checks_requested`).
+    /// One per queue entry ref; `actor_id` is the entry's enqueuer.
+    MergeGroupChecksRequested {
+        repo_id: i64,
+        group_id: i64,
+        actor_id: Option<i64>,
+        head_ref: String,
+        head_sha: String,
+        base_ref: String,
+        base_sha: String,
+    },
+    /// A merge group ref was removed (webhook `merge_group` `destroyed`);
+    /// `reason` is `merged`, `invalidated` or `dequeued`.
+    MergeGroupDestroyed {
+        repo_id: i64,
+        group_id: i64,
+        actor_id: Option<i64>,
+        head_ref: String,
+        head_sha: String,
+        base_ref: String,
+        base_sha: String,
+        reason: String,
+    },
     ReleasePublished {
         repo_id: i64,
         release_id: i64,
@@ -989,6 +1014,8 @@ impl Event {
             Self::CheckSuiteRequested { .. } => "check_suite_requested",
             Self::CheckSuiteRerequested { .. } => "check_suite_rerequested",
             Self::CheckSuiteCompleted { .. } => "check_suite_completed",
+            Self::MergeGroupChecksRequested { .. } => "merge_group_checks_requested",
+            Self::MergeGroupDestroyed { .. } => "merge_group_destroyed",
             Self::ReleasePublished { .. } => "release_published",
             Self::IssueLabeled { .. } => "issue_labeled",
             Self::IssueUnlabeled { .. } => "issue_unlabeled",
@@ -1159,6 +1186,8 @@ impl Event {
             | Self::CheckSuiteRequested { repo_id, .. }
             | Self::CheckSuiteRerequested { repo_id, .. }
             | Self::CheckSuiteCompleted { repo_id, .. }
+            | Self::MergeGroupChecksRequested { repo_id, .. }
+            | Self::MergeGroupDestroyed { repo_id, .. }
             | Self::IssueDeleted { repo_id, .. }
             | Self::RepositoryArchived { repo_id, .. }
             | Self::RepositoryUnarchived { repo_id, .. }
@@ -1238,7 +1267,9 @@ impl Event {
             | Self::DeploymentCreated { actor_id, .. }
             | Self::DeploymentStatusCreated { actor_id, .. }
             | Self::DeploymentReview { actor_id, .. }
-            | Self::SecretScanningAlert { actor_id, .. } => *actor_id,
+            | Self::SecretScanningAlert { actor_id, .. }
+            | Self::MergeGroupChecksRequested { actor_id, .. }
+            | Self::MergeGroupDestroyed { actor_id, .. } => *actor_id,
             Self::SecretScanningAlertLocationCreated { .. } => None,
             Self::CheckSuiteCompleted { .. }
             | Self::AccessChanged { .. }

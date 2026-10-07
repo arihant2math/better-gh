@@ -3,6 +3,7 @@
 //! shared helpers live in the helper modules (see docs/BACKEND_PATTERNS.md).
 
 mod api_compat;
+mod backup;
 mod events;
 mod infra;
 mod observability;

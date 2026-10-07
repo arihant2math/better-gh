@@ -261,9 +261,8 @@ Rules:
 
 * **When to record.** The `tx.sync*` helpers load the row *at the call*
   (inside your transaction), so call them after the writes that shape it.
-  The action itself is written at `tx.commit()` (one statement under the
-  ordering advisory lock, so sync ids commit in id order and the lock is
-  never held while you wait for row locks).
+  The action itself is written at `tx.commit()` (one statement, no lock;
+  readers stop at the commit-order watermark, SYNC_PROTOCOL.md §2).
 * **Access changes:** after removing a collaborator / team grant /
   membership, changing visibility or transferring a repository, also
   `tx.emit(Event::AccessChanged { repo_id, org_id, user_id })` (any ids you

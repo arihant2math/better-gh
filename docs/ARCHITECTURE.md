@@ -125,8 +125,11 @@ names in `docs/SELF_HOSTING.md` "Monitoring". CI settings `BGH_ACTIONS_*` (see
 Runtime site settings (edited by site admins, `site_settings` table) are
 read through `bgh_core::settings::load(&state)` (typed `SiteSettings`,
 cached 5 s per process): sign-up policy (`open|invite|closed` + allowed
-email domains), default repository visibility, max repository size and
-per-owner `storage_quotas` (git + LFS storage; checked on push, in the
+email domains; `settings::check_signup`, enforced on both password sign-up
+routes via `session::admit_signup` and on OIDC/SAML just-in-time accounts
+via `sso::jit_signup_allowed`; site admins, the CLI, LDAP and SCIM (which
+has its own org-tenant rule) are exempt), default repository visibility,
+max repository size and per-owner `storage_quotas` (git + LFS storage; checked on push, in the
 pre-receive hook against the quarantined objects, and on LFS uploads with
 507), organization creation policy, announcement banner, API rate limits,
 auth providers (password login, OIDC, LDAP, SAML, SCIM), SMTP, maintenance mode, and push
@@ -145,6 +148,19 @@ instead: the `smtp` setting when enabled, else `BGH_SMTP_URL`, else the
 dev transport (`bgh_core::mail`). `BGH_SIGNUP_ENABLED=false` still
 disables sign-up regardless of the setting.
 
+Email trust: only `user_emails.verified` addresses may link an SSO identity,
+receive password resets, attribute commits/signatures/CODEOWNERS, route
+notifications or match org invitations. Self-service sign-up stores its
+primary email unverified and mails a `/_bgh/emails/verify` link; only
+trusted creators (site admins, the CLI, LDAP, SCIM, SAML, an OIDC
+`email_verified` claim) pass `email_verified: true` to `db::NewUser`, after
+`emails::release_unverified` drops other accounts' unverified claims on that
+address (and unpublishes it from their profiles). An unverified primary
+can't be made public. When the sign-up policy gates on the address (`invite`
+or an `allowed_email_domains` list), `settings::check_email_gate` refuses
+sign-up (`session::create_signup`, right after `admit_signup`) and password
+sign-in (403) until the account has a verified email.
+
 The `bgh` binary: `bgh [serve]` (migrate + HTTP + job workers + event
 listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 `bgh admin create-user --login --email --password [--site-admin]`,
@@ -155,7 +171,11 @@ listeners, graceful shutdown on SIGINT/SIGTERM), `bgh migrate`,
 GROUP/PROJECT --owner <login> …` / `bgh import resume --id N`
 (metadata import, token in `BGH_IMPORT_TOKEN`; runs job workers and prints
 the log), `bgh healthcheck` (probes `/healthz`
-on `BGH_LISTEN`; container health checks). Deployment (Docker, systemd,
+on `BGH_LISTEN`; container health checks), `bgh backup --to DIR` /
+`bgh backup verify --from DIR` / `bgh restore --from DIR [--force]`
+(`bgh_server::backup`: `pg_dump` + a hard-link-incremental copy of the data
+directory with a checksummed manifest; restore checks the manifest's
+migration level against the binary, migrates and fscks a sample). Deployment (Docker, systemd,
 reverse proxies, backups): `docs/SELF_HOSTING.md`.
 
 ## HTTP surface
@@ -378,9 +398,11 @@ optimistic-mutation reconciliation) is specified normatively in
   `bgh_core::sync::record(&mut tx, scope, model, id, action, data)` (`Tx`
   collects them and writes them all with `sync::record_all` right before
   committing). `tx` is the request's `X-Client-Tx` header (taken from the
-  request context), so the delta echoes it. Writing takes a
-  transaction-scoped advisory lock so sync ids become visible in id order;
-  `Tx` takes it only at commit, after all row locks. After commit,
+  request context), so the delta echoes it. Writers take no lock, so ids
+  can commit out of order; readers stop at the commit-order watermark
+  (`bgh_core::seqlog`, SYNC_PROTOCOL.md §2: every id `<=` it has a
+  committed row; burned ids get `!gap` fillers). The event outbox uses
+  the same scheme. After commit,
   `bgh_core::sync::notify(&state, ...)` publishes on the Redis channel
   `sync:{scope}`. The request context is a tokio task-local installed by
   `bgh_sync::http_middleware` (mounted for every route), which also adds
@@ -391,9 +413,13 @@ optimistic-mutation reconciliation) is specified normatively in
   order and fills gaps (out-of-order or lost publishes, rollback-burned ids)
   from `sync_actions`; a socket subscribing at hub position `L` replays
   `(since, L]` from the log and receives `> L` live. Access changes
-  (`Event::AccessChanged`, repo updates/deletes, `repo`/`org`/
-  `membership`/`team`/`viewerRepo` deltas, sign-outs via
-  `sync:!access`) trigger permission rechecks and `revoke`s.
+  (`Event::AccessChanged`, repo updates/deletes and sign-outs via
+  `sync:!access`; `org`/`team`/`membership`/`viewerRepo` deltas; `repo`
+  deltas only when the repo's visibility/owner differs from the hub's
+  cached key, so counter refreshes are free) trigger permission rechecks
+  and `revoke`s. Repo-level triggers check only that scope; rechecks are
+  coalesced by one worker per hub and batched per chunk of users
+  (`scopes::check_many`) with bounded pool use.
 * Retention: the `sync.compact` job (hourly, self-rescheduling) prunes
   actions older than `BGH_SYNC_RETENTION_HOURS` (168) and advances
   `sync_meta.min_retained_id`; with `BGH_SYNC_KEEP_LATEST=1` it keeps the
@@ -553,7 +579,17 @@ Site-level account changes also emit `UserAccountChanged` /
   (`bgh_pulls::protection`): the classic rule protecting the base branch
   plus every active ruleset selecting it, each requirement reported with
   its source and bypassed per source; required checks only count
-  statuses/check runs posted to the base repository. Push protection
+  statuses/check runs posted to the base repository. A `merge_queue` rule
+  makes that evaluator refuse every direct merge; only the merge queue
+  (`bgh_pulls::merge_queue`, `MergeRequest::via_merge_queue`) merges: its
+  `pulls.merge_queue` job (one per queue under an advisory lock, kicked by
+  queue changes, checks on group commits, base pushes and a deadline
+  sweep service) stacks queued PRs on the base tip as
+  `gh-readonly-queue/{base}/pr-{n}-{sha}` refs, emits
+  `MergeGroupChecksRequested`, and once the base's required checks pass
+  on them fast-forwards the base (CAS) and marks the PRs merged; failures
+  and timeouts eject the entry and rebuild (`MergeGroupDestroyed`). See
+  `docs/packages/pulls.md`. Push protection
   (`bgh_security::push`, P65) is one more object check combined into
   `PushPolicy::object_check` by both transports: it scans only the blobs
   the push adds (quarantined objects, <= `secret_scanning.max_blob_kb`,

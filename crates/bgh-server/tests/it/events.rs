@@ -435,3 +435,45 @@ async fn request_finishing_during_shutdown_still_gets_its_webhook() {
     assert_eq!(webhooks.lag, 0);
     assert!(webhooks.lease_owner.is_none(), "lease released on shutdown");
 }
+
+/// #241: outbox ids may commit out of order. A consumer shutting down while
+/// a committed event waits above a lower, still in-flight id keeps draining
+/// until the lower one commits, and handles both in id order.
+#[tokio::test]
+async fn shutdown_drains_past_an_in_flight_lower_id() {
+    let app = TestApp::spawn_with(bgh_server::factory()).await;
+    app.stop_listeners().await;
+    let seen: Seen = Seen::default();
+    let reg = recording_registry("test.p9.order", &seen);
+    let consumer = Consumer::start(&app.state, &reg).await;
+
+    let event = |repo_id| Event::RepositoryUpdated {
+        repo_id,
+        actor_id: 1,
+    };
+    let mut low = app.state.db.begin().await.unwrap();
+    outbox::append(&mut low, &[event(1)]).await.unwrap();
+    let mut high = app.state.db.begin().await.unwrap();
+    outbox::append(&mut high, &[event(2)]).await.unwrap();
+    high.commit().await.unwrap();
+
+    let stopping = tokio::spawn(consumer.stop());
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !stopping.is_finished(),
+        "stopped with a committed event unhandled"
+    );
+    low.commit().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), stopping)
+        .await
+        .expect("drain finished")
+        .unwrap();
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM event_outbox WHERE kind = 'repository_updated' ORDER BY id",
+    )
+    .fetch_all(&app.state.db)
+    .await
+    .unwrap();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(*seen.lock().unwrap(), ids);
+}

@@ -170,14 +170,27 @@ pub async fn quota(
     ip: &str,
     consume: bool,
 ) -> redis::RedisResult<Quota> {
+    charge(state, limits, resource, ctx, ip, i64::from(consume)).await
+}
+
+/// The caller's quota for `resource` after counting `points` more requests
+/// (GraphQL charges a query's cost; 0 only reads the quota).
+pub async fn charge(
+    state: &AppState,
+    limits: &RateLimitSettings,
+    resource: Resource,
+    ctx: Option<&AuthContext>,
+    ip: &str,
+    points: i64,
+) -> redis::RedisResult<Quota> {
     let limit = resource.limit(limits, ctx.is_some());
     let (start, reset) = window(resource);
     let key = bucket_key(state, resource, &caller_key(ctx, ip), start);
     let mut redis = state.redis.clone();
-    let used: i64 = if consume {
+    let used: i64 = if points > 0 {
         let (n,): (i64,) = redis::pipe()
             .atomic()
-            .incr(&key, 1)
+            .incr(&key, points)
             .expire(&key, resource.window_secs() + 60)
             .ignore()
             .query_async(&mut redis)
@@ -301,7 +314,10 @@ async fn limit(state: AppState, mut req: Request, next: Next) -> Response {
     } else {
         q
     };
-    q.apply(resp.headers_mut());
+    // A handler that charged more (GraphQL query cost) set fresher headers.
+    if !resp.headers().contains_key("x-ratelimit-remaining") {
+        q.apply(resp.headers_mut());
+    }
     resp
 }
 

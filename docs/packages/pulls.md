@@ -137,6 +137,60 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   base; `@user`, `@org/team`, emails; gitignore-like patterns, last match
   wins; owners need write access (teams need a `team_repos` grant).
   Auto-requested on open (non-draft), ready-for-review and pushes.
+* Merge queue (P39, `merge_queue/`, migration `5100_merge_queue.sql`): an
+  active ruleset with a `merge_queue` rule adds the blocker "Changes must be
+  made through the merge queue" (`protection::BlockerKind::MergeQueue`), so
+  `PUT /merge`, `mergePullRequest` and auto-merge refuse direct merges
+  (405; `mergeable_state` `blocked`) unless the actor bypasses the ruleset.
+  Only the queue merges, passing `MergeRequest::via_merge_queue` (drops just
+  that blocker). Enqueue (`merge_queue::enqueue`, write access, `jump` =
+  admin) needs an open non-draft PR without conflicts whose requirements
+  other than status checks are met; idempotent. Entries are ordered jump
+  first, then by enqueue time; they leave the queue on dequeue, close
+  (`close_in_tx`, `PullRequestClosed` listener), a head push (synchronize,
+  reason `head changed`) or a merge outside the queue. Timeline:
+  `added_to_merge_queue` / `removed_from_merge_queue` `{reason}`.
+  `/_bgh`: `PUT|DELETE /repos/{o}/{r}/pulls/{n}/queue`,
+  `GET /repos/{o}/{r}/queue/{*branch}` (PUT: 201 new entry, 200 already
+  queued), and `merge_queue` in `/pulls/{n}/requirements` (whose
+  `blockers`/`requirements` omit the queue rule itself).
+* Merge queue processing (P39.2, `merge_queue/service.rs`, migration
+  `5101`): job `pulls.merge_queue` per `(repo, base)` (advisory lock,
+  coalesced by `service::kick`; kicked by enqueue/dequeue, check/status
+  changes on a group commit, pushes to the base, and the
+  `pulls.merge_queue_sweep` service for deadlines). It stacks up to
+  `max_entries_to_build` queued entries on the base tip per `merge_method`
+  into `refs/heads/gh-readonly-queue/{base}/pr-{n}-{head_sha}` (commit
+  kept in `merge_queue_entries.group_sha`; conflicts are ejected as
+  `unmergeable`), records one `merge_groups` row and emits
+  `MergeGroupChecksRequested` per ref. Required status checks of the base
+  decide each commit (none configured: every check present must pass; no
+  checks = success). ALLGREEN merges the all-green prefix, HEADGREEN up
+  to the last green entry (`max_entries_to_merge`): the base is
+  fast-forwarded to that commit, the PRs are marked merged
+  (`merge_commit_sha` = their group commit, `PullRequestMerged`,
+  `repos.post_receive`) and `MergeGroupDestroyed{merged}` is emitted; the
+  remaining refs stay live on the new base. Otherwise the first failing
+  entry (`checks failed`) or, after `check_response_timeout_minutes`, the
+  first one without green checks (`timed out`) is ejected and the group
+  rebuilt (`invalidated`); a base move (`invalidated`) or an entry leaving
+  (`dequeued`) rebuilds it too. Lock order: every transaction writing
+  `merge_queue_entries` locks their PRs first (`FOR UPDATE OF i, p`,
+  ascending id; `merge_queue::lock_pulls` / `model::lock`), then the
+  entries.
+* `merge_group` (P39.3): webhook `merge_group` `checks_requested` /
+  `destroyed` (+ `reason`) with `merge_group {head_sha, head_ref,
+  base_sha, base_ref, head_commit}` (bgh-notify). Actions runs `on:
+  merge_group` workflows (types: `checks_requested`) read from the group
+  commit, with `GITHUB_REF` = the queue ref and `GITHUB_SHA` = its commit.
+  The job-token loop guard applies to the event's actor, which is the
+  entry's enqueuer (also on rebuilds): a group whose entry
+  github-actions[bot] enqueued (e.g. auto-merge enabled with a
+  `GITHUB_TOKEN`) starts no workflows, so a `merge_group` job can't
+  re-enqueue its own PR into an endless run loop; such a group is decided
+  by other checks/statuses or times out. Their check runs land on the
+  group commit, so `pulls.checks_changed` kicks the queue and a job named
+  like a required check gates the group.
 * Diffs: parsed file diffs cached in Redis by `(repo, base, head)` for 7
   days (`pulls:diff:v1:*`); `.diff`/`.patch` streamed from git.
 
@@ -212,4 +266,6 @@ convert_to_draft endpoints (the mock backend implements them too).
 * `body_html`/`body_text` media types for reviews/comments not rendered.
 * Comments created against an older `commit_id` are positioned on that
   commit's diff and immediately outdated if the line changed since.
-* Merge queue not implemented.
+* Merge queue: `min_entries_to_merge` only delays building (up to
+  `min_entries_to_merge_wait_minutes`); no ETA; `merge_group` webhooks and
+  the Actions trigger land in P39.3.

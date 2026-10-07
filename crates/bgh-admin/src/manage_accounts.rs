@@ -392,6 +392,7 @@ pub async fn create_user(
                     password,
                     name: body.name.as_deref(),
                     site_admin: Some(body.site_admin),
+                    email_verified: true,
                 },
                 Some(&auth.user),
             )

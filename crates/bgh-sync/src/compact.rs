@@ -59,6 +59,9 @@ pub async fn compact(
             min_retained_id: crate::delta::min_retained_id(&state.db).await?,
         });
     };
+    // Never delete above the commit-order watermark: a gap there may still
+    // be in flight, and `seqlog` must find the rows it scans.
+    let cutoff = cutoff.min(crate::delta::head(&state.db).await? + 1);
     let mut deleted = 0u64;
     if keep_latest {
         loop {

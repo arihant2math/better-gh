@@ -300,6 +300,8 @@ pub struct Requirements {
     /// Latest deployment of the head commit per environment ("This branch
     /// was successfully deployed").
     pub deployments: Vec<bgh_core::deployments::EnvironmentDeployment>,
+    /// The base branch's merge queue and this PR's entry in it.
+    pub merge_queue: crate::merge_queue::web::Requirement,
 }
 
 pub async fn requirements(
@@ -310,6 +312,9 @@ pub async fn requirements(
     let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
     let rules = protection::rules_for(&state.db, access.repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(&state, &access.repo, &pull, &rules).await?;
+    // The `merge_queue` rule is reported through `merge_queue` only (the
+    // merge box offers "Add to merge queue" while nothing else blocks).
+    let listed = ev.clone().without_merge_queue();
     // Whether the viewer may merge without meeting the requirements.
     let can_bypass = match auth.as_ref() {
         Some(a) if access.permission >= Permission::Write => {
@@ -339,8 +344,8 @@ pub async fn requirements(
         rebaseable: pull.pr.rebaseable,
         mergeable_state: pull.pr.mergeable_state.clone(),
         protected: rules.protected,
-        blockers: ev.messages(),
-        requirements: ev.blockers.clone(),
+        blockers: listed.messages(),
+        requirements: listed.blockers,
         approvals: ev.approvals,
         required_approvals: rules
             .reviews
@@ -364,6 +369,7 @@ pub async fn requirements(
             &pull.pr.head_sha,
         )
         .await?,
+        merge_queue: crate::merge_queue::web::requirement(&state, &rules, &pull).await?,
     }))
 }
 
@@ -398,8 +404,8 @@ struct ReactionSyncRow {
 /// pending ones, reviews incl. the viewer's pending one, reactions on the
 /// comments, check suites/runs and commit statuses of the head, the
 /// viewer's viewed files, referenced users), read in one `REPEATABLE READ`
-/// snapshot whose `lastSyncId` is taken first, so applying deltas
-/// `> lastSyncId` afterwards is safe.
+/// snapshot; `lastSyncId` is the sync watermark taken just before it, so
+/// applying deltas `> lastSyncId` afterwards is safe.
 pub async fn pull_sync(
     State(state): State<AppState>,
     auth: MaybeUser,
@@ -408,12 +414,12 @@ pub async fn pull_sync(
     let (access, pull) = load_pull(&state, auth.as_ref(), &owner, &repo, number).await?;
     let viewer = auth.user_id();
     let repo_id = access.repo.id;
+    // The commit-order watermark, taken before the snapshot: every action
+    // <= it is committed, so the snapshot reflects it.
+    let last_sync_id = bgh_core::seqlog::advance(&state.db, bgh_core::seqlog::Log::Sync).await?;
     let mut tx = state.db.begin().await?;
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
         .execute(&mut *tx)
-        .await?;
-    let last_sync_id: i64 = sqlx::query_scalar("SELECT coalesce(max(id), 0) FROM sync_actions")
-        .fetch_one(&mut *tx)
         .await?;
     // Re-read the head inside the snapshot (a push may have landed since).
     let head_sha: String =

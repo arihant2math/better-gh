@@ -14,6 +14,7 @@
 //! | `renamed` | `{"rename": {"from", "to"}}` |
 //! | `convert_to_draft` / `ready_for_review` | `{}` |
 //! | `auto_merge_enabled` / `auto_merge_disabled` | `{"merge_method"}` / `{"reason"}` |
+//! | `added_to_merge_queue` / `removed_from_merge_queue` | `{}` / `{"reason"}` (`dequeued`, `closed`, `merged`, `head changed`; ejected by the queue: `checks failed`, `timed out`, `merge conflict`) |
 
 use bgh_core::prelude::*;
 use serde_json::Value;

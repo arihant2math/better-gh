@@ -75,6 +75,10 @@ pub struct MergeRequest {
     pub commit_message: Option<String>,
     /// Expected head SHA (409 if it differs).
     pub sha: Option<String>,
+    /// The merge queue merges this PR: the `merge_queue` rule's blocker
+    /// ("Changes must be made through the merge queue") does not apply.
+    /// Every other merge (REST, GraphQL, auto-merge) passes `false`.
+    pub via_merge_queue: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,8 +88,26 @@ pub struct MergeResult {
     pub message: String,
 }
 
+/// `owner/branch` of a PR's head (merge commit titles).
+pub(crate) async fn head_label(state: &AppState, pull: &Pull) -> ApiResult<String> {
+    let head_owner = match pull.pr.head_repo_id {
+        Some(id) => match db::Repository::find(&state.db, id).await? {
+            Some(r) => db::User::find(&state.db, r.owner_id)
+                .await?
+                .map(|u| u.login),
+            None => None,
+        },
+        None => None,
+    };
+    Ok(format!(
+        "{}/{}",
+        head_owner.as_deref().unwrap_or("unknown"),
+        pull.pr.head_ref
+    ))
+}
+
 /// Commit title and message for a merge per repository settings.
-async fn messages(
+pub(crate) async fn messages(
     state: &AppState,
     repo: &db::Repository,
     pull: &Pull,
@@ -199,7 +221,10 @@ pub async fn perform_merge(
     if rules.restricts(&actor) {
         return Err(not_allowed("You're not authorized to push to this branch."));
     }
-    let ev = protection::evaluate(state, repo, pull, &rules).await?;
+    let mut ev = protection::evaluate(state, repo, pull, &rules).await?;
+    if req.via_merge_queue {
+        ev = ev.without_merge_queue();
+    }
     if let Some(suite) = protection::merge_suite(
         repo.id,
         &rules,
@@ -216,20 +241,7 @@ pub async fn perform_merge(
         return Err(not_allowed(protection::violation_message(&blocking)));
     }
 
-    let head_owner = match pull.pr.head_repo_id {
-        Some(id) => match db::Repository::find(&state.db, id).await? {
-            Some(r) => db::User::find(&state.db, r.owner_id)
-                .await?
-                .map(|u| u.login),
-            None => None,
-        },
-        None => None,
-    };
-    let head_label = format!(
-        "{}/{}",
-        head_owner.as_deref().unwrap_or("unknown"),
-        pull.pr.head_ref
-    );
+    let head_label = head_label(state, pull).await?;
     let (title, message) = messages(state, repo, pull, &head_label, req).await?;
     let full_message = if message.is_empty() {
         format!("{title}\n")
@@ -574,6 +586,7 @@ pub async fn merge(
         commit_title: body.commit_title,
         commit_message: body.commit_message,
         sha: body.sha,
+        via_merge_queue: false,
     };
     let out = perform_merge(
         &state,

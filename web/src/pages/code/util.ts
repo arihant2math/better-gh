@@ -4,6 +4,7 @@ import { peek } from '../../api/cache';
 import { browseKeys, isSha } from '../../api/endpoints';
 import type { BrowseRefs } from '../../api/types';
 import { navigate } from '../../router';
+import { parseCodeUrl } from '../../components/code/urls';
 
 export interface CodeTarget {
   owner: string;
@@ -17,35 +18,49 @@ export interface CodeTarget {
 }
 
 /**
- * Split `{ref}/{rest}` against the cached ref list (refs may contain
- * slashes: longest branch, then tag, wins) and pin the commit SHA so every
- * tree/blob fetch is content addressed. Falls back to the URL split when
- * refs aren't cached yet (the server re-splits the joined spec anyway).
+ * Split `{ref}/{rest}` against the cached ref list and pin the commit SHA
+ * so every tree/blob fetch is content addressed. Falls back to the URL
+ * split when refs aren't cached yet (the server re-splits the joined spec
+ * anyway; see `isSettled`).
  */
 export function resolveTarget(owner: string, repo: string, refParam: string, rest: string): CodeTarget {
   const path = rest.replace(/^\/+|\/+$/g, '');
   if (isSha(refParam)) return { owner, repo, ref: refParam, path, commit: refParam.toLowerCase(), kind: 'commit' };
   const refs = peek<BrowseRefs>(browseKeys.refs(owner, repo));
-  if (refs) {
-    const parts = [refParam, ...(path ? path.split('/') : [])];
-    for (const list of [refs.branches, refs.tags]) {
-      for (let n = parts.length; n >= 1; n--) {
-        const name = parts.slice(0, n).join('/');
-        const hit = list.find((r) => r.name === name);
-        if (hit) return { owner, repo, ref: name, path: parts.slice(n).join('/'), commit: hit.sha, kind: list === refs.branches ? 'branch' : 'tag' };
-      }
-    }
-  }
+  const hit = refs && splitRefPath(refs, refParam, path);
+  if (hit) return { owner, repo, ...hit };
   return { owner, repo, ref: refParam, path, commit: null, kind: 'unknown' };
+}
+
+/**
+ * Refs may contain slashes, so `{ref}/{path}` is ambiguous: like GitHub,
+ * the longest prefix naming a branch or tag wins (a branch on a tie).
+ * `null` when no prefix names a known ref.
+ */
+export function splitRefPath(refs: Pick<BrowseRefs, 'branches' | 'tags'>, refParam: string, path: string): Omit<CodeTarget, 'owner' | 'repo'> | null {
+  const parts = [refParam, ...(path ? path.split('/') : [])];
+  for (let n = parts.length; n >= 1; n--) {
+    const name = parts.slice(0, n).join('/');
+    const branch = refs.branches.find((r) => r.name === name);
+    const hit = branch ?? refs.tags.find((r) => r.name === name);
+    if (hit) return { ref: name, path: parts.slice(n).join('/'), commit: hit.sha, kind: branch ? 'branch' : 'tag' };
+  }
+  return null;
+}
+
+/**
+ * The ref/path split is final (ref list loaded, a SHA, or nothing to
+ * split). Fetches for a path other than `t.path` (file tree
+ * root, file finder) wait for it: an unsettled `feature/x/src` would ask
+ * for ref `feature`.
+ */
+export function isSettled(t: CodeTarget): boolean {
+  return t.kind !== 'unknown' || !t.path || !!peek<BrowseRefs>(browseKeys.refs(t.owner, t.repo));
 }
 
 /** `ref` to send to the browse API: the pinned commit when known. */
 export function fetchRef(t: CodeTarget): string {
   return t.commit ?? t.ref;
-}
-
-export function codeUrl(t: { owner: string; repo: string }, mode: 'tree' | 'blob' | 'blame' | 'commits' | 'edit' | 'new' | 'delete' | 'upload' | 'raw', ref: string, path = ''): string {
-  return `/${t.owner}/${t.repo}/${mode}/${ref}${path ? `/${path}` : ''}`;
 }
 
 export function parentPath(path: string): string {
@@ -114,7 +129,7 @@ export function routeLinks(e: MouseEvent<HTMLElement>): void {
   const a = (e.target as HTMLElement).closest('a');
   if (!a || a.target === '_blank' || !a.href) return;
   const url = new URL(a.href, window.location.href);
-  if (url.origin !== window.location.origin || url.pathname.includes('/raw/') || url.pathname.includes('/releases/download/')) return;
+  if (url.origin !== window.location.origin || parseCodeUrl(url.pathname)?.view === 'raw' || url.pathname.includes('/releases/download/')) return;
   e.preventDefault();
   if (url.pathname === window.location.pathname && url.hash) {
     document.getElementById(url.hash.slice(1))?.scrollIntoView();
@@ -123,12 +138,17 @@ export function routeLinks(e: MouseEvent<HTMLElement>): void {
   navigate(url.pathname + url.search + url.hash);
 }
 
-/** Nearest scrollable ancestor (the repo layout body). */
+/**
+ * Nearest ancestor that actually scrolls vertically (the repo layout body).
+ * `overflow-x: auto` alone makes `overflow-y` compute to `auto` too, so a
+ * horizontal-only wrapper like `.codeScroll` would match on style alone;
+ * require the box to be height-bounded (content taller than the box).
+ */
 export function scrollParent(el: HTMLElement | null): HTMLElement | null {
   let n = el?.parentElement ?? null;
   while (n) {
     const o = getComputedStyle(n).overflowY;
-    if (o === 'auto' || o === 'scroll') return n;
+    if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
     n = n.parentElement;
   }
   return document.scrollingElement as HTMLElement | null;

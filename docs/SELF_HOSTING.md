@@ -50,8 +50,9 @@ other settings from the [reference](#configuration-reference) under
 
 ### The image
 
-The `Dockerfile` is multi-stage: Node builds `web/`, cargo-chef caches the
-Rust dependency build, and the runtime stage is `debian:trixie-slim` with
+The `Dockerfile` is multi-stage: Node builds `web/`, cargo-chef (the
+prebuilt `lukemathwalker/cargo-chef` image for the pinned Rust version)
+caches the Rust dependency build, and the runtime stage is `debian:trixie-slim` with
 `git`, `git-lfs`, `ca-certificates` and `tini`:
 
 * runs as the non-root user `bgh` (uid/gid 10001); `/data` is a volume
@@ -64,7 +65,8 @@ Rust dependency build, and the runtime stage is `debian:trixie-slim` with
   `docker run IMAGE migrate` or `docker run IMAGE admin create-user ...`
   work too
 
-Build arguments: `RUST_VERSION` (1.97), `NODE_VERSION` (22),
+Build arguments: `RUST_VERSION` (1.97), `CARGO_CHEF_VERSION` (`0.1.78`;
+`latest` tracks the newest cargo-chef release), `NODE_VERSION` (22),
 `DEBIAN_RELEASE` (trixie), `CARGO_FEATURES` (`embed-web`; set to `""` to
 serve the client from `BGH_WEB_DIR` instead), `CARGO_BUILD_JOBS` (cap
 parallel rustc processes on small builders; the release profile uses LTO
@@ -353,6 +355,54 @@ TOTP two-factor secrets: restoring the database without it locks every
 account with an authenticator app out (site admins can disable 2FA per
 user). WebAuthn security keys and passkeys are bound to the host of
 `BGH_BASE_URL`; changing the domain invalidates them.
+
+### `bgh backup` and `bgh restore`
+
+```sh
+bgh backup --to /srv/bgh-backups          # one new snapshot per run (cron/systemd timer)
+bgh backup verify --from /srv/bgh-backups # newest snapshot; or pass a snapshot dir
+systemctl stop bgh
+bgh restore --from /srv/bgh-backups       # into an empty database + data dir
+systemctl start bgh
+```
+
+`bgh backup` runs with the server up and needs the PostgreSQL client tools
+(`pg_dump`/`pg_restore` at least as new as the server; the Docker image
+ships them; override the paths with `BGH_PG_DUMP` / `BGH_PG_RESTORE`). Each
+run writes `DIR/<UTC timestamp>/` with `db.dump` (one consistent
+`pg_dump --format=custom`, taken first), `data/` (the data directory:
+repositories, wikis, LFS objects, release assets, packages, attachments, the
+SSH host key, `actions/server.key` and the signing keys) and
+`manifest.json` (bgh version, migration level, every file with its sha256).
+`cache/`, `actions/caches/`, `actions/tmp/` and `files/tmp/` are skipped.
+Files whose size and modification time are unchanged since the previous
+snapshot are **hard links** to it, so every snapshot is complete on its own
+while only changed files take space; delete old snapshots with `rm -rf`
+(keep the backup directory on one filesystem). A snapshot is written as
+`NAME.partial` and renamed when complete. If the server key comes from
+`BGH_ACTIONS_SECRET_KEY` it is not in the snapshot: keep it with your
+configuration.
+
+A snapshot contains credentials: the database dump (password, token and
+session hashes, 2FA secrets, encrypted Actions secrets), `actions/server.key`
+(which decrypts them), the signing keys and the SSH host key. `bgh backup`
+creates the backup directory and each snapshot owner-only (0700, dump and
+manifest 0600); store and ship them off-host accordingly (encrypted at
+rest, restricted access). Inside each repository `HEAD`, `refs/` and
+`packed-refs` are copied before `objects/`, so a push during the backup
+cannot leave refs pointing at objects the snapshot lacks.
+
+`bgh backup verify` re-reads every file against the manifest checksums and
+checks that `pg_restore` can read the dump. `bgh restore` (server stopped)
+first verifies the whole snapshot the same way (also with `--force`, so a
+damaged backup never replaces anything), refuses snapshots taken at a newer migration than the binary knows,
+refuses a non-empty database or data directory unless `--force` (which
+drops the `public` schema and empties the data directory), restores the
+dump and files (rewriting forks' alternates when the data directory moved),
+applies newer migrations and runs `git fsck --connectivity-only` on a
+sample of repositories (`--fsck-sample N`, default 10).
+
+### Manual backups
 
 Take the database dump **first**, then copy the data directory. Git
 maintenance (the scheduled `repos.maintenance` service and the admin gc)

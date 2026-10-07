@@ -353,6 +353,8 @@ export interface NewPull {
   head: string;
   headRepoId?: ID;
   draft: boolean;
+  /** Cross-repository PRs only: let base maintainers push to the head branch. */
+  maintainerCanModify?: boolean;
 }
 
 /** Open a PR. The row appears instantly (number 0 until the server answers); await `done` for the number. */
@@ -393,7 +395,14 @@ export function createPull(repo: Repo, input: NewPull) {
   return commit(`Open pull request in ${repo.name}`, [ops.insert('issue', row)], {
     method: 'POST',
     path: `/api/v3/repos/${enc(repo.owner)}/${enc(repo.name)}/pulls`,
-    body: { title: input.title, body: input.body, base: input.base, head: input.head, draft: input.draft },
+    body: {
+      title: input.title,
+      body: input.body,
+      base: input.base,
+      head: input.head,
+      draft: input.draft,
+      ...(input.maintainerCanModify != null ? { maintainer_can_modify: input.maintainerCanModify } : {}),
+    },
   });
 }
 

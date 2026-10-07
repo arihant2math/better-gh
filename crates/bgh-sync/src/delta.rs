@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use bgh_core::seqlog;
 use bgh_core::sync::shapes::{self, Filter, Model, Opts};
 use bgh_core::sync::{SyncAction, SyncRecord};
 use serde::Serialize;
@@ -72,7 +73,8 @@ pub async fn fetch_range(
     limit: i64,
 ) -> Result<Vec<SyncRecord>, sqlx::Error> {
     let rows: Vec<ActionRow> = sqlx::query_as(&format!(
-        "SELECT {ACTION_COLUMNS} FROM sync_actions WHERE id > $1 AND id <= $2 ORDER BY id LIMIT $3"
+        "SELECT {ACTION_COLUMNS} FROM sync_actions
+          WHERE id > $1 AND id <= $2 AND scope <> '!gap' ORDER BY id LIMIT $3"
     ))
     .bind(after)
     .bind(upto)
@@ -82,11 +84,10 @@ pub async fn fetch_range(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
-/// Current head (max sync id).
-pub async fn head(db: impl sqlx::PgExecutor<'_>) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT coalesce(max(id), 0) FROM sync_actions")
-        .fetch_one(db)
-        .await
+/// Current head: the commit-order watermark. Every id `<=` it is
+/// committed, so nothing can appear below it later (`bgh_core::seqlog`).
+pub async fn head(db: &PgPool) -> Result<i64, sqlx::Error> {
+    seqlog::advance(db, seqlog::Log::Sync).await
 }
 
 /// Lowest sync id guaranteed to still be in the log.

@@ -576,6 +576,7 @@ async fn signed_in(
         .await?;
         return Err(ApiError::forbidden("Sorry. Your account was suspended."));
     }
+    settings::check_email_gate(state, &user).await?;
     ratelimit::clear(state, &login_fail_key(login)).await;
     Ok(user)
 }

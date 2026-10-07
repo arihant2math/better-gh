@@ -1,46 +1,50 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { load, peek, useResource } from '../../api/cache';
+import { load, peek } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { codeKeys, getCommitStatuses, type CommitStatusRollup, type CommitStatuses } from '../../api/code';
 import { getHistory, isSha } from '../../api/endpoints';
+import { usePager } from '../../api/pager';
 import type { BrowseCommit, History } from '../../api/types';
 import { RefPicker } from '../../components/code/RefPicker';
+import { LoadMore } from '../../components/LoadMore';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
-import { Button, IconButton, cx } from '../../ui/Button';
+import { IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizontalIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
-import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
+import { useRefsData } from '../code/data';
+import { EmptyRepoState } from '../code/EmptyRepoState';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
+import { historyUrl, repoRefOf, treeUrl } from '../../components/code/urls';
+import { resolveTarget } from '../code/util';
 import { commitDate, groupByDay, splitMessage, type CommitListRow } from './group';
 import { CiIcon, Person, copyText, samePerson } from './parts';
 import { SignatureBadge, useSignatures, type CommitSignature } from './Signature';
 import styles from './Commits.module.css';
 
-const enc = encodeURIComponent;
-
-/** `/commits/{ref}/{path}` URL. */
-export function commitsUrl(owner: string, repo: string, ref: string, path = ''): string {
-  return `/${owner}/${repo}/commits/${enc(ref)}${path ? `/${path.split('/').map(enc).join('/')}` : ''}`;
-}
-
 /** Commits list / file history: `/:owner/:repo/commits[/:ref/*path]`. */
 export default observer(function CommitsPage() {
   const params = useParams<{ owner: string; repo: string; ref?: string; '*'?: string }>();
   const repo = repoByName(params.owner, params.repo);
+  // Splits `{ref}/{path}` once the ref list arrives (refs may contain slashes).
+  useRefsData(params.owner, params.repo);
   if (!repo) return null;
+  // The history fetch keeps the URL's split (the server resolves the joined
+  // spec itself, and the route prefetch uses the same key); the header shows
+  // the resolved ref and path.
   const ref = params.ref || repo.defaultBranch;
   const path = (params['*'] ?? '').replace(/\/+$/, '');
+  const t = resolveTarget(repo.owner, repo.name, ref, path);
   return (
     <div className={styles.page}>
-      <Header repo={repo} refName={ref} path={path} />
+      <Header repo={repo} refName={t.ref} path={t.path} />
       {/* Remount per ref/path: page state (loaded pages, cursor) starts fresh. */}
-      <CommitList key={`${ref}:${path}`} repo={repo} refName={ref} path={path} />
+      <CommitList key={`${ref}:${path}`} repo={repo} refName={ref} path={path} label={`${t.ref}${t.path ? `:${t.path}` : ''}`} />
     </div>
   );
 });
@@ -49,17 +53,17 @@ function Header({ repo, refName, path }: { repo: Repo; refName: string; path: st
   const parts = path ? path.split('/') : [];
   return (
     <div className={styles.header}>
-      <RefPicker owner={repo.owner} repo={repo.name} value={refName} onSelect={(r) => navigate(commitsUrl(repo.owner, repo.name, r, path))} />
+      <RefPicker owner={repo.owner} repo={repo.name} value={refName} onSelect={(r) => navigate(historyUrl(repoRefOf(repo), r, path))} />
       {path ? (
         <h1 className={styles.title}>
           <HistoryIcon size={16} className={styles.muted} />
           <span>History for</span>
           <nav className={styles.crumbs} aria-label="Path">
-            <Link to={commitsUrl(repo.owner, repo.name, refName)}>{repo.name}</Link>
+            <Link to={historyUrl(repoRefOf(repo), refName)}>{repo.name}</Link>
             {parts.map((p, i) => (
               <span key={i}>
                 <span className={styles.sep}>/</span>
-                {i === parts.length - 1 ? <strong>{p}</strong> : <Link to={commitsUrl(repo.owner, repo.name, refName, parts.slice(0, i + 1).join('/'))}>{p}</Link>}
+                {i === parts.length - 1 ? <strong>{p}</strong> : <Link to={historyUrl(repoRefOf(repo), refName, parts.slice(0, i + 1).join('/'))}>{p}</Link>}
               </span>
             ))}
           </nav>
@@ -74,54 +78,14 @@ function Header({ repo, refName, path }: { repo: Repo; refName: string; path: st
   );
 }
 
-function historyLoader(repo: Repo, ref: string, path: string, page: number) {
-  return () => getHistory(repo.owner, repo.name, ref, path, { page, perPage: COMMITS_PER_PAGE });
-}
-
-/**
- * Page 1 through `useResource` (renders synchronously when the route
- * prefetch warmed it); later pages appended on demand. Pages still in the
- * cache (e.g. back navigation) are restored on mount.
- */
+/** History pages of `ref`/`path`; pages still in the cache (back navigation) are restored on mount. */
 function useHistoryPages(repo: Repo, ref: string, path: string) {
-  const opts = { immutable: isSha(ref) };
-  const key = (page: number) => codeKeys.history(repo.owner, repo.name, ref, path, page);
-  const first = useResource<History>(key(1), historyLoader(repo, ref, path, 1), opts);
-  const [more, setMore] = useState<History[]>(() => {
-    const out: History[] = [];
-    let prev = peek<History>(key(1));
-    for (let p = 2; prev?.has_more; p++) {
-      const h = peek<History>(key(p));
-      if (!h) break;
-      out.push(h);
-      prev = h;
-    }
-    return out;
+  return usePager<History>(`${repo.owner}/${repo.name}@${ref}:${path}`, {
+    key: (page) => codeKeys.history(repo.owner, repo.name, ref, path, page),
+    loader: (page) => getHistory(repo.owner, repo.name, ref, path, { page, perPage: COMMITS_PER_PAGE }),
+    hasMore: (last) => !!last.has_more,
+    immutable: isSha(ref),
   });
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState(false);
-  const last = more[more.length - 1] ?? first.data;
-  const hasMore = !!last?.has_more;
-
-  const loadMore = () => {
-    if (loadingMore || !hasMore) return;
-    const page = 2 + more.length;
-    setLoadingMore(true);
-    setMoreError(false);
-    load(key(page), historyLoader(repo, ref, path, page), opts).then(
-      (h) => {
-        setMore((m) => (m.length === page - 2 ? [...m, h] : m));
-        setLoadingMore(false);
-      },
-      () => {
-        setMoreError(true);
-        setLoadingMore(false);
-      },
-    );
-  };
-
-  const pages = useMemo(() => (first.data ? [first.data, ...more] : []), [first.data, more]);
-  return { first, pages, hasMore, loadMore, loadingMore, moreError };
 }
 
 /** One batched commit-status request per loaded page, merged. */
@@ -150,8 +114,9 @@ function useCiStatuses(repo: Repo, pages: History[]): Record<string, CommitStatu
 
 type Row = CommitListRow | { kind: 'more' };
 
-function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path: string }) {
-  const { first, pages, hasMore, loadMore, loadingMore, moreError } = useHistoryPages(repo, refName, path);
+function CommitList({ repo, refName, path, label }: { repo: Repo; refName: string; path: string; label: string }) {
+  const pager = useHistoryPages(repo, refName, path);
+  const { first, pages, hasMore, loadMore } = pager;
   const ci = useCiStatuses(repo, pages);
   const sigs = useSignatures(
     repo.owner,
@@ -191,11 +156,12 @@ function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path
     const missing = first.error instanceof ApiError && (first.error.status === 404 || first.error.status === 422);
     return (
       <EmptyState icon={AlertIcon} title={missing ? 'Nothing to show' : 'Couldn’t load the commit history'}>
-        {missing ? `${refName}${path ? `:${path}` : ''} doesn’t exist in this repository.` : 'Try again in a moment.'}
+        {missing ? `${label} doesn’t exist in this repository.` : 'Try again in a moment.'}
       </EmptyState>
     );
   }
   if (!first.data) return <SkeletonRows />;
+  if (first.data.empty) return <EmptyRepoState repo={repo} />;
   if (!rows.length) return <EmptyState icon={GitCommitIcon} title="No commits found" />;
 
   const toggle = (sha: string) =>
@@ -223,7 +189,7 @@ function CommitList({ repo, refName, path }: { repo: Repo; refName: string; path
             </div>
           );
         }
-        if (r.kind === 'more') return <MoreRow onVisible={loadMore} loading={loadingMore} error={moreError} />;
+        if (r.kind === 'more') return <LoadMore pager={pager} auto className={styles.more} loadingLabel="Loading more commits…" />;
         return (
           <CommitRow
             repo={repo}
@@ -305,32 +271,10 @@ function CommitRow({
           </Link>
           <IconButton icon={CopyIcon} label="Copy full SHA" size="sm" onClick={() => copyText(c.sha, `Copied ${c.sha.slice(0, 7)}`)} />
         </span>
-        <Link to={`${base}/tree/${c.sha}`} className={styles.browse} aria-label="Browse repository at this point in the history" title="Browse repository at this point in the history">
+        <Link to={treeUrl(repoRefOf(repo), c.sha)} className={styles.browse} aria-label="Browse repository at this point in the history" title="Browse repository at this point in the history">
           <CodeIcon size={16} />
         </Link>
       </div>
-    </div>
-  );
-}
-
-function MoreRow({ onVisible, loading, error }: { onVisible: () => void; loading: boolean; error: boolean }) {
-  // Mounted only while the virtualizer renders it (near the bottom): infinite
-  // scroll. Re-fires after each page while it stays in view.
-  useEffect(() => {
-    if (!loading && !error) onVisible();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- on mount and when a load settles
-  }, [loading, error]);
-  return (
-    <div className={styles.more}>
-      {loading ? (
-        <>
-          <Spinner size={14} /> Loading more commits…
-        </>
-      ) : (
-        <Button size="sm" onClick={onVisible}>
-          {error ? 'Retry loading more' : 'Load more'}
-        </Button>
-      )}
     </div>
   );
 }

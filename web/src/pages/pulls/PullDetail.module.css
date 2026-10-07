@@ -317,8 +317,27 @@
 }
 
 .reviewThreads {
+  /* Above the timeline rail (z-index 0), like comment cards. */
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin: 4px 0 12px 44px;
+}
+
+/* merge queue status in the merge box (P39) */
+.queueRow {
+  flex-wrap: wrap;
+}
+
+.queueText {
+  flex: 1;
+  min-width: 180px;
+}
+
+@media (pointer: coarse) {
+  .touchButton {
+    min-height: 32px;
+  }
 }

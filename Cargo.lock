@@ -762,6 +762,7 @@ dependencies = [
  "http",
  "http-body-util",
  "lettre",
+ "libc",
  "metrics",
  "rand 0.9.5",
  "rand_core 0.6.4",
@@ -980,6 +981,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -1118,6 +1120,7 @@ dependencies = [
  "chrono",
  "clap",
  "futures",
+ "hex",
  "http",
  "http-body-util",
  "metrics",
@@ -1140,6 +1143,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

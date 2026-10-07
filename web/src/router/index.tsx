@@ -23,6 +23,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { isChunkLoadError, reloadForChunkError } from './chunkError';
 
 export type Params = Record<string, string>;
 
@@ -144,6 +145,16 @@ async function loadMatch(m: Match): Promise<void> {
   await Promise.all([loadModule(m.route.load), m.route.layout && loadModule(m.route.layout)]);
 }
 
+/**
+ * Start loading the route chunks (no data prefetch) for `pathname`. Called at
+ * boot so the current page's code downloads in parallel with the store
+ * hydrate/bootstrap instead of after it (#269).
+ */
+export function preloadRoute(pathname: string): Promise<void> {
+  const m = matchPath(pathname);
+  return m ? loadMatch(m).catch(() => undefined) : Promise.resolve();
+}
+
 const prefetched = new Map<string, number>();
 
 /** Preload the chunk and data for `href` (called on hover/focus of links). */
@@ -199,10 +210,34 @@ export interface NavigateOptions {
   keepScroll?: boolean;
 }
 
+/**
+ * `to` as a same-origin `pathname + search + hash`, or null when it resolves
+ * elsewhere (`//x`, `/\x`, `/\t/x`, `/..//x`, `https://x`, `javascript:`). Use it for
+ * any untrusted target such as `?return_to=`.
+ */
+export function sameOriginPath(to: string, origin: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(to, origin);
+  } catch {
+    return null;
+  }
+  // Dot segments can normalize to a protocol-relative path (`/..//x` → `//x`).
+  if (url.origin !== origin || url.pathname.startsWith('//')) return null;
+  return url.pathname + url.search + url.hash;
+}
+
+/** Where to go after signing in: a same-origin `return_to`, else home. */
+export function returnTo(search = window.location.search, origin = window.location.origin): string {
+  const ret = new URLSearchParams(search).get('return_to');
+  return (ret && sameOriginPath(ret, origin)) || '/';
+}
+
 export function navigate(to: string, opts: NavigateOptions = {}): void {
   const url = new URL(to, window.location.href);
   if (url.origin !== window.location.origin) {
-    window.location.href = to;
+    // Full-page loads only for web URLs: never `javascript:`/`data:` targets.
+    if (url.protocol === 'http:' || url.protocol === 'https:') window.location.href = url.href;
     return;
   }
   const next = url.pathname + url.search + url.hash;
@@ -279,6 +314,9 @@ export function RouterView({ notFound: NotFound }: { notFound: ComponentType }) 
   // The match currently on screen; we only swap once the next one's code is loaded.
   const [shown, setShown] = useState<{ match: Match | null; href: string }>(() => ({ match, href }));
   const [, force] = useState(0);
+  // A route chunk that failed to load (and wasn't fixed by a reload): thrown
+  // during render so the surrounding error boundary shows its fallback.
+  const [failed, setFailed] = useState<{ error: unknown } | null>(null);
   const target = match && !matchReady(match) ? null : { match, href };
 
   if (target && (shown.href !== target.href || shown.match?.route !== target.match?.route)) {
@@ -292,8 +330,10 @@ export function RouterView({ notFound: NotFound }: { notFound: ComponentType }) 
         () => !cancelled && force((n) => n + 1),
         (err: unknown) => {
           console.error('[router] failed to load route', err);
-          // A failed chunk (e.g. after a deploy) → hard reload to get fresh assets.
-          if (!cancelled) window.location.reload();
+          if (cancelled) return;
+          // A stale chunk after a deploy → one hard reload to get fresh assets;
+          // otherwise (or if that already happened) show the error UI.
+          if (!(isChunkLoadError(err) && reloadForChunkError())) setFailed({ error: err });
         },
       );
       return () => {
@@ -312,6 +352,7 @@ export function RouterView({ notFound: NotFound }: { notFound: ComponentType }) 
     if (m?.route.title) document.title = `${m.route.title(m.params)} · Better GitHub`;
   }, [shown]);
 
+  if (failed) throw failed.error;
   const m = shown.match;
   if (!m) return <NotFound />;
   const Page = loaded(m.route.load)?.default as ComponentType | undefined;

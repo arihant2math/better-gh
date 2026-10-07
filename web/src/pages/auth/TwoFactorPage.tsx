@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { returnTo } from '../../app/App';
 import { session } from '../../app/session';
-import { navigate, useLocation } from '../../router';
+import { navigate, returnTo, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { AlertIcon, ArrowLeftIcon, DeviceMobileIcon } from '../../ui/icons';
 import { AuthLayout, authStyles as styles, messageOf, StateBlock, statusOf } from './AuthPage';
