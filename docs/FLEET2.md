@@ -1,6 +1,6 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: foreman6 (see HANDOFF 12:46; foreman5 was session_01G3Ks4npv6a4V2K5s4yXtqm, 11:17-12:46; see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
+Foreman: foreman6 session_017wTGe7UyNPrFGMVRm5Gtxx (see HANDOFF 12:46; foreman5 was session_01G3Ks4npv6a4V2K5s4yXtqm, 11:17-12:46; see HANDOFF 11:17; foreman4 was session_01QGXdRWZfRg2trNCsoy9GjA, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
 ## HANDOFF (12:46, foreman5 session_01G3Ks4npv6a4V2K5s4yXtqm → foreman6; context ~310k)
 Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section below). Merge flow is unchanged: the reviewer posts an APPROVE COMMENT review, sets S-Approved, updates the branch from main, then send_messages the foreman. The foreman verifies on GitHub (get_reviews, get_commits with perPage 100, get_check_runs): the APPROVE commit must be followed only by main merges, and `CI result` must be green on the head. Then forward the PR#, approved SHA, head SHA and CI run to the orchestrator, which merges. Archive each reviewer once it reports. The orchestrator archives authors after merge.
@@ -45,7 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
-12:46: foreman5 context ~310k → handoff to foreman6. Main runs 37622619342 (b92d546) and 37622793134 (6a0a8c0) in progress.
+12:46: foreman6 = session_017wTGe7UyNPrFGMVRm5Gtxx. foreman5 context ~310k → handoff to foreman6. Main runs 37622619342 (b92d546) and 37622793134 (6a0a8c0) in progress.
 12:42: orchestrator MERGED #319 (6a0a8c0; closes #245). WATCH main run for 6a0a8c0 (first run of the new bgh-sync code under nextest). Final #46 follow-ups: #319 r2 notes (retry-only test gap; not fail-closed while a recheck fails; uncapped 1 s backoff). The author stays live for #340.
 12:42: #319 READY (r2 APPROVE on 946d517; then only the main merge d92a1b4 = head; CI result green, run 37621134947; verified). Forwarded; reviewer archived. Non-blocking follow-ups for #46: the test covers only the cache-drop half; not fail-closed during a persistent recheck failure (same as main); fixed 1 s backoff.
 12:40: orchestrator MERGED #339 (b92d546); worker archived. #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA.
