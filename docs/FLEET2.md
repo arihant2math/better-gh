@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:42: orchestrator MERGED #319 (6a0a8c0; closes #245). WATCH main run for 6a0a8c0 (first run of the new bgh-sync code under nextest). Final #46 follow-ups: #319 r2 notes (retry-only test gap; not fail-closed while a recheck fails; uncapped 1 s backoff). The author stays live for #340.
 12:42: #319 READY (r2 APPROVE on 946d517; then only the main merge d92a1b4 = head; CI result green, run 37621134947; verified). Forwarded; reviewer archived. Non-blocking follow-ups for #46: the test covers only the cache-drop half; not fail-closed during a persistent recheck failure (same as main); fixed 1 s backoff.
 12:40: orchestrator MERGED #339 (b92d546); worker archived. #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA.
 12:40: #339 READY (APPROVE on 497d2a9; then only the main merge c3bf1e8 = head; CI result green, run 37619882426; verified). Counts match main (1320 passed, 5 skipped, 11 ignored doctests); test run step 6m55s → 4m52s, about −30%. Forwarded; reviewer archived. Next: #85 item 8 (CARGO_PROFILE_DEV_DEBUG=0) after the merge.
