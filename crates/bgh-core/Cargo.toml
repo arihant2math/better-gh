@@ -44,5 +44,9 @@ url.workspace = true
 chacha20poly1305.workspace = true
 hmac.workspace = true
 
+# `testing::pid_alive` probes with kill(2) where there is no procfs.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 tokio.workspace = true
