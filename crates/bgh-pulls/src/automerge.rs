@@ -2,6 +2,14 @@
 //! for GraphQL's `enablePullRequestAutoMerge`), and the merge attempt run
 //! after every mergeability refresh (triggered by pushes, statuses, check
 //! runs and reviews).
+//!
+//! On a base branch with a merge queue (`merge_queue` rule), auto-merge
+//! means "add to the queue once ready": [`try_merge`] enqueues the PR as
+//! the user who enabled auto-merge once the only remaining blockers are
+//! status checks and the queue itself (checks run on the merge group), and
+//! then clears `auto_merge` without an `auto_merge_disabled` event, like
+//! GitHub (the queue entry takes over; `autoMergeRequest` is null while
+//! queued).
 
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -12,8 +20,9 @@ use serde_json::json;
 use crate::json::{self, PullRequest};
 use crate::merge::{MergeMethod, MergeRequest, perform_merge};
 use crate::model::{self, Pull};
+use crate::protection::BlockerKind;
 use crate::pulls::load_pull;
-use crate::{protection, timeline};
+use crate::{merge_queue, protection, timeline};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct EnableBody {
@@ -31,7 +40,12 @@ pub async fn enable(
     body: &EnableBody,
 ) -> ApiResult<()> {
     access.require(Permission::Write)?;
-    if !access.repo.allow_auto_merge {
+    // A merge queue branch takes "auto-merge" as "enqueue when ready".
+    if !access.repo.allow_auto_merge
+        && merge_queue::config_for(&state.db, access.repo.id, &pull.pr.base_ref)
+            .await?
+            .is_none()
+    {
         return Err(ApiError::unprocessable(
             "Auto-merge is not allowed for this repository",
         ));
@@ -137,14 +151,24 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
     };
     let rules = protection::rules_for(&state.db, repo.id, &pull.pr.base_ref).await?;
     let ev = protection::evaluate(state, &repo, &pull, &rules).await?;
-    // Auto-merge waits for every requirement and for pending checks. With
-    // a `merge_queue` rule the queue blocker never clears: auto-merge never
-    // merges such a PR directly.
-    let pending = protection::check_outcomes(&state.db, repo.id, &pull.pr.head_sha)
-        .await?
-        .any_pending();
-    if !ev.blockers.is_empty() || pending {
-        return Ok(());
+    let queue = merge_queue::QueueConfig::from_rules(&rules).is_some();
+    if queue {
+        // Checks run on the merge group: wait only for the rest.
+        if ev
+            .blockers
+            .iter()
+            .any(|b| !matches!(b.kind, BlockerKind::Check | BlockerKind::MergeQueue))
+        {
+            return Ok(());
+        }
+    } else {
+        // Auto-merge waits for every requirement and for pending checks.
+        let pending = protection::check_outcomes(&state.db, repo.id, &pull.pr.head_sha)
+            .await?
+            .any_pending();
+        if !ev.blockers.is_empty() || pending {
+            return Ok(());
+        }
     }
     let Some(user_id) = cfg.get("enabled_by_id").and_then(|v| v.as_i64()) else {
         return Ok(());
@@ -160,6 +184,9 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
     if perm < Permission::Write {
         disable(state, repo.id, pull.id(), None, "permission_revoked").await?;
         return Ok(());
+    }
+    if queue {
+        return enqueue(state, repo, owner, &pull, &user, perm).await;
     }
     let req = MergeRequest {
         method: cfg
@@ -201,6 +228,43 @@ pub async fn try_merge(state: &AppState, pull_id: i64) -> ApiResult<()> {
         }
         Err(e) => Err(e),
     }
+}
+
+/// Auto-merge on a merge queue branch: add `pull` to the queue as `user`
+/// (who enabled auto-merge), then clear `auto_merge`. Still blocked (e.g.
+/// a rule the evaluation above let through for this actor): retry on the
+/// next refresh.
+async fn enqueue(
+    state: &AppState,
+    repo: db::Repository,
+    owner: db::User,
+    pull: &Pull,
+    user: &db::User,
+    perm: Permission,
+) -> ApiResult<()> {
+    let access = RepoAccess {
+        repo,
+        owner,
+        permission: perm.min(Permission::Write),
+        authenticated: true,
+    };
+    match merge_queue::enqueue(state, &access, pull, user, false).await {
+        Ok(_) => {}
+        Err(ApiError::Validation { message, .. }) => {
+            tracing::info!(pull = pull.id(), %message, "auto-merge: not enqueued yet");
+            return Ok(());
+        }
+        Err(ApiError::Conflict(_)) => return Ok(()),
+        Err(e) => return Err(e),
+    }
+    let mut tx = Tx::begin(state).await?;
+    sqlx::query("UPDATE pull_requests SET auto_merge = NULL WHERE issue_id = $1")
+        .bind(pull.id())
+        .execute(&mut *tx)
+        .await?;
+    json::sync_pull(&mut tx, &access.scope(), pull.id()).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 // ----- web endpoints ------------------------------------------------------
