@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
 import { setSudoHandler } from '../api/client';
-import { navigate, RouterView, useLocation } from '../router';
+import { navigate, RouterView, sameOriginPath, useLocation } from '../router';
 import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
 import { session } from './session';
@@ -38,9 +38,9 @@ function bareFor(pathname: string): BarePage | undefined {
 export const TWO_FACTOR_SETUP_PATH = '/settings/security';
 
 /** Where to go after signing in: a same-origin `return_to`, else home. */
-export function returnTo(search = location.search): string {
+export function returnTo(search = location.search, origin = location.origin): string {
   const ret = new URLSearchParams(search).get('return_to');
-  return ret && ret.startsWith('/') && !ret.startsWith('//') ? ret : '/';
+  return (ret && sameOriginPath(ret, origin)) || '/';
 }
 
 export const App = observer(function App() {
