@@ -348,6 +348,44 @@ account with an authenticator app out (site admins can disable 2FA per
 user). WebAuthn security keys and passkeys are bound to the host of
 `BGH_BASE_URL`; changing the domain invalidates them.
 
+### `bgh backup` and `bgh restore`
+
+```sh
+bgh backup --to /srv/bgh-backups          # one new snapshot per run (cron/systemd timer)
+bgh backup verify --from /srv/bgh-backups # newest snapshot; or pass a snapshot dir
+systemctl stop bgh
+bgh restore --from /srv/bgh-backups       # into an empty database + data dir
+systemctl start bgh
+```
+
+`bgh backup` runs with the server up and needs the PostgreSQL client tools
+(`pg_dump`/`pg_restore` at least as new as the server; the Docker image
+ships them; override the paths with `BGH_PG_DUMP` / `BGH_PG_RESTORE`). Each
+run writes `DIR/<UTC timestamp>/` with `db.dump` (one consistent
+`pg_dump --format=custom`, taken first), `data/` (the data directory:
+repositories, wikis, LFS objects, release assets, packages, attachments, the
+SSH host key, `actions/server.key` and the signing keys) and
+`manifest.json` (bgh version, migration level, every file with its sha256).
+`cache/`, `actions/caches/`, `actions/tmp/` and `files/tmp/` are skipped.
+Files whose size and modification time are unchanged since the previous
+snapshot are **hard links** to it, so every snapshot is complete on its own
+while only changed files take space; delete old snapshots with `rm -rf`
+(keep the backup directory on one filesystem). A snapshot is written as
+`NAME.partial` and renamed when complete. If the server key comes from
+`BGH_ACTIONS_SECRET_KEY` it is not in the snapshot: keep it with your
+configuration.
+
+`bgh backup verify` re-reads every file against the manifest checksums and
+checks that `pg_restore` can read the dump. `bgh restore` (server stopped)
+refuses snapshots taken at a newer migration than the binary knows,
+refuses a non-empty database or data directory unless `--force` (which
+drops the `public` schema and empties the data directory), restores the
+dump and files (rewriting forks' alternates when the data directory moved),
+applies newer migrations and runs `git fsck --connectivity-only` on a
+sample of repositories (`--fsck-sample N`, default 10).
+
+### Manual backups
+
 Take the database dump **first**, then copy the data directory. Git
 maintenance (the scheduled `repos.maintenance` service and the admin gc)
 removes unreachable objects only once they are older than the prune grace

@@ -17,6 +17,7 @@
 //!   with the diff/patch media type (read access checked there)
 //! * everything else: the web client from `BGH_WEB_DIR` with SPA fallback
 
+pub mod backup;
 pub mod embedded;
 mod serve;
 pub mod telemetry;
