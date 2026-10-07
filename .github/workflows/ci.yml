@@ -81,9 +81,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x86_64, os: ubuntu-latest }
-          - { name: linux-arm64, os: ubuntu-24.04-arm }
-          - { name: macos-arm64, os: macos-latest }
+          # linux-x86_64 restores rust-test's cache, which main also warms
+          # with clippy's check-mode deps: one x86_64 entry instead of two,
+          # while clippy still runs beside the tests, not in front of them.
+          - { name: linux-x86_64, os: ubuntu-latest, cache: x86_64-debug }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, cache: clippy-linux-arm64 }
+          - { name: macos-arm64, os: macos-latest, cache: clippy-macos-arm64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -106,9 +109,10 @@ jobs:
       # rust-cache already keys on OS and arch; the name keeps it explicit.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: clippy-${{ matrix.name }}
-          # Only main writes caches; PRs restore main's (#85).
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: ${{ matrix.cache }}
+          # Only main writes caches; PRs restore main's (#85). rust-test is
+          # the only writer of the shared x86_64-debug entry.
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.cache != 'x86_64-debug' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -140,12 +144,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       # Only main writes caches; PRs restore main's. Tests are often red, so
       # save on failure too, or the cache never warms (#85). The key has no
-      # ref in it, so a PR run hits the entry its base main run saved.
+      # ref in it, so a PR run hits the entry its base main run saved. The
+      # linux-x86_64 clippy job restores this entry too (see the last step).
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: test
+          shared-key: x86_64-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
       # Integration tests drive the real git CLI (preinstalled, with git-lfs).
@@ -224,6 +231,13 @@ jobs:
           path: |
             gh-compat.json
             api-smoke.json
+      # Main only: check the deps in clippy's mode too, so the saved
+      # x86_64-debug entry warms the linux-x86_64 clippy job (#85). Lint
+      # results come from rust-lint; this step only fills the cache.
+      - name: Warm clippy deps for the shared cache
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: cargo clippy --workspace --all-targets --locked
 
   web:
     name: Web (typecheck, lint, test, build)
