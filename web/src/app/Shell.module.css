@@ -292,6 +292,8 @@
 
 @media (pointer: coarse) {
   .crumb {
+    justify-content: center;
+    min-width: 32px;
     height: 32px;
   }
 
