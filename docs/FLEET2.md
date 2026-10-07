@@ -23,3 +23,6 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 | dashboard/inbox/search → settings/admin/orgs | session_01DgtACGYUY364jRkpysuP9h | running |
 
 Next QA rotation: actions/projects/wiki/packages; auth & onboarding.
+
+## Standing rules (from orchestrator, 01:45)
+Every worker/reviewer/QA prompt gets: "Follow docs/AGENT_WORKFLOW.md 'Operating principles' (context discipline)." Fresh reviewer per round; one issue per worker, archive on merge; track via labels/PR state, get_session only for liveness. Status: comment on #46 "Agent fleet status" every ~2h + message orchestrator. Design questions: Discussions if enabled, else issue T-Docs + S-Blocked.
