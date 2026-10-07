@@ -235,6 +235,8 @@ pub async fn signup(
             password: &body.password,
             name: body.name.as_deref(),
             site_admin: None,
+            // Self-service: the address must be proven by mail first.
+            email_verified: false,
         },
         None,
     )

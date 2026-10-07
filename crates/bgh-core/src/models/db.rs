@@ -103,8 +103,14 @@ impl User {
 #[derive(Debug, Clone, Default)]
 pub struct NewUser<'a> {
     pub login: &'a str,
-    /// Primary email; stored verified in `user_emails` when given.
+    /// Primary email, stored in `user_emails` when given.
     pub email: Option<&'a str>,
+    /// Whether the primary email is already proven to belong to the user.
+    /// Only trusted sources (site admins, LDAP, SCIM, SAML, an IdP's
+    /// `email_verified`) pass `true`; self-service sign-up must pass `false`
+    /// and send a verification mail. A verified insert releases unverified
+    /// claims on the same address held by other accounts.
+    pub email_verified: bool,
     pub name: Option<&'a str>,
     /// Argon2 PHC hash (see `crypto::hash_password`).
     pub password_hash: Option<&'a str>,
@@ -127,12 +133,21 @@ impl NewUser<'_> {
         .fetch_one(&mut *conn)
         .await?;
         if let Some(email) = self.email {
+            if self.email_verified {
+                sqlx::query(
+                    "DELETE FROM user_emails WHERE lower(email) = lower($1) AND NOT verified",
+                )
+                .bind(email)
+                .execute(&mut *conn)
+                .await?;
+            }
             sqlx::query(
                 "INSERT INTO user_emails (user_id, email, verified, is_primary, visibility)
-                 VALUES ($1, $2, true, true, 'private')",
+                 VALUES ($1, $2, $3, true, 'private')",
             )
             .bind(user.id)
             .bind(email)
+            .bind(self.email_verified)
             .execute(&mut *conn)
             .await?;
             crate::signatures::forget_email(&mut *conn, email).await?;

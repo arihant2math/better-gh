@@ -138,7 +138,7 @@ pub async fn sign_in(
                     let mut email = None;
                     for e in &emails {
                         let taken: bool = sqlx::query_scalar(
-                            "SELECT EXISTS (SELECT 1 FROM user_emails WHERE lower(email) = lower($1))",
+                            "SELECT EXISTS (SELECT 1 FROM user_emails WHERE lower(email) = lower($1) AND verified)",
                         )
                         .bind(e)
                         .fetch_one(&mut *tx)
@@ -160,6 +160,7 @@ pub async fn sign_in(
                         full_name.as_deref(),
                         None,
                         Some(admin.unwrap_or(false)),
+                        true,
                     )
                     .await?;
                     audit::log(

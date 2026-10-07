@@ -62,6 +62,8 @@ pub async fn create_user(
         name: None,
         password_hash: None,
         site_admin: false,
+        // Site admins vouch for the address they type in.
+        email_verified: true,
     }
     .insert(&mut tx)
     .await

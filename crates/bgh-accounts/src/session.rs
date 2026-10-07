@@ -173,6 +173,8 @@ pub async fn signup(
             password: &body.password,
             name: body.name.as_deref(),
             site_admin: None,
+            // Self-service: the address must be proven by mail first.
+            email_verified: false,
         },
         None,
     )
@@ -607,7 +609,8 @@ pub struct ResetRequestBody {
 }
 
 /// `POST /_bgh/password_reset {email}` → 202 (always, to avoid account
-/// enumeration). Mails a one-hour reset link to the primary address.
+/// enumeration). Mails a one-hour reset link to a verified address
+/// ([`util::verified_email`]).
 pub async fn request_reset(
     State(state): State<AppState>,
     client: ClientInfo,
@@ -642,7 +645,7 @@ pub async fn request_reset(
     let Some(user) = user else {
         return Ok(accepted);
     };
-    let Some(to) = util::primary_email(&state.db, user.id).await? else {
+    let Some(to) = util::verified_email(&state.db, user.id).await? else {
         return Ok(accepted);
     };
     let mut tx = Tx::begin(&state).await?;

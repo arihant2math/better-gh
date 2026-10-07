@@ -98,7 +98,7 @@ pub async fn list_public(
 }
 
 /// Queue a verification mail for `email_id`.
-async fn send_verification(
+pub(crate) async fn send_verification(
     state: &AppState,
     tx: &mut Tx,
     user: &db::User,

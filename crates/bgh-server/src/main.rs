@@ -357,6 +357,7 @@ async fn admin(config: Config, command: AdminCommand) -> anyhow::Result<()> {
                     password: &password,
                     name: None,
                     site_admin: Some(site_admin),
+                    email_verified: true,
                 },
                 None,
             )
