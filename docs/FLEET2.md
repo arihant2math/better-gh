@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+12:42: #319 READY (r2 APPROVE on 946d517; then only the main merge d92a1b4 = head; CI result green, run 37621134947; verified). Forwarded; reviewer archived. Non-blocking follow-ups for #46: the test covers only the cache-drop half; not fail-closed during a persistent recheck failure (same as main); fixed 1 s backoff.
 12:40: orchestrator MERGED #339 (b92d546); worker archived. #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA.
 12:40: #339 READY (APPROVE on 497d2a9; then only the main merge c3bf1e8 = head; CI result green, run 37619882426; verified). Counts match main (1320 passed, 5 skipped, 11 ignored doctests); test run step 6m55s → 4m52s, about −30%. Forwarded; reviewer archived. Next: #85 item 8 (CARGO_PROFILE_DEV_DEBUG=0) after the merge.
 12:29 cycle: main 37618590481 (4351428) GREEN; told the orchestrator. #339 S-Approved; the reviewer merged main (c3bf1e8) and is waiting for CI. #319 r2 S-Approved; the reviewer merged main (d92a1b4) and is waiting for CI. #316 deadlock fix 9ab35b6 → adversarial r4 reviewer session_01EQC8yBZ3rfDQDgPJEhpinM, which also delta-checks #322 (0664135 vs the 510558b approval). #340 review is still running.
