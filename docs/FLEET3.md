@@ -8,6 +8,9 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | — | — |
 | C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 (main merged, CI running) | — |
 
+## Rule (user, 21:33Z)
+New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
+
 ## Queues
 A: #286 items in order → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (rel. #237) → web of the same backlog.
@@ -22,3 +25,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:30Z: #345 green; opus reviewer spawned.
 - 21:32Z: #345 APPROVE @8b35d0e (=head), CI green; sent to coordinator. Nits for follow-up: CLAUDE.md:5 wording; up-to-date-branch requirement.
 - 21:33Z: #345 merged as 4a70e36; reviewer archived; A → #226; up-to-date-branch note posted on #46.
+- 21:34Z: adopted per-PR session rule (relayed from user via session_01GowVR33vpQmuohFCEKVRUk); lanes told to stop after current item.
