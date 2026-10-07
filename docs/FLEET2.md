@@ -1,37 +1,45 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7.
+Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
-## Bootstrap
-#44 merged by user into main (9ef62fb) at ~02:33. claude/sleepy-cray-9jj0t3 retired.
+## Mode
+03:23 FULL SPEED (user via orchestrator): up to ~10 workers + 4 QA, ignore rate-limit warnings; reviewer per S-NeedsReview PR immediately; fixer if S-ChangesRequested not picked up in 15 min; cycles every 10–15 min. On hard rate-limit failures: back off and report to orchestrator. Priority: P-Critical/P-High, then O-QA T-Bug A-Responsive, then rest; spread across areas.
 
-## Pacing
-02:37 THROTTLE (user via orchestrator): 7-day usage 82%, resets 9 PM user local. Until then: finish main fixer, #45, #73 (+ their reviews); QA paused (no restarts); no new workers; wake every 60–90 min, cheap cycles. After reset (orchestrator confirms, or no warning past 9 PM US): ~5 workers + 2 QA.
-02:34: rate_limit_info allowed_warning (seven_day) seen → cap 3 workers (incl. fixers) + 1 QA. Re-check on each cycle.
-Worker queue (next, by priority): #60 topbar breadcrumbs (note #66), #41 PR diff commit range, #17 backup/admin CLI, #42 bundle budget, #63 review popover focus (may be fixed by #73).
+## History
+#44 merged by user into main (9ef62fb) ~02:33; claude/sleepy-cray-9jj0t3 retired. Old QA sessions filed #47–#78 (archived).
 
 ## Workers
 | Issue | Session | PR | Status |
 |---|---|---|---|
 | #45 viewport matrix | session_01BURtkf7ua5yBimS7SrhLvt | — | working |
 | main Rust tests fixer | session_01E96iLFFFxFuaZXgU4hayJ6 | (agent/fix-main-tests) | working |
-| #73 modal focus | session_013HG6yn6H9NYMAmM4iHzJ51 | — | working |
+| #73 modal focus (+#63?) | session_013HG6yn6H9NYMAmM4iHzJ51 | — | working |
+| #60+#66 topbar breadcrumbs | session_0142iYEJAmNc4sKsZMCnhhYQ | — | working |
+| #41 PR diff commit range | session_01QkzGhN3PPqNiRUBQ9YnH5C | — | working |
+| #17 backup/admin CLI | session_01CBqx1eAjHqzrzArwDfoRUs | — | working (multi-PR) |
+| #67 list filter bar | session_01DqkE15WspmiTrQ5N81q11Y | — | working |
+| #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | — | working |
+| #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | — | working |
+| #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | — | working |
+
+Queue: #42 bundle budget (P-High perf), #63 (check after #73), #22 web perf, #23 mobile/a11y, #65+#64 diff toolbar/header, #52+#51+#53 command palette, #68+#69 PR timeline, #76 branch names with /, #48 search clipping, then P-Medium features (#1–#31).
 
 ## Reviewers
 | PR | Session | Status |
 |---|---|---|
+| #81 branch cleanup (orchestrator's) | session_01ALeBwbtYSGHLijgBq11T8x (re-review) | running; foreman merges with MERGE then runs branch-cleanup.yml min_age_hours=12 |
 
 ## QA
-| Focus | Session | Status |
+| Focus (pass 1 → pass 2) | Session | Status |
 |---|---|---|
-| issues/PRs/review | session_01KK7aYBXALVtbFaqcevgYPC | told to wrap up (throttle); archive when idle |
-| dashboard/inbox/search | session_01DgtACGYUY364jRkpysuP9h | told to wrap up (pacing); archive when idle |
+| repo/code browsing → wiki | session_01KfNriN3BgXNqpcuz9vki6a | running |
+| settings/admin/orgs → Actions UI | session_012WCiQPEEZjiJJF6N8PiNvR | running |
+| projects/packages/releases → issue detail | session_01V2UQXBRnk8zvBZenyJNhPo | running |
+| auth/onboarding → API/gh compat | session_01CNLoLz9eJUdS9dDdekDadC | running |
 
-Next QA rotation: actions/projects/wiki/packages; auth & onboarding.
+Next QA rotation: issues & PRs & review; dashboard/inbox/search/command palette.
 
-## Standing rules (from orchestrator, 01:45)
-Every worker/reviewer/QA prompt gets: "Follow docs/AGENT_WORKFLOW.md 'Operating principles' (context discipline)." Fresh reviewer per round; one issue per worker, archive on merge; track via labels/PR state, get_session only for liveness. Status: comment on #46 "Agent fleet status" every ~2h + message orchestrator. Design questions: Discussions if enabled, else issue T-Docs + S-Blocked.
-Self-handoff: when own context > ~350k tokens (get_session on self → external_metadata.context_usage.used_tokens), write full handoff here, start successor foreman with the original foreman2 prompt (orchestrator session_01U7ukQiQRpcMMA4n4VDVQR7 holds it; key points: ~5 workers, reviewer per S-NeedsReview PR, 2 QA rotating areas, label C-Claimed on start, worker/reviewer/QA prompt templates in AGENT_WORKFLOW.md roles) + "Resume from docs/FLEET2.md on branch bgh/foreman2" + these standing rules; send orchestrator the successor id; cancel own send_later triggers; stop.
-
-## Branch hygiene (02:41)
-PR #81 (orchestrator) adds branch-cleanup workflow. Reviewer session_011q3Xbdt7W7hby6so7C1QBg (sonnet). Foreman merges #81 with method MERGE (not squash), then actions_run_trigger branch-cleanup.yml ref main. After: reviewers squash-merge, workflow deletes head branches; workers delete abandoned branches; on handoff/finish copy FLEET2.md into a docs PR and delete bgh/foreman2 (or leave for successor).
+## Standing rules
+Every worker/reviewer/QA prompt: "Follow docs/AGENT_WORKFLOW.md 'Operating principles' (context discipline)." Fresh reviewer per round; one issue (or tightly coupled pair) per worker, archive on merge; track via labels/PR state, get_session only for liveness. Status: comment on #46 every ~2h + message orchestrator. Design questions: Discussions if enabled, else issue T-Docs + S-Blocked.
+Branches: reviewers squash-merge, branch-cleanup workflow deletes heads (once #81 lands); workers delete abandoned branches; on handoff copy FLEET2.md into a docs PR and delete bgh/foreman2 (or leave for successor).
+Self-handoff: when own context > ~350k tokens, write full handoff here, start successor foreman with the original foreman2 prompt (orchestrator holds it) + "Resume from docs/FLEET2.md on branch bgh/foreman2" + these rules; send orchestrator the id; cancel own send_later triggers; stop.
