@@ -4,7 +4,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_018QXmQxBA8SZy83jx2yjck9 | #220 (migration order) | #345 (CI running) | — |
+| A backend | session_018QXmQxBA8SZy83jx2yjck9 | #220 (next #226) | #345 | session_01GifmJK4QD4TzLC5Ex88XK1 (opus) |
 | B frontend | session_01TAQmQsT9vztYogpqp8Ert9 | #256 | — | — |
 | C #150+flakes | session_011JTr24wKfWp5qTZ1EEvEpM | PR #150 update | #150 (main merged, CI running) | — |
 
@@ -19,3 +19,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:19Z: #346 APPROVE @2a384dd (=head), CI green; sent to coordinator.
 - 21:24Z: #346 re-forwarded (head a29749a, comment-only after approval, CI green). A: #345 CI running. C: #150 CI running.
 - 21:25Z: #346 merged as 6da3945; reviewer archived; B → #256.
+- 21:30Z: #345 green; opus reviewer spawned.
