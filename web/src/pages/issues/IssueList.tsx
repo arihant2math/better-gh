@@ -185,73 +185,76 @@ export const IssueList = observer(function IssueList({ kind, source, repo, showR
           aria-label="Filter"
           trailing={query !== defaultQuery && <IconButton icon={XIcon} label="Clear filter" size="sm" onClick={() => setQuery({ q: null })} />}
         />
-        {repo && (
-          <>
-            <Button ref={labelBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'label'} onClick={() => setOpen('label')}>
-              Label
-            </Button>
-            <SelectPanel
-              open={open === 'label'}
-              onClose={() => setOpen(null)}
-              anchor={labelBtn}
-              title="Filter by label"
-              items={labels.map((l) => ({
-                id: l.name,
-                text: l.name,
-                leading: <ColorDot color={l.color} />,
-                selected: filter.labels.some((x) => x.toLowerCase() === l.name.toLowerCase()),
-              }))}
-              onToggle={(name) => {
-                const n = String(name);
-                const has = filter.labels.some((x) => x.toLowerCase() === n.toLowerCase());
-                setFilter({ labels: has ? filter.labels.filter((x) => x.toLowerCase() !== n.toLowerCase()) : [...filter.labels, n] });
-              }}
-            />
-            <Button ref={assigneeBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'assignee'} onClick={() => setOpen('assignee')}>
-              Assignee
-            </Button>
-            <SelectPanel
-              open={open === 'assignee'}
-              onClose={() => setOpen(null)}
-              anchor={assigneeBtn}
-              title="Filter by assignee"
-              multiple={false}
-              items={[
-                { id: 'none', text: 'Assigned to nobody', selected: filter.assignee === 'none' },
-                ...people.map((u) => ({ id: u.login, text: u.login, description: u.name ?? undefined, leading: <Avatar user={u} size={18} />, selected: filter.assignee === u.login })),
-              ]}
-              onToggle={(login) => setFilter({ assignee: filter.assignee === login ? undefined : String(login) })}
-            />
-            <Button ref={authorBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'author'} onClick={() => setOpen('author')}>
-              Author
-            </Button>
-            <SelectPanel
-              open={open === 'author'}
-              onClose={() => setOpen(null)}
-              anchor={authorBtn}
-              title="Filter by author"
-              multiple={false}
-              items={people.map((u) => ({ id: u.login, text: u.login, description: u.name ?? undefined, leading: <Avatar user={u} size={18} />, selected: filter.author === u.login }))}
-              onToggle={(login) => setFilter({ author: filter.author === login ? undefined : String(login) })}
-            />
-            {milestonesForRepo(repo.id).length > 0 && <MilestoneFilter repo={repo} filter={filter} setFilter={setFilter} />}
-          </>
-        )}
-        <Button ref={sortBtn} variant="ghost" leadingIcon={SortDescIcon} trailingIcon={ChevronDownIcon} aria-expanded={open === 'sort'} onClick={() => setOpen('sort')}>
-          {SORTS.find((s) => s.key === filter.sort)?.label}
-        </Button>
-        <Menu
-          open={open === 'sort'}
-          onClose={() => setOpen(null)}
-          anchor={sortBtn}
-          placement="bottom-end"
-          items={SORTS.map((s) => ({
-            id: s.key,
-            label: s.label,
-            leading: <span style={{ width: 16, display: 'inline-flex', color: 'var(--accent-fg)' }}>{s.key === filter.sort && <CheckIcon size={16} />}</span>,
-            onSelect: () => setFilter({ sort: s.key }),
-          }))}
-        />
+        {/* Scrolls horizontally on its own when it can't fit, so the page never does. */}
+        <div className={styles.filters}>
+          {repo && (
+            <>
+              <Button ref={labelBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'label'} onClick={() => setOpen('label')}>
+                Label
+              </Button>
+              <SelectPanel
+                open={open === 'label'}
+                onClose={() => setOpen(null)}
+                anchor={labelBtn}
+                title="Filter by label"
+                items={labels.map((l) => ({
+                  id: l.name,
+                  text: l.name,
+                  leading: <ColorDot color={l.color} />,
+                  selected: filter.labels.some((x) => x.toLowerCase() === l.name.toLowerCase()),
+                }))}
+                onToggle={(name) => {
+                  const n = String(name);
+                  const has = filter.labels.some((x) => x.toLowerCase() === n.toLowerCase());
+                  setFilter({ labels: has ? filter.labels.filter((x) => x.toLowerCase() !== n.toLowerCase()) : [...filter.labels, n] });
+                }}
+              />
+              <Button ref={assigneeBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'assignee'} onClick={() => setOpen('assignee')}>
+                Assignee
+              </Button>
+              <SelectPanel
+                open={open === 'assignee'}
+                onClose={() => setOpen(null)}
+                anchor={assigneeBtn}
+                title="Filter by assignee"
+                multiple={false}
+                items={[
+                  { id: 'none', text: 'Assigned to nobody', selected: filter.assignee === 'none' },
+                  ...people.map((u) => ({ id: u.login, text: u.login, description: u.name ?? undefined, leading: <Avatar user={u} size={18} />, selected: filter.assignee === u.login })),
+                ]}
+                onToggle={(login) => setFilter({ assignee: filter.assignee === login ? undefined : String(login) })}
+              />
+              <Button ref={authorBtn} variant="ghost" trailingIcon={ChevronDownIcon} aria-expanded={open === 'author'} onClick={() => setOpen('author')}>
+                Author
+              </Button>
+              <SelectPanel
+                open={open === 'author'}
+                onClose={() => setOpen(null)}
+                anchor={authorBtn}
+                title="Filter by author"
+                multiple={false}
+                items={people.map((u) => ({ id: u.login, text: u.login, description: u.name ?? undefined, leading: <Avatar user={u} size={18} />, selected: filter.author === u.login }))}
+                onToggle={(login) => setFilter({ author: filter.author === login ? undefined : String(login) })}
+              />
+              {milestonesForRepo(repo.id).length > 0 && <MilestoneFilter repo={repo} filter={filter} setFilter={setFilter} />}
+            </>
+          )}
+          <Button ref={sortBtn} variant="ghost" leadingIcon={SortDescIcon} trailingIcon={ChevronDownIcon} aria-expanded={open === 'sort'} onClick={() => setOpen('sort')}>
+            {SORTS.find((s) => s.key === filter.sort)?.label}
+          </Button>
+          <Menu
+            open={open === 'sort'}
+            onClose={() => setOpen(null)}
+            anchor={sortBtn}
+            placement="bottom-end"
+            items={SORTS.map((s) => ({
+              id: s.key,
+              label: s.label,
+              leading: <span style={{ width: 16, display: 'inline-flex', color: 'var(--accent-fg)' }}>{s.key === filter.sort && <CheckIcon size={16} />}</span>,
+              onSelect: () => setFilter({ sort: s.key }),
+            }))}
+          />
+        </div>
       </div>
 
       <div className={styles.subbar}>
