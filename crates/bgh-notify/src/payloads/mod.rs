@@ -187,6 +187,9 @@ pub fn event_names(event: &Event) -> Vec<&'static str> {
         | E::CheckSuiteRequested { .. }
         | E::CheckSuiteRerequested { .. }
         | E::CheckSuiteCompleted { .. } => vec!["check_suite"],
+        E::MergeGroupChecksRequested { .. } | E::MergeGroupDestroyed { .. } => {
+            vec!["merge_group"]
+        }
         E::DeployKeyCreated { .. } | E::DeployKeyDeleted { .. } => vec!["deploy_key"],
         E::BranchProtectionRuleChanged { .. } => vec!["branch_protection_rule"],
         E::RepositoryRulesetChanged { .. } => vec!["repository_ruleset"],
@@ -1106,6 +1109,37 @@ pub async fn for_event(state: &AppState, event: &Event) -> anyhow::Result<Vec<Ho
         }
         E::CheckSuiteCompleted { check_suite_id, .. } => {
             b.check_suite(*check_suite_id, "completed").await
+        }
+        E::MergeGroupChecksRequested {
+            head_ref,
+            head_sha,
+            base_ref,
+            base_sha,
+            ..
+        } => {
+            let group =
+                checks::merge_group(state, &ctx, head_ref, head_sha, base_ref, base_sha).await;
+            Ok(vec![b.emit(
+                "merge_group",
+                Some("checks_requested"),
+                vec![("merge_group", group)],
+            )])
+        }
+        E::MergeGroupDestroyed {
+            head_ref,
+            head_sha,
+            base_ref,
+            base_sha,
+            reason,
+            ..
+        } => {
+            let group =
+                checks::merge_group(state, &ctx, head_ref, head_sha, base_ref, base_sha).await;
+            Ok(vec![b.emit(
+                "merge_group",
+                Some("destroyed"),
+                vec![("reason", json!(reason)), ("merge_group", group)],
+            )])
         }
 
         // ----- repository configuration -----------------------------------------------
