@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { lazy, Suspense, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { fetchRaw } from '../../api/code';
 import type { BlobView } from '../../api/types';
 import { Link, navigate, useQuery, setQuery } from '../../router';
@@ -25,6 +25,19 @@ export const FileView = observer(function FileView({ t, repo, blame, canPush }: 
   const hash = useHash();
   const selection = parseLineHash(hash);
   const anchor = useRef<LineRange | null>(null);
+  // Stable so memoized code rows don't all re-render on each selection change.
+  const onSelect = useCallback((_r: LineRange | null, line: number, extend: boolean) => {
+    const cur = parseLineHash(window.location.hash);
+    let next: LineRange;
+    if (extend && cur) {
+      const a = anchor.current?.start ?? cur.start;
+      next = { start: Math.min(a, line), end: Math.max(a, line) };
+    } else {
+      next = { start: line, end: line };
+      anchor.current = next;
+    }
+    setHash(lineHash(next));
+  }, []);
 
   if (error) {
     const status = (error as { status?: number }).status;
@@ -36,18 +49,6 @@ export const FileView = observer(function FileView({ t, repo, blame, canPush }: 
   const mode: RenderMode = blame ? 'code' : plain && modes.includes('code') ? 'code' : modes[0]!;
   const rendered = mode !== 'code';
 
-  const onSelect = (_r: LineRange | null, line: number, extend: boolean) => {
-    const cur = parseLineHash(window.location.hash);
-    let next: LineRange;
-    if (extend && cur) {
-      const a = anchor.current?.start ?? cur.start;
-      next = { start: Math.min(a, line), end: Math.max(a, line) };
-    } else {
-      next = { start: line, end: line };
-      anchor.current = next;
-    }
-    setHash(lineHash(next));
-  };
 
   return (
     <>
@@ -103,9 +104,9 @@ export const FileView = observer(function FileView({ t, repo, blame, canPush }: 
 });
 
 function FileMeta({ blob }: { blob: BlobView }) {
+  const loc = useMemo(() => blob.lines?.filter((l) => l.replace(/<[^>]*>/g, '').trim() !== '').length ?? 0, [blob.lines]);
   const parts: string[] = [];
   if (blob.lines) {
-    const loc = blob.lines.filter((l) => l.replace(/<[^>]*>/g, '').trim() !== '').length;
     parts.push(`${blob.line_count} lines (${loc} loc)`);
   }
   parts.push(formatSize(blob.lfs?.size ?? blob.size));

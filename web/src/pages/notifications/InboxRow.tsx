@@ -20,11 +20,12 @@ export interface InboxRowProps {
   selected: boolean;
   /** Some row is selected: show every checkbox. */
   selecting: boolean;
-  onSelect: () => void;
-  onToggleSelect: (e: MouseEvent) => void;
-  onOpen: () => void;
-  onDone: () => void;
-  onToggleRead: () => void;
+  /** Callbacks get the row's notification, so the list can pass the same stable functions to every row. */
+  onSelect: (n: Notification) => void;
+  onToggleSelect: (n: Notification, e: MouseEvent) => void;
+  onOpen: (n: Notification) => void;
+  onDone: (n: Notification) => void;
+  onToggleRead: (n: Notification) => void;
 }
 
 export const InboxRow = observer(function InboxRow({ n, active, selected, selecting, onSelect, onToggleSelect, onOpen, onDone, onToggleRead }: InboxRowProps) {
@@ -37,8 +38,8 @@ export const InboxRow = observer(function InboxRow({ n, active, selected, select
   return (
     <div
       className={cx(styles.row, active && styles.rowActive, !n.unread && styles.rowRead, selected && styles.rowSelected, fresh && styles.rowArrived)}
-      onClick={(e) => (e.shiftKey || e.metaKey || e.ctrlKey ? onToggleSelect(e) : onSelect())}
-      onDoubleClick={onOpen}
+      onClick={(e) => (e.shiftKey || e.metaKey || e.ctrlKey ? onToggleSelect(n, e) : onSelect(n))}
+      onDoubleClick={() => onOpen(n)}
       onMouseEnter={() => issue && prefetch(issueHref(issue))}
       role="listitem"
       aria-current={active || undefined}
@@ -52,7 +53,7 @@ export const InboxRow = observer(function InboxRow({ n, active, selected, select
           aria-label={`Select ${n.title}`}
           onClick={(e) => {
             e.stopPropagation();
-            onToggleSelect(e);
+            onToggleSelect(n, e);
           }}
           onChange={() => undefined}
         />
@@ -90,7 +91,7 @@ export const InboxRow = observer(function InboxRow({ n, active, selected, select
             aria-label={n.unread ? 'Mark as read' : 'Mark as unread'}
             onClick={(e) => {
               e.stopPropagation();
-              onToggleRead();
+              onToggleRead(n);
             }}
           >
             <DotFillIcon size={12} />
@@ -102,7 +103,7 @@ export const InboxRow = observer(function InboxRow({ n, active, selected, select
             aria-label="Mark as done"
             onClick={(e) => {
               e.stopPropagation();
-              onDone();
+              onDone(n);
             }}
           >
             <CheckIcon size={14} />
