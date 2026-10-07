@@ -3,7 +3,12 @@
 Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
 ## Mode
-03:23 FULL SPEED (user via orchestrator): up to ~10 workers + 4 QA, ignore rate-limit warnings; reviewer per S-NeedsReview PR immediately; fixer if S-ChangesRequested not picked up in 15 min; cycles every 10–15 min. On hard rate-limit failures: back off and report to orchestrator. Priority: P-Critical/P-High, then O-QA T-Bug A-Responsive, then rest; spread across areas.
+04:10 WIND DOWN (user via orchestrator; supersedes FULL SPEED):
+1. No new workers/QA/reviewers for feature/polish/QA work; no new claims; queue frozen. In-flight workers finish their current claimed issue/PR (review + fixer rounds on already-open PRs OK). Archive each session when its PR merges. QA told (04:10) to finish current pass, stop filing, report.
+2. CI track stays FULL SPEED: main red Rust tests (fixer session_01E96iLFFFxFuaZXgU4hayJ6 root-cause PR), #86 path filters, #81 branch cleanup (merge method "merge", then branch-cleanup.yml min_age_hours=12). Fixers/reviewers allowed; classifier blocks → orchestrator.
+3. After CI work merged + main green: "CI caching analysis and recommendations" issue checklist, one worker PR at a time, merged before next; close issue at end.
+4. When all done: archive all sessions (incl. QA), final #46 status, delete bgh/foreman2, report to orchestrator.
+(Previous: 03:23 FULL SPEED.)
 
 ## History
 #44 merged by user into main (9ef62fb) ~02:33; claude/sleepy-cray-9jj0t3 retired. Old QA sessions filed #47–#78 (archived).
