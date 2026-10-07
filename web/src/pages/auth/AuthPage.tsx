@@ -3,7 +3,7 @@
  * sign-up, two-factor, password reset, email verification, device
  * activation, OAuth consent): logo, title, one card, an optional box below.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/client';
 import { getBoot, isMockMode } from '../../boot';
 import { cx } from '../../ui/Button';
@@ -172,14 +172,17 @@ export function OtpInput({
   );
 }
 
-/** Run `fn` once per `key` even under StrictMode's double effects. */
+/**
+ * Run `fn` once per `key` even under StrictMode's double effects. `fn` is an
+ * effect event: it sees the latest render's values but never re-triggers.
+ */
 export function useOnce(key: string | null, fn: () => void): void {
   const done = useRef<string | null>(null);
+  const run = useEffectEvent(fn);
   useEffect(() => {
     if (key === null || done.current === key) return;
     done.current = key;
-    fn();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    run();
   }, [key]);
 }
 

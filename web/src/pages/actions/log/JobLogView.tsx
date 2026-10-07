@@ -4,8 +4,9 @@
  * follow — over ONE virtualized list of fixed-height rows, so 100k+ lines
  * scroll smoothly.
  *
- * Log state lives outside React (`JobLog`, mutated by the stream) and a
- * version counter bumped at most once per animation frame drives renders.
+ * Log state lives outside React (`JobLog`, mutated by the stream); a render
+ * forced at most once per animation frame reads its `snapshot()`, which the
+ * memos depend on.
  */
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -115,7 +116,9 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
   const [groups] = useState(() => new GroupState());
   const [visibleCache] = useState(() => new VisibleCache());
   const [search] = useState(() => new LogSearch());
-  const [version, bump] = useReducer((v: number) => v + 1, 0);
+  const [, bump] = useReducer((v: number) => v + 1, 0);
+  const logSnap = log.snapshot();
+  const groupSnap = groups.snapshot();
   const [phase, setPhase] = useState<Phase>('connecting');
 
   const live = job.status !== 'completed';
@@ -169,11 +172,10 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
   // ------------------------------------------------------------ sections
   const order = useMemo(() => {
     const nums = new Set(steps.map((s) => s.number));
-    for (const n of log.steps.keys()) nums.add(n);
+    // Steps that only exist in the log so far count too.
+    for (const n of logSnap.of.steps.keys()) nums.add(n);
     return [...nums].sort((a, b) => a - b);
-    // `version` covers steps that only exist in the log so far.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps, log, version]);
+  }, [steps, logSnap]);
 
   const [sel, setSel] = useState<Selection | null>(readHash);
   const pendingHash = useRef<Selection | null>(sel);
@@ -198,13 +200,11 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
   const layout = useMemo(
     () =>
       buildLayout(
-        order.map((n) => ({ step: n, expanded: expanded.has(n), log: log.steps.get(n), waiting: isRunning(stepByNumber.get(n)) })),
-        groups,
+        order.map((n) => ({ step: n, expanded: expanded.has(n), log: logSnap.of.steps.get(n), waiting: isRunning(stepByNumber.get(n)) })),
+        groupSnap.of,
         visibleCache,
       ),
-    // `version` tracks mutations of `log` / `groups`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [order, expanded, stepByNumber, version, log, groups, visibleCache],
+    [order, expanded, stepByNumber, logSnap, groupSnap, visibleCache],
   );
 
   // ------------------------------------------------------------ virtual list
@@ -244,10 +244,9 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
   }, [query, log]);
   const needle = debounced.toLowerCase();
   const matches = useMemo(() => {
-    search.update(log, needle);
-    return search.result(log, order);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, log, needle, order, version]);
+    search.update(logSnap.of, needle);
+    return search.result(logSnap.of, order);
+  }, [search, logSnap, needle, order]);
   const [cur, setCur] = useState(-1);
   const current = cur >= 0 ? matches.at(cur) : undefined;
 
