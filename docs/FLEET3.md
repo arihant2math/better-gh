@@ -54,3 +54,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 23:41Z: #359 merged as 1aacf33; B worker+reviewer archived; fresh B worker for #247. Queued #360, #358 in lane B after #280.
 - 23:47Z: A opened #357 (Fixes #181), green; opus reviewer spawned.
 - 23:55Z: B opened #361 (Fixes #247), green; opus reviewer spawned (CSRF).
+- 00:00Z: #361 APPROVE @a043c16 (=head), CI green; sent to coordinator. Nits → #353.
