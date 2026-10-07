@@ -100,6 +100,16 @@ async fn boot_and_auth_endpoints() {
         .await;
     res.assert_status(422);
     assert_eq!(res.json()["message"], "Incorrect username or password.");
+    // Sign-in by email needs a verified address (#138).
+    app.post("/_bgh/auth/login")
+        .json(&json!({"login": "ada@example.com", "password": "s3cret-password"}))
+        .send()
+        .await
+        .assert_status(422);
+    sqlx::query("UPDATE user_emails SET verified = true WHERE email = 'ada@example.com'")
+        .execute(&app.state.db)
+        .await
+        .unwrap();
     let res = app
         .post("/_bgh/auth/login")
         .json(&json!({"login": "ada@example.com", "password": "s3cret-password"}))
