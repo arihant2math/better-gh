@@ -820,3 +820,153 @@ async fn run_after_crash_finishes_landed_merge() {
     );
     assert_eq!(outbox(app, "pull_request_merged").await.len(), 2);
 }
+
+/// Race loop iterations (each on fresh PRs in one fixture).
+const RACE_ROUNDS: usize = 30;
+
+/// Open and queue PRs `r{round}a`, `r{round}b`, ... and build their group;
+/// each commit gets status `states[i]` (`None` = none). Returns the PR
+/// numbers.
+async fn race_group(app: &TestApp, f: &Fixture, round: usize, states: &[Option<&str>]) -> Vec<i64> {
+    let mut prs = Vec::new();
+    for i in 0..states.len() {
+        let name = format!("r{round}{}", ["a", "b", "c"][i]);
+        prs.push(pr_with(app, f, &name, &[]).await);
+    }
+    settle(app).await;
+    for &p in &prs {
+        enqueue(app, &f.alice, p).await;
+    }
+    settle(app).await;
+    for (&p, s) in prs.iter().zip(states) {
+        let r = entry(app, f.repo_id, p).await;
+        assert_eq!(r.state, "awaiting_checks", "round {round}: {r:?}");
+        if let Some(s) = s {
+            status(app, &f.alice, r.group_sha.as_deref().unwrap(), s).await;
+        }
+    }
+    prs
+}
+
+/// Mark every rebuilt group commit green until the queue is empty.
+async fn drain_queue(app: &TestApp, f: &Fixture) {
+    for _ in 0..10 {
+        settle(app).await;
+        let waiting: Vec<String> = sqlx::query_scalar(
+            "SELECT group_sha FROM merge_queue_entries
+              WHERE repo_id = $1 AND state = 'awaiting_checks' AND group_sha IS NOT NULL",
+        )
+        .bind(f.repo_id)
+        .fetch_all(&app.state.db)
+        .await
+        .unwrap();
+        if waiting.is_empty() {
+            return;
+        }
+        for sha in &waiting {
+            status(app, &f.alice, sha, "success").await;
+        }
+    }
+    panic!("merge queue did not drain");
+}
+
+/// Group refs left in the repository.
+async fn queue_refs(app: &TestApp, repo_id: i64) -> Vec<String> {
+    store(app)
+        .read(repo_id, |r| {
+            Ok(r.refs("refs/heads/gh-readonly-queue/")?
+                .into_iter()
+                .map(|r| r.name)
+                .collect())
+        })
+        .await
+        .unwrap()
+}
+
+/// The real dequeue (PR lock, entry update, timeline insert) racing the
+/// queue merging a green group `[a, b, c]`: no deadlock, and b is either
+/// removed or merged, exactly once.
+#[tokio::test]
+async fn dequeue_racing_merge_has_one_outcome() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    let ok = Some("success");
+    for round in 0..RACE_ROUNDS {
+        let prs = race_group(app, &f, round, &[ok, ok, ok]).await;
+        let pb = pull_id(app, f.repo_id, prs[1]).await;
+        let delay = std::time::Duration::from_millis((round % 6) as u64 * 3);
+        let (ran, removed) = tokio::join!(
+            bgh_pulls::merge_queue::service::run(&app.state, f.repo_id, "main"),
+            async {
+                tokio::time::sleep(delay).await;
+                bgh_pulls::merge_queue::dequeue(&app.state, f.repo_id, pb, None, "dequeued").await
+            },
+        );
+        ran.unwrap_or_else(|e| panic!("round {round}: run: {e:?}"));
+        let removed = removed.unwrap_or_else(|e| panic!("round {round}: dequeue: {e:?}"));
+        drain_queue(app, &f).await;
+
+        for n in [prs[0], prs[2]] {
+            assert_eq!(pull(app, n).await["merged"], true, "round {round}: #{n}");
+            assert_eq!(entry(app, f.repo_id, n).await.state, "merged");
+        }
+        let b = pull(app, prs[1]).await;
+        let rb = entry(app, f.repo_id, prs[1]).await;
+        if removed {
+            assert_eq!(b["merged"], false, "round {round}: {b}");
+            assert_eq!(b["state"], "open");
+            assert_eq!(rb.state, "removed", "round {round}");
+        } else {
+            assert_eq!(b["merged"], true, "round {round}: {b}");
+            assert_eq!(rb.state, "merged", "round {round}");
+        }
+        let merged_events: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM issue_events WHERE issue_id = $1 AND event = 'merged'",
+        )
+        .bind(pb)
+        .fetch_one(&app.state.db)
+        .await
+        .unwrap();
+        assert_eq!(merged_events, i64::from(!removed), "round {round}");
+        assert_eq!(queue_refs(app, f.repo_id).await, Vec::<String>::new());
+    }
+}
+
+/// Closing a PR while the queue ejects it (checks failed): no deadlock;
+/// the PR ends closed and out of the queue, the rest merges.
+#[tokio::test]
+async fn close_racing_eject_has_one_outcome() {
+    let f = fixture().await;
+    let app = &f.app;
+    queue_with_ci(app, &f.alice, "MERGE").await;
+    for round in 0..RACE_ROUNDS {
+        let prs = race_group(app, &f, round, &[Some("failure"), Some("success")]).await;
+        let delay = std::time::Duration::from_millis((round % 6) as u64 * 3);
+        let (ran, closed) = tokio::join!(
+            bgh_pulls::merge_queue::service::run(&app.state, f.repo_id, "main"),
+            async {
+                tokio::time::sleep(delay).await;
+                app.patch(&format!("/api/v3/repos/alice/demo/pulls/{}", prs[0]))
+                    .auth(&f.alice)
+                    .json(&json!({"state": "closed"}))
+                    .send()
+                    .await
+            },
+        );
+        ran.unwrap_or_else(|e| panic!("round {round}: run: {e:?}"));
+        assert_eq!(closed.status(), 200, "round {round}: {}", closed.json());
+        drain_queue(app, &f).await;
+
+        let a = pull(app, prs[0]).await;
+        assert_eq!(a["state"], "closed", "round {round}: {a}");
+        assert_eq!(a["merged"], false);
+        let ra = entry(app, f.repo_id, prs[0]).await;
+        assert!(
+            ra.state == "unmergeable" || ra.state == "removed",
+            "round {round}: {ra:?}"
+        );
+        assert_eq!(pull(app, prs[1]).await["merged"], true, "round {round}");
+        assert_eq!(queue_refs(app, f.repo_id).await, Vec::<String>::new());
+    }
+}

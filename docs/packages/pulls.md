@@ -174,7 +174,10 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   entry (`checks failed`) or, after `check_response_timeout_minutes`, the
   first one without green checks (`timed out`) is ejected and the group
   rebuilt (`invalidated`); a base move (`invalidated`) or an entry leaving
-  (`dequeued`) rebuilds it too.
+  (`dequeued`) rebuilds it too. Lock order: every transaction writing
+  `merge_queue_entries` locks their PRs first (`FOR UPDATE OF i, p`,
+  ascending id; `merge_queue::lock_pulls` / `model::lock`), then the
+  entries.
 * Diffs: parsed file diffs cached in Redis by `(repo, base, head)` for 7
   days (`pulls:diff:v1:*`); `.diff`/`.patch` streamed from git.
 

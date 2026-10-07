@@ -347,6 +347,9 @@ async fn destroy(
     eject: Option<(usize, &str)>,
 ) -> ApiResult<()> {
     let mut tx = Tx::begin(state).await?;
+    // PRs before entries (lock order, see `super::lock_pulls`).
+    let pull_ids: Vec<i64> = entries.iter().map(|e| e.pull_id).collect();
+    super::lock_pulls(&mut tx, &pull_ids).await?;
     let mut touched: Vec<i64> = Vec::new();
     if let Some((i, why)) = eject
         && let Some(e) = entries.get(i)
@@ -424,6 +427,8 @@ async fn truncate(
     let (prefix, cut) = entries.split_at(kept);
     let last = &prefix[kept - 1];
     let mut tx = Tx::begin(state).await?;
+    let cut_pulls: Vec<i64> = cut.iter().map(|e| e.pull_id).collect();
+    super::lock_pulls(&mut tx, &cut_pulls).await?;
     let prefix_ids: Vec<i64> = prefix.iter().map(|e| e.id).collect();
     sqlx::query(
         "UPDATE merge_groups SET entry_ids = $2, head_ref = $3, head_sha = $4, updated_at = now()
@@ -532,7 +537,8 @@ fn unmergeable_reason(g: &Group, l: &LockedEntry) -> Option<&'static str> {
 /// a new group based on the new tip.
 ///
 /// Race-free against dequeue / close / head pushes: the PRs and entries
-/// are locked (PRs first, like those writers) and re-checked before the
+/// are locked (PRs first, then entries: the order of every entry writer,
+/// see `super::lock_pulls`) and re-checked before the
 /// base moves, and the base moves while the locks are held; the prefix is
 /// cut before the first entry that can no longer merge. Idempotent: a run
 /// that failed after moving the base is finished by [`Landing::Landed`].
@@ -547,15 +553,11 @@ async fn merge_prefix(
     let store = git::store(state);
     let base_ref = format!("refs/heads/{}", g.base_ref);
     let mut tx = Tx::begin(state).await?;
-    let pull_ids: Vec<i64> = entries[..k].iter().map(|e| e.pull_id).collect();
+    // Every PR of the group (the rest's entries move to the new group),
+    // then the prefix entries.
+    let pull_ids: Vec<i64> = entries.iter().map(|e| e.pull_id).collect();
     let entry_ids: Vec<i64> = entries[..k].iter().map(|e| e.id).collect();
-    sqlx::query(
-        "SELECT i.id FROM issues i JOIN pull_requests p ON p.issue_id = i.id
-          WHERE i.id = ANY($1) ORDER BY i.id FOR UPDATE OF i, p",
-    )
-    .bind(&pull_ids)
-    .execute(&mut *tx)
-    .await?;
+    super::lock_pulls(&mut tx, &pull_ids).await?;
     let locked: Vec<LockedEntry> = sqlx::query_as(
         "SELECT e.id, e.state, e.group_id, e.head_sha, i.state = 'open' AS pull_open,
                 p.merged AS pull_merged, p.head_sha AS pull_head_sha
@@ -791,6 +793,8 @@ async fn build(
     let orphans: Vec<&Entry> = active.iter().filter(|e| e.state != "queued").collect();
     if !orphans.is_empty() {
         let mut tx = Tx::begin(state).await?;
+        let pull_ids: Vec<i64> = orphans.iter().map(|e| e.pull_id).collect();
+        super::lock_pulls(&mut tx, &pull_ids).await?;
         for e in &orphans {
             sqlx::query(
                 "UPDATE merge_queue_entries
@@ -839,6 +843,13 @@ async fn build(
     }
 
     let mut tx = Tx::begin(state).await?;
+    // PRs before entries (lock order, see `super::lock_pulls`).
+    let pull_ids: Vec<i64> = conflicts
+        .iter()
+        .map(|e| e.pull_id)
+        .chain(built.iter().map(|(e, _, _)| e.pull_id))
+        .collect();
+    super::lock_pulls(&mut tx, &pull_ids).await?;
     for e in &conflicts {
         sqlx::query(
             "UPDATE merge_queue_entries SET state = 'unmergeable', failure_reason = 'merge conflict',
