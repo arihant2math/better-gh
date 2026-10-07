@@ -8,6 +8,7 @@ mod cache;
 mod deployments;
 mod e2e;
 mod environments;
+mod merge_group;
 mod oidc;
 mod reusable;
 mod runner_groups;

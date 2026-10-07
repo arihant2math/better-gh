@@ -133,10 +133,11 @@ group.
 
 ## Known gaps
 
-* `merge_group`, `discussion*`,
+* `discussion*`,
   `registry_package`, `branch_protection_rule`, `status`, `page_build`,
-  `project*` triggers are still not fired (P19/P20/P39/P56 add the
-  domain features; each needs one `map_event` arm).
+  `project*` triggers are still not fired (P19/P20/P56 add the
+  domain features; each needs one `map_event` arm). `merge_group` landed
+  with P39.3 (see `docs/packages/pulls.md`).
 * P8's job-token loop guard (`trigger::on_event`) lets
   `repository_dispatch`, `workflow_dispatch` and `workflow_run` through, as
   on GitHub (`workflow_run` chains are bounded by depth instead).

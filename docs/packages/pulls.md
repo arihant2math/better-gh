@@ -175,6 +175,14 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   first one without green checks (`timed out`) is ejected and the group
   rebuilt (`invalidated`); a base move (`invalidated`) or an entry leaving
   (`dequeued`) rebuilds it too.
+* `merge_group` (P39.3): webhook `merge_group` `checks_requested` /
+  `destroyed` (+ `reason`) with `merge_group {head_sha, head_ref,
+  base_sha, base_ref, head_commit}` (bgh-notify). Actions runs `on:
+  merge_group` workflows (types: `checks_requested`) read from the group
+  commit, with `GITHUB_REF` = the queue ref and `GITHUB_SHA` = its commit;
+  the job token loop guard does not apply. Their check runs land on the
+  group commit, so `pulls.checks_changed` kicks the queue and a job named
+  like a required check gates the group.
 * Diffs: parsed file diffs cached in Redis by `(repo, base, head)` for 7
   days (`pulls:diff:v1:*`); `.diff`/`.patch` streamed from git.
 
