@@ -16,3 +16,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 ## Log
 - 2026-10-07 21:07Z: created workers A, B, C.
 - 21:16Z: B opened #346 (Fixes #258), green; reviewer spawned.
+- 21:19Z: #346 APPROVE @2a384dd (=head), CI green; sent to coordinator.
