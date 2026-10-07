@@ -11,6 +11,7 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+04:25 USER OVERRIDE: reviewers for ALL PRs needing review (workers/QA stay frozen). Reviewers must NOT merge (classifier 'Merge Without Review'); they approve, set S-Approved, update the branch, report 'ready to merge' to the foreman, and the foreman batches them to the orchestrator for the user to merge. #147 approved (reviewer archived), ready to merge. #151 = main-tests root-cause PR; reviewer session_01VoEAMaVcskHH3zXbM5dyuA.
 04:15–04:17 user merged #81 (merge), #82, #83. 04:19 branch-cleanup.yml dispatched on main (min_age_hours=12). Archived: reviewers #81/#82/#83, workers #82/#83, all 4 QA (filed #89–#140, 47 issues incl. P-High security #96, #138). Classifier denied archiving #81 fixer session_019mR7rcWSJ6vanJSsU95Gdw → left to user/orchestrator. #147 (#42 bundle) S-NeedsReview, no reviewer: asked orchestrator whether wind-down allows one (holding).
 #44 merged by user into main (9ef62fb) ~02:33; claude/sleepy-cray-9jj0t3 retired. Old QA sessions filed #47–#78 (archived).
 
