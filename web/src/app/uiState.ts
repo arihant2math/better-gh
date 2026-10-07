@@ -63,6 +63,12 @@ class UiState {
 
 export const ui = new UiState();
 
+/** Path in the current repo (`/:owner/:repo<suffix>`), else `fallback`. */
+export function repoPath(suffix: string, fallback: string): string {
+  const r = currentRepo();
+  return r ? `/${r.owner}/${r.name}${suffix}` : fallback;
+}
+
 /** The repo of the current URL, if any (for contextual commands). */
 export function currentRepo(): Repo | undefined {
   const m = matchPath(window.location.pathname);

@@ -54,3 +54,31 @@ export function bghServiceWorker(): Plugin {
     },
   };
 }
+
+/**
+ * Drop chunks the entry already loads (its static import graph: vendor,
+ * runtime, shared UI) from every dynamic import's modulepreload list. They
+ * are in memory before any lazy route runs, so listing them only bloats the
+ * preload table in the entry chunk. Returns the plugin (computes the entry
+ * graph in `generateBundle`, before Vite rewrites the preload calls) and the
+ * `build.modulePreload.resolveDependencies` hook that applies it. If the
+ * graph is unknown the hook keeps every dependency.
+ */
+export function bghPreloadDedupe(): { plugin: Plugin; resolveDependencies: (file: string, deps: string[]) => string[] } {
+  const initial = new Set<string>();
+  const plugin: Plugin = {
+    name: 'bgh-preload-dedupe',
+    apply: 'build',
+    generateBundle(_opts, bundle) {
+      initial.clear();
+      const visit = (file: string) => {
+        const chunk = bundle[file];
+        if (!chunk || chunk.type !== 'chunk' || initial.has(file)) return;
+        initial.add(file);
+        chunk.imports.forEach(visit);
+      };
+      for (const chunk of Object.values(bundle)) if (chunk.type === 'chunk' && chunk.isEntry && chunk.facadeModuleId?.endsWith('/index.html')) visit(chunk.fileName);
+    },
+  };
+  return { plugin, resolveDependencies: (_file, deps) => deps.filter((d) => !initial.has(d)) };
+}

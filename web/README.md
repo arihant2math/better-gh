@@ -38,6 +38,7 @@ appears on resize). Every page is checked for:
 | `offscreen` | an element sticks out of the viewport without a scrolling ancestor (wholly off-screen positioned layers such as skip links are ignored) |
 | `unreachable` | a control is clipped out of an `overflow: hidden` box |
 | `clipped-text` | text is cut by an `overflow: hidden/clip` box (its own or an ancestor's) without `text-overflow: ellipsis` / line clamp |
+| `squeezed-text` | text is squeezed to under 3 characters per line over 3+ lines (e.g. a title crushed by header actions) |
 | `overlap` | the centre of a control is covered by another control |
 | `tap-target` | touch viewports only: a control smaller than 32 px (inline links in running text and inputs inside a big enough `<label>` are exempt) |
 | `console`, `request` | console errors / uncaught exceptions, failed requests, HTTP 5xx |
@@ -85,8 +86,15 @@ Enforced by `scripts/size-check.mjs`, run as part of `npm run build`:
 | Any lazily loaded chunk, gzip | ≤ 60 KB |
 | On-demand diagram chunks (only reachable through the Mermaid entry), gzip | ≤ 150 KB each |
 
-Current: ~122 KB gzip initial JS (React DOM ≈ 58 KB, MobX ≈ 14 KB, app shell
-+ sync engine ≈ 35 KB). Route pages, markdown (marked + DOMPurify), the
+Current: ~131 KB gzip initial JS (React DOM ≈ 63 KB, MobX ≈ 12 KB, app shell
++ route table + sync engine ≈ 50 KB). Keep shared code out of the entry:
+overlays (command palette, shortcut help, new-issue dialog), the palette's
+command lists, inbox indicators and REST-backed route prefetchers
+(`app/routePrefetch.ts`) are lazy chunks, and shell code imports small
+modules (`ui/Avatar`, `ui/Kbd`) rather than barrels that drag in page-only
+icons. `npm run analyze` lists the initial chunks; modulepreload lists skip
+chunks the entry already loaded (`bghPreloadDedupe` in `build/plugins.ts`).
+Route pages, markdown (marked + DOMPurify), the
 virtualizer and the mock backend are separate lazy chunks. The gemoji
 table (`ui/markdown/emoji.json`, shared with the server, regenerate with
 `node scripts/gen-emoji.mjs`) is its own chunk; math (temml, MathML output)

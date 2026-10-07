@@ -188,7 +188,26 @@
 }
 
 .repoLine {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
   font-size: var(--fs-sm);
+}
+
+.repoLine > * {
+  flex: none;
+}
+
+.repoLine > .ellipsis {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Long unbroken slugs/logins: one line, ellipsized (#48). */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subtle {
@@ -203,6 +222,7 @@ a.subtle:hover {
 }
 
 .title {
+  overflow-wrap: anywhere;
   color: var(--fg);
   font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
@@ -229,6 +249,7 @@ a.subtle:hover {
   font-size: var(--fs-md);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
   white-space: pre-line;
 }
 
@@ -246,6 +267,12 @@ a.subtle:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.meta > .ellipsis {
+  display: block;
 }
 
 .label {

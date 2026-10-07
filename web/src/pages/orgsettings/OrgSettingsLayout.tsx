@@ -50,7 +50,9 @@ export default observer(function OrgSettingsLayout({ children }: { children: Rea
             {s.group && <div className={styles.subnavGroup}>{s.group}</div>}
             <Link to={orgSettingsPath(org, s.id)} className={styles.subnavItem} aria-current={section === s.id ? 'page' : undefined}>
               <s.icon size={16} />
-              {s.label}
+              <span className={styles.subnavLabel} title={s.label}>
+                {s.label}
+              </span>
               <span className={styles.subnavKey} aria-hidden>
                 {s.keys.replace(' ', '')}
               </span>
