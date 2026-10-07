@@ -199,10 +199,32 @@ export interface NavigateOptions {
   keepScroll?: boolean;
 }
 
+/**
+ * `to` as a same-origin `pathname + search + hash`, or null when it resolves
+ * elsewhere (`//x`, `/\x`, `/\t/x`, `https://x`, `javascript:`). Use it for
+ * any untrusted target such as `?return_to=`.
+ */
+export function sameOriginPath(to: string, origin: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(to, origin);
+  } catch {
+    return null;
+  }
+  return url.origin === origin ? url.pathname + url.search + url.hash : null;
+}
+
+/** Where to go after signing in: a same-origin `return_to`, else home. */
+export function returnTo(search = window.location.search, origin = window.location.origin): string {
+  const ret = new URLSearchParams(search).get('return_to');
+  return (ret && sameOriginPath(ret, origin)) || '/';
+}
+
 export function navigate(to: string, opts: NavigateOptions = {}): void {
   const url = new URL(to, window.location.href);
   if (url.origin !== window.location.origin) {
-    window.location.href = to;
+    // Full-page loads only for web URLs: never `javascript:`/`data:` targets.
+    if (url.protocol === 'http:' || url.protocol === 'https:') window.location.href = url.href;
     return;
   }
   const next = url.pathname + url.search + url.hash;
