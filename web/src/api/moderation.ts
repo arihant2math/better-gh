@@ -5,21 +5,21 @@
  * go through here.
  */
 import { api } from './client';
-import type { RestUser } from './types';
+import type { SimpleUser } from './types';
 
 /** `user_content_edits.target_type`. */
 export type ContentKind = 'issue' | 'comment' | 'review' | 'review_comment' | 'commit_comment';
 
 export interface ContentEdit {
   id: number;
-  editor: RestUser | null;
+  editor: SimpleUser | null;
   /** Text after this edit; `null` once deleted. */
   body: string | null;
   /** Text before this edit; `null` once deleted. */
   previous_body: string | null;
   edited_at: string;
   deleted_at: string | null;
-  deleted_by: RestUser | null;
+  deleted_by: SimpleUser | null;
 }
 
 const base = (owner: string, repo: string) => `/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;

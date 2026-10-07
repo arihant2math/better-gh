@@ -10,7 +10,6 @@ import {
   setEmailVisibility,
   setPrimaryEmail,
   useEditableResource,
-  type UserEmail,
 } from '../../../api/userSettings';
 import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, Toggle, apiFieldErrors, errorMessage } from '../../../components/settings/kit';
 import { Button, IconButton } from '../../../ui/Button';
@@ -19,6 +18,7 @@ import { MailIcon, TrashIcon } from '../../../ui/icons';
 import { Field, Input, Select } from '../../../ui/Input';
 import { toast } from '../../../ui/Toast';
 import styles from './userSettings.module.css';
+import type { UserEmail } from '../../../api/types';
 
 /** Client-side check for the "Add email address" field. */
 export function emailError(value: string, existing: readonly UserEmail[]): string | null {

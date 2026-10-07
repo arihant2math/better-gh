@@ -11,7 +11,8 @@ import { commit } from '../sync/mutations';
 import type { ID, Permission, Repo, Team } from '../sync/models';
 import { ops, type OverlayOp } from '../sync/overlay';
 import { api, encodePath, v3 } from './client';
-import type { RestBranch, RestUser } from './types';
+import type { RestAccount } from './profile';
+import type { HookDelivery, HookDeliveryItem, RestBranch, RestTeam, SimpleUser } from './types';
 
 // ------------------------------------------------------------------ types
 
@@ -25,7 +26,7 @@ export interface FullRepository {
   id: number;
   name: string;
   full_name: string;
-  owner: RestUser;
+  owner: SimpleUser;
   private: boolean;
   visibility: 'public' | 'private' | 'internal';
   description: string | null;
@@ -82,27 +83,18 @@ export type RepoPatch = Partial<
   >
 > & { visibility?: 'public' | 'private' | 'internal' };
 
-export interface Collaborator extends RestUser {
+export interface Collaborator extends SimpleUser {
   role_name: Permission | string;
   permissions?: Record<string, boolean>;
 }
 
 export interface RepoInvitation {
   id: number;
-  invitee: RestUser | null;
-  inviter: RestUser | null;
+  invitee: SimpleUser | null;
+  inviter: SimpleUser | null;
   permissions: Permission | string;
   created_at: string;
   expired: boolean;
-}
-
-export interface RestTeam {
-  id: number;
-  slug: string;
-  name: string;
-  description: string | null;
-  /** Legacy names on `/repos/{o}/{r}/teams`: pull | triage | push | maintain | admin. */
-  permission: string;
 }
 
 export interface StatusChecks {
@@ -112,7 +104,7 @@ export interface StatusChecks {
 }
 
 export interface PeopleOut {
-  users: RestUser[];
+  users: SimpleUser[];
   teams: { slug: string; name: string }[];
 }
 
@@ -188,25 +180,6 @@ export interface HookInput {
   active: boolean;
   events: string[];
   config: { url: string; content_type: 'json' | 'form'; insecure_ssl: '0' | '1'; secret?: string };
-}
-
-export interface DeliveryItem {
-  id: number;
-  guid: string;
-  delivered_at: string;
-  redelivery: boolean;
-  duration: number;
-  /** `OK`, `Invalid HTTP Response: 500`, `pending`, … */
-  status: string;
-  status_code: number;
-  event: string;
-  action: string | null;
-}
-
-export interface Delivery extends DeliveryItem {
-  url: string;
-  request: { headers: Record<string, string>; payload: unknown };
-  response: { headers: Record<string, string>; payload: string | null };
 }
 
 export interface Autolink {
@@ -329,8 +302,8 @@ export function deleteInvitation(owner: string, repo: string, id: number): Promi
   return api.delete<void>(repoPath(owner, repo, 'invitations', id));
 }
 
-export function getUser(login: string): Promise<RestUser> {
-  return api.get<RestUser>(v3('users', login));
+export function getUser(login: string): Promise<RestAccount> {
+  return api.get<RestAccount>(v3('users', login));
 }
 
 export function listRepoTeams(owner: string, repo: string): Promise<RestTeam[]> {
@@ -453,12 +426,12 @@ export function testHook(owner: string, repo: string, id: number): Promise<void>
   return api.post<void>(repoPath(owner, repo, 'hooks', id, 'tests'));
 }
 
-export function listDeliveries(owner: string, repo: string, hookId: number): Promise<DeliveryItem[]> {
-  return api.get<DeliveryItem[]>(`${repoPath(owner, repo, 'hooks', hookId, 'deliveries')}?per_page=50`);
+export function listDeliveries(owner: string, repo: string, hookId: number): Promise<HookDeliveryItem[]> {
+  return api.get<HookDeliveryItem[]>(`${repoPath(owner, repo, 'hooks', hookId, 'deliveries')}?per_page=50`);
 }
 
-export function getDelivery(owner: string, repo: string, hookId: number, id: number): Promise<Delivery> {
-  return api.get<Delivery>(repoPath(owner, repo, 'hooks', hookId, 'deliveries', id));
+export function getDelivery(owner: string, repo: string, hookId: number, id: number): Promise<HookDelivery> {
+  return api.get<HookDelivery>(repoPath(owner, repo, 'hooks', hookId, 'deliveries', id));
 }
 
 export function redeliver(owner: string, repo: string, hookId: number, id: number): Promise<unknown> {

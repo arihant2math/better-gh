@@ -12,11 +12,11 @@ import {
   removeOrgGroupRunner,
   setOrgGroupRepos,
   updateOrgGroup,
-  type MinimalRepository,
   type RunnerGroup,
 } from '../../../api/runners';
 import { attempt, useConfirm } from '../../../components/admin/kit';
 import { Link, navigate, useParams } from '../../../router';
+import type { MinimalRepository } from '../../../api/types';
 import { Tag } from '../../../ui/Badge';
 import { Button, IconButton } from '../../../ui/Button';
 import { EmptyState } from '../../../ui/EmptyState';

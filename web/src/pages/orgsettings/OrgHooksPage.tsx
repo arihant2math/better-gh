@@ -29,12 +29,12 @@ import {
   pingHook,
   redeliver,
   updateHook,
-  type HookDeliveryItem,
   type HookInput,
   type OrgHook,
 } from './api';
 import { OwnerRequired } from './common';
 import local from './OrgSettings.module.css';
+import type { HookDeliveryItem } from '../../api/types';
 
 const eventsSummary = (events: string[]) =>
   events.includes('*') ? 'Everything' : events.length === 1 ? events[0]! : events.length <= 3 ? events.join(', ') : `${events.slice(0, 2).join(', ')} +${events.length - 2}`;

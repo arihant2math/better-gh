@@ -15,9 +15,17 @@ const commit = (sha: string, msg: string, parent?: string): RestCommit => ({
   sha,
   node_id: '',
   html_url: '',
-  commit: { message: msg, author: { name: 'a', email: 'a@x', date: '2026-01-01T00:00:00Z' }, committer: { name: 'a', date: '2026-01-01T00:00:00Z' } },
+  commit: {
+    message: msg,
+    author: { name: 'a', email: 'a@x', date: '2026-01-01T00:00:00Z' },
+    committer: { name: 'a', email: 'a@x', date: '2026-01-01T00:00:00Z' },
+    tree: { sha: '' },
+    comment_count: 0,
+    verification: { verified: false, reason: 'unsigned', signature: null, payload: null },
+  },
   author: null,
-  parents: parent ? [{ sha: parent }] : [],
+  committer: null,
+  parents: parent ? [{ sha: parent, html_url: '' }] : [],
 });
 
 const A = 'a'.repeat(40);

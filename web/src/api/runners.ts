@@ -6,6 +6,7 @@
  */
 import type { RegistrationToken, Runner } from './actions';
 import { api, v3 } from './client';
+import type { MinimalRepository } from './types';
 
 export type GroupVisibility = 'all' | 'selected' | 'private';
 
@@ -32,14 +33,6 @@ export interface GroupInput {
   allows_public_repositories?: boolean;
   restricted_to_workflows?: boolean;
   selected_workflows?: string[];
-}
-
-export interface MinimalRepository {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-  owner?: { login: string };
 }
 
 export interface OrgSummary {

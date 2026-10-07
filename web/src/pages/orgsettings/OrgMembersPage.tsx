@@ -12,8 +12,9 @@ import { EmptyState } from '../../ui/EmptyState';
 import { CheckIcon, LinkExternalIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { collaboratorsPrefix, convertToOutsideCollaborator, membersPath, removeMember, setMembership, type OrgRole, type SimpleUser } from './api';
+import { collaboratorsPrefix, convertToOutsideCollaborator, membersPath, removeMember, setMembership, type OrgRole } from './api';
 import { InviteDialog, RowMenu, useLoadAll, useOrgAccess, userCell } from './common';
+import type { SimpleUser } from '../../api/types';
 
 interface Row {
   user: SimpleUser;
@@ -50,7 +51,7 @@ export default function OrgMembersPage() {
     const needle = q.trim().toLowerCase();
     return all
       .filter((r) => !roleFilter || r.role === roleFilter)
-      .filter((r) => !needle || r.user.login.toLowerCase().includes(needle) || (r.user.name ?? '').toLowerCase().includes(needle))
+      .filter((r) => !needle || r.user.login.toLowerCase().includes(needle))
       .sort((a, b) => a.user.login.localeCompare(b.user.login, undefined, { sensitivity: 'base' }));
   }, [admins.items, members.items, q, roleFilter]);
 
@@ -142,7 +143,7 @@ export default function OrgMembersPage() {
     ) : null;
 
   const columns: Column<Row>[] = [
-    { id: 'user', header: 'Member', width: 'minmax(220px, 3fr)', render: (r) => userCell(r.user, r.user.name ?? undefined, access.me) },
+    { id: 'user', header: 'Member', width: 'minmax(220px, 3fr)', render: (r) => userCell(r.user, undefined, access.me) },
     {
       id: 'role',
       header: 'Role',

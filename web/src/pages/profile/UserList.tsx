@@ -1,6 +1,5 @@
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState, type ReactNode } from 'react';
-import type { RestSimpleUser } from '../../api/profile';
 import { Pill } from '../../components/settings/kit';
 import { Link } from '../../router';
 import { userByLogin } from '../../sync/selectors';
@@ -11,6 +10,7 @@ import { Input } from '../../ui/Input';
 import { VirtualList } from '../../ui/VirtualList';
 import { FollowButton, useFollowState, useMyFollowing } from './follow';
 import styles from './ProfilePage.module.css';
+import type { SimpleUser } from '../../api/types';
 
 export interface PersonItem {
   login: string;
@@ -21,7 +21,7 @@ export interface PersonItem {
   badge?: string;
 }
 
-export const personFromRest = (u: RestSimpleUser): PersonItem => ({ login: u.login, id: u.id, avatarUrl: u.avatar_url, name: u.name ?? null });
+export const personFromRest = (u: SimpleUser): PersonItem => ({ login: u.login, id: u.id, avatarUrl: u.avatar_url, name: null });
 
 const PersonRow = observer(function PersonRow({ p, following }: { p: PersonItem; following: Set<string> | undefined }) {
   const synced = userByLogin(p.login);

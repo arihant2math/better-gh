@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { getSettings, ssKeys } from '../../api/secretScanning';
-import type { RestUser } from '../../api/types';
+import type { SimpleUser } from '../../api/types';
 import { Link, useLocation } from '../../router';
 import { blobUrl } from '../../components/code/urls';
 import { store } from '../../sync';
@@ -90,7 +90,7 @@ export function BypassBadge() {
   );
 }
 
-export function UserLink({ user }: { user: RestUser | null | undefined }) {
+export function UserLink({ user }: { user: SimpleUser | null | undefined }) {
   if (!user) return <span>someone</span>;
   return (
     <Link to={`/${user.login}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600, color: 'var(--fg)' }}>

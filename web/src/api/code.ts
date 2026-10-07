@@ -9,59 +9,9 @@
  */
 import { ApiError, api, encodePath, v3 } from './client';
 import { browserTransport, transport } from './transport';
-import type { BrowseCommit, RestUser } from './types';
+import type { BrowseCommit, RestCommitDetail, RestCompare, SimpleUser } from './types';
 
 // ------------------------------------------------------------------ types
-
-export interface GitPerson {
-  name: string;
-  email: string;
-  date: string;
-}
-
-export interface RestCommitFile {
-  sha: string | null;
-  filename: string;
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
-  additions: number;
-  deletions: number;
-  changes: number;
-  patch?: string;
-  previous_filename?: string;
-  blob_url?: string;
-  raw_url?: string;
-}
-
-/** `GET /repos/{o}/{r}/commits/{ref}`. */
-export interface RestCommitDetail {
-  sha: string;
-  html_url: string;
-  commit: {
-    message: string;
-    author: GitPerson;
-    committer: GitPerson;
-    tree: { sha: string };
-    comment_count?: number;
-    verification?: { verified: boolean; reason: string; signature: string | null; payload: string | null };
-  };
-  author: RestUser | null;
-  committer: RestUser | null;
-  parents: { sha: string; html_url?: string }[];
-  stats?: { additions: number; deletions: number; total: number };
-  files?: RestCommitFile[];
-}
-
-/** `GET /repos/{o}/{r}/compare/{base}...{head}`. */
-export interface RestCompare {
-  status: 'diverged' | 'ahead' | 'behind' | 'identical';
-  ahead_by: number;
-  behind_by: number;
-  total_commits: number;
-  html_url: string;
-  merge_base_commit: RestCommitDetail;
-  commits: RestCommitDetail[];
-  files?: RestCommitFile[];
-}
 
 export interface RestTag {
   name: string;
@@ -76,7 +26,7 @@ export interface RestFullRepo {
   name: string;
   full_name: string;
   private: boolean;
-  owner: RestUser;
+  owner: SimpleUser;
   description: string | null;
   homepage: string | null;
   html_url: string;
@@ -118,7 +68,7 @@ export interface RestAsset {
   browser_download_url: string;
   created_at: string;
   updated_at: string;
-  uploader: RestUser | null;
+  uploader: SimpleUser | null;
 }
 
 export interface RestRelease {
@@ -132,7 +82,7 @@ export interface RestRelease {
   prerelease: boolean;
   created_at: string;
   published_at: string | null;
-  author: RestUser;
+  author: SimpleUser;
   assets: RestAsset[];
   html_url: string;
   upload_url: string;

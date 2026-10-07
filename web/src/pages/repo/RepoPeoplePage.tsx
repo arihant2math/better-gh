@@ -1,7 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useMemo } from 'react';
 import { repoListPaths } from '../../api/endpoints';
-import type { RestSimpleUser } from '../../api/profile';
 import { usePagedList } from '../../components/admin/usePagedList';
 import { useLocation, useParams } from '../../router';
 import { repoByName } from '../../sync/selectors';
@@ -9,6 +8,7 @@ import { Button } from '../../ui/Button';
 import { EyeIcon, StarIcon } from '../../ui/icons';
 import { personFromRest, UserList } from '../profile/UserList';
 import styles from './RepoNav.module.css';
+import type { SimpleUser } from '../../api/types';
 
 /** `/:owner/:repo/stargazers` and `/:owner/:repo/watchers` (paginated, `Link: rel="next"`). */
 export default observer(function RepoPeoplePage() {
@@ -17,7 +17,7 @@ export default observer(function RepoPeoplePage() {
   const repo = repoByName(owner, name);
   const o = repo?.owner ?? owner;
   const n = repo?.name ?? name;
-  const list = usePagedList<RestSimpleUser>(watchers ? repoListPaths.watchers(o, n) : repoListPaths.stargazers(o, n));
+  const list = usePagedList<SimpleUser>(watchers ? repoListPaths.watchers(o, n) : repoListPaths.stargazers(o, n));
   const people = useMemo(() => (list.items.length || list.done ? list.items.map(personFromRest) : undefined), [list.items, list.done]);
   const Icon = watchers ? EyeIcon : StarIcon;
   return (

@@ -4,10 +4,10 @@
  * read. Results are cached per query so going back renders instantly.
  */
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { searchAudit, type AuditEntry, type AuditQuery } from './api';
+import { searchAudit, type AdminAuditEntry, type AuditQuery } from './api';
 
 export interface AuditListState {
-  entries: AuditEntry[];
+  entries: AdminAuditEntry[];
   next: number | null;
   loading: boolean;
   error: unknown;
@@ -101,8 +101,8 @@ export const EXPORT_LIMIT = 10_000;
  * Page through every entry matching `query` (up to `EXPORT_LIMIT`).
  * `onProgress` gets the running count; abort with `signal`.
  */
-export async function fetchAllAudit(query: AuditQuery, onProgress: (n: number) => void, signal: { aborted: boolean }): Promise<{ entries: AuditEntry[]; truncated: boolean }> {
-  const out: AuditEntry[] = [];
+export async function fetchAllAudit(query: AuditQuery, onProgress: (n: number) => void, signal: { aborted: boolean }): Promise<{ entries: AdminAuditEntry[]; truncated: boolean }> {
+  const out: AdminAuditEntry[] = [];
   let cursor: number | undefined;
   for (;;) {
     const page = await searchAudit({ ...query, cursor, per_page: 100 });

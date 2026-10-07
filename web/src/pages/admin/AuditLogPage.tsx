@@ -15,7 +15,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import type { AuditEntry, AuditQuery } from './api';
+import type { AdminAuditEntry, AuditQuery } from './api';
 import { EXPORT_LIMIT, fetchAllAudit, useAuditLog } from './auditCursor';
 import a from './audit.module.css';
 
@@ -33,7 +33,7 @@ const ALL_FILTERS: FilterKey[] = ['actor', 'action', 'repo', 'org', 'user', 'sin
 
 const userHref = (login: string) => `/site-admin/users/${encodeURIComponent(login)}`;
 
-function target(e: AuditEntry): string {
+function target(e: AdminAuditEntry): string {
   if (e.repo) return e.repo;
   if (e.user) return e.user;
   if (e.org) return e.org;
@@ -41,7 +41,7 @@ function target(e: AuditEntry): string {
   return '';
 }
 
-function actorCell(e: AuditEntry) {
+function actorCell(e: AdminAuditEntry) {
   if (!e.actor.login) return <span className={styles.subtle}>system</span>;
   return (
     <>
@@ -51,7 +51,7 @@ function actorCell(e: AuditEntry) {
   );
 }
 
-const COLUMNS: Column<AuditEntry>[] = [
+const COLUMNS: Column<AdminAuditEntry>[] = [
   {
     id: 'time',
     header: 'Time',
@@ -76,7 +76,7 @@ const COLUMNS: Column<AuditEntry>[] = [
   { id: 'ip', header: 'IP', width: '128px', hideBelow: 820, render: (e) => (e.ip ? <span className={`${styles.mono} ${a.ellipsis}`}>{e.ip}</span> : <span className={styles.subtle}>—</span>) },
 ];
 
-const CSV_COLUMNS: { header: string; value: (e: AuditEntry) => unknown }[] = [
+const CSV_COLUMNS: { header: string; value: (e: AdminAuditEntry) => unknown }[] = [
   { header: 'id', value: (e) => e.id },
   { header: 'created_at', value: (e) => e.created_at },
   { header: 'action', value: (e) => e.action },
@@ -336,7 +336,7 @@ export default function AuditLogPage() {
   );
 }
 
-function EntryDetails({ entry: e, filterBy }: { entry: AuditEntry; filterBy: (p: Partial<Record<FilterKey, string>>) => void }) {
+function EntryDetails({ entry: e, filterBy }: { entry: AdminAuditEntry; filterBy: (p: Partial<Record<FilterKey, string>>) => void }) {
   const category = e.action.split('.')[0]!;
   const quick: { label: string; patch: Partial<Record<FilterKey, string>> }[] = [];
   if (e.actor.login) quick.push({ label: `Actor ${e.actor.login}`, patch: { actor: e.actor.login } });

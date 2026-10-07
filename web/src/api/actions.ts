@@ -4,7 +4,7 @@
  * `api/cache` (`actionsKey(...)`) and the live store in `pages/actions/live`.
  */
 import { api, v3 } from './client';
-import type { RestUser } from './types';
+import type { SimpleUser } from './types';
 
 const enc = encodeURIComponent;
 
@@ -55,8 +55,8 @@ export interface WorkflowRun {
   pull_requests: RunPullRequest[];
   created_at: string;
   updated_at: string;
-  actor: RestUser | null;
-  triggering_actor: RestUser | null;
+  actor: SimpleUser | null;
+  triggering_actor: SimpleUser | null;
   run_attempt: number;
   run_started_at: string;
   head_commit: { id: string; message: string; timestamp: string; author: { name: string; email: string } | null } | null;

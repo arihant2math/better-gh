@@ -6,7 +6,7 @@
  * Only imported by the lazy security / settings chunks.
  */
 import { api, v3 } from './client';
-import type { RestUser } from './types';
+import type { MinimalRepository, SimpleUser } from './types';
 
 export type AlertState = 'open' | 'resolved';
 export type Resolution = 'false_positive' | 'wont_fix' | 'revoked' | 'used_in_tests';
@@ -30,15 +30,6 @@ export interface AlertLocation {
   details: CommitLocation;
 }
 
-export interface MinimalRepository {
-  id: number;
-  name: string;
-  full_name: string;
-  owner: { login: string; avatar_url?: string };
-  private?: boolean;
-  html_url?: string;
-}
-
 /** GitHub `secret-scanning-alert`. */
 export interface SecretScanningAlert {
   number: number;
@@ -50,13 +41,13 @@ export interface SecretScanningAlert {
   state: AlertState;
   resolution: Resolution | null;
   resolved_at: string | null;
-  resolved_by: RestUser | null;
+  resolved_by: SimpleUser | null;
   resolution_comment: string | null;
   secret_type: string;
   secret_type_display_name: string;
   secret: string;
   push_protection_bypassed: boolean | null;
-  push_protection_bypassed_by: RestUser | null;
+  push_protection_bypassed_by: SimpleUser | null;
   push_protection_bypassed_at: string | null;
   validity?: string;
   publicly_leaked?: boolean;
@@ -127,7 +118,7 @@ export interface CustomPattern {
   scope: 'repository' | 'organization';
   created_at: string;
   updated_at: string;
-  created_by: RestUser | null;
+  created_by: SimpleUser | null;
 }
 
 export interface CustomPatternInput {

@@ -13,6 +13,7 @@ import { ApiError, api, v3 } from '../../api/client';
 import { transport } from '../../api/transport';
 import { getBoot } from '../../boot';
 import { parseLink } from '../../components/admin/usePagedList';
+import type { HookDelivery, OrgMembership, RestTeam, SimpleUser, TeamSimple } from '../../api/types';
 
 // ------------------------------------------------------------------ helpers
 
@@ -62,20 +63,6 @@ export const isNotAllowed = (err: unknown) => err instanceof ApiError && (err.st
 const orgPath = (org: string, ...rest: (string | number)[]) => v3('orgs', org, ...rest);
 
 // ------------------------------------------------------------------ shapes
-
-/** `simple-user` (the fields the UI reads). */
-export interface SimpleUser {
-  login: string;
-  id: number;
-  node_id?: string;
-  avatar_url: string;
-  html_url: string;
-  type: 'User' | 'Organization' | 'Bot' | string;
-  site_admin: boolean;
-  /** Present on `public-user` (`GET /users/{u}`), not on simple-user. */
-  name?: string | null;
-  email?: string | null;
-}
 
 export type DefaultRepoPermission = 'none' | 'read' | 'write' | 'admin';
 
@@ -141,16 +128,6 @@ export type OrgPatch = Partial<
 
 export type OrgRole = 'admin' | 'member';
 
-/** `org-membership`. */
-export interface OrgMembership {
-  url: string;
-  state: 'active' | 'pending';
-  role: OrgRole | 'billing_manager';
-  organization_url: string;
-  user: SimpleUser | null;
-  permissions?: { can_create_repository: boolean };
-}
-
 export type InvitationRole = 'admin' | 'direct_member' | 'billing_manager' | 'hiring_manager' | 'reinstate';
 
 /** `organization-invitation`. */
@@ -169,31 +146,10 @@ export interface OrgInvitation {
   invitation_source?: string;
 }
 
-export type TeamPrivacy = 'closed' | 'secret';
-
-/** `team-simple`. */
-export interface TeamSimple {
-  id: number;
-  node_id: string;
-  url: string;
-  html_url: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  privacy: TeamPrivacy;
-  notification_setting?: 'notifications_enabled' | 'notifications_disabled';
-  permission: string;
-  members_url: string;
-  repositories_url: string;
-}
-
-/** `team` (list shape). */
-export interface Team extends TeamSimple {
-  parent: TeamSimple | null;
-}
+export type TeamPrivacy = TeamSimple['privacy'];
 
 /** `team-full`. */
-export interface TeamFull extends Team {
+export interface TeamFull extends RestTeam {
   members_count: number;
   repos_count: number;
   created_at: string;
@@ -256,30 +212,6 @@ export interface HookInput {
   config: { url: string; content_type: 'json' | 'form'; insecure_ssl: '0' | '1'; secret?: string };
   events: string[];
   active: boolean;
-}
-
-/** `hook-delivery-item`. */
-export interface HookDeliveryItem {
-  id: number;
-  guid: string;
-  delivered_at: string;
-  redelivery: boolean;
-  /** Seconds. */
-  duration: number;
-  status: string;
-  status_code: number;
-  event: string;
-  action: string | null;
-  installation_id: number | null;
-  repository_id: number | null;
-  throttled_at?: string | null;
-}
-
-/** `hook-delivery`. */
-export interface HookDelivery extends HookDeliveryItem {
-  url?: string;
-  request: { headers: Record<string, string> | null; payload: unknown };
-  response: { headers: Record<string, string> | null; payload: string | null };
 }
 
 /** GitHub audit log entry (`GET /orgs/{org}/audit-log`). */
@@ -376,7 +308,7 @@ export const createInvitation = (org: string, body: InvitationInput) => api.post
 
 export const cancelInvitation = (org: string, id: number) => api.delete<null>(orgPath(org, 'invitations', id));
 
-export const invitationTeams = (org: string, id: number) => fetchAll<Team>(orgPath(org, 'invitations', id, 'teams') + qs({ per_page: 100 }));
+export const invitationTeams = (org: string, id: number) => fetchAll<RestTeam>(orgPath(org, 'invitations', id, 'teams') + qs({ per_page: 100 }));
 
 // ------------------------------------------------------------------ teams
 
@@ -386,7 +318,7 @@ export const teamsPath = (org: string) => orgPath(org, 'teams') + qs({ per_page:
 
 export const allTeamsKey = (org: string) => `org:teams:${org}`;
 
-export const listAllTeams = (org: string) => fetchAll<Team>(teamsPath(org));
+export const listAllTeams = (org: string) => fetchAll<RestTeam>(teamsPath(org));
 
 export const teamKey = (org: string, slug: string) => `org:team:${org}/${slug}`;
 

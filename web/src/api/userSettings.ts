@@ -14,6 +14,7 @@ import { uuid } from '../sync/transactions';
 import { invalidate, load, useResource } from './cache';
 import { ApiError, api, v3 } from './client';
 import { transport } from './transport';
+import type { UserEmail } from './types';
 
 // ------------------------------------------------------------------ shapes
 
@@ -43,14 +44,6 @@ export interface ProfilePatch {
   location?: string | null;
   hireable?: boolean | null;
   bio?: string | null;
-}
-
-export interface UserEmail {
-  email: string;
-  primary: boolean;
-  verified: boolean;
-  /** Only set on the primary address. */
-  visibility: 'public' | 'private' | null;
 }
 
 export interface TwoFactorStatus {

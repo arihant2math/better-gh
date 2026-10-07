@@ -4,14 +4,7 @@
  * bgh-accounts `apps/` (GitHub's `integration` and `installation`).
  */
 import { api } from './client';
-
-export interface SimpleUser {
-  login: string;
-  id: number;
-  avatar_url: string;
-  type: string;
-  html_url?: string;
-}
+import type { HookDelivery, HookDeliveryItem, MinimalRepository, SimpleUser } from './types';
 
 export type Access = 'read' | 'write' | 'admin';
 export type PermissionMap = Record<string, Access>;
@@ -68,28 +61,6 @@ export interface ClientSecret {
   last_used_at: string | null;
   /** Only in the create response. */
   client_secret?: string;
-}
-
-/** GitHub's `hook-delivery-item`. */
-export interface HookDeliveryItem {
-  id: number;
-  guid: string;
-  delivered_at: string;
-  redelivery: boolean;
-  duration: number;
-  status: string;
-  status_code: number;
-  event: string;
-  action: string | null;
-  installation_id: number | null;
-  repository_id: number | null;
-}
-
-/** GitHub's `hook-delivery`. */
-export interface HookDelivery extends HookDeliveryItem {
-  url: string;
-  request: { headers: Record<string, string>; payload: unknown };
-  response: { headers: Record<string, string>; payload: string | null };
 }
 
 export interface AppHookStatus {
@@ -151,17 +122,10 @@ export interface Installation {
   html_url: string;
 }
 
-export interface MinimalRepo {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
-}
-
 export interface InstallationDetail {
   installation: Installation;
   app: Integration;
-  repositories: MinimalRepo[];
+  repositories: MinimalRepository[];
   permissions_outdated: boolean;
   requested_permissions: PermissionMap;
   requested_events: string[];
@@ -214,8 +178,8 @@ export const setSuspended = (id: number, on: boolean) =>
 export const acceptPermissions = (id: number) => api.post<InstallationDetail>(`/_bgh/installations/${id}/accept_permissions`);
 
 /** Repositories of an account, for the "Only select repositories" picker. */
-export const listAccountRepos = (account: SimpleUser, me: string) =>
-  api.get<MinimalRepo[]>(
+export const listAccountRepos = (account: Pick<SimpleUser, 'login' | 'type'>, me: string) =>
+  api.get<MinimalRepository[]>(
     account.type === 'Organization'
       ? `/api/v3/orgs/${enc(account.login)}/repos?per_page=100&sort=full_name`
       : account.login === me

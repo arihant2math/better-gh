@@ -9,9 +9,10 @@ import { EmptyState } from '../../ui/EmptyState';
 import { InfoIcon, LockIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { collaboratorsPath, isNotAllowed, removeOutsideCollaborator, type SimpleUser } from './api';
+import { collaboratorsPath, isNotAllowed, removeOutsideCollaborator } from './api';
 import { InviteDialog, RowMenu, useLoadAll, useOrgAccess, userCell } from './common';
 import local from './OrgSettings.module.css';
+import type { SimpleUser } from '../../api/types';
 
 const FILTERS = [
   { id: '', label: 'All' },

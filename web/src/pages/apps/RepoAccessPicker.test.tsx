@@ -2,8 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { SimpleUser } from '../../api/apps';
 import { RepoAccessPicker, type RepoSelection } from './RepoAccessPicker';
+import { simpleUser } from '../../test/fixtures';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -13,7 +13,7 @@ const REPOS = [
 ];
 vi.mock('../../api/cache', () => ({ useResource: () => ({ data: REPOS, loading: false }) }));
 
-const account = { login: 'octo' } as SimpleUser;
+const account = simpleUser('octo', 1);
 let root: Root | null = null;
 afterEach(() => {
   act(() => root?.unmount());
