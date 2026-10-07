@@ -181,17 +181,27 @@ export const repoListPaths = {
   forks: (owner: string, repo: string, sort: string) => `${v3('repos', owner, repo, 'forks')}?per_page=30&sort=${encodeURIComponent(sort)}`,
 };
 
-/** The repo's PR template (`.github/pull_request_template.md` and the usual fallbacks), or `null`. */
-export async function getPullTemplate(owner: string, repo: string, ref?: string): Promise<string | null> {
-  for (const path of ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md']) {
-    try {
-      const c = await getContents(owner, repo, path, ref);
-      if (!Array.isArray(c) && c.type === 'file' && 'content' in c) return decodeContent(c.content);
-    } catch {
-      // try the next location
-    }
-  }
-  return null;
+export interface PullTemplate {
+  /** Path in the repository, e.g. `.github/PULL_REQUEST_TEMPLATE/feature.md`. */
+  filename: string;
+  /** Basename, as used by `?template=`. */
+  name: string;
+  body: string;
+}
+
+export interface PullTemplates {
+  commit_sha: string | null;
+  /** `repo`, `org` (the owner's `.github` repository) or `null` when there are none. */
+  source: 'repo' | 'org' | null;
+  /** `pull_request_template.md` (`.github/`, root or `docs/`). */
+  default: PullTemplate | null;
+  /** `PULL_REQUEST_TEMPLATE/*.md`. */
+  templates: PullTemplate[];
+}
+
+/** PR templates (all locations and the owner's `.github` fallback, resolved server-side in one request). */
+export function getPullTemplates(owner: string, repo: string): Promise<PullTemplates> {
+  return api.get<PullTemplates>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull-templates`);
 }
 
 // ---------------------------------------------------------------- code browser

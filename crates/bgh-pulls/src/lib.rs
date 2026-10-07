@@ -31,6 +31,7 @@ pub mod reviews;
 pub mod statuses;
 pub mod suggestions;
 pub mod synchronize;
+pub mod templates;
 pub mod timeline;
 pub mod viewed;
 pub mod web;
@@ -188,6 +189,10 @@ pub fn web_router() -> Router<AppState> {
             get(viewed::list).put(viewed::put).delete(viewed::delete),
         )
         .route(&p("/suggestions/apply"), post(suggestions::apply_handler))
+        .route(
+            "/_bgh/repos/{owner}/{repo}/pull-templates",
+            get(templates::get),
+        )
         .route(
             "/_bgh/repos/{owner}/{repo}/commits/{sha}/annotations",
             get(diffview::commit_annotations),
