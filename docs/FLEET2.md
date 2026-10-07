@@ -11,22 +11,23 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+04:15–04:17 user merged #81 (merge), #82, #83. 04:19 branch-cleanup.yml dispatched on main (min_age_hours=12). Archived: reviewers #81/#82/#83, workers #82/#83, all 4 QA (filed #89–#140, 47 issues incl. P-High security #96, #138). Classifier denied archiving #81 fixer session_019mR7rcWSJ6vanJSsU95Gdw → left to user/orchestrator. #147 (#42 bundle) S-NeedsReview, no reviewer: asked orchestrator whether wind-down allows one (holding).
 #44 merged by user into main (9ef62fb) ~02:33; claude/sleepy-cray-9jj0t3 retired. Old QA sessions filed #47–#78 (archived).
 
 ## Workers
 | Issue | Session | PR | Status |
 |---|---|---|---|
 | #45 viewport matrix | session_01BURtkf7ua5yBimS7SrhLvt | — | working |
-| main Rust tests fixer | session_01E96iLFFFxFuaZXgU4hayJ6 | #87 merged by user 04:04 (diagnostics only) | sent back for root-cause fix PR |
+| main Rust tests fixer | session_01E96iLFFFxFuaZXgU4hayJ6 | #87 merged (diagnostics) | 04:18 gate test running; PR from agent/fix-main-tests-2 next |
 | #73 modal focus (+#63?) | session_013HG6yn6H9NYMAmM4iHzJ51 | — | working |
 | #60+#66 topbar breadcrumbs | session_0142iYEJAmNc4sKsZMCnhhYQ | #99 | in review (session_01ES6c9RyJjKa6meDUUJbvV3) |
-| #41 PR diff commit range | session_01QkzGhN3PPqNiRUBQ9YnH5C | #83 | in review (session_01PAC94sDt4XhXqoRgzXLhpd) |
+| #41 PR diff commit range | session_01QkzGhN3PPqNiRUBQ9YnH5C | #83 | MERGED, archived |
 | #17 backup/admin CLI | session_01CBqx1eAjHqzrzArwDfoRUs | — | working (multi-PR) |
 | #67 list filter bar | session_01DqkE15WspmiTrQ5N81q11Y | #94 | in review (session_01JHfbu2yrPNBqxLXUmsXc4z) |
 | #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | #93 | in review (session_0138qu5VQL9FTrSUSvCkrMCm) |
 | #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | #88 | in review (session_01By5xV53cQckCS8sQpYfvSC) |
-| #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | #82 | in review (session_01VvN6wT3FDMVjv4NGHkQsDB) |
-| #42 bundle budget | session_01EqGtoarvzLipstEVahMUUk | — | working |
+| #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | #82 | MERGED, archived |
+| #42 bundle budget | session_01EqGtoarvzLipstEVahMUUk | #147 | S-NeedsReview; reviewer held pending orchestrator |
 | #52+#51+#53 command palette | session_013fSYvtqc39XjY3386rsMor | — | working |
 | #68+#69+#70 PR timeline | session_01QpEnrtN98FRjCg8vGgLuZj | — | working |
 | #76 slash branch names | session_01ULxkjyqgpub6jn2a4ZR4oB | — | working |
