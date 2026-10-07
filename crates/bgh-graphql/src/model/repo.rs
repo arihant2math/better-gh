@@ -576,6 +576,17 @@ impl Repository {
         let name = format!("refs/heads/{}", self.r().default_branch);
         Ref::load(ctx, self.clone(), &name).await
     }
+    /// The merge queue for a specified branch, otherwise the default
+    /// branch if not provided (null when the branch has no merge queue).
+    pub async fn merge_queue(
+        &self,
+        ctx: &Context<'_>,
+        branch: Option<String>,
+    ) -> GResult<Option<super::merge_queue::MergeQueue>> {
+        let branch = branch.unwrap_or_else(|| self.r().default_branch.clone());
+        let branch = branch.strip_prefix("refs/heads/").unwrap_or(&branch);
+        super::merge_queue::MergeQueue::load(ctx, self.clone(), branch).await
+    }
     #[graphql(name = "ref")]
     pub async fn ref_(&self, ctx: &Context<'_>, qualified_name: String) -> GResult<Option<Ref>> {
         let full = if qualified_name.starts_with("refs/") {

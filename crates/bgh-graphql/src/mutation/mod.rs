@@ -7,6 +7,7 @@
 //! payload.
 
 mod issues;
+mod merge_queue;
 mod moderation;
 pub mod projects;
 mod pulls;
@@ -47,6 +48,7 @@ pub fn guard<'a>(ctx: &Context<'a>) -> GResult<&'a AuthContext> {
 #[derive(MergedObject, Default)]
 pub struct Mutation(
     issues::IssueMutations,
+    merge_queue::MergeQueueMutations,
     moderation::ModerationMutations,
     projects::ProjectMutations,
     pulls::PullMutations,

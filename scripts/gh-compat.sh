@@ -323,6 +323,29 @@ run_case "gh pr review --comment" --needs FX_PR -- \
   "$GH" pr review "$FX_PR" -R "$NWO" --comment --body "review from gh"
 run_case "gh pr merge --merge" --needs FX_PR -- "$GH" pr merge "$FX_PR" -R "$NWO" --merge
 
+# Merge queue: a PR into `queue-base` (which has a merge_queue rule);
+# `gh pr merge --auto` must add it to the queue (enablePullRequestAutoMerge).
+# shellcheck disable=SC2329 # invoked through run_case
+queue_fixture() {
+  local sha
+  sha="$(api GET "/repos/$NWO/git/ref/heads/main" | python3 -c 'import json,sys; print(json.load(sys.stdin)["object"]["sha"])')" &&
+    api POST "/repos/$NWO/git/refs" "{\"ref\":\"refs/heads/queue-base\",\"sha\":\"$sha\"}" >/dev/null &&
+    api POST "/repos/$NWO/git/refs" "{\"ref\":\"refs/heads/queued\",\"sha\":\"$sha\"}" >/dev/null &&
+    api PUT "/repos/$NWO/contents/queued.txt" '{"message":"Queued change","content":"cXVldWVkCg==","branch":"queued"}' >/dev/null &&
+    api POST "/repos/$NWO/rulesets" '{"name":"compat queue","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/queue-base"],"exclude":[]}},"rules":[{"type":"merge_queue"}]}' >/dev/null &&
+    api POST "/repos/$NWO/pulls" '{"title":"Queued PR","head":"queued","base":"queue-base"}'
+}
+FX_QUEUE_PR=""
+if [[ -n $FX_REPO ]] && run_case "merge queue branch + PR (REST)" --kind fixture -- queue_fixture; then
+  FX_QUEUE_PR="$(jfield number <"$LAST_OUT")"
+fi
+run_case "gh pr merge --auto (merge queue)" --needs FX_QUEUE_PR -- \
+  "$GH" pr merge "$FX_QUEUE_PR" -R "$NWO" --auto --squash
+run_case "gh api graphql isInMergeQueue (merge queue)" --needs FX_QUEUE_PR --expect "^true\$" -- \
+  "$GH" api graphql -F owner="$OWNER" -F name="$REPO" -F n="${FX_QUEUE_PR:-0}" \
+  -f query='query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $n) { isInMergeQueue } } }' \
+  --jq .data.repository.pullRequest.isInMergeQueue
+
 echo "-- rulesets"
 run_case "gh ruleset list" --needs FX_RULESET --expect "compat rules" -- "$GH" ruleset list -R "$NWO"
 run_case "gh ruleset view" --needs FX_RULESET --expect "compat rules" -- \
