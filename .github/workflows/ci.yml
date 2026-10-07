@@ -64,7 +64,28 @@ jobs:
           shared-key: test
       # Integration tests drive the real git CLI (preinstalled, with git-lfs).
       - run: git config --global user.name ci && git config --global user.email ci@example.com
-      - run: cargo test --workspace --locked --no-fail-fast
+      # The suite's expected constraint violations and per-test DROP DATABASE
+      # make Postgres log tens of thousands of lines, which the runner dumps
+      # after the job and which bury the test output in the log tail.
+      - name: Quiet the Postgres service log
+        run: >-
+          docker exec ${{ job.services.postgres.id }} psql -U postgres
+          -c "ALTER SYSTEM SET log_min_messages = 'panic'"
+          -c "ALTER SYSTEM SET log_min_error_statement = 'panic'"
+          -c "ALTER SYSTEM SET log_checkpoints = off"
+          -c "SELECT pg_reload_conf()"
+      - run: cargo test --workspace --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/cargo-test.log"
+        shell: bash # -o pipefail: keep cargo's exit status through tee
+      - name: Summarize test failures
+        if: failure()
+        run: |
+          {
+            echo '### Rust test failures'
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/cargo-test.log" \
+              | grep -E '^test .* FAILED$|panicked at|^error(\[|:)|test result: FAILED' || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   web:
     name: Web (typecheck, lint, test, build)
