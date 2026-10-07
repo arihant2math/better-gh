@@ -32,6 +32,7 @@ jobs:
       # Branches some open PR still uses as its head or its base (stacked
       # PRs) are never deleted.
       - name: Collect branches used by open PRs
+        shell: bash  # -eo pipefail: a failing gh must fail the job, never yield an empty list
         run: |
           gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 1000 \
             --json headRefName,baseRefName \
@@ -42,7 +43,9 @@ jobs:
         if: github.event_name == 'pull_request' && github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        shell: bash
         run: |
+          [ -n "$DEFAULT_BRANCH" ] || { echo "no default branch"; exit 1; }
           if [ "$HEAD_REF" = "$DEFAULT_BRANCH" ]; then
             echo "not deleting the default branch"; exit 0
           fi
@@ -55,7 +58,9 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           MIN_AGE_HOURS: ${{ inputs.min_age_hours || '48' }}
+        shell: bash
         run: |
+          [ -n "$DEFAULT_BRANCH" ] || { echo "no default branch"; exit 1; }
           case "$MIN_AGE_HOURS" in
             ''|*[!0-9]*) echo "min_age_hours must be a non-negative integer, got '$MIN_AGE_HOURS'"; exit 1 ;;
           esac
@@ -68,6 +73,7 @@ jobs:
               echo "skip (used by an open PR): $b"; continue
             fi
             tip=$(git rev-parse "origin/$b")
+            # Age is the tip's commit date, not when the branch was created or last pushed.
             # A branch at the default branch's tip was probably just created
             # and has no commits yet; recent tips may be work in progress.
             if [ "$tip" = "$default_tip" ]; then
