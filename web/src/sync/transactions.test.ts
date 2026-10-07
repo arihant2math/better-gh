@@ -3,6 +3,7 @@ import type { Issue } from './models';
 import { ops } from './overlay';
 import { MemoryPersistence } from './persistence';
 import { ObjectPool } from './pool';
+import { SUDO_REQUIRED_PREFIX } from '../api/client';
 import { TxQueue, TxRejectedError, type TxResult, type TxSender } from './transactions';
 
 const T = '2026-01-01T00:00:00Z';
@@ -162,5 +163,92 @@ describe('TxQueue', () => {
     release({ status: 200, syncId: 7 });
     await expect(done).resolves.toMatchObject({ status: 200 });
     expect(pool.get('issue', 1)?.title).toBe('New');
+  });
+
+  describe('sudo 401 (#242)', () => {
+    const SUDO: TxResult = { status: 401, message: `${SUDO_REQUIRED_PREFIX}: confirm your password and retry.` };
+
+    function sudoSetup(responses: TxResult[], onSudoRequired?: () => Promise<boolean>) {
+      const pool = new ObjectPool(1);
+      pool.loadRows({ issue: [base] });
+      const onRollback = vi.fn();
+      const onUnauthorized = vi.fn();
+      const sent: string[] = [];
+      const queue = new TxQueue(
+        pool,
+        new MemoryPersistence(),
+        async (req) => {
+          sent.push(req.path);
+          return responses.shift() ?? { status: 200 };
+        },
+        { onRollback, onUnauthorized, onSudoRequired },
+      );
+      return { pool, queue, onRollback, onUnauthorized, sent };
+    }
+
+    it('prompts for sudo and retries instead of expiring the session', async () => {
+      const prompt = vi.fn(async () => true);
+      const { queue, onUnauthorized, onRollback, sent } = sudoSetup([SUDO, { status: 204 }], prompt);
+      const { done } = queue.commit(rename('New'));
+      await expect(done).resolves.toMatchObject({ status: 204 });
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(2);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(onRollback).not.toHaveBeenCalled();
+      expect(queue.paused).toBe(false);
+    });
+
+    it('rolls back when the user cancels the prompt, without pausing the queue', async () => {
+      const { pool, queue, onUnauthorized, onRollback, sent } = sudoSetup([SUDO], async () => false);
+      const { done } = queue.commit(rename('New'));
+      await expect(done).rejects.toBeInstanceOf(TxRejectedError);
+      expect(pool.get('issue', 1)?.title).toBe('Original');
+      expect(sent).toHaveLength(1);
+      expect(onRollback).toHaveBeenCalledTimes(1);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(queue.paused).toBe(false);
+      // Later writes still go out.
+      await expect(queue.commit(rename('Again')).done).resolves.toMatchObject({ status: 200 });
+    });
+
+    it('rolls back (never logs out) without a sudo hook', async () => {
+      const { queue, onUnauthorized, onRollback } = sudoSetup([SUDO]);
+      await expect(queue.commit(rename('New')).done).rejects.toThrow(SUDO_REQUIRED_PREFIX);
+      expect(onRollback).toHaveBeenCalledTimes(1);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(queue.paused).toBe(false);
+    });
+
+    it('retries only once: a second sudo 401 rolls back', async () => {
+      const prompt = vi.fn(async () => true);
+      const { queue, onUnauthorized, sent } = sudoSetup([SUDO, SUDO, { status: 200 }], prompt);
+      await expect(queue.commit(rename('New')).done).rejects.toBeInstanceOf(TxRejectedError);
+      expect(prompt).toHaveBeenCalledTimes(1);
+      expect(sent).toHaveLength(2);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it('holds later txs while the prompt is open', async () => {
+      let answer!: (ok: boolean) => void;
+      const prompt = () => new Promise<boolean>((r) => (answer = r));
+      const { queue, sent } = sudoSetup([SUDO], prompt);
+      const first = queue.commit(rename('First'));
+      const second = queue.commit(rename('Second'));
+      await until(() => !!answer);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(sent).toHaveLength(1);
+      answer(true);
+      await Promise.all([first.done, second.done]);
+      expect(sent).toHaveLength(3);
+    });
+
+    it('still treats a plain 401 as an expired session', async () => {
+      const prompt = vi.fn(async () => true);
+      const { queue, onUnauthorized } = sudoSetup([{ status: 401, message: 'Requires authentication' }], prompt);
+      queue.commit(rename('New'));
+      await until(() => queue.paused);
+      expect(onUnauthorized).toHaveBeenCalledTimes(1);
+      expect(prompt).not.toHaveBeenCalled();
+    });
   });
 });
