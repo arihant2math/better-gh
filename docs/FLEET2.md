@@ -12,26 +12,31 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 | Issue | Session | PR | Status |
 |---|---|---|---|
 | #45 viewport matrix | session_01BURtkf7ua5yBimS7SrhLvt | — | working |
-| main Rust tests fixer | session_01E96iLFFFxFuaZXgU4hayJ6 | (agent/fix-main-tests) | working |
+| main Rust tests fixer | session_01E96iLFFFxFuaZXgU4hayJ6 | #87 | in review — reviewer creation DENIED by classifier (self-approval); needs user |
 | #73 modal focus (+#63?) | session_013HG6yn6H9NYMAmM4iHzJ51 | — | working |
-| #60+#66 topbar breadcrumbs | session_0142iYEJAmNc4sKsZMCnhhYQ | — | working |
-| #41 PR diff commit range | session_01QkzGhN3PPqNiRUBQ9YnH5C | — | working |
+| #60+#66 topbar breadcrumbs | session_0142iYEJAmNc4sKsZMCnhhYQ | #99 | in review (session_01ES6c9RyJjKa6meDUUJbvV3) |
+| #41 PR diff commit range | session_01QkzGhN3PPqNiRUBQ9YnH5C | #83 | in review (session_01PAC94sDt4XhXqoRgzXLhpd) |
 | #17 backup/admin CLI | session_01CBqx1eAjHqzrzArwDfoRUs | — | working (multi-PR) |
-| #67 list filter bar | session_01DqkE15WspmiTrQ5N81q11Y | — | working |
-| #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | — | working |
-| #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | — | working |
-| #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | — | working |
-| CI path filters (orchestrator-started; own issue + PR) | session_01Em5rrQBMpzEpHHvsmaNzqG | — | working; give PR a reviewer |
+| #67 list filter bar | session_01DqkE15WspmiTrQ5N81q11Y | #94 | in review (session_01JHfbu2yrPNBqxLXUmsXc4z) |
+| #74+#75 admin/org settings | session_013CH7MYMktXWDWWDncSZdRV | #93 | in review (session_0138qu5VQL9FTrSUSvCkrMCm) |
+| #61+#47 inbox pane | session_01JjNrzyZ2B5SRuDho11YYeU | #88 | in review (session_01By5xV53cQckCS8sQpYfvSC) |
+| #49+#50 dashboard long names | session_01MnuxWsCvwWYqJvjYw2JrUw | #82 | in review (session_01VvN6wT3FDMVjv4NGHkQsDB) |
+| #42 bundle budget | session_01EqGtoarvzLipstEVahMUUk | — | working |
+| #52+#51+#53 command palette | session_013fSYvtqc39XjY3386rsMor | — | working |
+| #68+#69+#70 PR timeline | session_01QpEnrtN98FRjCg8vGgLuZj | — | working |
+| #76 slash branch names | session_01ULxkjyqgpub6jn2a4ZR4oB | — | working |
+| #48+#59+#55 search polish | session_012zz7GcEfQELQFVfMLhtL37 | — | working |
+| CI path filters (orchestrator-started; issue #84) | session_01Em5rrQBMpzEpHHvsmaNzqG | #86 | in review (session_01X8kuDPNCg7kzgRAaPnUFNY) |
 | CI caching analysis (read-only; files issue "CI caching analysis and recommendations") | session_011amGqNaCwcHg8XeTafyqfq | — | working; archive when issue filed |
 
 CI rule: no other ci.yml work until the path-filter PR merges; then queue the caching issue's checklist items as worker tasks.
 
-Queue: #42 bundle budget (P-High perf), #63 (check after #73), #22 web perf, #23 mobile/a11y, #65+#64 diff toolbar/header, #52+#51+#53 command palette, #68+#69 PR timeline, #76 branch names with /, #48 search clipping, then P-Medium features (#1–#31).
+Queue: #63 (check after #73), #65+#64 diff toolbar/header (after #83 merges), #22 web perf (after #42), #23 mobile/a11y, #54/#57/#58/#62 small polish, #56 inbox polish (after #88), #71/#72 PR polish, #77/#78 code polish, then P-Medium features (#1–#31; not ci.yml).
 
 ## Reviewers
 | PR | Session | Status |
 |---|---|---|
-| #81 branch cleanup (orchestrator authored; further changes → fixer session, not orchestrator) | session_01JeQnHGDV7zqsAiRgxDE9pU (re-review 2) | running; foreman merges with MERGE then runs branch-cleanup.yml min_age_hours=12 |
+| #81 branch cleanup (changes → fixer session) | fixer session_019mR7rcWSJ6vanJSsU95Gdw (pipefail); re-review 3 session_012zodeH8NboDNrmkJU12FC4 | foreman merges with MERGE then runs branch-cleanup.yml min_age_hours=12 |
 
 ## QA
 | Focus (pass 1 → pass 2) | Session | Status |
