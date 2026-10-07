@@ -45,6 +45,7 @@ When every open PR is merged or parked: post the final #46 status (merged today;
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+11:42: #338 fixed at 9dcc8f5 (warm step gated; description honest; CI green, run 37613747443) → delta reviewer r2 session_01PeHu5zVtft2A3h7cKziEKJ (sonnet).
 11:35 cycle: #338 pushed 9dcc8f5 (no ping yet). #337 security review still running. #316 waiting on the lead's deadlock fix. #322 S-Approved, blocked on #316. The #319 author is live but working on agent/241-sync-lock (a flaky consumer_lag_and_prune test) and hasn't answered two status asks. Park #319 at the next cycle if there's still no reply.
 11:29: #322 r2 APPROVE on 510558b (CI green; loop guard verified; #328 can close once #322 merges). It's blocked on #316 (r3 changes requested). If the lead's #316 deadlock fix also changes #322 code, #322 needs a delta review; a pure main/#316 merge plus retarget only needs CI re-checked. r2 reviewer archived.
 11:27: #316 r3 REQUEST_CHANGES on ee81558: reproduced lock-order deadlock (dequeue locks entry then timeline FK key-share on issue vs merge_prefix holding issue FOR UPDATE; same for destroy/build ejection vs close/synchronize). Fix: lock PR rows first. Lead told (carry into #322); r3 reviewer archived. #322 r2 reviewer session_01XfyDSac15aDmCTGBNKoYtZ still running.
