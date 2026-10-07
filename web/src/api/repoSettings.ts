@@ -10,7 +10,7 @@ import { store } from '../sync';
 import { commit } from '../sync/mutations';
 import type { ID, Permission, Repo, Team } from '../sync/models';
 import { ops, type OverlayOp } from '../sync/overlay';
-import { api, encodePath, v3 } from './client';
+import { api, encodePath, isNotFound, v3 } from './client';
 import type { RestAccount } from './profile';
 import type { HookDelivery, HookDeliveryItem, RestBranch, RestTeam, SimpleUser } from './types';
 
@@ -207,7 +207,7 @@ export async function repoExists(owner: string, name: string): Promise<{ exists:
     const r = await api.get<{ id: number }>(repoPath(owner, name));
     return { exists: true, id: r.id };
   } catch (e) {
-    if ((e as { status?: number }).status === 404) return { exists: false };
+    if (isNotFound(e)) return { exists: false };
     throw e;
   }
 }
@@ -373,7 +373,7 @@ export async function listProtectionRules(owner: string, repo: string): Promise<
       getProtection(owner, repo, b.name).then(
         (rule) => ({ branch: b.name, rule }),
         (e: unknown) => {
-          if ((e as { status?: number }).status === 404) return null; // protected by a ruleset only
+          if (isNotFound(e)) return null; // protected by a ruleset only
           throw e;
         },
       ),

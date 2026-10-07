@@ -16,6 +16,7 @@ import { prefetchBlame, useBlob } from './data';
 import { LastCommitBar } from './LastCommitBar';
 import { copyText, formatSize, lineHash, parseLineHash, renderModes, routeLinks, setHash, useHash, type CodeTarget, type LineRange, type RenderMode } from './util';
 import { codeUrl, historyUrl } from '../../components/code/urls';
+import { isNotFound } from '../../api/client';
 
 const CsvTable = lazy(() => import('./CsvTable'));
 
@@ -41,8 +42,8 @@ export const FileView = observer(function FileView({ t, repo, blame, canPush }: 
   }, []);
 
   if (error) {
-    const status = (error as { status?: number }).status;
-    return <EmptyState icon={AlertIcon} title={status === 404 ? 'File not found' : 'Could not load this file'}>{status === 404 ? `${t.path} does not exist at ${t.ref}.` : String((error as Error).message ?? error)}</EmptyState>;
+    const missing = isNotFound(error);
+    return <EmptyState icon={AlertIcon} title={missing ? 'File not found' : 'Could not load this file'}>{missing ? `${t.path} does not exist at ${t.ref}.` : String((error as Error).message ?? error)}</EmptyState>;
   }
 
   const modes = blob ? renderModes(blob.path, blob.image) : ['code' as RenderMode];

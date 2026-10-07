@@ -10,7 +10,6 @@
  * with `…?` never matches a nested resource.
  */
 import { ApiError, api, v3 } from '../../api/client';
-import { transport } from '../../api/transport';
 import { getBoot } from '../../boot';
 import { parseLink } from '../../components/admin/usePagedList';
 import type { HookDelivery, OrgMembership, RestTeam, SimpleUser, TeamSimple } from '../../api/types';
@@ -247,25 +246,16 @@ export const updateOrg = (org: string, patch: OrgPatch) => api.patch<OrgFull>(or
 export const MAX_AVATAR_BYTES = 1024 * 1024;
 export const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 
-async function rawRequest<T>(method: 'PUT' | 'DELETE', path: string, body?: Blob): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  const csrf = getBoot().csrf;
-  if (csrf) headers['X-CSRF-Token'] = csrf;
-  if (body) headers['Content-Type'] = body.type || 'application/octet-stream';
-  const res = await transport().fetch(path, { method, headers, body });
-  const isJson = (res.headers.get('content-type') ?? '').includes('json');
-  const data: unknown = res.status === 204 ? null : isJson ? await res.json().catch(() => null) : await res.text();
-  if (!res.ok) {
-    const msg = data && typeof data === 'object' && 'message' in data ? String(data.message) : `${method} ${path} failed (${res.status})`;
-    throw new ApiError(msg, res.status, data);
-  }
-  return data as T;
-}
-
 /** `PUT /_bgh/orgs/{org}/avatar` with the raw image (≤ 1 MiB). */
-export const uploadOrgAvatar = (org: string, file: Blob) => rawRequest<{ avatar_url: string }>('PUT', `/_bgh/orgs/${encodeURIComponent(org)}/avatar`, file);
+export const uploadOrgAvatar = (org: string, file: Blob) =>
+  api.raw<{ avatar_url: string }>(`/_bgh/orgs/${encodeURIComponent(org)}/avatar`, {
+    method: 'PUT',
+    body: file,
+    contentType: file.type || 'application/octet-stream',
+    accept: 'application/json',
+  });
 
-export const deleteOrgAvatar = (org: string) => rawRequest<{ avatar_url: string } | null>('DELETE', `/_bgh/orgs/${encodeURIComponent(org)}/avatar`);
+export const deleteOrgAvatar = (org: string) => api.delete<{ avatar_url: string } | null>(`/_bgh/orgs/${encodeURIComponent(org)}/avatar`, { accept: 'application/json' });
 
 // ------------------------------------------------------------------ members
 

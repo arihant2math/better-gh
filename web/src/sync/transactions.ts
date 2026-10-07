@@ -1,5 +1,5 @@
 import { makeObservable, observable, runInAction } from 'mobx';
-import { SUDO_REQUIRED_PREFIX } from '../api/client';
+import { ApiError, SUDO_REQUIRED_PREFIX } from '../api/client';
 import type { OverlayOp } from './overlay';
 import type { Persistence } from './persistence';
 import type { ObjectPool } from './pool';
@@ -66,12 +66,10 @@ export function isSudoRequiredResult(result: TxResult): boolean {
   return result.status === 401 && (result.message ?? '').startsWith(SUDO_REQUIRED_PREFIX);
 }
 
-export class TxRejectedError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
+/** A transaction the server rejected permanently (rolled back); an `ApiError` like any other failed request. */
+export class TxRejectedError extends ApiError {
+  constructor(message: string, status: number, body: unknown = null) {
+    super(message, status, body);
   }
 }
 
@@ -323,7 +321,7 @@ export class TxQueue {
   private rollback(t: PendingTx, result: TxResult): void {
     const message = result.message ?? `Request failed (${result.status})`;
     this.finish(t);
-    this.waiters.get(t.tx)?.reject(new TxRejectedError(message, result.status));
+    this.waiters.get(t.tx)?.reject(new TxRejectedError(message, result.status, result.data ?? null));
     this.waiters.delete(t.tx);
     this.hooks.onRollback?.(t, message);
   }

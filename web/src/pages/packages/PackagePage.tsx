@@ -32,6 +32,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import { PushHint, VisibilityPill } from './PackageList';
 import styles from './Packages.module.css';
+import { isNotFound } from '../../api/client';
 
 type Ref = { tag: string } | { digest: string };
 
@@ -50,7 +51,7 @@ export default observer(function PackagePage() {
 
   const d = res.data;
   if (!d) {
-    if ((res.error as { status?: number } | undefined)?.status === 404) return <NotFound what="package" />;
+    if (isNotFound(res.error)) return <NotFound what="package" />;
     if (res.error) {
       return (
         <div className={styles.page}>

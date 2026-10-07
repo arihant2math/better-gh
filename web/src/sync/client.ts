@@ -1,4 +1,5 @@
 import { makeObservable, observable, runInAction } from 'mobx';
+import { ApiError, errorMessageOf } from '../api/client';
 import type { SocketLike, Transport } from '../api/transport';
 import type { ID } from './models';
 import type { Persistence } from './persistence';
@@ -411,9 +412,12 @@ export class SyncClient {
     const res = await this.opts.transport.fetch(path, { headers: { Accept: 'application/json' } });
     if (res.status === 401) {
       this.opts.hooks?.onUnauthenticated?.();
-      throw new Error('unauthenticated');
+      throw new ApiError('unauthenticated', 401, null);
     }
-    if (!res.ok) throw new Error(`${path} → ${res.status}`);
+    if (!res.ok) {
+      const data: unknown = await res.json().catch(() => null);
+      throw new ApiError(errorMessageOf(data, `GET ${path} failed (${res.status})`), res.status, data);
+    }
     return (await res.json()) as T;
   }
 

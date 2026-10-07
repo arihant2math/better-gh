@@ -15,6 +15,7 @@ import { prefetchBlob, prefetchTree, useTree } from './data';
 import { LastCommitBar } from './LastCommitBar';
 import { parentPath, routeLinks, type CodeTarget } from './util';
 import { codeUrl } from '../../components/code/urls';
+import { isNotFound } from '../../api/client';
 
 /** Directory listing (+ last commit per entry) and the rendered README. */
 export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTarget; repo: Repo; root: boolean }) {
@@ -40,7 +41,7 @@ export const DirView = observer(function DirView({ t, repo, root }: { t: CodeTar
   if (data?.empty) return <EmptyRepo repo={repo} />;
   if (error) {
     // Older servers answer an empty repository with a 404.
-    const empty = root && (error as { status?: number }).status === 404;
+    const empty = root && isNotFound(error);
     return empty ? <EmptyRepo repo={repo} /> : <EmptyState icon={AlertIcon} title="This path does not exist" />;
   }
   const last = data?.last_commits ?? commits.data?.entries;

@@ -1,4 +1,5 @@
 import { getBoot } from '../boot';
+import { ApiError, api, errorMessageOf, parseRetryAfter } from './client';
 import { browserTransport, transport } from './transport';
 
 /** `POST /_bgh/uploads` response (crates/bgh-uploads). */
@@ -33,36 +34,17 @@ function uploadPath(file: File, target: UploadTarget): string {
   return `/_bgh/uploads?${q}`;
 }
 
-function errorMessage(data: unknown, status: number): string {
-  const d = data as { message?: string; errors?: { message?: string }[] } | null;
-  return d?.errors?.find((e) => e.message)?.message ?? d?.message ?? `Upload failed (${status})`;
-}
-
 /**
- * Upload one attachment (raw body, name in the query), reporting progress
- * (0..1). XHR against the real server (fetch has no upload progress), the
- * transport in mock mode.
+ * POST `file` with XHR (fetch has no upload progress), reporting progress
+ * (0..1). Sends the current CSRF token and rejects with `ApiError` (status
+ * 0 for a network error) or an `AbortError` when `signal` fires.
  */
-export function uploadAttachment(file: File, target: UploadTarget, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<Attachment> {
-  const path = uploadPath(file, target);
-  const contentType = file.type || 'application/octet-stream';
-  if (transport() !== browserTransport) {
-    onProgress(0);
-    return transport()
-      .fetch(path, { method: 'POST', body: file, headers: { 'Content-Type': contentType }, signal })
-      .then(async (r) => {
-        const data: unknown = await r.json().catch(() => null);
-        if (!r.ok) throw new Error(errorMessage(data, r.status));
-        onProgress(1);
-        return data as Attachment;
-      });
-  }
-  return new Promise<Attachment>((resolve, reject) => {
+export function xhrUpload<T>(path: string, file: Blob, headers: Record<string, string>, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', path);
     xhr.withCredentials = true;
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.setRequestHeader('Accept', 'application/json');
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     const csrf = getBoot().csrf;
     if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
@@ -75,14 +57,37 @@ export function uploadAttachment(file: File, target: UploadTarget, onProgress: (
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         onProgress(1);
-        resolve(data as Attachment);
+        resolve(data as T);
       } else {
-        reject(new Error(errorMessage(data, xhr.status)));
+        reject(new ApiError(errorMessageOf(data, `Upload failed (${xhr.status})`), xhr.status, data, parseRetryAfter(xhr.getResponseHeader('retry-after'))));
       }
     };
-    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.onerror = () => reject(new ApiError('Network error during upload', 0, null));
     xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
     signal?.addEventListener('abort', () => xhr.abort());
     xhr.send(file);
+  });
+}
+
+/**
+ * Upload `file` as a raw POST body with progress: XHR against the real
+ * server, `api.raw` through the transport in mock mode (no progress events).
+ */
+export async function uploadFile<T>(path: string, file: Blob, opts: { accept: string; headers?: Record<string, string>; onProgress?: (fraction: number) => void; signal?: AbortSignal }): Promise<T> {
+  const contentType = file.type || 'application/octet-stream';
+  const onProgress = opts.onProgress ?? (() => {});
+  if (transport() === browserTransport) return xhrUpload<T>(path, file, { 'Content-Type': contentType, Accept: opts.accept, ...opts.headers }, onProgress, opts.signal);
+  onProgress(0);
+  const data = await api.raw<T>(path, { method: 'POST', body: file, contentType, accept: opts.accept, headers: opts.headers, signal: opts.signal });
+  onProgress(1);
+  return data;
+}
+
+/** Upload one attachment (raw body, name in the query), reporting progress (0..1). */
+export function uploadAttachment(file: File, target: UploadTarget, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<Attachment> {
+  return uploadFile<Attachment>(uploadPath(file, target), file, { accept: 'application/json', onProgress, signal }).catch((e: unknown) => {
+    // The upload endpoint explains rejected files in a field error ("Validation Failed").
+    const detail = e instanceof ApiError ? (e.body as { errors?: { message?: string }[] } | null)?.errors?.find((x) => x.message)?.message : undefined;
+    throw detail && e instanceof ApiError ? new ApiError(detail, e.status, e.body, e.retryAfterMs) : e;
   });
 }

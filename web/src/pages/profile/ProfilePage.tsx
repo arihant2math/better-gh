@@ -11,6 +11,7 @@ import { canonicalAccountUrl } from './canonical';
 import { OrgProfile } from './OrgProfile';
 import styles from './ProfilePage.module.css';
 import { UserProfile } from './UserProfile';
+import { isNotFound } from '../../api/client';
 
 /**
  * `/:owner` — user or organization profile. Decides the kind from the store
@@ -37,7 +38,7 @@ export default observer(function ProfilePage() {
   if (a?.type === 'Organization') return <OrgProfile key={a.login} login={a.login} synced={undefined} />;
   if (a) return <UserProfile key={a.login} login={a.login} synced={undefined} />;
   if (account.error) {
-    if ((account.error as { status?: number }).status === 404) return <NotFound what="account" />;
+    if (isNotFound(account.error)) return <NotFound what="account" />;
     return (
       <div className={styles.page}>
         <EmptyState

@@ -5,7 +5,7 @@
  * `useResource` (stale-while-revalidate) and render store data first.
  */
 import { prefetch as prefetchResource } from './cache';
-import { api, v3 } from './client';
+import { api, isNotFound, v3 } from './client';
 import type { OrganizationSimple, RestTeam, SimpleUser } from './types';
 
 /** `GET /users/{username}` (public-user; also resolves organizations). */
@@ -115,7 +115,7 @@ export async function checkFollowing(login: string): Promise<boolean> {
     await api.get(v3('user', 'following', login));
     return true;
   } catch (e) {
-    if ((e as { status?: number }).status === 404) return false;
+    if (isNotFound(e)) return false;
     throw e;
   }
 }
@@ -140,7 +140,7 @@ export async function repoExists(owner: string, name: string, signal?: AbortSign
     await api.get(v3('repos', owner, name), { signal });
     return true;
   } catch (e) {
-    if ((e as { status?: number }).status === 404) return false;
+    if (isNotFound(e)) return false;
     throw e;
   }
 }
@@ -151,7 +151,7 @@ export async function accountExists(login: string, signal?: AbortSignal): Promis
     await api.get(v3('users', login), { signal });
     return true;
   } catch (e) {
-    if ((e as { status?: number }).status === 404) return false;
+    if (isNotFound(e)) return false;
     throw e;
   }
 }

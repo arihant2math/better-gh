@@ -6,14 +6,12 @@
  */
 import { useCallback, useState } from 'react';
 import { session } from '../app/session';
-import { getBoot } from '../boot';
 import { hasSync, store } from '../sync';
 import type { User } from '../sync/models';
 import { ops } from '../sync/overlay';
 import { uuid } from '../sync/transactions';
 import { invalidate, load, useResource } from './cache';
-import { ApiError, api, v3 } from './client';
-import { transport } from './transport';
+import { api, v3 } from './client';
 import type { UserEmail } from './types';
 
 // ------------------------------------------------------------------ shapes
@@ -113,17 +111,8 @@ export const updateMe = (patch: ProfilePatch) => api.patch<PrivateUser>(v3('user
 export const MAX_AVATAR_BYTES = 1024 * 1024;
 
 /** `PUT /_bgh/user/avatar` with a raw image body (the JSON client can't send blobs). */
-export async function uploadAvatar(blob: Blob): Promise<{ avatar_url: string }> {
-  const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': blob.type || 'image/png' };
-  const csrf = getBoot().csrf;
-  if (csrf) headers['X-CSRF-Token'] = csrf;
-  const res = await transport().fetch('/_bgh/user/avatar', { method: 'PUT', headers, body: blob });
-  const data: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const msg = (data as { message?: string } | null)?.message ?? `Upload failed (${res.status})`;
-    throw new ApiError(msg, res.status, data);
-  }
-  return data as { avatar_url: string };
+export function uploadAvatar(blob: Blob): Promise<{ avatar_url: string }> {
+  return api.raw('/_bgh/user/avatar', { method: 'PUT', body: blob, contentType: blob.type || 'image/png', accept: 'application/json' });
 }
 
 export const deleteAvatar = () => api.delete<{ avatar_url: string }>('/_bgh/user/avatar');

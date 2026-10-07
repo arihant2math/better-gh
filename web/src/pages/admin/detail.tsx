@@ -1,6 +1,5 @@
 /** Pieces shared by the admin user, organization and repository detail pages. */
 import { useState, type ReactNode } from 'react';
-import { ApiError } from '../../api/client';
 import styles from '../../components/admin/admin.module.css';
 import { Meter, type Severity } from '../../components/admin/charts';
 import { formatKb } from '../../components/admin/format';
@@ -28,7 +27,7 @@ export const LOGIN_RULE = 'Letters, digits and single hyphens (not at the start 
 /** `true` while any modal dialog is open: page shortcuts stand down. */
 export const modalOpen = () => typeof document !== 'undefined' && !!document.querySelector('dialog[open]');
 
-export const isNotFound = (err: unknown) => err instanceof ApiError && err.status === 404;
+export { isNotFound } from '../../api/client';
 
 export function NotFound({ what, name, back }: { what: string; name: string; back: { to: string; label: string } }) {
   return (
