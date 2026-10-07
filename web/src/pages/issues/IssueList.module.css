@@ -7,15 +7,34 @@
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 8px 6px;
   padding: 12px 16px 8px;
 }
 
-.search {
-  flex: 1;
-  min-width: 200px;
-  margin-right: 6px;
+/* Grows to fill the row; when the filters can't fit beside a usable search
+   they wrap to their own row and the search takes the full width. Doubled
+   selector so QueryInput's own `min-width: 0` can't win on source order. */
+.toolbar .search {
+  flex: 1 1 280px;
+  min-width: min(280px, 100%);
+}
+
+/* Filter buttons + sort. Shrinks to the row and scrolls sideways inside
+   itself rather than overflowing the page. */
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.filters > * {
+  flex: none;
 }
 
 .subbar {
@@ -289,6 +308,7 @@
 
 .headerLinks {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 }
