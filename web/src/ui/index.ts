@@ -3,6 +3,7 @@ export { Avatar, AvatarStack, ColorDot, Counter, Kbd, LabelPill, StateBadge, Sta
 export { Button, IconButton, cx, type ButtonProps } from './Button';
 export { Dialog } from './Dialog';
 export { Box, EmptyState, Skeleton } from './EmptyState';
+export { ErrorBoundary } from './ErrorBoundary';
 export { fuzzyScore } from './fuzzy';
 export { Field, Input, Select, Textarea } from './Input';
 export { Markdown, preloadMarkdown } from './Markdown';

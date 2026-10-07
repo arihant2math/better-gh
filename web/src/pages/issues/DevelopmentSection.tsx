@@ -4,6 +4,7 @@ import { useResource } from '../../api/cache';
 import { getIssueLinks } from '../../api/endpoints';
 import type { IssueLinkItem, IssueLinks } from '../../api/types';
 import { Link } from '../../router';
+import { repoRefOf, treeUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import type { Issue, Repo } from '../../sync/models';
 import { commit, enc, repoOf } from '../../sync/mutations';
@@ -119,7 +120,7 @@ export const DevelopmentSection = observer(function DevelopmentSection({ issue, 
           </Link>
         ))}
         {branches.map((b) => (
-          <Link key={b.name} to={`/${repo.owner}/${repo.name}/tree/${b.name.split('/').map(encodeURIComponent).join('/')}`} className={styles.devItem}>
+          <Link key={b.name} to={treeUrl(repoRefOf(repo), b.name)} className={styles.devItem}>
             <GitBranchIcon size={14} />
             <span className={styles.devTitle}>{b.name}</span>
           </Link>

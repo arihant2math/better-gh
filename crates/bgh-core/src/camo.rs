@@ -9,12 +9,15 @@
 //! size/type limits.
 //!
 //! The key and the on/off switch (site setting `markdown.image_proxy`,
-//! default on) are process-global so the pure [`crate::markdown::render`]
-//! can sign without a state handle.
+//! default on) live outside `AppState` so the pure
+//! [`crate::markdown::render`] can sign without a state handle. The switch is
+//! keyed by the instance's base URL (which `render` already gets): several
+//! instances can share a process (every test app does), and one instance
+//! loading its settings must not flip another's switch.
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, OnceLock, RwLock};
 
 use hmac::{Hmac, Mac};
 use rand::RngCore;
@@ -24,7 +27,8 @@ use sha2::Sha256;
 pub const PATH: &str = "/_bgh/camo/";
 
 static KEY: OnceLock<[u8; 32]> = OnceLock::new();
-static ENABLED: AtomicBool = AtomicBool::new(true);
+/// Base URL (no trailing slash) → switch; absent means on (the default).
+static ENABLED: LazyLock<RwLock<HashMap<String, bool>>> = LazyLock::new(Default::default);
 
 /// Load (or create) `{data_dir}/camo.key`. The first call wins; later calls
 /// (other test apps in the same process) keep the existing key. Falls back
@@ -58,14 +62,28 @@ fn key() -> &'static [u8; 32] {
     })
 }
 
-/// Whether external images are proxied (site setting `markdown.image_proxy`).
-pub fn enabled() -> bool {
-    ENABLED.load(Ordering::Relaxed)
+/// Whether the instance at `base` proxies external images (site setting
+/// `markdown.image_proxy`).
+pub fn enabled(base: &str) -> bool {
+    let base = base.trim_end_matches('/');
+    ENABLED
+        .read()
+        .expect("camo switch")
+        .get(base)
+        .copied()
+        .unwrap_or(true)
 }
 
-/// Updated whenever site settings are (re)loaded.
-pub fn set_enabled(on: bool) {
-    ENABLED.store(on, Ordering::Relaxed);
+/// Updated whenever the site settings of the instance at `base` are
+/// (re)loaded.
+pub fn set_enabled(base: &str, on: bool) {
+    let base = base.trim_end_matches('/');
+    if enabled(base) != on {
+        ENABLED
+            .write()
+            .expect("camo switch")
+            .insert(base.to_string(), on);
+    }
 }
 
 fn mac(url: &str) -> Hmac<Sha256> {
