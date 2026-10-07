@@ -382,9 +382,11 @@ optimistic-mutation reconciliation) is specified normatively in
   `bgh_core::sync::record(&mut tx, scope, model, id, action, data)` (`Tx`
   collects them and writes them all with `sync::record_all` right before
   committing). `tx` is the request's `X-Client-Tx` header (taken from the
-  request context), so the delta echoes it. Writing takes a
-  transaction-scoped advisory lock so sync ids become visible in id order;
-  `Tx` takes it only at commit, after all row locks. After commit,
+  request context), so the delta echoes it. Writers take no lock, so ids
+  can commit out of order; readers stop at the commit-order watermark
+  (`bgh_core::seqlog`, SYNC_PROTOCOL.md §2: every id `<=` it has a
+  committed row; burned ids get `!gap` fillers). The event outbox uses
+  the same scheme. After commit,
   `bgh_core::sync::notify(&state, ...)` publishes on the Redis channel
   `sync:{scope}`. The request context is a tokio task-local installed by
   `bgh_sync::http_middleware` (mounted for every route), which also adds

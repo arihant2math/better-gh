@@ -35,6 +35,7 @@ pub mod ratelimit;
 pub mod registry;
 pub mod secret_scanning;
 pub mod secretbox;
+pub mod seqlog;
 pub mod settings;
 pub mod signatures;
 pub mod ssrf;

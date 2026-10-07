@@ -1,9 +1,10 @@
 //! Durable event delivery: the transactional outbox and its consumers.
 //!
 //! * [`append`] writes events to `event_outbox` inside the emitting
-//!   transaction ([`crate::db::Tx::commit`] calls it), under the sync
-//!   advisory lock so ids become visible in id order, and `NOTIFY`s
-//!   [`NOTIFY_CHANNEL`] so consumers in every process wake on commit.
+//!   transaction ([`crate::db::Tx::commit`] calls it), without a lock (ids
+//!   may commit out of order; consumers stop at the commit-order watermark,
+//!   [`crate::seqlog`]), and `NOTIFY`s [`NOTIFY_CHANNEL`] so consumers in
+//!   every process wake on commit.
 //! * Each `reg.on_event` listener is a durable consumer
 //!   ([`start_listeners`]): it reads batches past its cursor in
 //!   `event_listener_cursors`, runs the handler for each event in order, and
@@ -34,7 +35,6 @@ use uuid::Uuid;
 use crate::events::{Event, with_listener_event};
 use crate::registry::Listener;
 use crate::state::AppState;
-use crate::sync::SYNC_LOCK;
 
 /// Postgres NOTIFY channel announcing committed outbox rows.
 pub const NOTIFY_CHANNEL: &str = "bgh_events";
@@ -47,6 +47,8 @@ const RENEW_MARGIN: Duration = Duration::from_secs(20);
 /// Fallback poll interval (wakeups cover the common case) and the interval
 /// at which a process without the lease retries taking it.
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// Retry interval while committed events wait above the watermark.
+const BLOCKED_RETRY: Duration = Duration::from_millis(20);
 /// How long consumers keep draining committed events after shutdown.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
 /// Attempts per event before it is skipped.
@@ -54,9 +56,10 @@ pub const MAX_ATTEMPTS: u32 = 3;
 /// Interval between prune passes.
 const PRUNE_INTERVAL: Duration = Duration::from_secs(600);
 
-/// Append `events` to the outbox in the caller's transaction. Takes the
-/// [`SYNC_LOCK`] advisory lock (held until commit): call it right before
-/// committing.
+/// Append `events` to the outbox in the caller's transaction, in order.
+/// No lock: ids may commit out of order and consumers stop at the
+/// commit-order watermark ([`crate::seqlog`]); rows that collide with a gap
+/// filler are re-inserted with fresh ids (see [`crate::sync::record_all`]).
 pub async fn append(conn: &mut PgConnection, events: &[Event]) -> Result<(), sqlx::Error> {
     if events.is_empty() {
         return Ok(());
@@ -67,27 +70,42 @@ pub async fn append(conn: &mut PgConnection, events: &[Event]) -> Result<(), sql
         kinds.push(e.name());
         payloads.push(serde_json::to_value(e).map_err(|e| sqlx::Error::Encode(Box::new(e)))?);
     }
-    sqlx::query(
-        "INSERT INTO event_outbox (kind, payload)
-         SELECT u.k, u.p
-           FROM (SELECT pg_advisory_xact_lock($3), pg_notify($4, '')) l,
-                unnest($1::text[], $2::jsonb[]) WITH ORDINALITY AS u(k, p, o)
-          ORDER BY u.o",
-    )
-    .bind(&kinds)
-    .bind(&payloads)
-    .bind(SYNC_LOCK)
-    .bind(NOTIFY_CHANNEL)
-    .execute(conn)
-    .await?;
+    for attempt in 1.. {
+        let ids: Vec<i64> = sqlx::query_scalar(
+            "INSERT INTO event_outbox (kind, payload, created_at)
+             SELECT u.k, u.p, clock_timestamp()
+               FROM (SELECT pg_notify($3, '')) l,
+                    unnest($1::text[], $2::jsonb[]) WITH ORDINALITY AS u(k, p, o)
+              ORDER BY u.o
+             ON CONFLICT (id) DO NOTHING
+             RETURNING id",
+        )
+        .bind(&kinds)
+        .bind(&payloads)
+        .bind(NOTIFY_CHANNEL)
+        .fetch_all(&mut *conn)
+        .await?;
+        if ids.len() == events.len() {
+            break;
+        }
+        tracing::warn!(attempt, "outbox ids taken by gap fillers; retrying");
+        sqlx::query("DELETE FROM event_outbox WHERE id = ANY($1)")
+            .bind(&ids)
+            .execute(&mut *conn)
+            .await?;
+        if attempt >= 5 {
+            return Err(sqlx::Error::Protocol(
+                "outbox ids repeatedly taken by gap fillers".into(),
+            ));
+        }
+    }
     Ok(())
 }
 
-/// Highest committed outbox id (0 when empty).
+/// The outbox's commit-order watermark: every id `<=` it is committed
+/// (consumers never read past it; [`crate::seqlog`]).
 pub async fn head(db: &PgPool) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("SELECT coalesce(max(id), 0) FROM event_outbox")
-        .fetch_one(db)
-        .await
+    crate::seqlog::advance(db, crate::seqlog::Log::Outbox).await
 }
 
 /// Consumer state of one listener (for metrics and admin pages).
@@ -96,7 +114,7 @@ pub struct ConsumerLag {
     pub listener: String,
     /// Last event the listener fully processed.
     pub last_id: i64,
-    /// Highest committed event.
+    /// The outbox watermark (every event `<=` it is committed).
     pub head_id: i64,
     /// Committed events not yet processed (`head_id - last_id`, ids may
     /// have gaps so this is an upper bound).
@@ -110,17 +128,20 @@ pub struct ConsumerLag {
 
 /// Lag of every listener cursor, ordered by name.
 pub async fn consumer_lag(db: &PgPool) -> Result<Vec<ConsumerLag>, sqlx::Error> {
+    let head = head(db).await?;
     sqlx::query_as(
-        "WITH h AS (SELECT coalesce(max(id), 0) AS head FROM event_outbox)
+        "WITH h AS (SELECT $1::bigint AS head)
          SELECT c.listener, c.last_id, h.head AS head_id,
                 greatest(h.head - c.last_id, 0) AS lag,
                 coalesce(extract(epoch FROM now() - (
                     SELECT o.created_at FROM event_outbox o WHERE o.id > c.last_id
+                        AND o.kind <> '!gap'
                      ORDER BY o.id LIMIT 1))::float8, 0) AS oldest_pending_secs,
                 c.lease_owner, c.lease_until, c.updated_at
            FROM event_listener_cursors c, h
           ORDER BY c.listener",
     )
+    .bind(head)
     .fetch_all(db)
     .await
 }
@@ -161,7 +182,12 @@ pub async fn prune(
 pub async fn wait_caught_up(state: &AppState, listeners: &[&str], timeout: Duration) -> bool {
     state.events.flush().await;
     let deadline = Instant::now() + timeout;
-    let Ok(target) = head(&state.db).await else {
+    // Every committed event, including ones above the watermark (the
+    // consumers get there once lower in-flight ids settle).
+    let Ok(target) = sqlx::query_scalar::<_, i64>("SELECT coalesce(max(id), 0) FROM event_outbox")
+        .fetch_one(&state.db)
+        .await
+    else {
         return false;
     };
     loop {
@@ -185,7 +211,7 @@ pub async fn wait_caught_up(state: &AppState, listeners: &[&str], timeout: Durat
     }
 }
 
-/// Create missing cursors (at the current head: a newly added listener
+/// Create missing cursors (at the current watermark: a newly added listener
 /// starts with events committed from now on), then spawn one consumer per
 /// listener, the cross-process wakeup task and the pruner. Every task
 /// returns once `shutdown` is cancelled (consumers after draining).
@@ -199,13 +225,15 @@ pub async fn start_listeners(
     for n in &names {
         anyhow::ensure!(seen.insert(*n), "duplicate event listener name {n:?}");
     }
+    // At the watermark, not max(id): a lower id may still be in flight.
+    let start = head(&state.db).await?;
     sqlx::query(
         "INSERT INTO event_listener_cursors (listener, last_id)
-         SELECT name, (SELECT coalesce(max(id), 0) FROM event_outbox)
-           FROM unnest($1::text[]) AS t(name)
+         SELECT name, $2 FROM unnest($1::text[]) AS t(name)
          ON CONFLICT (listener) DO NOTHING",
     )
     .bind(&names)
+    .bind(start)
     .execute(&state.db)
     .await?;
 
@@ -304,6 +332,9 @@ enum Pass {
     Progress,
     /// Caught up.
     Idle,
+    /// Committed events wait above the watermark (a lower id is still in
+    /// flight, or burned and not filled yet): look again shortly.
+    Blocked,
     /// Another process holds the lease.
     NotLeader,
 }
@@ -332,6 +363,8 @@ impl Consumer {
                 Ok(Pass::Idle) if drain_deadline.is_some() => break,
                 Ok(Pass::NotLeader) if drain_deadline.is_some() => break,
                 Ok(Pass::Idle) => POLL_INTERVAL,
+                // Also while draining: the events are committed.
+                Ok(Pass::Blocked) => BLOCKED_RETRY,
                 Ok(Pass::NotLeader) => POLL_INTERVAL,
                 Err(err) => {
                     if drain_deadline.is_some() {
@@ -390,6 +423,15 @@ impl Consumer {
         Ok(cursor)
     }
 
+    async fn idle_or_blocked(&self, watermark: i64) -> anyhow::Result<Pass> {
+        let above: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM event_outbox WHERE id > $1)")
+                .bind(watermark)
+                .fetch_one(&self.state.db)
+                .await?;
+        Ok(if above { Pass::Blocked } else { Pass::Idle })
+    }
+
     async fn pass(
         &self,
         lease: &mut Option<(i64, Instant)>,
@@ -398,17 +440,28 @@ impl Consumer {
         let Some(cursor) = self.ensure_lease(lease).await? else {
             return Ok(Pass::NotLeader);
         };
+        // Only up to the commit-order watermark: a lower id may still be in
+        // flight past the highest visible one (`seqlog`).
+        let watermark = head(&self.state.db).await?;
+        if watermark <= cursor {
+            return self.idle_or_blocked(watermark).await;
+        }
         let rows: Vec<OutboxRow> = sqlx::query_as(
-            "SELECT id, kind, payload FROM event_outbox WHERE id > $1 ORDER BY id LIMIT $2",
+            "SELECT id, kind, payload FROM event_outbox
+              WHERE id > $1 AND id <= $3 ORDER BY id LIMIT $2",
         )
         .bind(cursor)
         .bind(BATCH_SIZE)
+        .bind(watermark)
         .fetch_all(&self.state.db)
         .await?;
         let Some(last) = rows.last().map(|r| r.id) else {
             return Ok(Pass::Idle);
         };
         for row in rows {
+            if row.kind == crate::seqlog::GAP {
+                continue;
+            }
             self.handle(row, draining).await;
             // Keep the lease through a slow batch.
             if lease.is_some_and(|(_, until)| {
