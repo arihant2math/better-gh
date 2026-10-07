@@ -16,6 +16,7 @@
 mod conn;
 mod cost;
 mod ctx;
+mod guard;
 mod loaders;
 mod model;
 mod mutation;
@@ -161,6 +162,17 @@ async fn execute(
     request: async_graphql::Request,
     method: Method,
 ) -> Response {
+    // Every query reaches the parser through here (POST and GET; there is
+    // no batching or subscription transport). Variables are already bounded
+    // by serde_json's recursion limit (128) when the request is decoded.
+    if let Err(rejection) = guard::check(&request.query) {
+        let (ty, message) = rejection.error();
+        let mut ext = async_graphql::ErrorExtensionValues::default();
+        ext.set("type", ty);
+        let mut err = async_graphql::ServerError::new(message, None);
+        err.extensions = Some(ext);
+        return respond(async_graphql::Response::from_errors(vec![err]), None);
+    }
     let loaders = loaders::Loaders::new(&state, auth.as_ref());
     let cost = std::sync::Arc::new(cost::CostCell::default());
     let mut request = request
@@ -175,12 +187,19 @@ async fn execute(
         request = request.data(mutation::ReadOnly);
     }
     let response = schema().execute(request).await;
+    respond(response, cost.quota())
+}
+
+fn respond(
+    response: async_graphql::Response,
+    quota: Option<bgh_core::ratelimit::Quota>,
+) -> Response {
     let mut body = serde_json::to_value(&response).unwrap_or_else(|_| json!({}));
     github_errors(&mut body);
     let mut resp = axum::Json(body).into_response();
     let h = resp.headers_mut();
     h.insert("x-github-media-type", HeaderValue::from_static("github.v4"));
-    if let Some(q) = cost.quota() {
+    if let Some(q) = quota {
         q.apply(h);
     }
     resp

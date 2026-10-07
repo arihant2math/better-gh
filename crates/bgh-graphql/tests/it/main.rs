@@ -9,6 +9,7 @@ mod cost_limits;
 mod merge_queue;
 mod moderation;
 mod mutations;
+mod parse_limits;
 mod projects;
 mod queries;
 mod rulesets;
