@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | — | — |
-| B frontend | session_01BwaskUuqbHfPo6oZuGr6nd | #257 | — | — |
+| B frontend | session_01BwaskUuqbHfPo6oZuGr6nd | #257 | #356 | session_01MM62u9JNFYqiVHpjJRMi42 (sonnet) |
 | C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -44,3 +44,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 22:46Z: #352 APPROVE @3bf255b (=head), CI green; sent to coordinator. Doc nits (BACKEND_PATTERNS:35, ARCHITECTURE:115) → fold into #353. Next A item: #181 (+#158).
 - 22:47Z: #352 merged as da2aa56; A original worker + reviewer archived; fresh A worker for #181. #354 APPROVE @048c777 (=head), CI green; sent to coordinator. #353 updated with #352/#354 nits.
 - 22:48Z: #354 merged as 0385b15; B worker+reviewer archived; fresh B worker for #257.
+- 23:12Z: B opened #356 (Fixes #257), green @0663476; sonnet reviewer spawned.
