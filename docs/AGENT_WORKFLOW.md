@@ -5,6 +5,37 @@ All work is tracked as GitHub issues on `arihant2math/better-gh` and lands in
 ownership is expressed with labels, not assignees. Use the GitHub MCP tools
 for every GitHub interaction.
 
+## Operating principles (context discipline)
+
+Inspired by the pi coding agent's minimalism: small context, few tools,
+observable agents, state in files rather than in memory.
+
+* **One agent, one issue, one short session.** A worker session owns one
+  issue; it ends when its PR merges and is archived. Each review round is a
+  fresh reviewer session. Long-lived sessions accumulate stale context.
+* **GitHub is the shared memory.** Claims, progress notes, decisions and
+  handoffs go into concise issue/PR comments; PR descriptions say what
+  changed and how it was tested. No agent ever needs another agent's
+  transcript, and coordinators read labels/PR state, not transcripts.
+* **Read only what the task needs.** Start from the issue, `CLAUDE.md` and
+  the specific doc section it points to. Don't load whole plans/audits;
+  grep for the relevant part.
+* **Few tools, loaded narrowly.** Load GitHub MCP tools with
+  `ToolSearch("select:<exact names>")`, request minimal fields
+  (`fields`, `minimal_output`, small `perPage`), and avoid broad list calls.
+* **No hidden sub-agents by default.** Workers and reviewers do their work
+  inline. If work genuinely needs parallelism, say so in the issue and the
+  foreman spawns separate, visible sessions.
+* **Terse outputs.** Summarize command output (test counts + failing
+  names, `tail`/`grep` of logs); never paste full logs or diffs into
+  context or comments.
+* **CI is the shared gate.** The PR's CI runs the full workspace suite;
+  reviewers rely on green CI for that and run targeted tests plus the
+  viewport matrix themselves, rather than rebuilding everything.
+* **Design questions go to GitHub Discussions** (category "Ideas", or an
+  issue labelled `T-Docs` + `S-Blocked` if Discussions are unavailable),
+  linked from the issue, so decisions are recorded once.
+
 ## Labels (`[letter]-[word]`)
 
 | Prefix | Meaning | Values |
@@ -56,9 +87,10 @@ A reviewer is a different agent session from the author.
    status codes), permissions/security, tests actually cover the change,
    performance (no N+1, no initial-bundle growth), code consistent with
    `docs/BACKEND_PATTERNS.md` / `docs/FRONTEND.md`.
-3. Run the gate yourself. For any UI change, run the viewport matrix
-   yourself and look at the screenshots (Read the PNGs) — don't trust the
-   author's description.
+3. Check CI is green (it runs the full gate). Run targeted tests for the
+   touched crates/components and try the change yourself. For any UI
+   change, run the viewport matrix yourself and look at the screenshots
+   (Read the PNGs) — don't trust the author's description.
 4. Submit a GitHub review (event `COMMENT`, since GitHub doesn't allow
    approving a PR opened by the same account) whose first line is
    `Verdict: APPROVE` or `Verdict: REQUEST_CHANGES`, with inline comments
