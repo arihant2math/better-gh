@@ -1,8 +1,8 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
-import { useResource } from '../../api/cache';
-import { getPullRequirements } from '../../api/endpoints';
-import type { PullRequirements } from '../../api/types';
+import { mutate, refresh, useResource } from '../../api/cache';
+import { dequeuePull, enqueuePull, getPullRequirements } from '../../api/endpoints';
+import type { MergeQueueEntry, PullRequirements } from '../../api/types';
 import { Link } from '../../router';
 import { store } from '../../sync';
 import type { Issue } from '../../sync/models';
@@ -11,13 +11,14 @@ import { deleteHeadBranch, disableAutoMerge, enableAutoMerge, mergePullWith, upd
 import { checkRunsFor, checksSummary, latestReviews, runRollup, statusesFor, statusRollup } from '../../sync/pullSelectors';
 import { canWrite } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
-import { AlertIcon, CheckCircleIcon, CheckIcon, ChevronDownIcon, DotFillIcon, GitBranchIcon, GitMergeIcon, GitPullRequestClosedIcon, GitPullRequestIcon, TrashIcon, XCircleFillIcon } from '../../ui/icons';
+import { AlertIcon, CheckCircleIcon, CheckIcon, ChevronDownIcon, DotFillIcon, GitBranchIcon, GitMergeIcon, GitMergeQueueIcon, GitPullRequestClosedIcon, GitPullRequestIcon, TrashIcon, XCircleFillIcon } from '../../ui/icons';
 import { Input, Textarea } from '../../ui/Input';
 import { Menu } from '../../ui/Menu';
 import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
 import styles from '../issues/IssueView.module.css';
 import { RollupIcon } from './ChecksIcon';
+import { entryState, etaLabel, positionLabel, queuePath } from './mergeQueue';
 import pr from './PullDetail.module.css';
 
 const METHOD_LABEL: Record<MergeMethod, string> = {
@@ -51,7 +52,9 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
     repo && open
       ? `requirements:${repo.owner}/${repo.name}#${issue.number}@${issue.headSha}:${issue.baseSha}:${issue.mergeableState}:${issue.reviewDecision}:${issue.checks}:${issue.draft}`
       : null;
-  const { data: req } = useResource<PullRequirements>(key, () => getPullRequirements(repo!.owner, repo!.name, issue.number), { ttlMs: 10_000 });
+  const loadReq = () => getPullRequirements(repo!.owner, repo!.name, issue.number);
+  const { data: req } = useResource<PullRequirements>(key, loadReq, { ttlMs: 10_000 });
+  const [queueBusy, setQueueBusy] = useState(false);
   const [method, setMethod] = useState<MergeMethod | null>(() => savedMethod(issue.repoId));
   const [menu, setMenu] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -145,7 +148,48 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
   const runs = checkRunsFor(issue.headSha);
   const statuses = statusesFor(issue.headSha);
   const auto = issue.autoMerge;
-  const canAutoMerge = writable && !conflict && !issue.draft && !auto && (blocked || !checksOk);
+  const queue = req?.merge_queue?.required ? req.merge_queue : null;
+  const queued = queue?.entry ?? null;
+  const canAutoMerge = !queue && writable && !conflict && !issue.draft && !auto && (blocked || !checksOk);
+
+  /** Put the queue entry into the cached requirements now, then revalidate. */
+  const settleQueue = (entry: MergeQueueEntry | null) => {
+    if (!key) return;
+    mutate<PullRequirements>(key, (prev) => (prev?.merge_queue ? { ...prev, merge_queue: { ...prev.merge_queue, entry } } : prev!));
+    void refresh(key, loadReq, { ttlMs: 10_000 }).catch(() => undefined);
+  };
+  const addToQueue = () => {
+    setQueueBusy(true);
+    enqueuePull(repo!.owner, repo!.name, issue.number)
+      .then(
+        (entry) => {
+          settleQueue(entry);
+          toast({ kind: 'success', title: `Added #${issue.number} to the merge queue` });
+        },
+        (e: unknown) => {
+          if (key) void refresh(key, loadReq, { ttlMs: 10_000 }).catch(() => undefined);
+          toast({ kind: 'error', title: 'Couldn’t add to the merge queue', description: e instanceof Error ? e.message : undefined });
+        },
+      )
+      .finally(() => setQueueBusy(false));
+  };
+  const removeFromQueue = () => {
+    setQueueBusy(true);
+    dequeuePull(repo!.owner, repo!.name, issue.number)
+      .then(
+        () => {
+          settleQueue(null);
+          toast({ kind: 'success', title: `Removed #${issue.number} from the merge queue` });
+        },
+        (e: unknown) => {
+          if (key) void refresh(key, loadReq, { ttlMs: 10_000 }).catch(() => undefined);
+          toast({ kind: 'error', title: 'Couldn’t remove from the merge queue', description: e instanceof Error ? e.message : undefined });
+        },
+      )
+      .finally(() => setQueueBusy(false));
+  };
+  const queueState = queued ? entryState(queued) : null;
+  const queueEta = queued ? etaLabel(queued.estimated_time_to_merge) : null;
 
   const startConfirm = () => {
     setTitle(chosen === 'squash' ? `${issue.title} (#${issue.number})` : chosen === 'merge' ? `Merge pull request #${issue.number} from ${issue.headRef}` : '');
@@ -258,6 +302,27 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
             {(writable || isAuthor) && <Button onClick={() => disableAutoMerge(issue)}>Disable auto-merge</Button>}
           </div>
         )}
+        {queued && queue && queueState && (
+          <div className={cx(styles.mergeRow, pr.queueRow)} data-testid="merge-queue-status">
+            <GitMergeQueueIcon size={20} className={queueState.tone === 'fail' ? pr.fail : queueState.tone === 'ok' ? pr.ok : pr.pending} />
+            <div className={pr.queueText} role="status" aria-live="polite">
+              <div className={styles.mergeRowTitle}>
+                Queued to merge · {positionLabel(queued)}
+              </div>
+              <div className={styles.subtle}>
+                {queueState.label}
+                {queueEta && ` · ${queueEta} to merge`}
+                {' · '}
+                <Link to={queuePath(repo!.owner, repo!.name, queue.branch)}>View merge queue</Link>
+              </div>
+            </div>
+            {(writable || isAuthor) && (
+              <Button onClick={removeFromQueue} loading={queueBusy} className={pr.touchButton}>
+                Remove from queue
+              </Button>
+            )}
+          </div>
+        )}
         <div className={styles.mergeRow}>
           {conflict ? <XCircleFillIcon size={20} className={pr.fail} /> : computing ? <Spinner size={18} /> : <CheckCircleIcon size={20} className={pr.ok} />}
           <div style={{ flex: 1 }}>
@@ -277,12 +342,23 @@ export const MergeBox = observer(function MergeBox({ issue, base }: { issue: Iss
                   ? 'Use the command line to resolve conflicts before continuing.'
                   : blocked
                     ? 'Merging is blocked until the requirements above are met.'
-                    : 'Merging can be performed automatically.'}
+                    : queue
+                      ? queued
+                        ? 'This pull request will be merged by the merge queue.'
+                        : `Changes to ${queue.branch} must go through the merge queue.`
+                      : 'Merging can be performed automatically.'}
             </div>
           </div>
           {(writable || isAuthor) &&
             (issue.draft ? (
               <Button onClick={() => setDraft(issue, false)}>Ready for review</Button>
+            ) : queue ? (
+              writable &&
+              !queued && (
+                <Button variant="success" leadingIcon={GitMergeQueueIcon} disabled={blocked || computing} loading={queueBusy} onClick={addToQueue} className={pr.touchButton}>
+                  Add to merge queue
+                </Button>
+              )
             ) : writable && !confirming ? (
               <span className={pr.splitButton}>
                 <Button variant="success" leadingIcon={GitMergeIcon} disabled={blocked || computing} onClick={startConfirm}>

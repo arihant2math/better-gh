@@ -324,6 +324,12 @@ export function registerRoutes(): void {
       prefetch: prefetchPull,
       title: (p) => `PR #${p.number} · ${p.owner}/${p.repo}`,
     },
+    {
+      path: '/:owner/:repo/queue/*',
+      layout: RepoLayout,
+      load: () => import('../pages/pulls/MergeQueuePage'),
+      title: (p) => `Merge queue · ${p['*']} · ${p.owner}/${p.repo}`,
+    },
     { path: '/:owner/:repo/import', layout: RepoLayout, load: () => import('../pages/repo/ImportProgressPage'), title: (p) => `Import · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
     { path: '/:owner/:repo/settings/*', layout: RepoLayout, load: RepoSettings, title: (p) => `Settings · ${p.owner}/${p.repo}` },
