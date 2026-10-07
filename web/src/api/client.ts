@@ -46,6 +46,15 @@ export function setSudoHandler(handler: SudoHandler | null): () => void {
   };
 }
 
+/**
+ * Show the installed sudo prompt (for write paths outside `ApiClient`, e.g.
+ * the sync tx queue). Resolves false when no prompt is installed or the user
+ * cancels.
+ */
+export function requestSudo(): Promise<boolean> {
+  return sudoHandler ? sudoHandler() : Promise.resolve(false);
+}
+
 export interface ApiResponse<T> {
   status: number;
   data: T;
