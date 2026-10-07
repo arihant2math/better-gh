@@ -91,6 +91,12 @@ cargo build --release --locked -p bgh-server --bin bgh --features embed-web
 install -m 0755 target/release/bgh /usr/local/bin/bgh
 ```
 
+Prebuilt `embed-web` binaries for Linux (`x86_64-unknown-linux-gnu`) and
+macOS (`aarch64-apple-darwin`) are attached to each GitHub release (the
+`Release` workflow runs on `v*` tags; run it manually for an unreleased
+build). OpenSSL is linked statically; the Linux build needs glibc from
+Ubuntu 24.04 or newer.
+
 Without `--features embed-web` the binary serves the client from
 `BGH_WEB_DIR` (copy `web/dist` there). With it, a `BGH_WEB_DIR` that
 contains an `index.html` still takes precedence, which lets you hot-swap a
