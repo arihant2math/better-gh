@@ -91,3 +91,13 @@ export function inRange(spec: RangeSpec, commits: readonly RestCommit[], sha: st
   const hi = Math.max(idx(spec.from), idx(spec.to));
   return lo >= 0 && i >= lo && i <= hi;
 }
+
+/**
+ * Old/new refs of the diff viewer's `DiffSource` for a selection, matching
+ * what the range files endpoint diffs: an explicit base is compared directly,
+ * otherwise the PR's merge base (`base...head`) is the old side.
+ */
+export function rangeRefs(range: { base?: string; head?: string } | null, baseSha: string, headSha: string): { oldRef: string; newRef: string } {
+  const newRef = range?.head ?? headSha;
+  return { oldRef: range?.base ?? `${baseSha}...${newRef}`, newRef };
+}

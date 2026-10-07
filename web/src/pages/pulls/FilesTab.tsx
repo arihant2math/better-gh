@@ -22,7 +22,7 @@ import { Input } from '../../ui/Input';
 import { MarkdownEditor } from '../issues/Timeline';
 import { CommitRangePicker } from './CommitRangePicker';
 import { SuggestionBatchButton } from './CommitSuggestionsDialog';
-import { formatRange, lastReviewCommit, parseRange, resolveRange } from './range';
+import { formatRange, lastReviewCommit, parseRange, rangeRefs, resolveRange } from './range';
 import { getPullRangePatch, listPullRangeFiles } from './reviewApi';
 import { ReviewButton } from './ReviewButton';
 import styles from './Review.module.css';
@@ -201,13 +201,16 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
         .join(','),
     [pr.headSha],
   );
-  const source = useMemo<DiffSource | undefined>(
-    () =>
-      pr.baseSha && pr.headSha
-        ? { owner: repo.owner, repo: repo.name, oldRef: `${pr.baseSha}...${pr.headSha}`, newRef: pr.headSha, annotations: completedRuns, editRef: canEdit ? (pr.headRef ?? null) : null }
-        : undefined,
-    [repo.owner, repo.name, pr.baseSha, pr.headSha, pr.headRef, canEdit, completedRuns],
-  );
+  // The selected commit range's endpoints (P38), so highlighting, context
+  // expansion and rich/image diffs read the same blobs as the range's patches.
+  const atHead = !fileRange || resolved.atHead;
+  const source = useMemo<DiffSource | undefined>(() => {
+    if (!pr.baseSha || !pr.headSha || !rangeReady) return undefined;
+    const { oldRef, newRef } = rangeRefs(fileRange, pr.baseSha, pr.headSha);
+    // Earlier commits: their own (settled) annotations, and no "Edit file".
+    return { owner: repo.owner, repo: repo.name, oldRef, newRef, annotations: atHead ? completedRuns : newRef, editRef: canEdit && atHead ? (pr.headRef ?? null) : null };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `fileRange` is captured through `rangeTag`
+  }, [repo.owner, repo.name, pr.baseSha, pr.headSha, pr.headRef, canEdit, completedRuns, rangeTag, rangeReady, atHead]);
 
   // Collapsed: viewed and generated files by default; explicit toggles override.
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map());
