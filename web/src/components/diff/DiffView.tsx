@@ -5,6 +5,7 @@ import type { CommitAnnotation } from '../../api/types';
 import type { Pager } from '../../api/pager';
 import { LoadMore } from '../LoadMore';
 import { Link } from '../../router';
+import { blobUrl, codeUrl } from '../code/urls';
 import { toast } from '../../ui/Toast';
 import {
   AlertIcon,
@@ -793,8 +794,6 @@ function CheckAnnotations({ items }: { items: readonly CommitAnnotation[] }) {
 function FileActions({ file, extras }: { file: DiffFileEntry; extras: DiffExtras }) {
   const { source } = extras;
   const status = file.status === 'removed' ? 'deleted' : file.status;
-  const base = `/${source.owner}/${source.repo}`;
-  const enc = file.path.split('/').map(encodeURIComponent).join('/');
   const rich = extras.rich.has(file.path);
   return (
     <span className={styles.fileActions}>
@@ -823,12 +822,12 @@ function FileActions({ file, extras }: { file: DiffFileEntry; extras: DiffExtras
         <CopyIcon size={14} />
       </button>
       {status !== 'deleted' && (
-        <Link className={styles.fileAction} to={`${base}/blob/${source.newRef}/${enc}`} aria-label="View file" title={`View file @ ${source.newRef.slice(0, 7)}`}>
+        <Link className={styles.fileAction} to={blobUrl(source, source.newRef, file.path)} aria-label="View file" title={`View file @ ${source.newRef.slice(0, 7)}`}>
           <EyeIcon size={14} />
         </Link>
       )}
       {status !== 'deleted' && source.editRef && !file.binary && (
-        <Link className={styles.fileAction} to={`${base}/edit/${source.editRef.split('/').map(encodeURIComponent).join('/')}/${enc}`} aria-label="Edit file" title={`Edit file on ${source.editRef}`}>
+        <Link className={styles.fileAction} to={codeUrl(source, 'edit', source.editRef, file.path)} aria-label="Edit file" title={`Edit file on ${source.editRef}`}>
           <PencilIcon size={14} />
         </Link>
       )}

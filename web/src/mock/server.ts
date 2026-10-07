@@ -77,6 +77,8 @@ export class MockServer implements Transport {
   private sockets = new Set<MockSocket>();
   private idem = new Map<string, { resp: Resp; syncId: number }>();
   private routes: Route[] = [];
+  /** Extra fields of `GET …/pulls/{n}/requirements` contributed by feature mocks (e.g. `merge_queue`). */
+  readonly requirementExtras: ((repo: Repo, pr: Issue) => Record<string, unknown>)[] = [];
   private files = new Map<ID, MockFile[]>();
   private rng = new Rng(Date.now() & 0xffff);
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1142,6 +1144,7 @@ export class MockServer implements Transport {
           allowed_merge_methods: ['merge', 'squash', 'rebase'],
           can_bypass: true,
           deployments: deploymentsForSha(this, r[0], pr.headSha),
+          ...Object.assign({}, ...this.requirementExtras.map((f) => f(r[0], pr))),
         },
       };
     });

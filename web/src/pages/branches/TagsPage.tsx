@@ -7,6 +7,7 @@ import { usePager } from '../../api/pager';
 import type { History } from '../../api/types';
 import { LoadMore } from '../../components/LoadMore';
 import { Link, useParams } from '../../router';
+import { archiveUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
@@ -106,11 +107,11 @@ function Tags({ repo }: { repo: Repo }) {
 
 function TagRow({ repo, tag, release }: { repo: Repo; tag: RestTag; release: RestRelease | undefined }) {
   const base = `/${repo.owner}/${repo.name}`;
-  const archive = `${base}/archive/refs/tags/${enc(tag.name)}`;
+  const archive = (ext: 'zip' | 'tar.gz') => archiveUrl(repoRefOf(repo), `refs/tags/${tag.name}`, ext);
   return (
     <div className={styles.tagRow} role="listitem">
       <div>
-        <Link to={`${base}/tree/${enc(tag.name)}`} className={styles.tagName}>
+        <Link to={treeUrl(repoRefOf(repo), tag.name)} className={styles.tagName}>
           <TagIcon size={16} />
           {tag.name}
         </Link>
@@ -120,11 +121,11 @@ function TagRow({ repo, tag, release }: { repo: Repo; tag: RestTag; release: Res
             <GitCommitIcon size={14} />
             {tag.commit.sha.slice(0, 7)}
           </Link>
-          <a href={`${archive}.zip`} download>
+          <a href={archive('zip')} download>
             <FileZipIcon size={14} />
             zip
           </a>
-          <a href={`${archive}.tar.gz`} download>
+          <a href={archive('tar.gz')} download>
             <FileZipIcon size={14} />
             tar.gz
           </a>

@@ -9,6 +9,7 @@ import { ApiError } from '../../api/client';
 import { getSettings, ssKeys } from '../../api/secretScanning';
 import type { RestUser } from '../../api/types';
 import { Link, useLocation } from '../../router';
+import { blobUrl } from '../../components/code/urls';
 import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
@@ -100,4 +101,4 @@ export function UserLink({ user }: { user: RestUser | null | undefined }) {
 
 /** Code browser link to a location at its commit. */
 export const blobHref = (owner: string, repo: string, l: { commit_sha: string; path: string; start_line: number }) =>
-  `/${owner}/${repo}/blob/${l.commit_sha}/${l.path.split('/').map(encodeURIComponent).join('/')}#L${l.start_line}`;
+  `${blobUrl({ owner, repo }, l.commit_sha, l.path)}#L${l.start_line}`;
