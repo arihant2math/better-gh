@@ -1,6 +1,6 @@
 # Fleet 2 (phase 5) — foreman2 tracking
 
-Foreman: session_011BS1twjVWtvUAmNtnSQ52s (foreman3, since 08:12; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
+Foreman: session_01QGXdRWZfRg2trNCsoy9GjA (foreman4, since 09:23; foreman3 was session_011BS1twjVWtvUAmNtnSQ52s; foreman2 was session_01TnU6QngZQQ3epR16djXC76). Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Status issue: #46.
 
 ## HANDOFF (09:22, foreman3 session_011BS1twjVWtvUAmNtnSQ52s → foreman4; context ~310k)
 Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. Foreman2 is gone (archived by the orchestrator). WIND DOWN is in effect (section below).
@@ -49,6 +49,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:27 (foreman4 session_01QGXdRWZfRg2trNCsoy9GjA): took over; notified the orchestrator, the authors of #312, #309, #316/#315/#322 and #319, the #330 worker, the #331 fixer, and the #312 and #315 r2 reviewers. #315 r2 APPROVE at 9a96154; head edddec1 is a main merge, but `Rust (tests)` is red only from the #331 flake (insights::stats_accepted_then_computed). Re-run after 10:00 UTC, then forward. Note: whichever of #315 and #316 lands second must update the auto_merge_waits_for_requirements_then_enqueues assertion. The #315 reviewer is still running (it hasn't reported yet). New heads to watch on pings: #330 f817f86, #316 572c20f, #322 699da9c.
 09:22: #330 REQUEST_CHANGES (pin cargo-chef, honest timing); worker told; reviewer archived. Foreman3 context is 308k, so it hands off to foreman4 now.
 09:13: #309 r2 REQUEST_CHANGES (fragment-doubling validation DoS); author told; reviewer archived. The orchestrator approved a #331 fixer: session_01HiZuw5TZdK2DU9KPyfjtRs.
 09:13: filed #331 (P-High T-Test): insights::stats_accepted_then_computed fails Wed 09:00-09:59 UTC (seed commit uses the current time). Any backend PR CI is red until 10:00 UTC; it is not the PRs' fault. Orchestrator told; no fixer unless directed.
