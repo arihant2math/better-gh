@@ -133,6 +133,10 @@ const FIXTURES = {
       <button style="position:absolute;left:0;top:0;width:80px;height:40px">under</button>
       <button style="position:absolute;left:10px;top:0;width:80px;height:40px">over</button></div>`),
   '/tiny': PAGE(`<button style="width:20px;height:20px;padding:0">x</button><label style="display:inline-block;padding:10px 20px"><input type="checkbox"> big label</label>`),
+  '/squeezed': PAGE(`<header style="display:flex;width:340px"><h1 style="flex:1;min-width:0;overflow-wrap:anywhere">Background jobs</h1>
+    <div style="flex:none;width:310px"><button style="height:40px">Retry all failed</button></div></header>
+    <header style="display:flex;flex-wrap:wrap;width:340px"><h1 style="flex:1 1 16ch;min-width:12ch;overflow-wrap:anywhere">Repositories</h1>
+    <div style="display:flex"><button style="height:40px">Run maintenance on all repositories</button></div></header>`),
   '/error': PAGE(`<script>console.error('boom')</script><img src="/missing-500.png" alt="">`),
 };
 
@@ -185,6 +189,13 @@ describe.skipIf(!chromium)('viewport-matrix checks in Chromium', () => {
   it('catches clipped text and unreachable controls', async () => {
     const issues = await check('/clipped', { width: 1024, touch: false });
     expect(kinds(issues)).toEqual(['clipped-text', 'unreachable']);
+  });
+
+  it('catches text squeezed to a letter per line, not wrapped headers', async () => {
+    const issues = await check('/squeezed', { touch: false });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ check: 'squeezed-text', selector: 'header > h1' });
+    expect(issues[0].detail).toMatch(/"Background jobs"/);
   });
 
   it('catches overlapping controls', async () => {

@@ -15,6 +15,7 @@ import { Spinner } from '../ui/Spinner';
 import { formatKeys } from '../shortcuts/manager';
 import { commands } from './commands';
 import styles from './CommandPalette.module.css';
+import { rankCommands } from './paletteRank';
 import { currentRepo, ui } from './uiState';
 
 interface Result {
@@ -107,6 +108,7 @@ const PaletteBody = observer(function PaletteBody() {
   const [query, setQuery] = useState(ui.paletteMode === 'commands' ? '>' : '');
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const typedAt = useRef(0);
   const here = currentRepo();
   const pageOwner = matchPath(window.location.pathname)?.params.owner;
@@ -122,12 +124,19 @@ const PaletteBody = observer(function PaletteBody() {
 
   const local = useMemo(() => {
     const t0 = performance.now();
-    const cmds: Result[] = cmdList
-      .map((c) => ({ c, score: fuzzyScore(q, `${c.title} ${c.keywords ?? ''} ${c.group}`) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
+    // `>` mode shows every match under its own section header; mixed search keeps one "Commands" group.
+    const cmds: Result[] = rankCommands([...cmdList].reverse(), q, commandMode)
       .slice(0, commandMode ? 50 : MAX_PER_GROUP.Commands)
-      .map(({ c, score }) => ({ id: `cmd:${c.id}`, group: 'Commands', title: c.title, subtitle: c.group, icon: c.icon, shortcut: c.shortcut, run: c.run, score }));
+      .map(({ command: c, score }) => ({
+        id: `cmd:${c.id}`,
+        group: commandMode ? c.group : 'Commands',
+        title: c.title,
+        subtitle: commandMode ? undefined : c.group,
+        icon: c.icon,
+        shortcut: c.shortcut,
+        run: c.run,
+        score,
+      }));
     if (commandMode) return { groups: [cmds], ms: performance.now() - t0 };
     const repoMap = new Map(repos.map((r) => [r.id, r]));
     const repoResults: Result[] = repos
@@ -278,15 +287,35 @@ const PaletteBody = observer(function PaletteBody() {
 
   let lastGroup = '';
   return (
-    <div className={styles.palette}>
+    <div
+      className={styles.palette}
+      onKeyDown={(e) => {
+        // Keep focus in the palette: Tab from anything else (e.g. a clicked scope chip) returns to the input.
+        if (e.key === 'Tab' && e.target !== inputRef.current) {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }
+      }}
+    >
       <div className={styles.inputRow}>
         <SearchIcon size={16} />
         {scopes.length > 1 && !commandMode && (
-          <button type="button" className={styles.scope} onClick={() => cycleScope(1)} title="Change scope (Tab)" data-scope={scope.scope.kind}>
+          <button
+            type="button"
+            tabIndex={-1}
+            className={styles.scope}
+            onClick={() => {
+              cycleScope(1);
+              inputRef.current?.focus();
+            }}
+            title="Change scope (Tab)"
+            data-scope={scope.scope.kind}
+          >
             {scope.label}
           </button>
         )}
         <input
+          ref={inputRef}
           autoFocus
           data-autofocus
           className={styles.input}
@@ -304,7 +333,11 @@ const PaletteBody = observer(function PaletteBody() {
             if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) setActive((a) => Math.min(results.length - 1, a + 1));
             else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) setActive((a) => Math.max(0, a - 1));
             else if (e.key === 'Enter') run(current);
-            else if (e.key === 'Tab' && scopes.length > 1 && !commandMode) cycleScope(e.shiftKey ? -1 : 1);
+            else if (e.key === 'Tab') {
+              // Combobox: results are reached with arrows, so Tab never leaves the input
+              // (it cycles the scope when there is one).
+              if (scopes.length > 1 && !commandMode) cycleScope(e.shiftKey ? -1 : 1);
+            }
             else if (e.key === 'Backspace' && query === '' && scope.id !== 'global') setScopeId('global');
             else return;
             e.preventDefault();
@@ -312,7 +345,7 @@ const PaletteBody = observer(function PaletteBody() {
         />
         {server.loading && q && <Spinner size={14} />}
       </div>
-      <div ref={listRef} id="palette-results" className={styles.results} role="listbox" aria-busy={server.loading}>
+      <div ref={listRef} id="palette-results" className={styles.results} role="listbox" tabIndex={-1} aria-busy={server.loading}>
         {results.length === 0 && <div className={styles.empty}>{server.loading ? 'Searching…' : `No results for “${query}”`}</div>}
         {results.map((r, i) => {
           const header = r.group !== lastGroup ? r.group : null;
@@ -353,7 +386,7 @@ const PaletteBody = observer(function PaletteBody() {
         <span>
           <kbd>↵</kbd> open
         </span>
-        {scopes.length > 1 && (
+        {scopes.length > 1 && !commandMode && (
           <span>
             <kbd>Tab</kbd> scope
           </span>
@@ -375,3 +408,5 @@ function weight(g: Result[]): number {
   if (!best) return -1;
   return best.score / (best.group === 'Commands' ? 2 : 1);
 }
+
+export default CommandPalette;

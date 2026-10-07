@@ -49,3 +49,5 @@ export const ShortcutHelp = observer(function ShortcutHelp() {
     </Dialog>
   );
 });
+
+export default ShortcutHelp;

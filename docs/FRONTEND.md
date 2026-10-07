@@ -52,7 +52,7 @@ local-store model (our pages read synchronously from MobX, not loaders).
   path: '/:owner/:repo/releases',
   layout: RepoLayout,                       // optional persistent layout
   load: () => import('../pages/releases/ReleasesPage'),
-  prefetch: (p) => prefetchResource(`releases:${p.owner}/${p.repo}`, () => listReleases(p.owner!, p.repo!)),
+  prefetch: lazyPrefetch((m, p) => m.prefetchReleases(p)),  // helper in app/routePrefetch.ts
   title: (p) => `Releases · ${p.owner}/${p.repo}`,
 },
 ```
@@ -60,7 +60,10 @@ local-store model (our pages read synchronously from MobX, not loaders).
 The most specific route wins (static segments beat `:params`, which beat
 `*`; ties keep table order), so `/site-admin` beats `/:owner` and
 `/:owner/:repo/settings/secrets/actions` beats `/:owner/:repo/settings/*`
-wherever they sit in the table. Use `<Link to=…>` for every internal link: it prefetches
+wherever they sit in the table. `routes.ts` is part of the initial bundle,
+so it must not import REST wrappers (`api/*`) or page modules statically:
+put data prefetchers in the lazy `src/app/routePrefetch.ts` (or a page's
+own `data.ts`) and reference them through `lazyPrefetch`. Use `<Link to=…>` for every internal link: it prefetches
 the chunk and calls the route's `prefetch` on hover/focus/touch.
 `useParams()`, `useQuery()`, `setQuery({ q: … })` (replace, keeps scroll) and
 `navigate(path)` cover the rest.
