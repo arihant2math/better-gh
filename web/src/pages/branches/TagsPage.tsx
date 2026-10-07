@@ -1,9 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { load, peek, useResource } from '../../api/cache';
+import { peek, useResource } from '../../api/cache';
 import { codeKeys, listReleases, listTags, type RestRelease, type RestTag } from '../../api/code';
 import { getHistory } from '../../api/endpoints';
+import { usePager } from '../../api/pager';
 import type { History } from '../../api/types';
+import { LoadMore } from '../../components/LoadMore';
 import { Link, useParams } from '../../router';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
@@ -36,40 +38,20 @@ function Tags({ repo }: { repo: Repo }) {
   const o = repo.owner;
   const r = repo.name;
   const base = `/${o}/${r}`;
-  const first = useResource<RestTag[]>(tagsKey(repo, 1), () => listTags(o, r));
-  const releases = useResource<RestRelease[]>(codeKeys.releaseTags(o, r), () => listReleases(o, r, 1, 100));
-  const [more, setMore] = useState<RestTag[][]>(() => {
-    const out: RestTag[][] = [];
-    for (let p = 2; ; p++) {
-      const prev = p === 2 ? peek<RestTag[]>(tagsKey(repo, 1)) : out[out.length - 1];
-      const next = prev && prev.length >= PER_PAGE ? peek<RestTag[]>(tagsKey(repo, p)) : undefined;
-      if (!next) break;
-      out.push(next);
-    }
-    return out;
+  const pager = usePager<RestTag[]>(`${o}/${r}`, {
+    key: (page) => tagsKey(repo, page),
+    // Page 1 without paging params: it shares the route prefetch's request.
+    loader: (page) => (page === 1 ? listTags(o, r) : listTags(o, r, page, PER_PAGE)),
+    hasMore: (last) => last.length >= PER_PAGE,
   });
-  const [loadingMore, setLoadingMore] = useState(false);
-  const lastPage = more[more.length - 1] ?? first.data;
-  const hasMore = !!lastPage && lastPage.length >= PER_PAGE;
+  const { first, pages, hasMore } = pager;
+  const releases = useResource<RestRelease[]>(codeKeys.releaseTags(o, r), () => listReleases(o, r, 1, 100));
 
-  const tags = useMemo(() => (first.data ? [first.data, ...more].flat() : []), [first.data, more]);
+  const tags = useMemo(() => pages.flat(), [pages]);
   const releaseByTag = useMemo(() => new Map((releases.data ?? []).filter((x) => !x.draft).map((x) => [x.tag_name, x])), [releases.data]);
 
-  const loadMore = () => {
-    if (loadingMore || !hasMore) return;
-    const page = 2 + more.length;
-    setLoadingMore(true);
-    load(tagsKey(repo, page), () => listTags(o, r, page, PER_PAGE)).then(
-      (list) => {
-        setMore((m) => (m.length === page - 2 ? [...m, list] : m));
-        setLoadingMore(false);
-      },
-      () => setLoadingMore(false),
-    );
-  };
-
   let body;
-  if (first.error && !first.data) body = <EmptyState icon={AlertIcon} title="Couldn’t load tags" />;
+  if (first.error && !first.data) body = <EmptyState icon={AlertIcon} title="Couldn’t load tags" action={<Button onClick={pager.retry}>Retry</Button>} />;
   else if (!first.data) body = <SkeletonTags />;
   else if (!tags.length)
     body = (
@@ -85,13 +67,7 @@ function Tags({ repo }: { repo: Repo }) {
             <TagRow key={t.name} repo={repo} tag={t} release={releaseByTag.get(t.name)} />
           ))}
         </div>
-        {more.length === 0 && hasMore && (
-          <div style={{ marginTop: 'var(--sp-3)', textAlign: 'center' }}>
-            <Button size="sm" loading={loadingMore} onClick={loadMore}>
-              Load more tags
-            </Button>
-          </div>
-        )}
+        {hasMore && <LoadMore pager={pager} label="Load more tags" style={{ marginTop: 'var(--sp-3)', textAlign: 'center' }} />}
       </section>
     );
 
@@ -117,7 +93,7 @@ function Tags({ repo }: { repo: Repo }) {
           renderItem={(t, i) => (
             <div className={cx(styles.vrow, i === 0 && styles.vfirst, i === tags.length - 1 && styles.vlast)} style={i === 0 ? { marginTop: 'var(--sp-4)' } : undefined}>
               <TagRow repo={repo} tag={t} release={releaseByTag.get(t.name)} />
-              {i === tags.length - 1 && hasMore && <MoreTags onVisible={loadMore} loading={loadingMore} />}
+              {i === tags.length - 1 && hasMore && <LoadMore pager={pager} auto label="Load more tags" style={{ padding: 'var(--sp-3)', textAlign: 'center' }} />}
             </div>
           )}
         />
@@ -185,21 +161,6 @@ function TagDate({ repo, sha }: { repo: Repo; sha: string }) {
   const { data } = useResource<History>(visible ? key : null, () => getHistory(repo.owner, repo.name, sha, '', { perPage: 1 }), { immutable: true });
   const c = data?.commits[0];
   return <span ref={ref}>{c ? <RelativeTime date={c.committer.date || c.author.date} /> : visible && !data ? <Skeleton width={70} height={12} /> : null}</span>;
-}
-
-/** Last row of the virtualized list: loads the next page when rendered (infinite scroll). */
-function MoreTags({ onVisible, loading }: { onVisible: () => void; loading: boolean }) {
-  useEffect(() => {
-    if (!loading) onVisible();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- on mount and when a load settles
-  }, [loading]);
-  return (
-    <div style={{ padding: 'var(--sp-3)', textAlign: 'center' }}>
-      <Button size="sm" loading={loading} onClick={onVisible}>
-        Load more tags
-      </Button>
-    </div>
-  );
 }
 
 function SkeletonTags() {

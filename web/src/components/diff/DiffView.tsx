@@ -2,6 +2,8 @@ import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, cx } from '../../ui/Button';
 import type { CommitAnnotation } from '../../api/types';
+import type { Pager } from '../../api/pager';
+import { LoadMore } from '../LoadMore';
 import { Link } from '../../router';
 import { toast } from '../../ui/Toast';
 import {
@@ -95,7 +97,8 @@ export interface DiffViewProps {
   fileActions?(file: DiffFileEntry): ReactNode;
   /** Number of files still being listed (rendered as a trailing placeholder). */
   pendingFiles?: number;
-  onNeedMoreFiles?(): void;
+  /** Pager of the file list, driven by the trailing placeholder. */
+  moreFiles?: Pick<Pager<unknown>, 'status' | 'loadMore' | 'retry'>;
   tree?: boolean;
   /** Enable j/k/n/p/c and friends. */
   keyboard?: boolean;
@@ -435,7 +438,7 @@ export function DiffView(props: DiffViewProps) {
         getKey={(r, i) => rowKey(r, files, i)}
         renderItem={(r, i) => {
           if (r.k === 'footer') return props.footer;
-          if (r.k === 'more') return <MoreFiles count={props.pendingFiles ?? 0} onNeed={props.onNeedMoreFiles} />;
+          if (r.k === 'more') return <MoreFiles count={props.pendingFiles ?? 0} pager={props.moreFiles} />;
           const file = files[r.f]!;
           const active = i === cursor;
           switch (r.k) {
@@ -844,15 +847,15 @@ function LoadingFile({ path, onNeed }: { path: string; onNeed?: (path: string) =
   );
 }
 
-function MoreFiles({ count, onNeed }: { count: number; onNeed?: () => void }) {
-  useEffect(() => {
-    onNeed?.();
-  }, [onNeed]);
-  return (
-    <div className={styles.more}>
-      <Spinner size={14} /> Loading {count} more file{count === 1 ? '' : 's'}…
-    </div>
-  );
+function MoreFiles({ count, pager }: { count: number; pager?: Pick<Pager<unknown>, 'status' | 'loadMore' | 'retry'> }) {
+  const label = `Loading ${count} more file${count === 1 ? '' : 's'}…`;
+  if (!pager)
+    return (
+      <div className={styles.more}>
+        <Spinner size={14} /> {label}
+      </div>
+    );
+  return <LoadMore pager={pager} auto className={styles.more} label="Load more files" loadingLabel={label} />;
 }
 
 // ------------------------------------------------------------------ tree
