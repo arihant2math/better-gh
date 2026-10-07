@@ -3,13 +3,10 @@
  * hover so navigation renders synchronously. Add new pages here
  * (docs/FRONTEND.md "Add a route").
  */
-import { prefetch as prefetchResource } from '../api/cache';
-import { prefetchProfile } from '../api/profile';
-import { browseKeys, getBlob, getIssueTemplates, getRefs, getTree, isSha, listPullCommits, listPullFiles } from '../api/endpoints';
-import { fetchRef, resolveTarget, type CodeTarget } from '../pages/code/util';
 import type { ComponentType } from 'react';
 import { defineRoutes, type Params, type RouteDef } from '../router';
 import { hasSync, sync } from '../sync';
+import type { Issue } from '../sync/models';
 import { issueByNumber, orgByLogin, repoByName } from '../sync/selectors';
 import { preloadMarkdown } from '../ui/Markdown';
 
@@ -77,26 +74,27 @@ function codePrefetch(kind: 'blame' | 'commits' | 'commit' | 'branches' | 'tags'
   return (p: Params) => void import('../pages/code/prefetch').then((m) => m.prefetchCodeRoute(kind, p)).catch(() => undefined);
 }
 
+/**
+ * Data prefetchers that need the REST wrappers live in a lazy module (see
+ * routePrefetch.ts) so those wrappers stay out of the initial bundle.
+ */
+const prefetchers = () => import('./routePrefetch');
+function lazyPrefetch(run: (m: Awaited<ReturnType<typeof prefetchers>>, p: Params) => void) {
+  return (p: Params) => void prefetchers().then((m) => run(m, p)).catch(() => undefined);
+}
+const prefetchDeployments = lazyPrefetch((m, p) => m.prefetchDeployments(p));
+const prefetchPackages = lazyPrefetch((m, p) => m.prefetchPackages(p));
+const prefetchTemplates = lazyPrefetch((m, p) => m.prefetchTemplates(p));
+const prefetchCode = lazyPrefetch((m, p) => m.prefetchCode(p));
+const prefetchBlobView = lazyPrefetch((m, p) => m.prefetchBlobView(p));
+const prefetchPullFiles = (p: Params, pr: Issue) => void prefetchers().then((m) => m.prefetchPullFiles(p, pr)).catch(() => undefined);
+const prefetchPullCommits = (p: Params, pr: Issue) => void prefetchers().then((m) => m.prefetchPullCommits(p, pr)).catch(() => undefined);
+
 const DeploymentsPage = () => import('../pages/deployments/DeploymentsPage');
 const SecurityPage = () => import('../pages/security/SecurityPage');
 
-function prefetchDeployments(p: Params) {
-  void import('../api/deployments').then((m) => prefetchResource(m.deploymentKeys.summary(p.owner!, p.repo!), () => m.getDeploymentsSummary(p.owner!, p.repo!), { ttlMs: 15_000 }));
-}
-
 const PackagesPage = () => import('../pages/packages/PackagesPage');
 const PackagePage = () => import('../pages/packages/PackagePage');
-
-/** Packages data prefetch (lazy module: keeps the API wrappers out of the initial bundle). */
-function prefetchPackages(p: Params) {
-  void import('../api/packages')
-    .then((m) => {
-      const name = p['*'];
-      if (name) prefetchResource(m.packageKeys.detail(p.owner!, p.type!, name), () => m.getPackage(p.owner!, p.type!, name));
-      else prefetchResource(m.packageKeys.owner(p.owner!), () => m.listOwnerPackages(p.owner!));
-    })
-    .catch(() => undefined);
-}
 
 const RunsPage = () => import('../pages/actions/RunsPage');
 const RunPage = () => import('../pages/actions/RunPage');
@@ -134,37 +132,13 @@ function prefetchPull(p: Params) {
   // Warm the tab's chunk and first data page.
   if (p.tab === 'files') {
     void import('../pages/pulls/FilesTab');
-    if (pr) prefetchResource(`files:${p.owner}/${p.repo}#${p.number}@${pr.baseSha}...${pr.headSha}:1`, () => listPullFiles(p.owner!, p.repo!, Number(p.number), 1), { immutable: true });
+    if (pr) prefetchPullFiles(p, pr);
   } else if (p.tab === 'commits') {
     void import('../pages/pulls/CommitsTab');
-    if (pr) prefetchResource(`commits:${p.owner}/${p.repo}#${p.number}@${pr.headSha}`, () => listPullCommits(p.owner!, p.repo!, Number(p.number)), { immutable: true });
+    if (pr) prefetchPullCommits(p, pr);
   } else if (p.tab === 'checks') {
     void import('../pages/pulls/ChecksTab');
   }
-}
-
-function prefetchTemplates(p: Params) {
-  prefetchResource(`issue-templates:${p.owner}/${p.repo}`.toLowerCase(), () => getIssueTemplates(p.owner!, p.repo!), { ttlMs: 60_000 });
-}
-
-function codeTarget(p: Params): CodeTarget | null {
-  const ref = p.ref ?? (hasSync() ? repoByName(p.owner!, p.repo!)?.defaultBranch : undefined);
-  return ref ? resolveTarget(p.owner!, p.repo!, ref, p['*'] ?? '') : null;
-}
-
-function prefetchCode(p: Params) {
-  prefetchResource(browseKeys.refs(p.owner!, p.repo!), () => getRefs(p.owner!, p.repo!));
-  const t = codeTarget(p);
-  if (!t) return;
-  const ref = fetchRef(t);
-  prefetchResource(browseKeys.tree(t.owner, t.repo, ref, t.path), () => getTree(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
-}
-
-function prefetchBlobView(p: Params) {
-  const t = codeTarget(p);
-  if (!t) return;
-  const ref = fetchRef(t);
-  prefetchResource(browseKeys.blob(t.owner, t.repo, ref, t.path), () => getBlob(t.owner, t.repo, ref, t.path), { immutable: isSha(ref) });
 }
 
 export function registerRoutes(): void {
@@ -182,7 +156,7 @@ export function registerRoutes(): void {
       path: '/:owner',
       load: () => import('../pages/profile/ProfilePage'),
       // Skip paths that can't be accounts (bare pages like /password_reset, /login).
-      prefetch: (p) => VALID_LOGIN.test(p.owner!) && prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!)),
+      prefetch: lazyPrefetch((m, p) => VALID_LOGIN.test(p.owner!) && m.prefetchProfile(p.owner!, hasSync() && !!orgByLogin(p.owner!))),
       title: (p) => p.owner!,
     },
     // Site administration (lazy chunks; the layout guards non-admins).

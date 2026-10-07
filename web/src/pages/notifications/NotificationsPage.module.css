@@ -519,8 +519,9 @@
 
 .previewActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 6px 12px;
   min-height: 48px;
   padding: 6px 16px 6px 32px;
   border-bottom: 1px solid var(--border-subtle);
@@ -528,6 +529,7 @@
 }
 
 .previewRepo {
+  flex: 1 1 160px;
   min-width: 0;
   overflow: hidden;
   color: var(--fg-subtle);
@@ -536,11 +538,28 @@
   white-space: nowrap;
 }
 
-.previewActions > button {
+.previewButtons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.previewButtons > * {
   flex: none;
 }
 
+@media (pointer: coarse) {
+  .previewButtons button {
+    min-width: 32px;
+    min-height: 32px;
+  }
+}
+
 .previewTitle {
+  overflow-wrap: anywhere;
   font-size: var(--fs-xl);
   font-weight: var(--fw-semibold);
   letter-spacing: -0.01em;

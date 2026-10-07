@@ -446,6 +446,7 @@ export function seed(now = Date.now()): MockDb {
   }
 
   showcase(t, viewer, now, id, nextNumber);
+  longNames(t, viewer, now, id, nextNumber);
   const db: MockDb = { viewerId: viewer.id, tables: t, nextId, nextNumber, viewerReactions: {} };
   seedProjects(db, now);
   return db;
@@ -565,4 +566,68 @@ function showcase(t: Tables, viewer: User, now: number, id: () => number, nextNu
   // One more pinned issue and a locked one.
   if (open[4]) t.issue.set(open[4].id, { ...open[4], pinned: true });
   if (open[5]) t.issue.set(open[5].id, { ...open[5], locked: true, activeLockReason: 'too heated' });
+}
+
+/**
+ * A 39-character login (GitHub's maximum) owning a repository with a very long
+ * name, plus an issue there assigned to the viewer, so the viewport matrix
+ * exercises overflow in the sidebar, Recent repositories and the work list
+ * (deterministic; uses no rng).
+ */
+function longNames(t: Tables, viewer: User, now: number, id: () => number, nextNumber: Record<ID, number>): void {
+  const owner: User = { id: id(), login: 'averyveryverylongusernamethatgoesonando', name: 'Avery Long', avatarUrl: '', type: 'User' };
+  t.user.set(owner.id, owner);
+  const at = iso(now - 3_600_000);
+  const repo: Repo = {
+    id: id(),
+    ownerId: owner.id,
+    owner: owner.login,
+    name: 'this-is-an-extremely-long-repository-name-for-testing-overflow-behaviour-in-lists',
+    description: 'Fixture for long owner and repository names.',
+    private: false,
+    fork: false,
+    archived: false,
+    defaultBranch: 'main',
+    language: 'TypeScript',
+    topics: [],
+    stars: 3,
+    forks: 0,
+    watchers: 1,
+    openIssues: 1,
+    openPulls: 0,
+    hasIssues: true,
+    hasProjects: false,
+    hasWiki: false,
+    pushedAt: at,
+    createdAt: at,
+    updatedAt: at,
+  };
+  t.repo.set(repo.id, repo);
+  t.viewerRepo.set(repo.id, { id: repo.id, permission: 'write', starred: false, watching: 'subscribed' });
+  const issue: Issue = {
+    id: id(),
+    repoId: repo.id,
+    number: 1,
+    title: 'Long names should ellipsize instead of wrapping',
+    body: '',
+    state: 'open',
+    stateReason: null,
+    authorId: owner.id,
+    assigneeIds: [viewer.id],
+    labelIds: [],
+    milestoneId: null,
+    comments: 0,
+    locked: false,
+    activeLockReason: null,
+    reactions: {},
+    pinned: false,
+    parentId: null,
+    subIssueIds: [],
+    createdAt: at,
+    updatedAt: iso(now),
+    closedAt: null,
+    isPr: false,
+  };
+  t.issue.set(issue.id, issue);
+  nextNumber[repo.id] = 2;
 }
