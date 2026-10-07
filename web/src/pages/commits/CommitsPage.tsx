@@ -1,20 +1,21 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useReducer, useState } from 'react';
-import { load, peek, useResource } from '../../api/cache';
+import { load, peek } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { codeKeys, getCommitStatuses, type CommitStatusRollup, type CommitStatuses } from '../../api/code';
 import { getHistory, isSha } from '../../api/endpoints';
+import { usePager } from '../../api/pager';
 import type { BrowseCommit, History } from '../../api/types';
 import { RefPicker } from '../../components/code/RefPicker';
+import { LoadMore } from '../../components/LoadMore';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Repo } from '../../sync/models';
 import { repoByName } from '../../sync/selectors';
-import { Button, IconButton, cx } from '../../ui/Button';
+import { IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizontalIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
-import { Spinner } from '../../ui/Spinner';
 import { VirtualList } from '../../ui/VirtualList';
 import { useRefsData } from '../code/data';
 import { COMMITS_PER_PAGE } from '../code/prefetch';
@@ -84,54 +85,14 @@ function Header({ repo, refName, path }: { repo: Repo; refName: string; path: st
   );
 }
 
-function historyLoader(repo: Repo, ref: string, path: string, page: number) {
-  return () => getHistory(repo.owner, repo.name, ref, path, { page, perPage: COMMITS_PER_PAGE });
-}
-
-/**
- * Page 1 through `useResource` (renders synchronously when the route
- * prefetch warmed it); later pages appended on demand. Pages still in the
- * cache (e.g. back navigation) are restored on mount.
- */
+/** History pages of `ref`/`path`; pages still in the cache (back navigation) are restored on mount. */
 function useHistoryPages(repo: Repo, ref: string, path: string) {
-  const opts = { immutable: isSha(ref) };
-  const key = (page: number) => codeKeys.history(repo.owner, repo.name, ref, path, page);
-  const first = useResource<History>(key(1), historyLoader(repo, ref, path, 1), opts);
-  const [more, setMore] = useState<History[]>(() => {
-    const out: History[] = [];
-    let prev = peek<History>(key(1));
-    for (let p = 2; prev?.has_more; p++) {
-      const h = peek<History>(key(p));
-      if (!h) break;
-      out.push(h);
-      prev = h;
-    }
-    return out;
+  return usePager<History>(`${repo.owner}/${repo.name}@${ref}:${path}`, {
+    key: (page) => codeKeys.history(repo.owner, repo.name, ref, path, page),
+    loader: (page) => getHistory(repo.owner, repo.name, ref, path, { page, perPage: COMMITS_PER_PAGE }),
+    hasMore: (last) => !!last.has_more,
+    immutable: isSha(ref),
   });
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState(false);
-  const last = more[more.length - 1] ?? first.data;
-  const hasMore = !!last?.has_more;
-
-  const loadMore = () => {
-    if (loadingMore || !hasMore) return;
-    const page = 2 + more.length;
-    setLoadingMore(true);
-    setMoreError(false);
-    load(key(page), historyLoader(repo, ref, path, page), opts).then(
-      (h) => {
-        setMore((m) => (m.length === page - 2 ? [...m, h] : m));
-        setLoadingMore(false);
-      },
-      () => {
-        setMoreError(true);
-        setLoadingMore(false);
-      },
-    );
-  };
-
-  const pages = useMemo(() => (first.data ? [first.data, ...more] : []), [first.data, more]);
-  return { first, pages, hasMore, loadMore, loadingMore, moreError };
 }
 
 /** One batched commit-status request per loaded page, merged. */
@@ -161,7 +122,8 @@ function useCiStatuses(repo: Repo, pages: History[]): Record<string, CommitStatu
 type Row = CommitListRow | { kind: 'more' };
 
 function CommitList({ repo, refName, path, label }: { repo: Repo; refName: string; path: string; label: string }) {
-  const { first, pages, hasMore, loadMore, loadingMore, moreError } = useHistoryPages(repo, refName, path);
+  const pager = useHistoryPages(repo, refName, path);
+  const { first, pages, hasMore, loadMore } = pager;
   const ci = useCiStatuses(repo, pages);
   const sigs = useSignatures(
     repo.owner,
@@ -233,7 +195,7 @@ function CommitList({ repo, refName, path, label }: { repo: Repo; refName: strin
             </div>
           );
         }
-        if (r.kind === 'more') return <MoreRow onVisible={loadMore} loading={loadingMore} error={moreError} />;
+        if (r.kind === 'more') return <LoadMore pager={pager} auto className={styles.more} loadingLabel="Loading more commits…" />;
         return (
           <CommitRow
             repo={repo}
@@ -319,28 +281,6 @@ function CommitRow({
           <CodeIcon size={16} />
         </Link>
       </div>
-    </div>
-  );
-}
-
-function MoreRow({ onVisible, loading, error }: { onVisible: () => void; loading: boolean; error: boolean }) {
-  // Mounted only while the virtualizer renders it (near the bottom): infinite
-  // scroll. Re-fires after each page while it stays in view.
-  useEffect(() => {
-    if (!loading && !error) onVisible();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- on mount and when a load settles
-  }, [loading, error]);
-  return (
-    <div className={styles.more}>
-      {loading ? (
-        <>
-          <Spinner size={14} /> Loading more commits…
-        </>
-      ) : (
-        <Button size="sm" onClick={onVisible}>
-          {error ? 'Retry loading more' : 'Load more'}
-        </Button>
-      )}
     </div>
   );
 }

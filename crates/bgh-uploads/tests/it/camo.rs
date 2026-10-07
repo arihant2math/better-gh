@@ -2,8 +2,9 @@
 //! the proxy's SSRF / type / size guards, signing for the web client, and
 //! the `markdown.image_proxy` site setting.
 //!
-//! The on/off switch is process-global (`bgh_core::camo::enabled`), so this
-//! binary has exactly one test touching it and it restores the default.
+//! The on/off switch (`bgh_core::camo::enabled`) is keyed by instance base
+//! URL, so other test apps in this binary loading their settings don't flip
+//! it (#153).
 
 use axum::Router;
 use axum::http::header;
@@ -167,6 +168,11 @@ async fn proxies_external_images() {
         .send()
         .await;
     assert_eq!(off.json()["urls"][&urls[0]], Value::String(urls[0].clone()));
+    // Another instance in this process (proxy on) loading its settings must
+    // not turn this one's proxy back on (#153).
+    let other = bgh_server::test_app().await;
+    settings::load(&other.state).await.unwrap();
+    assert!(bgh_core::camo::enabled(&other.base_url));
     let html = app
         .get("/api/v3/repos/alice/hello/issues/1")
         .auth(&alice)
@@ -184,5 +190,5 @@ async fn proxies_external_images() {
         .unwrap();
     settings::invalidate(&app.state);
     settings::load(&app.state).await.unwrap();
-    assert!(bgh_core::camo::enabled());
+    assert!(bgh_core::camo::enabled(&app.base_url));
 }

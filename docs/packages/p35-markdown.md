@@ -38,7 +38,8 @@ renders the same DOM after canonicalization (sorted attributes, `rel` /
   `include_str!`-ed by bgh-core and lazy-loaded by the web client.
 * `camo.rs`: per-instance HMAC key `{data_dir}/camo.key` (created on
   first start, `AppState::new` calls `camo::init`), `sign` / `url` /
-  `verify` / `is_external`, process-global switch fed by site settings.
+  `verify` / `is_external`, switch fed by site settings, keyed by
+  instance base URL (several instances share a test process, #153).
 * Site setting section `markdown` `{ image_proxy: bool }` (default on);
   admin UI switch under Site settings → Markdown.
 * Callers passing autolinks: issue/PR and comment `body_html`/`body_text`

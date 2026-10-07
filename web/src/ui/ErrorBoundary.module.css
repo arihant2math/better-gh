@@ -1,0 +1,12 @@
+.page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
