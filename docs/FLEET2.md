@@ -6,6 +6,7 @@ Foreman: session_01TnU6QngZQQ3epR16djXC76. Orchestrator: session_01U7ukQiQRpcMMA
 #44 merged by user into main (9ef62fb) at ~02:33. claude/sleepy-cray-9jj0t3 retired.
 
 ## Pacing
+02:37 THROTTLE (user via orchestrator): 7-day usage 82%, resets 9 PM user local. Until then: finish main fixer, #45, #73 (+ their reviews); QA paused (no restarts); no new workers; wake every 60–90 min, cheap cycles. After reset (orchestrator confirms, or no warning past 9 PM US): ~5 workers + 2 QA.
 02:34: rate_limit_info allowed_warning (seven_day) seen → cap 3 workers (incl. fixers) + 1 QA. Re-check on each cycle.
 Worker queue (next, by priority): #60 topbar breadcrumbs (note #66), #41 PR diff commit range, #17 backup/admin CLI, #42 bundle budget, #63 review popover focus (may be fixed by #73).
 
@@ -23,7 +24,7 @@ Worker queue (next, by priority): #60 topbar breadcrumbs (note #66), #41 PR diff
 ## QA
 | Focus | Session | Status |
 |---|---|---|
-| issues/PRs/review → repo/code | session_01KK7aYBXALVtbFaqcevgYPC | running |
+| issues/PRs/review | session_01KK7aYBXALVtbFaqcevgYPC | told to wrap up (throttle); archive when idle |
 | dashboard/inbox/search | session_01DgtACGYUY364jRkpysuP9h | told to wrap up (pacing); archive when idle |
 
 Next QA rotation: actions/projects/wiki/packages; auth & onboarding.
