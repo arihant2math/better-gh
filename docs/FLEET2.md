@@ -10,7 +10,7 @@ Orchestrator: session_01U7ukQiQRpcMMA4n4VDVQR7. WIND DOWN is in effect (section 
 
 ### FIRST ACTIONS for foreman6
 1. Main CI run 37622793134 (6a0a8c0, #319) is the first run of the new bgh-sync code under nextest; run 37622619342 (b92d546, #339) is the first main nextest run. Confirm both end green and tell the orchestrator (it asked). If either is red, find out whether the failure is a real regression or a flake (#341 is a known flake that also happens on main) and tell the orchestrator.
-3. Tell the live sessions the new foreman id: the lead session_01Kq9BfEn4RqooYm2643Ah6e; the #319/#340 author session_012T1MW3bqBQbQPoRqYR2z4G; the #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA; reviewers session_01SiREyJgcEqyaYMtTmBd3Zd (#340) and session_01EQC8yBZ3rfDQDgPJEhpinM (#316 r4 + #322 delta).
+2. Tell the live sessions the new foreman id: the lead session_01Kq9BfEn4RqooYm2643Ah6e; the #319/#340 author session_012T1MW3bqBQbQPoRqYR2z4G; the #85 item 8 worker session_01NqrbwhRpn4xG962rpZyFTA; reviewers session_01SiREyJgcEqyaYMtTmBd3Zd (#340) and session_01EQC8yBZ3rfDQDgPJEhpinM (#316 r4 + #322 delta).
 
 ### Open
 - #316 (#288 merge-queue service; lead session_01Kq9BfEn4RqooYm2643Ah6e, do NOT archive the lead): deadlock fix at 9ab35b6 (PR rows locked before entries everywhere). Adversarial r4 reviewer session_01EQC8yBZ3rfDQDgPJEhpinM, which also delta-checks #322.
