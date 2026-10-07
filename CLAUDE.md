@@ -20,6 +20,10 @@ cd web && npm install && npm run dev
 
 Deployment (Docker, systemd, proxies): `docs/SELF_HOSTING.md`.
 
+Work is tracked as GitHub issues and lands in `main` via reviewed PRs:
+follow `docs/AGENT_WORKFLOW.md` (labels, claiming, PRs, review, device
+testing, QA).
+
 ## Conventions
 
 * Rust 2024 edition, stable toolchain. `cargo fmt`, `cargo clippy
