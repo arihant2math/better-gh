@@ -33,13 +33,16 @@ observable agents, state in files rather than in memory.
   reviewers rely on green CI for that and run targeted tests plus the
   viewport matrix themselves, rather than rebuilding everything. CI is
   path-filtered on PRs (`scripts/ci-changes.sh`): `web/`-only diffs skip the
-  Rust jobs, backend-only diffs (`crates/`, `migrations/`, `testdata/`,
-  `scripts/`, `Cargo.*`) skip the web job, Docker runs for either plus
-  `Dockerfile`/`.dockerignore`, and docs-only diffs skip all three. Skipped
-  jobs count as passing. `web/src/ui/markdown/emoji.json` is a backend input
-  too (`bgh-core` embeds it); workflow changes, pushes to `main` and manual
-  runs build everything. Update the script, the `ci.yml` header and this
-  paragraph together when adding a cross-tree dependency.
+  Rust jobs, backend-only diffs (`crates/`, `migrations/`, `scripts/`,
+  `Cargo.*`) skip the web job, Docker runs for either plus
+  `Dockerfile`/`.dockerignore`, and docs-only diffs skip all three.
+  `testdata/` (markdown golden corpus) and `web/src/ui/markdown/emoji.json`
+  feed both sides and run both. Workflow changes, pushes to `main` and
+  manual runs build everything. Skipped jobs count as passing, so the
+  required status check is the aggregate `CI result` job, which fails if any
+  job (including `Detect changes`) failed or was cancelled. Update the
+  script, the `ci.yml` header and this paragraph together when adding a
+  cross-tree dependency.
 * **Design questions go to GitHub Discussions** (category "Ideas", or an
   issue labelled `T-Docs` + `S-Blocked` if Discussions are unavailable),
   linked from the issue, so decisions are recorded once.

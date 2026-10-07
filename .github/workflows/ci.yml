@@ -1,15 +1,19 @@
 # Path-filtered CI. The `changes` job classifies a pull request's diff
 # (scripts/ci-changes.sh) and the heavy jobs carry a job-level `if:`, so a
-# job that isn't needed reports "skipped", which satisfies required checks.
-# Pushes to main and workflow_dispatch always run everything.
+# job that isn't needed reports "skipped". Pushes to main and
+# workflow_dispatch always run everything. Because a failed `changes` job
+# would also mark every gated job skipped, `CI result` aggregates them and
+# fails on any failure/cancel: make that the required status check.
 #
 # Dependency rules (keep in sync with scripts/ci-changes.sh and
 # docs/AGENT_WORKFLOW.md "CI is the shared gate"):
-# * backend (rust-lint, rust-test, compat): crates/, migrations/, testdata/,
-#   scripts/, Cargo.*, rust toolchain/fmt/clippy config, and
-#   web/src/ui/markdown/emoji.json (bgh-core include_str!s it).
-# * frontend (web): web/. The web job needs nothing from the backend (vitest
-#   runs without a server; the viewport matrix is run by hand, not in CI).
+# * backend (rust-lint, rust-test, compat): crates/, migrations/, scripts/,
+#   Cargo.*, rust toolchain/fmt/clippy config.
+# * frontend (web): web/.
+# * both: testdata/ (the markdown golden corpus is read by Rust tests and by
+#   web/src/ui/markdown/render.golden.test.ts) and
+#   web/src/ui/markdown/emoji.json (bgh-core include_str!s it). Otherwise the
+#   web job needs no server (vitest only; the viewport matrix isn't in CI).
 # * docker: Dockerfile, .dockerignore, or any backend/frontend change (the
 #   image builds the server with `embed-web`, i.e. it embeds web/dist).
 # * release-binary embeds web/dist too; it only runs off pull requests, where
@@ -256,3 +260,23 @@ jobs:
           path: |
             gh-compat.json
             api-smoke.json
+
+  # Single required check. Gated jobs that weren't needed are "skipped" (ok);
+  # a failed or cancelled job, including `changes` itself, fails this. The
+  # informational compat report is left out on purpose.
+  ci-result:
+    name: CI result
+    if: always()
+    needs: [changes, rust-lint, rust-test, web, docker, scripts]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success | skipped) ;;
+              *) echo "::error::a required job finished with '$r'"; exit 1 ;;
+            esac
+          done

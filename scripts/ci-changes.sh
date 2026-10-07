@@ -21,13 +21,14 @@ else
       # CI definition itself: run everything.
       .github/workflows/* | .github/actions/* | scripts/ci-changes.sh)
         backend=true frontend=true docker=true ;;
-      # bgh-core include_str!s this file, so it is also a backend input.
-      web/src/ui/markdown/emoji.json)
+      # Shared by both sides: bgh-core include_str!s emoji.json, and the
+      # markdown golden corpus is read by Rust tests and the web vitest.
+      web/src/ui/markdown/emoji.json | testdata/*)
         backend=true frontend=true ;;
       web/*)
         frontend=true ;;
       # Rust workspace, its fixtures, and the scripts the compat job runs.
-      crates/* | migrations/* | testdata/* | scripts/* | .cargo/* \
+      crates/* | migrations/* | scripts/* | .cargo/* \
         | Cargo.toml | Cargo.lock | rust-toolchain* | rustfmt.toml \
         | .rustfmt.toml | clippy.toml | .clippy.toml)
         backend=true ;;
