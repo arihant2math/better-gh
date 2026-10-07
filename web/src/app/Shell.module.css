@@ -138,7 +138,16 @@
   background: var(--bg-hover);
 }
 
+.sectionTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sectionHeader svg {
+  flex-shrink: 0;
   transition: transform var(--dur) var(--ease);
 }
 
