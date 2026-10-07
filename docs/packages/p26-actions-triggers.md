@@ -141,6 +141,9 @@ group.
 * P8's job-token loop guard (`trigger::on_event`) lets
   `repository_dispatch`, `workflow_dispatch` and `workflow_run` through, as
   on GitHub (`workflow_run` chains are bounded by depth instead).
+  `merge_group` is not exempt: its actor is the queue entry's enqueuer, so
+  groups enqueued by github-actions[bot] (job token) start no workflows
+  (see `docs/packages/pulls.md`).
 * `deployment` / `deployment_status` triggers: P19's `DeploymentCreated` /
   `DeploymentStatusCreated` landed during this package; mapping them is one
   `map_event` arm, left to P20 (environment protection).

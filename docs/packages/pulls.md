@@ -179,8 +179,13 @@ Private, additive (`crates/bgh-pulls/src/web.rs`, prefix
   `destroyed` (+ `reason`) with `merge_group {head_sha, head_ref,
   base_sha, base_ref, head_commit}` (bgh-notify). Actions runs `on:
   merge_group` workflows (types: `checks_requested`) read from the group
-  commit, with `GITHUB_REF` = the queue ref and `GITHUB_SHA` = its commit;
-  the job token loop guard does not apply. Their check runs land on the
+  commit, with `GITHUB_REF` = the queue ref and `GITHUB_SHA` = its commit.
+  The job-token loop guard applies to the event's actor, which is the
+  entry's enqueuer (also on rebuilds): a group whose entry
+  github-actions[bot] enqueued (e.g. auto-merge enabled with a
+  `GITHUB_TOKEN`) starts no workflows, so a `merge_group` job can't
+  re-enqueue its own PR into an endless run loop; such a group is decided
+  by other checks/statuses or times out. Their check runs land on the
   group commit, so `pulls.checks_changed` kicks the queue and a job named
   like a required check gates the group.
 * Diffs: parsed file diffs cached in Redis by `(repo, base, head)` for 7

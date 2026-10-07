@@ -210,16 +210,19 @@ pub async fn on_event(state: AppState, event: Arc<Event>) -> anyhow::Result<()> 
 
 /// Dispatch events start workflows even when a job token sent them, and so
 /// does `workflow_run` (GitHub bounds those chains by depth instead, see
-/// `trigger_events::MAX_WORKFLOW_RUN_DEPTH`). Merge groups are built by the
-/// queue itself (the actor is only the enqueuer); skipping them would leave
-/// the group waiting for checks that never come.
+/// `trigger_events::MAX_WORKFLOW_RUN_DEPTH`).
+///
+/// `merge_group` is deliberately not listed: the queue sets the event's
+/// actor to the entry's enqueuer (also when it rebuilds the group), so a
+/// human-enqueued group passes the guard as usual, while a group whose
+/// entry github-actions[bot] enqueued (e.g. auto-merge toggled with a job
+/// token) starts no workflows. Exempting it would let a `merge_group` job
+/// dequeue and re-enqueue its own PR forever (new group -> new run). Such
+/// a group is decided by other checks/statuses, or times out.
 fn is_dispatch(event: &Event) -> bool {
     matches!(
         event.name(),
-        "repository_dispatch"
-            | "workflow_dispatch"
-            | "workflow_run_updated"
-            | "merge_group_checks_requested"
+        "repository_dispatch" | "workflow_dispatch" | "workflow_run_updated"
     )
 }
 

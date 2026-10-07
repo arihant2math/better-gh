@@ -282,3 +282,43 @@ async fn failing_merge_group_workflow_ejects_the_pull_request() {
     );
     assert_eq!(pull_state(&f, 1).await["state"], "open");
 }
+
+/// Loop guard: a group whose entry github-actions[bot] enqueued (e.g.
+/// auto-merge toggled with a job token) starts no `merge_group` workflows,
+/// or a job could dequeue + re-enqueue its own PR forever. Human-enqueued
+/// groups, including rebuilt ones, still run (see
+/// `failing_merge_group_workflow_ejects_the_pull_request`).
+#[tokio::test]
+async fn bot_enqueued_merge_group_starts_no_workflows() {
+    let f = setup().await;
+    let app = &f.app;
+    let mut conn = app.state.db.acquire().await.unwrap();
+    let bot = bgh_core::bots::ensure_actions_bot(&mut conn).await.unwrap();
+    drop(conn);
+    // Enqueue both, then make the bot #1's enqueuer before the queue builds
+    // the group (the build runs on settle and uses each entry's enqueuer).
+    enqueue(&f, 1).await;
+    enqueue(&f, 2).await;
+    sqlx::query(
+        "UPDATE merge_queue_entries e SET enqueuer_id = $1
+           FROM issues i
+          WHERE i.id = e.pull_id AND e.repo_id = $2 AND i.number = 1",
+    )
+    .bind(bot)
+    .bind(f.repo_id)
+    .execute(&app.state.db)
+    .await
+    .unwrap();
+    settle(app).await;
+    let (state1, _, sha1, _) = entry(&f, 1).await;
+    let (state2, _, sha2, _) = entry(&f, 2).await;
+    assert_eq!(state1, "awaiting_checks");
+    assert_eq!(state2, "awaiting_checks");
+    let (sha1, sha2) = (sha1.unwrap(), sha2.unwrap());
+
+    // Only the human-enqueued entry's commit gets a run.
+    let rs = merge_group_runs(&f).await;
+    assert_eq!(rs.len(), 1, "{rs:#?}");
+    assert_eq!(rs[0]["head_sha"], json!(sha2));
+    assert!(rs.iter().all(|r| r["head_sha"] != json!(sha1)));
+}
