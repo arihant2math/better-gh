@@ -370,7 +370,8 @@ async fn finalize_artifact(
             req.size
         )));
     }
-    let row = crate::server::store_artifact(state, &rj.job, &req.name, &staging, None).await?;
+    let row =
+        crate::server::store_artifact(state, &rj.job, &req.name, &staging, None, None).await?;
     let _ = tokio::fs::remove_file(&staging).await;
     if let Some(hash) = req.hash.filter(|h| !h.is_empty())
         && row.digest.as_deref() != Some(hash.as_str())

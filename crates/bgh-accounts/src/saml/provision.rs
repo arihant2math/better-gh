@@ -153,6 +153,9 @@ pub async fn sign_in(
                         .and_then(|u| u.host_str().map(str::to_string))
                         .unwrap_or_else(|| "localhost".into());
                     let email = email.unwrap_or_else(|| format!("{login}@users.noreply.{host}"));
+                    if let Err(denied) = sso::jit_signup_allowed(state, &email).await? {
+                        return Ok(Err(denied));
+                    }
                     let user = users::insert_user(
                         &mut tx,
                         &login,

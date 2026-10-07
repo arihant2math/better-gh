@@ -111,37 +111,7 @@ pub async fn filters(
         (in_title, in_body, in_comments) = (true, true, true);
     }
     if has_text {
-        c.with(|s| {
-            let mut first = true;
-            let mut or = |s: &mut Sql| {
-                if !first {
-                    s.raw(" OR ");
-                }
-                first = false;
-            };
-            if in_title && in_body {
-                or(s);
-                s.raw("i.search @@ websearch_to_tsquery('english', ")
-                    .text(text.clone())
-                    .raw(")");
-            } else if in_title {
-                or(s);
-                s.raw("to_tsvector('english', i.title) @@ websearch_to_tsquery('english', ")
-                    .text(text.clone())
-                    .raw(")");
-            } else if in_body {
-                or(s);
-                s.raw("to_tsvector('english', coalesce(i.body, '')) @@ websearch_to_tsquery('english', ")
-                    .text(text.clone())
-                    .raw(")");
-            }
-            if in_comments {
-                or(s);
-                s.raw("i.id IN (SELECT c.issue_id FROM comments c WHERE to_tsvector('english', c.body) @@ websearch_to_tsquery('english', ")
-                    .text(text.clone())
-                    .raw("))");
-            }
-        });
+        c.push(text_cond(&text, in_title, in_body, in_comments));
     }
 
     // Multiple repo:/user:/org: qualifiers are OR-ed together.
@@ -569,10 +539,82 @@ pub async fn search(
     Ok(SearchResult::new(&p, total, items, false))
 }
 
+/// The free-text predicate over the `in:` fields (at least one is set).
+///
+/// Each arm matches an index: `issues_search_idx` (title + body),
+/// `issues_{title,body}_tsv_idx` and `comments_search_idx`. Comments are
+/// brought in through `i.id IN (… UNION …)`: an OR between an issue column
+/// predicate and a sub-select can't become a BitmapOr, so it scans every
+/// issue (#278).
+fn text_cond(text: &str, in_title: bool, in_body: bool, in_comments: bool) -> Sql {
+    let issue_tsv = |p: &str| match (in_title, in_body) {
+        (true, true) => Some(format!("{p}search")),
+        (true, false) => Some(format!("to_tsvector('english', {p}title)")),
+        (false, true) => Some(format!("to_tsvector('english', coalesce({p}body, ''))")),
+        (false, false) => None,
+    };
+    let tsquery = |s: &mut Sql| {
+        s.raw(" @@ websearch_to_tsquery('english', ")
+            .text(text)
+            .raw(")");
+    };
+    let mut s = Sql::new();
+    if !in_comments {
+        s.raw(issue_tsv("i.").unwrap_or_default());
+        tsquery(&mut s);
+        return s;
+    }
+    s.raw("i.id IN (");
+    if let Some(tsv) = issue_tsv("") {
+        s.raw(format!("SELECT id FROM issues WHERE {tsv}"));
+        tsquery(&mut s);
+        s.raw(" UNION ");
+    }
+    s.raw("SELECT c.issue_id FROM comments c WHERE to_tsvector('english', c.body)");
+    tsquery(&mut s);
+    s.raw(")");
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::query::parse;
+
+    /// Every `in:` combination emits index-usable arms (#278): the
+    /// expressions must be the ones migration 0711 / issues_search_idx index,
+    /// and comments must not be OR-ed against an issue column.
+    #[test]
+    fn text_cond_is_index_shaped() {
+        let migration = include_str!("../../../migrations/0711_search_expression_indexes.sql");
+        assert!(migration.contains("(to_tsvector('english', title))"));
+        assert!(migration.contains("(to_tsvector('english', coalesce(body, '')))"));
+        let q = " @@ websearch_to_tsquery('english', $1)";
+        let case = |t, b, c| text_cond("x", t, b, c).render();
+        assert_eq!(case(true, true, false), format!("i.search{q}"));
+        assert_eq!(
+            case(true, false, false),
+            format!("to_tsvector('english', i.title){q}")
+        );
+        assert_eq!(
+            case(false, true, false),
+            format!("to_tsvector('english', coalesce(i.body, '')){q}")
+        );
+        let comments = "SELECT c.issue_id FROM comments c WHERE to_tsvector('english', c.body)";
+        let q2 = q.replace("$1", "$2");
+        assert_eq!(
+            case(true, true, true),
+            format!("i.id IN (SELECT id FROM issues WHERE search{q} UNION {comments}{q2})")
+        );
+        assert_eq!(
+            case(true, false, true),
+            format!(
+                "i.id IN (SELECT id FROM issues WHERE to_tsvector('english', title){q} \
+                 UNION {comments}{q2})"
+            )
+        );
+        assert_eq!(case(false, false, true), format!("i.id IN ({comments}{q})"));
+    }
 
     #[test]
     fn websearch_input() {

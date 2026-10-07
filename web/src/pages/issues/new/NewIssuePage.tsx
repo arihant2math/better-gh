@@ -6,18 +6,16 @@ import { MarkdownEditor } from '../../../components/editor/MarkdownEditor';
 import { Link, navigate, useLocation, useParams, useQuery } from '../../../router';
 import { formatKeys } from '../../../shortcuts/manager';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
-import { store } from '../../../sync';
 import type { ID, Repo } from '../../../sync/models';
 import { createIssue } from '../../../sync/mutations';
-import { assignableUsers, canTriage, labelByName, labelsForRepo, milestonesForRepo, repoByName, userByLogin } from '../../../sync/selectors';
-import { Avatar, ColorDot, LabelPill } from '../../../ui/Badge';
+import { canTriage, labelByName, milestonesForRepo, repoByName, userByLogin } from '../../../sync/selectors';
 import { Button } from '../../../ui/Button';
 import { Skeleton } from '../../../ui/EmptyState';
-import { FileIcon, GearIcon, IssueOpenedIcon, LinkExternalIcon, MilestoneIcon } from '../../../ui/icons';
+import { FileIcon, IssueOpenedIcon, LinkExternalIcon } from '../../../ui/icons';
 import { Input, Select, Textarea } from '../../../ui/Input';
 import { Markdown } from '../../../ui/Markdown';
-import { SelectPanel } from '../../../ui/Menu';
 import { toast } from '../../../ui/Toast';
+import { MetaPickers } from './MetaPickers';
 import { dropdownOptions, fieldKey, formToMarkdown, initialValues, missingRequired, type FormValues } from './issueForm';
 import styles from './NewIssue.module.css';
 
@@ -355,112 +353,3 @@ function FormFields({
     </div>
   );
 }
-
-const MetaPickers = observer(function MetaPickers({
-  repo,
-  labelIds,
-  setLabelIds,
-  assigneeIds,
-  setAssigneeIds,
-  milestoneId,
-  setMilestoneId,
-}: {
-  repo: Repo;
-  labelIds: ID[];
-  setLabelIds: (v: ID[]) => void;
-  assigneeIds: ID[];
-  setAssigneeIds: (v: ID[]) => void;
-  milestoneId: ID | null;
-  setMilestoneId: (v: ID | null) => void;
-}) {
-  const s = store();
-  const [open, setOpen] = useState<null | 'a' | 'l' | 'm'>(null);
-  const aRef = useRef<HTMLButtonElement>(null);
-  const lRef = useRef<HTMLButtonElement>(null);
-  const mRef = useRef<HTMLButtonElement>(null);
-  const toggle = (list: ID[], id: ID) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
-  const milestone = s.get('milestone', milestoneId);
-  return (
-    <aside className={styles.side} aria-label="Issue metadata">
-      <button ref={aRef} type="button" className={styles.sideHeader} onClick={() => setOpen('a')}>
-        Assignees <GearIcon size={14} />
-      </button>
-      <div className={styles.sideBody}>
-        {assigneeIds.length === 0 ? (
-          <span className={styles.subtle}>
-            No one —{' '}
-            <button type="button" className={styles.linkButton} onClick={() => setAssigneeIds([s.viewerId])}>
-              assign yourself
-            </button>
-          </span>
-        ) : (
-          assigneeIds.map((id) => (
-            <span key={id} className={styles.person}>
-              <Avatar user={s.get('user', id)} size={20} /> {s.get('user', id)?.login}
-            </span>
-          ))
-        )}
-      </div>
-      <SelectPanel
-        open={open === 'a'}
-        onClose={() => setOpen(null)}
-        anchor={aRef}
-        placement="bottom-end"
-        title="Assign up to 10 people"
-        items={assignableUsers(repo).map((u) => ({ id: u.id, text: u.login, description: u.name ?? undefined, leading: <Avatar user={u} size={18} />, selected: assigneeIds.includes(u.id) }))}
-        onToggle={(id) => setAssigneeIds(toggle(assigneeIds, Number(id)))}
-      />
-
-      <button ref={lRef} type="button" className={styles.sideHeader} onClick={() => setOpen('l')}>
-        Labels <GearIcon size={14} />
-      </button>
-      <div className={styles.sideBody}>
-        {labelIds.length === 0 ? (
-          <span className={styles.subtle}>None yet</span>
-        ) : (
-          <div className={styles.labelWrap}>
-            {labelIds.map((id) => {
-              const l = s.get('label', id);
-              return l ? <LabelPill key={id} label={l} /> : null;
-            })}
-          </div>
-        )}
-      </div>
-      <SelectPanel
-        open={open === 'l'}
-        onClose={() => setOpen(null)}
-        anchor={lRef}
-        placement="bottom-end"
-        title="Apply labels"
-        items={labelsForRepo(repo.id).map((l) => ({ id: l.id, text: l.name, description: l.description ?? undefined, leading: <ColorDot color={l.color} />, selected: labelIds.includes(l.id) }))}
-        onToggle={(id) => setLabelIds(toggle(labelIds, Number(id)))}
-      />
-
-      <button ref={mRef} type="button" className={styles.sideHeader} onClick={() => setOpen('m')}>
-        Milestone <GearIcon size={14} />
-      </button>
-      <div className={styles.sideBody}>
-        {milestone ? (
-          <span className={styles.person}>
-            <MilestoneIcon size={14} /> {milestone.title}
-          </span>
-        ) : (
-          <span className={styles.subtle}>No milestone</span>
-        )}
-      </div>
-      <SelectPanel
-        open={open === 'm'}
-        onClose={() => setOpen(null)}
-        anchor={mRef}
-        placement="bottom-end"
-        title="Set milestone"
-        multiple={false}
-        emptyText="No open milestones"
-        items={milestonesForRepo(repo.id)
-          .filter((m) => m.state === 'open' && m.id > 0)
-          .map((m) => ({ id: m.id, text: m.title, leading: <MilestoneIcon size={14} />, selected: milestoneId === m.id }))}
-        onToggle={(id) => setMilestoneId(milestoneId === Number(id) ? null : Number(id))}
-      />
-    </aside>
-  );
-});
