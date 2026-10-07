@@ -29,3 +29,4 @@ C: #150 (merge main; rebase authorized for #150 only) → #341 → #343 → othe
 - 21:41Z: #150 all checks green on 0818833 (incl. macOS release build); worker reports at 21:44. A on #226, B on #256.
 - 21:45Z: C reported #150 green @0818833; opus reviewer spawned.
 - 21:50Z: B opened #347 (Fixes #256), green; sonnet reviewer spawned.
+- 21:51Z: #150 APPROVE @0818833 (=head), CI+release green; S-Approved set; sent to coordinator. Nit: pin ubuntu-24.04.
