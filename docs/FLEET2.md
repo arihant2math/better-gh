@@ -24,7 +24,7 @@ Items 1-7 merged (#152, #311, #320, #330, #334, #338, #339). Item 8 merged (#342
 Timings so far (main): baseline ~29 min PR wall-clock at issue time. Main run 37611075666 (after item 5, warm) ~12m: tests job 11m42s (--no-run 3m27s, test run 6m55s), release binary 7m, Docker from prebuilt 38s. Item 6: main cold run 2755a5c ~18m15s (cache rename); gain is ~344 MB less cache, not wall-clock. Item 7 (nextest): test run step 6m55s → 4m52s (−30%) incl. doctests; 1320 tests, matching main. Get warm-main numbers from the post-#339 runs for the final summary.
 
 ### Follow-ups for the final #46 status
-Backlog: #321, #324 (P-High), #325, #326, #327,  #333 (double-@ parser, P-Medium), #336 (pg_notify commit serialization), #341 (flake, also on main), #343 (new flake: bgh-actions triggers emit/settle, after nextest), #340 if parked, #280 #286 #237 (audit umbrellas). #319 r2 non-blocking notes: `failed_recheck_is_retried` covers only the cache-drop half, not the retry; access is not fail-closed while a recheck keeps failing (same as main); fixed uncapped 1 s backoff. #338: old `test`/`clippy-linux-x86_64` cache entries age out in 7 days.
+Backlog: #321, #324 (P-High), #325, #326, #327,  #333 (double-@ parser, P-Medium), #336 (pg_notify commit serialization), #341 (flake, also on main), #343 (new flake: bgh-actions triggers emit/settle, after nextest), #280 #286 #237 (audit umbrellas). #319 r2 non-blocking notes: `failed_recheck_is_retried` covers only the cache-drop half, not the retry; access is not fail-closed while a recheck keeps failing (same as main); fixed uncapped 1 s backoff. #338: old `test`/`clippy-linux-x86_64` cache entries age out in 7 days.
 
 ### Finish
 When every open PR is merged or parked and #85 is closed: post the final #46 status (merged today; open/parked; backlog above), report to the orchestrator, archive the remaining sessions, cancel triggers, and delete bgh/foreman2 (copy this file into a docs PR first only if useful).
@@ -45,6 +45,7 @@ When every open PR is merged or parked and #85 is closed: post the final #46 sta
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+14:06: #340 READY (r1 adversarial APPROVE on 4a3faa0; then only main merge 63526b2 = head (021164a; tests/it/main.rs mod-list conflict); CI result green run 37629534355; clean; verified). Forwarded (offered update to dc4d48a first); reviewer archived. Not parked.
 14:06: orchestrator MERGED #322 (dc4d48a); lead archived by orchestrator. Closed #328 (completed; bot-enqueue guard test pins asks 1-2; ask 3 optional) and epic #2 (all P39 sub-issues #287-#291 closed). Main run 37633419003 (dc4d48a) in progress → confirm. #344 adversarial reviewer session_01Hg32TQBWfpaRzVPzBACbJy.
 14:03: #344 (#85 item 10) ready, 52efaf2, CI green run 37629213901; used upload-artifact@v6/download-artifact@v7 (v5 still node20) + docker build-push v7/buildx v4. Adversarial CI reviewer started (see Reviewers). Items 8/9 updated on #85 by the worker.
 14:03: #322 READY (delta APPROVE on 4a17f0e after r2/r4 on 0664135; then only main merge 5cc4dfe = head; CI result green run 37631482737; base main; clean; verified). Forwarded; delta reviewer archived. #328 closes after merge.
