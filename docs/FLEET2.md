@@ -48,6 +48,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+08:42: orchestrator MERGED #314 (5bb337c) and archived its author. Filed #327 (T-Polish, unassigned) with the #314 nits.
 08:41: #314 READY (r2 APPROVE on ab338fc; head dadb6e4 is a main merge; CI result green). Forwarded to the orchestrator; r2 reviewer archived. #312 author told the follow-ups are already filed.
 08:31 cycle: new PRs #323 (#317 signup policy, SECURITY) → adversarial reviewer session_015XU9jpf2gN1d2vsSNDywG6; #319 (#245 hub recheck) → adversarial reviewer session_01PYjPD9VK3v89qCV3XqqKtW; #320 (#85 item 3, worker session_01Pjosi2axSP1tmSuN6os4Bk) → reviewer (sonnet) session_01LsxgX5tvywm4Cq4bTqGE1T. #312 fixed (f8be9f2) → security r2 reviewer session_01SDYuLDtD7CYXTmwcLjoC1n. #314 S-Approved (head dadb6e4), waiting on its r2 reviewer's report. In review: #309 r2, #322. Waiting on the lead: #315, #316.
 08:30: new #322 (merge_group trigger + webhook, #289; STACKED on #316, merges only after #316 and a retarget) → adversarial reviewer session_01CW7onm3wAGmdxS1T4VGB4G. The lead is fixing #315 and #316.
