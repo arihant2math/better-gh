@@ -175,7 +175,7 @@ export const TableView = observer(function TableView({
                           setDragging(id);
                           ev.dataTransfer.setData(DND_TYPE, String(id));
                           ev.dataTransfer.effectAllowed = 'move';
-                          const row = (ev.currentTarget as HTMLElement).closest('[role=row]');
+                          const row = ev.currentTarget.closest('[role=row]');
                           if (row) ev.dataTransfer.setDragImage(row, 20, 18);
                         }}
                         onDragEnd={() => {

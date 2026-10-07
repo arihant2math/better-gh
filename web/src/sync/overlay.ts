@@ -28,7 +28,7 @@ export type OverlayOp =
 /** Typed constructors (keep call sites type-checked). */
 export const ops = {
   update<M extends ModelName>(model: M, id: ID, patch: Patch<ModelMap[M]>): OverlayOp {
-    return { op: 'update', model, id, patch: patch as Record<string, unknown> };
+    return { op: 'update', model, id, patch };
   },
   insert<M extends ModelName>(model: M, row: ModelMap[M]): OverlayOp {
     return { op: 'insert', model, id: row.id, row: row as unknown as Record<string, unknown> };

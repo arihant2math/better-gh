@@ -191,7 +191,7 @@ export default function OrgAuditLogPage() {
         onOpen={setOpen}
         loading={list.loading}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         rowHeight={36}
         empty={
           list.error && !badQuery ? (

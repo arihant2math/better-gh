@@ -34,7 +34,7 @@ type Full = ReturnType<typeof useLocalResource<FullRepository>>;
 function usePatch(repo: Repo, full: Full) {
   return (patch: RepoPatch, label?: string) => {
     const prev = full.data;
-    full.update((cur) => ({ ...cur, ...patch }) as FullRepository);
+    full.update((cur) => ({ ...cur, ...patch }));
     const { done } = updateRepo(repo, patch, label);
     return done.then(
       (server) => {

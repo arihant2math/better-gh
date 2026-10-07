@@ -147,7 +147,7 @@ const RunDetail = observer(function RunDetail({ repo, run, writable }: { repo: R
             size="sm"
             leadingIcon={SyncIcon}
             onClick={() =>
-              rerequestCheckRun(repo.owner, repo.name, run.id).then(
+              void rerequestCheckRun(repo.owner, repo.name, run.id).then(
                 () => toast({ kind: 'success', title: `Re-running ${run.name}` }),
                 (e: unknown) => toast({ kind: 'error', title: 'Couldn’t re-run', description: e instanceof Error ? e.message : undefined }),
               )
@@ -163,7 +163,7 @@ const RunDetail = observer(function RunDetail({ repo, run, writable }: { repo: R
               size="sm"
               title={a.description}
               onClick={() =>
-                requestCheckRunAction(repo.owner, repo.name, run.id, a.identifier).then(
+                void requestCheckRunAction(repo.owner, repo.name, run.id, a.identifier).then(
                   () => toast({ kind: 'success', title: `Requested “${a.label}”` }),
                   (e: unknown) => toast({ kind: 'error', title: 'Couldn’t request action', description: e instanceof Error ? e.message : undefined }),
                 )

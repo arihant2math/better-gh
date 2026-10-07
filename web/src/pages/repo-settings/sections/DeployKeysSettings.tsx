@@ -25,7 +25,7 @@ async function fingerprint(key: string): Promise<string | null> {
   try {
     const bin = atob(b64);
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
     return `SHA256:${btoa(String.fromCharCode(...digest)).replace(/=+$/, '')}`;
   } catch {
     return null;

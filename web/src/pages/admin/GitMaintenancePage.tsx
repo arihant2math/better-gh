@@ -339,7 +339,7 @@ export default function GitMaintenancePage() {
         href={(x) => `/site-admin/repos/${x.full_name}`}
         loading={list.loading && list.items.length === 0}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         rowHeight={48}
         empty={
           list.error ? (

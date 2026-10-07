@@ -188,18 +188,20 @@ function DeliveryDetail({ slug, id, onRedelivered }: { slug: string; id: number;
           size="sm"
           leadingIcon={SyncIcon}
           loading={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await redeliverHook(slug, id);
-              toast({ kind: 'success', title: 'Redelivery queued' });
-              onRedelivered();
-            } catch (e) {
-              toast({ kind: 'error', title: apiFieldErrors(e).message });
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onClick={() =>
+            void (async () => {
+              setBusy(true);
+              try {
+                await redeliverHook(slug, id);
+                toast({ kind: 'success', title: 'Redelivery queued' });
+                onRedelivered();
+              } catch (e) {
+                toast({ kind: 'error', title: apiFieldErrors(e).message });
+              } finally {
+                setBusy(false);
+              }
+            })()
+          }
         >
           Redeliver
         </Button>

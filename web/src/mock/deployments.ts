@@ -258,7 +258,7 @@ export function installDeploymentMocks(server: MockServer): void {
     const [repo, d] = r;
     const state = ctx.body.state as State;
     if (!STATES.includes(state)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'DeploymentStatus', field: 'state', code: 'invalid' }] } };
-    const str = (k: string) => (typeof ctx.body[k] === 'string' ? (ctx.body[k] as string) : '');
+    const str = (k: string) => (typeof ctx.body[k] === 'string' ? ctx.body[k] : '');
     const s: MockStatus = {
       id: nextId++,
       state,

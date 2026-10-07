@@ -83,7 +83,7 @@ function diff(base: Form, form: Form): OrgPatch {
   for (const k of TEXT_FIELDS) if (form[k].trim() !== base[k].trim()) patch[k] = form[k].trim();
   if (form.default_repository_permission !== base.default_repository_permission) patch.default_repository_permission = form.default_repository_permission;
   for (const k of FLAG_FIELDS) if (form[k] !== base[k]) patch[k] = form[k];
-  return patch as OrgPatch;
+  return patch;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -195,13 +195,13 @@ export default function OrgProfilePage() {
   const text = (key: (typeof TEXT_FIELDS)[number], label: string, opts: { type?: string; hint?: string; placeholder?: string; multiline?: boolean } = {}) => (
     <Field label={label} htmlFor={`org-${key}`} error={errors[key] ?? null} hint={opts.hint}>
       {opts.multiline ? (
-        <Textarea id={`org-${key}`} rows={2} value={form?.[key] ?? ''} onChange={(e) => set({ [key]: e.target.value } as Partial<Form>)} disabled={readOnly} placeholder={opts.placeholder} />
+        <Textarea id={`org-${key}`} rows={2} value={form?.[key] ?? ''} onChange={(e) => set({ [key]: e.target.value })} disabled={readOnly} placeholder={opts.placeholder} />
       ) : (
         <Input
           id={`org-${key}`}
           type={opts.type}
           value={form?.[key] ?? ''}
-          onChange={(e) => set({ [key]: e.target.value } as Partial<Form>)}
+          onChange={(e) => set({ [key]: e.target.value })}
           disabled={readOnly}
           invalid={!!errors[key]}
           placeholder={opts.placeholder}

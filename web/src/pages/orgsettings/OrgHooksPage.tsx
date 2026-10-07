@@ -274,7 +274,7 @@ function Deliveries({ org, hook, nonce }: { org: string; hook: OrgHook; nonce: n
         onOpen={setOpen}
         loading={list.loading}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         rowHeight={40}
         empty={
           list.error ? (
@@ -383,14 +383,23 @@ function DeliveryDrawer({ org, hookId, item, onClose, onRedelivered }: { org: st
 // ------------------------------------------------------------------ create / edit
 
 type EventMode = 'push' | 'all' | 'custom';
+interface HookForm {
+  url: string;
+  contentType: 'json' | 'form';
+  secret: string;
+  insecure: boolean;
+  mode: EventMode;
+  events: string[];
+  active: boolean;
+}
 
 function HookDialog({ org, hook, open, onClose, onSaved }: { org: string; hook: OrgHook | null; open: boolean; onClose: () => void; onSaved: (h: OrgHook, created: boolean) => void }) {
-  const init = () => ({
+  const init = (): HookForm => ({
     url: hook?.config.url ?? '',
-    contentType: (hook?.config.content_type === 'form' ? 'form' : 'json') as 'json' | 'form',
+    contentType: hook?.config.content_type === 'form' ? 'form' : 'json',
     secret: '',
     insecure: String(hook?.config.insecure_ssl ?? '0') === '1',
-    mode: (!hook || (hook.events.length === 1 && hook.events[0] === 'push') ? 'push' : hook.events.includes('*') ? 'all' : 'custom') as EventMode,
+    mode: !hook || (hook.events.length === 1 && hook.events[0] === 'push') ? 'push' : hook.events.includes('*') ? 'all' : 'custom',
     events: hook && !hook.events.includes('*') ? hook.events : ['push'],
     active: hook?.active ?? true,
   });

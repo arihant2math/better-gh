@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { store } from '../../sync';
-import type { ID, Issue, ProjectField } from '../../sync/models';
+import type { ProjectField } from '../../sync/models';
 import { setMilestone, toggleAssignee, toggleLabel } from '../../sync/mutations';
 import { setItemValue, updateItem } from '../../sync/projects';
 import { assignableUsers, labelsForRepo, milestonesForRepo } from '../../sync/selectors';
@@ -210,7 +210,7 @@ export const FieldCell = observer(function FieldCell({ row, field, ctx, onOpen, 
           leading: <Avatar user={u} size={18} />,
           selected: issue.assigneeIds.includes(u.id),
         }));
-        onToggle = (id) => toggleAssignee(issue as Issue, Number(id));
+        onToggle = (id) => toggleAssignee(issue, Number(id));
       } else {
         items = ctx
           .people()
@@ -222,7 +222,7 @@ export const FieldCell = observer(function FieldCell({ row, field, ctx, onOpen, 
             selected: item.assigneeIds.includes(u.id),
           }));
         onToggle = (id) => {
-          const uid = Number(id) as ID;
+          const uid = Number(id);
           const next = item.assigneeIds.includes(uid) ? item.assigneeIds.filter((x) => x !== uid) : [...item.assigneeIds, uid];
           updateItem(project, item, { assigneeIds: next }, 'Assign draft');
         };
@@ -241,7 +241,7 @@ export const FieldCell = observer(function FieldCell({ row, field, ctx, onOpen, 
           leading: <ColorDot color={l.color} />,
           selected: issue.labelIds.includes(l.id),
         }));
-        onToggle = (id) => toggleLabel(issue as Issue, Number(id));
+        onToggle = (id) => toggleLabel(issue, Number(id));
       }
       break;
     case 'milestone':
@@ -257,7 +257,7 @@ export const FieldCell = observer(function FieldCell({ row, field, ctx, onOpen, 
           })),
           ...(issue.milestoneId != null ? [{ id: '__clear', text: 'Clear milestone', selected: false }] : []),
         ];
-        onToggle = (id) => setMilestone(issue as Issue, id === '__clear' || id === issue.milestoneId ? null : Number(id));
+        onToggle = (id) => setMilestone(issue, id === '__clear' || id === issue.milestoneId ? null : Number(id));
       }
       break;
     case 'repository':

@@ -608,7 +608,7 @@ function TagCombo({ id, value, onChange, tags, invalid }: { id: string; value: s
       setActive((a) => (e.key === 'ArrowDown' ? (a + 1) % n : (a - 1 + n) % n));
     } else if (e.key === 'Enter' && open && matches[active]) {
       e.preventDefault();
-      pick(matches[active]!);
+      pick(matches[active]);
     } else if (e.key === 'Escape' && open) {
       e.stopPropagation();
       setOpen(false);

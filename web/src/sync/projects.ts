@@ -107,7 +107,7 @@ function projectCommit(project: Pick<Project, 'id' | 'ownerId'>, label: string, 
           if ('model' in apply) {
             const row = r.data as { id?: unknown } | null;
             if (row && typeof row === 'object' && typeof row.id === 'number') {
-              pool.loadRows({ [apply.model]: [row] } as never, { persist: false });
+              pool.loadRows({ [apply.model]: [row] }, { persist: false });
             }
           } else {
             pool.removeRows(apply.remove[0], [apply.remove[1]]);
@@ -324,7 +324,7 @@ export function updateItem(project: Project, item: ProjectItem, patch: ItemPatch
   return projectCommit(
     project,
     label,
-    [ops.update('projectItem', item.id, local as never)],
+    [ops.update('projectItem', item.id, local)],
     { method: 'PATCH', path: P(project.id, `/items/${item.id}`), body: patch },
     { model: 'projectItem' },
   );
@@ -346,7 +346,7 @@ export function moveItem(project: Project, item: ProjectItem, viewId: ID, key: s
   return projectCommit(
     project,
     'Move item',
-    [ops.update('projectItem', item.id, local as never)],
+    [ops.update('projectItem', item.id, local)],
     { method: 'PATCH', path: P(project.id, `/items/${item.id}`), body },
     { model: 'projectItem' },
   );
@@ -409,7 +409,7 @@ export function updateView(project: Project, view: ProjectView, patch: ViewInput
   return projectCommit(
     project,
     `Update view ${view.name}`,
-    [ops.update('projectView', view.id, { ...patch, updatedAt: nowIso() } as never)],
+    [ops.update('projectView', view.id, { ...patch, updatedAt: nowIso() })],
     { method: 'PATCH', path: P(project.id, `/views/${view.id}`), body: patch },
     { model: 'projectView' },
   );

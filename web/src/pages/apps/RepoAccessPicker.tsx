@@ -49,7 +49,7 @@ export function RepoAccessPicker<S extends { mode: string; repos: PickedRepo[] }
       <RadioCards
         aria-label="Repository access"
         value={value.mode}
-        onChange={(mode) => onChange({ ...value, mode } as S)}
+        onChange={(mode) => onChange({ ...value, mode })}
         options={[
           ...(publicOption ? [{ value: 'public', ...publicOption }] : []),
           { value: 'all', label: 'All repositories', description: `Applies to all current and future repositories owned by ${account.login}.` },

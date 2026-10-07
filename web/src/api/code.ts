@@ -369,7 +369,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
 /** Fetch a raw file through the current transport (works in mock mode). */
 export async function fetchRaw(url: string): Promise<string> {
   const path = url.startsWith('http') ? new URL(url).pathname : url;
-  const res = await transport().fetch(path, { credentials: 'same-origin' } as RequestInit);
+  const res = await transport().fetch(path, { credentials: 'same-origin' });
   if (!res.ok) throw new Error(`raw ${res.status}`);
   return res.text();
 }

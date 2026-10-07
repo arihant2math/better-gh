@@ -144,7 +144,7 @@ export default function HooksPage() {
         onOpen={(x) => setEditing(x)}
         loading={list.loading}
         hasMore={!!list.next}
-        onEndReached={list.loadMore}
+        onEndReached={() => void list.loadMore()}
         footer={<span>Delivery history isn’t available for global webhooks yet.</span>}
         empty={
           list.error ? (

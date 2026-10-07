@@ -140,7 +140,7 @@ export class ObjectPool {
         if (!SCHEMA[d.model]) continue;
         for (const u of d.refs?.user ?? []) this.upsertBase('user', u as unknown as Row, true);
         if (d.a === 'D') this.deleteBase(d.model, d.mid);
-        else this.upsertBase(d.model, { ...(d.d ?? {}), id: d.mid } as Row, true);
+        else this.upsertBase(d.model, { ...(d.d ?? {}), id: d.mid }, true);
         this.versions.set(rowKey(d.model, d.mid), d.id);
         if (d.tx && onTx) onTx(d.tx);
       }

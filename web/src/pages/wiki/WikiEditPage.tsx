@@ -134,17 +134,19 @@ function Editor({ owner, repo, page }: { owner: string; repo: string; page?: Wik
           <Button
             variant="danger"
             leadingIcon={TrashIcon}
-            onClick={async () => {
-              if (!confirm(`Delete “${page.title}”?`)) return;
-              try {
-                await deleteWikiPage(owner, repo, page.slug);
-                invalidateWiki(owner, repo);
-                toast({ kind: 'success', title: 'Page deleted' });
-                navigate(base);
-              } catch (e) {
-                setError(e instanceof ApiError ? e.message : String(e));
-              }
-            }}
+            onClick={() =>
+              void (async () => {
+                if (!confirm(`Delete “${page.title}”?`)) return;
+                try {
+                  await deleteWikiPage(owner, repo, page.slug);
+                  invalidateWiki(owner, repo);
+                  toast({ kind: 'success', title: 'Page deleted' });
+                  navigate(base);
+                } catch (e) {
+                  setError(e instanceof ApiError ? e.message : String(e));
+                }
+              })()
+            }
           >
             Delete page
           </Button>

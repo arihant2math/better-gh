@@ -323,7 +323,7 @@ const FeedEnd = observer(function FeedEnd({ feed }: { feed: ReturnType<typeof fe
     return (
       <div className={styles.feedEnd}>
         {feed.error}{' '}
-        <Button size="sm" variant="ghost" onClick={() => (feed.events.length ? feed.loadMore() : feed.refresh())}>
+        <Button size="sm" variant="ghost" onClick={() => void (feed.events.length ? feed.loadMore() : feed.refresh())}>
           Retry
         </Button>
       </div>

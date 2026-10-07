@@ -76,7 +76,7 @@ function DispatchForm({ owner, repo, workflow, defaultBranch, onDone }: { owner:
   if (!branchNames.includes(ref)) branchNames.unshift(ref);
 
   return (
-    <form className={styles.dispatchForm} onSubmit={submit}>
+    <form className={styles.dispatchForm} onSubmit={(e) => void submit(e)}>
       <div className={styles.dispatchTitle}>Run workflow</div>
       <Field label="Use workflow from" htmlFor="dispatch-ref">
         <Select id="dispatch-ref" value={ref} onChange={(e) => setRef(e.target.value)}>

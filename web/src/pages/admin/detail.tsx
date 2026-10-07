@@ -266,7 +266,7 @@ export function QuotaPanel({ login, quota, onChange }: { login: string; quota: Q
     setBusy('save');
     setError(null);
     try {
-      const q = await setQuota(login, { max_repo_size_mb: repoVal as number | null, max_total_size_mb: totalVal as number | null });
+      const q = await setQuota(login, { max_repo_size_mb: repoVal, max_total_size_mb: totalVal });
       onChange(q);
       toast({ kind: 'success', title: 'Storage quota saved' });
     } catch (err) {
