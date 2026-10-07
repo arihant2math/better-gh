@@ -1,11 +1,117 @@
-/** Subset of GitHub REST v3 response shapes used by the web client. */
+/**
+ * GitHub REST v3 response shapes shared by the web client. Every resource
+ * that more than one feature module reads is declared here once, matching
+ * the Rust struct that serializes it (see docs/FRONTEND.md "API types").
+ */
 
-export interface RestUser {
+/**
+ * `simple-user` (`bgh_core::models::api::SimpleUser`): embedded wherever a
+ * user or organization is referenced. The backend always sends every field
+ * below; the URL templates it also sends are omitted.
+ */
+export interface SimpleUser {
   login: string;
   id: number;
+  node_id: string;
   avatar_url: string;
-  type?: 'User' | 'Organization' | 'Bot';
-  name?: string | null;
+  html_url: string;
+  type: 'User' | 'Organization' | 'Bot' | (string & {});
+  site_admin: boolean;
+}
+
+/**
+ * `minimal-repository` (`bgh_core::models::api::MinimalRepository`), as
+ * embedded in alerts, installations, tokens, runner groups and lists.
+ * The backend always sends every field below.
+ */
+export interface MinimalRepository {
+  id: number;
+  node_id: string;
+  name: string;
+  full_name: string;
+  owner: SimpleUser;
+  private: boolean;
+  html_url: string;
+  description: string | null;
+  fork: boolean;
+  archived: boolean;
+  visibility: 'public' | 'private' | 'internal';
+}
+
+/** `organization-simple` (`bgh_core::models::api::OrganizationSimple`). */
+export interface OrganizationSimple {
+  login: string;
+  id: number;
+  node_id: string;
+  avatar_url: string;
+  description: string | null;
+}
+
+/** `org-membership` (bgh-accounts `json::OrgMembership`). */
+export interface OrgMembership {
+  url: string;
+  state: 'active' | 'pending';
+  role: 'admin' | 'member' | 'billing_manager';
+  organization_url: string;
+  organization: OrganizationSimple;
+  user: SimpleUser | null;
+  permissions: { can_create_repository: boolean };
+}
+
+/** `team-simple` (`bgh_core::models::api::TeamSimple`). */
+export interface TeamSimple {
+  id: number;
+  node_id: string;
+  url: string;
+  html_url: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  privacy: 'closed' | 'secret';
+  notification_setting: 'notifications_enabled' | 'notifications_disabled';
+  /** Legacy permission name: pull | triage | push | maintain | admin. */
+  permission: string;
+  members_url: string;
+  repositories_url: string;
+}
+
+/** `team` (`bgh_core::models::api::Team`): `/orgs/{org}/teams`, `/repos/{o}/{r}/teams`. */
+export interface RestTeam extends TeamSimple {
+  parent: TeamSimple | null;
+}
+
+/** `email` (bgh-accounts `json::Email`) from `GET /user/emails`. */
+export interface UserEmail {
+  email: string;
+  primary: boolean;
+  verified: boolean;
+  /** Only set on the primary address. */
+  visibility: 'public' | 'private' | null;
+}
+
+/** `hook-delivery-item` (bgh-notify `webhooks::deliveries::DeliveryItem`): repo, org and app hooks. */
+export interface HookDeliveryItem {
+  id: number;
+  guid: string;
+  delivered_at: string;
+  redelivery: boolean;
+  /** Seconds. */
+  duration: number;
+  /** `OK`, `Invalid HTTP Response: 500`, `pending`, … */
+  status: string;
+  status_code: number;
+  event: string;
+  action: string | null;
+  installation_id: number | null;
+  repository_id: number | null;
+  throttled_at: string | null;
+}
+
+/** `hook-delivery` (bgh-notify `webhooks::deliveries::Delivery`). */
+export interface HookDelivery extends HookDeliveryItem {
+  url: string;
+  request: { headers: Record<string, string>; payload: unknown };
+  response: { headers: Record<string, string>; payload: string | null };
 }
 
 export interface ContentEntry {
@@ -27,17 +133,67 @@ export interface ContentFile extends ContentEntry {
 
 export type Contents = ContentFile | ContentEntry[];
 
+/** Git author / committer identity inside a commit. */
+export interface GitPerson {
+  name: string;
+  email: string;
+  date: string;
+}
+
+/**
+ * `commit` (bgh-repos `gitjson::CommitJson`, bgh-pulls `commits::CommitJson`):
+ * commit lists, pull request commits and compare `commits`.
+ */
 export interface RestCommit {
   sha: string;
   node_id: string;
   html_url: string;
   commit: {
     message: string;
-    author: { name: string; email: string; date: string };
-    committer: { name: string; date: string };
+    author: GitPerson;
+    committer: GitPerson;
+    tree: { sha: string };
+    comment_count: number;
+    verification: { verified: boolean; reason: string; signature: string | null; payload: string | null };
   };
-  author: RestUser | null;
-  parents?: { sha: string }[];
+  author: SimpleUser | null;
+  committer: SimpleUser | null;
+  parents: { sha: string; html_url: string }[];
+}
+
+/** `GET /repos/{o}/{r}/commits/{ref}`: a commit plus its `stats` and `files`. */
+export interface RestCommitDetail extends RestCommit {
+  stats: { additions: number; deletions: number; total: number };
+  files: RestDiffEntry[];
+}
+
+/** `diff-entry`: pull request files, compare and single-commit `files`. */
+export interface RestDiffEntry {
+  sha: string;
+  filename: string;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  changes: number;
+  blob_url: string;
+  raw_url: string;
+  /** Omitted for binary or oversized diffs. */
+  patch?: string;
+  /** Renames only. */
+  previous_filename?: string;
+}
+
+/** `GET /repos/{o}/{r}/compare/{base}...{head}` (bgh-repos `commits::Comparison`). */
+export interface RestCompare {
+  status: 'diverged' | 'ahead' | 'behind' | 'identical';
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  html_url: string;
+  base_commit: RestCommit;
+  merge_base_commit: RestCommit;
+  commits: RestCommit[];
+  files: RestDiffEntry[];
 }
 
 /** `GET /_bgh/repos/{o}/{r}/pulls/{n}/requirements` (merge box data). */
@@ -84,8 +240,8 @@ export interface MergeQueueEntry {
   base_ref: string;
   head_sha: string;
   jump: boolean;
-  pull: { number: number; title: string; user: RestUser };
-  enqueuer: RestUser;
+  pull: { number: number; title: string; user: SimpleUser };
+  enqueuer: SimpleUser;
   enqueued_at: string;
   /** Seconds. */
   estimated_time_to_merge: number | null;
@@ -137,7 +293,7 @@ export interface RestRepository {
   name: string;
   full_name: string;
   private: boolean;
-  owner: RestUser;
+  owner: SimpleUser;
   description: string | null;
   default_branch: string;
   fork?: boolean;
@@ -159,7 +315,7 @@ export interface RestRepoRef {
   id: number;
   name: string;
   full_name: string;
-  owner: RestUser;
+  owner: SimpleUser;
   default_branch?: string;
   private?: boolean;
 }
@@ -228,18 +384,6 @@ export interface CommitAnnotation {
   raw_details: string | null;
 }
 
-/** `GET /repos/{o}/{r}/pulls/{n}/files` entry (also compare / commit `files`). */
-export interface RestDiffEntry {
-  sha?: string;
-  filename: string;
-  previous_filename?: string | null;
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
-  additions: number;
-  deletions: number;
-  changes?: number;
-  patch?: string | null;
-}
-
 /** `GET /_bgh/repos/{o}/{r}/pulls/{n}/patch?path=` */
 export interface FilePatch {
   filename: string;
@@ -261,27 +405,11 @@ export interface CheckAnnotation {
   raw_details: string | null;
 }
 
-export interface RestCompare {
-  status: 'diverged' | 'ahead' | 'behind' | 'identical';
-  ahead_by: number;
-  behind_by: number;
-  total_commits: number;
-  merge_base_commit?: { sha: string };
-  commits: RestCommit[];
-  files?: RestDiffEntry[];
-}
-
-export interface RestCommitDetail extends RestCommit {
-  stats?: { additions: number; deletions: number; total?: number };
-  files?: RestDiffEntry[];
-  parents?: { sha: string }[];
-}
-
 export interface RestFork {
   id: number;
   name: string;
   full_name: string;
-  owner: RestUser;
+  owner: SimpleUser;
   default_branch: string;
   description?: string | null;
   private?: boolean;

@@ -6,18 +6,10 @@
  */
 import { prefetch as prefetchResource } from './cache';
 import { api, v3 } from './client';
-
-export interface RestSimpleUser {
-  login: string;
-  id: number;
-  avatar_url: string;
-  type: 'User' | 'Organization' | 'Bot';
-  name?: string | null;
-  site_admin?: boolean;
-}
+import type { OrganizationSimple, RestTeam, SimpleUser } from './types';
 
 /** `GET /users/{username}` (public-user; also resolves organizations). */
-export interface RestAccount extends RestSimpleUser {
+export interface RestAccount extends SimpleUser {
   name: string | null;
   company: string | null;
   blog: string | null;
@@ -55,20 +47,12 @@ export interface RestOrg {
   members_can_create_internal_repositories?: boolean;
 }
 
-/** organization-simple (`/users/{u}/orgs`). */
-export interface RestOrgSimple {
-  login: string;
-  id: number;
-  avatar_url: string;
-  description: string | null;
-}
-
 /** minimal-repository (subset). */
 export interface RestRepo {
   id: number;
   name: string;
   full_name: string;
-  owner: RestSimpleUser;
+  owner: SimpleUser;
   private: boolean;
   visibility?: 'public' | 'private' | 'internal';
   description: string | null;
@@ -84,16 +68,6 @@ export interface RestRepo {
   created_at: string;
   updated_at: string;
   permissions?: { admin: boolean; push: boolean; pull: boolean };
-}
-
-/** team (`/orgs/{org}/teams`). */
-export interface RestTeam {
-  id: number;
-  name: string;
-  slug: string;
-  description: string | null;
-  privacy: 'closed' | 'secret';
-  parent?: { id: number; name: string; slug: string } | null;
 }
 
 /** Activity event (`/users/{u}/events/public`), GitHub event shape subset. */
@@ -125,12 +99,12 @@ async function getAll<T>(path: string, query: Record<string, string> = {}): Prom
 
 export const getAccount = (login: string) => api.get<RestAccount>(v3('users', login));
 export const getOrg = (org: string) => api.get<RestOrg>(v3('orgs', org));
-export const listUserOrgs = (login: string) => getAll<RestOrgSimple>(v3('users', login, 'orgs'));
-export const listFollowers = (login: string) => getAll<RestSimpleUser>(v3('users', login, 'followers'));
-export const listFollowing = (login: string) => getAll<RestSimpleUser>(v3('users', login, 'following'));
-export const listMyFollowing = () => getAll<RestSimpleUser>(v3('user', 'following'));
+export const listUserOrgs = (login: string) => getAll<OrganizationSimple>(v3('users', login, 'orgs'));
+export const listFollowers = (login: string) => getAll<SimpleUser>(v3('users', login, 'followers'));
+export const listFollowing = (login: string) => getAll<SimpleUser>(v3('users', login, 'following'));
+export const listMyFollowing = () => getAll<SimpleUser>(v3('user', 'following'));
 /** Members (non-members of the organization get its public members). */
-export const listOrgMembers = (org: string) => getAll<RestSimpleUser>(v3('orgs', org, 'members'));
+export const listOrgMembers = (org: string) => getAll<SimpleUser>(v3('orgs', org, 'members'));
 /** Teams visible to the caller (organization members only). */
 export const listOrgTeams = (org: string) => getAll<RestTeam>(v3('orgs', org, 'teams'));
 export const listEvents = (login: string) => api.get<RestEvent[]>(`${v3('users', login, 'events', 'public')}?per_page=30`);

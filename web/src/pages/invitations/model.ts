@@ -2,7 +2,8 @@
  * Pure helpers behind the invitation pages, the dashboard banner and the
  * organizations settings page (unit-tested in model.test.ts).
  */
-import type { OrgMembership, UserRepoInvitation, ViewerOrganization } from '../../api/invitations';
+import type { UserRepoInvitation, ViewerOrganization } from '../../api/invitations';
+import type { OrgMembership } from '../../api/types';
 
 /** One row of the dashboard's pending-invitations banner. */
 export interface PendingItem {

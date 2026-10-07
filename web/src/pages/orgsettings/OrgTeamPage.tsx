@@ -32,8 +32,6 @@ import {
   teamRepoPermission,
   teamReposPath,
   updateTeam,
-  type SimpleUser,
-  type Team,
   type TeamFull,
   type TeamRepo,
   type TeamRepoPermission,
@@ -42,6 +40,7 @@ import {
 import { RowMenu, TeamDialog, TeamPrivacyChoice, descendants, privacyPill, teamPath, teamTree, useAllTeams, useLoadAll, useOrgAccess, userCell } from './common';
 import { orgSettingsPath } from './OrgSettingsLayout';
 import local from './OrgSettings.module.css';
+import type { RestTeam, SimpleUser } from '../../api/types';
 
 const REPO_PERMISSIONS: { value: TeamRepoPermission; label: string; description: string }[] = [
   { value: 'pull', label: 'Read', description: 'Can read and clone, open and comment on issues and pull requests.' },
@@ -342,7 +341,7 @@ function AddMemberDialog({ org, slug, open, onClose, onAdded }: { org: string; s
 // ------------------------------------------------------------------ child teams
 
 function ChildTeamsTab({ org, slug, team, canManage }: { org: string; slug: string; team: TeamFull | undefined; canManage: boolean }) {
-  const children = usePagedList<Team>(childTeamsPath(org, slug));
+  const children = usePagedList<RestTeam>(childTeamsPath(org, slug));
   useLoadAll(children);
   const allTeams = useAllTeams(org);
   const [creating, setCreating] = useState(false);
@@ -667,7 +666,7 @@ function SettingsTab({ org, team }: { org: string; team: TeamFull }) {
       if (form.parent !== initial.parent) patch.parent_team_id = form.parent ? Number(form.parent) : null;
       const updated = await updateTeam(org, team.slug, patch);
       mutate<TeamFull>(teamKey(org, updated.slug), () => updated);
-      mutate<Team[]>(allTeamsKey(org), (prev) => (prev ?? []).map((t) => (t.id === updated.id ? updated : t)));
+      mutate<RestTeam[]>(allTeamsKey(org), (prev) => (prev ?? []).map((t) => (t.id === updated.id ? updated : t)));
       toast({ kind: 'success', title: 'Team updated' });
       if (updated.slug !== team.slug) {
         invalidate(teamKey(org, team.slug));
@@ -705,7 +704,7 @@ function SettingsTab({ org, team }: { org: string; team: TeamFull }) {
       confirmText: team.slug,
       onConfirm: async () => {
         await deleteTeam(org, team.slug);
-        mutate<Team[]>(allTeamsKey(org), (prev) => (prev ?? []).filter((t) => !blocked.has(t.id)));
+        mutate<RestTeam[]>(allTeamsKey(org), (prev) => (prev ?? []).filter((t) => !blocked.has(t.id)));
         invalidate(teamKey(org, team.slug));
         toast({ kind: 'success', title: `Deleted ${team.name}` });
         navigate(orgSettingsPath(org, 'teams'));

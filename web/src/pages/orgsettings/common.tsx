@@ -27,12 +27,11 @@ import {
   teamKey,
   viewerLogin,
   type InvitationInput,
-  type SimpleUser,
-  type Team,
   type TeamFull,
   type TeamPrivacy,
 } from './api';
 import local from './OrgSettings.module.css';
+import type { RestTeam, SimpleUser } from '../../api/types';
 
 /** The viewer's standing in `org` (owners manage settings; site admins too). */
 export function useOrgAccess(org: string) {
@@ -78,7 +77,7 @@ export function useLoadAll(list: { next: string | null; loading: boolean; error:
 
 /** Every team of the org, cached (pickers, tree, parent selects). */
 export function useAllTeams(org: string, enabled = true) {
-  return useResource<Team[]>(enabled ? allTeamsKey(org) : null, () => listAllTeams(org));
+  return useResource<RestTeam[]>(enabled ? allTeamsKey(org) : null, () => listAllTeams(org));
 }
 
 /** Kebab button + menu for a row. Clicks don't reach the row's open handler. */
@@ -244,15 +243,15 @@ export function InviteDialog({ org, open, onClose, initialLogin = '' }: { org: s
 export const teamPath = (org: string, slug: string) => `/organizations/${encodeURIComponent(org)}/settings/teams/${encodeURIComponent(slug)}`;
 
 export interface TreeRow {
-  team: Team;
+  team: RestTeam;
   depth: number;
   /** "Parent / Child" path, shown when searching. */
   path: string;
 }
 
 /** Depth-first tree (parents before children, siblings by name). */
-export function teamTree(teams: readonly Team[]): TreeRow[] {
-  const byParent = new Map<number | null, Team[]>();
+export function teamTree(teams: readonly RestTeam[]): TreeRow[] {
+  const byParent = new Map<number | null, RestTeam[]>();
   const ids = new Set(teams.map((t) => t.id));
   for (const t of teams) {
     // A parent the viewer can't see (secret) → show at the root.
@@ -275,7 +274,7 @@ export function teamTree(teams: readonly Team[]): TreeRow[] {
 }
 
 /** IDs of `id` and all its descendants (a team can't be nested under them). */
-export function descendants(teams: readonly Team[], id: number): Set<number> {
+export function descendants(teams: readonly RestTeam[], id: number): Set<number> {
   const out = new Set([id]);
   let grew = true;
   while (grew) {
@@ -294,7 +293,7 @@ export const privacyPill = (p: TeamPrivacy) =>
   p === 'secret' ? <StatusPill status="warning">Secret</StatusPill> : <StatusPill status="neutral">Visible</StatusPill>;
 
 /** Create a team (name, description, privacy, parent). */
-export function TeamDialog({ org, open, onClose, teams, parentId }: { org: string; open: boolean; onClose: () => void; teams: readonly Team[]; parentId?: number }) {
+export function TeamDialog({ org, open, onClose, teams, parentId }: { org: string; open: boolean; onClose: () => void; teams: readonly RestTeam[]; parentId?: number }) {
   const [form, setForm] = useState({ name: '', description: '', privacy: 'closed' as TeamPrivacy, parent: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -326,7 +325,7 @@ export function TeamDialog({ org, open, onClose, teams, parentId }: { org: strin
         parent_team_id: form.parent ? Number(form.parent) : undefined,
       });
       mutate<TeamFull>(teamKey(org, t.slug), () => t);
-      mutate<Team[]>(allTeamsKey(org), (prev) => [...(prev ?? []), t]);
+      mutate<RestTeam[]>(allTeamsKey(org), (prev) => [...(prev ?? []), t]);
       toast({ kind: 'success', title: `Created team ${t.name}` });
       onClose();
       navigate(teamPath(org, t.slug));

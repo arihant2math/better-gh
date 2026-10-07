@@ -5,7 +5,7 @@
  * Lazy-loaded from AppsManager.
  */
 import { useState } from 'react';
-import { getAppHook, getHookDelivery, listHookDeliveries, redeliverHook, updateApp, type AppDetail, type HookDelivery } from '../../api/apps';
+import { getAppHook, getHookDelivery, listHookDeliveries, redeliverHook, updateApp, type AppDetail } from '../../api/apps';
 import { refresh, useResource } from '../../api/cache';
 import { apiFieldErrors, Banner, ButtonRow, Checkbox, FormStack, ItemList, ItemRow, Pill, Section } from '../../components/settings/kit';
 import { Button } from '../../ui/Button';
@@ -15,6 +15,7 @@ import { Field, Select } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import styles from './apps.module.css';
+import type { HookDelivery } from '../../api/types';
 
 const hookKey = (slug: string) => `apps:hook:${slug}`;
 const deliveriesKey = (slug: string, filter: string) => `apps:deliveries:${slug}:${filter}`;

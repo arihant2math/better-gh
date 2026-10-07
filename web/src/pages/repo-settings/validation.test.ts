@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BranchProtection } from '../../api/repoSettings';
 import { EMPTY_PROTECTION, eventsFor, eventsMode, eventsSummary, fromProtection, messageOptionId, protectionFormError, SQUASH_MESSAGE_OPTIONS, summarizeRule, toProtectionInput } from './model';
 import { autolinkPrefixError, autolinkTemplateError, homepageError, hookUrlError, normalizeTopic, repoNameError, sshKeyError, topicError } from './validation';
+import { simpleUser } from '../../test/fixtures';
 
 function keyBlob(type: string, extra = 32): string {
   const bytes = [0, 0, 0, type.length, ...[...type].map((c) => c.charCodeAt(0)), 0, 0, 0, extra, ...Array.from({ length: extra }, (_, i) => i)];
@@ -79,7 +80,7 @@ describe('model', () => {
       allow_force_pushes: { enabled: false },
       allow_deletions: { enabled: true },
       required_conversation_resolution: { enabled: true },
-      restrictions: { users: [{ login: 'ada', id: 1, avatar_url: '' }], teams: [{ slug: 'core', name: 'Core' }] },
+      restrictions: { users: [simpleUser('ada', 1)], teams: [{ slug: 'core', name: 'Core' }] },
     };
     const f = fromProtection(p);
     expect(f.approvals).toBe(2);

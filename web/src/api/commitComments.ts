@@ -5,7 +5,7 @@
  * and update the cached list with `mutate` after writes.
  */
 import { api, v3 } from './client';
-import type { RestUser } from './types';
+import type { SimpleUser } from './types';
 
 export type CommitReactionContent = '+1' | '-1' | 'laugh' | 'confused' | 'heart' | 'hooray' | 'rocket' | 'eyes';
 
@@ -24,7 +24,7 @@ export interface CommitComment {
   position: number | null;
   line: number | null;
   commit_id: string;
-  user: RestUser | null;
+  user: SimpleUser | null;
   created_at: string;
   updated_at: string;
   author_association: string;
@@ -34,7 +34,7 @@ export interface CommitComment {
 export interface CommitCommentReaction {
   id: number;
   node_id: string;
-  user: RestUser | null;
+  user: SimpleUser | null;
   content: CommitReactionContent;
   created_at: string;
 }

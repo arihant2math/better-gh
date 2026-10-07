@@ -6,6 +6,7 @@
  * `/orgs/{org}/personal-access-tokens`). Only imported by lazy chunks.
  */
 import { api, v3 } from './client';
+import type { MinimalRepository } from './types';
 
 export type FgAccess = 'read' | 'write';
 export type FgSelection = 'all' | 'selected' | 'public';
@@ -122,13 +123,6 @@ export interface OrgPatGrant {
   /** Requests only. */
   reason?: string | null;
   created_at?: string;
-}
-
-export interface MinimalRepository {
-  id: number;
-  name: string;
-  full_name: string;
-  private: boolean;
 }
 
 /** List paths for `usePagedList` (each carries a query string). */

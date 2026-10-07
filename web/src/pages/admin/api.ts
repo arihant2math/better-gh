@@ -546,7 +546,8 @@ export const scimUserNameFilter = (text: string) => `userName eq "${text.replace
 
 // ------------------------------------------------------------------ audit log
 
-export interface AuditEntry {
+/** `/_bgh/admin/audit-log` row (instance audit log; not GitHub's org `audit-log` entry). */
+export interface AdminAuditEntry {
   id: number;
   action: string;
   actor: { id: number | null; login: string | null };
@@ -577,7 +578,7 @@ export interface AuditQuery {
 }
 
 export const searchAudit = (q: AuditQuery) =>
-  api.get<{ entries: AuditEntry[]; next_cursor: number | null }>(`/_bgh/admin/audit-log${qs({ per_page: 100, ...q })}`);
+  api.get<{ entries: AdminAuditEntry[]; next_cursor: number | null }>(`/_bgh/admin/audit-log${qs({ per_page: 100, ...q })}`);
 
 // ------------------------------------------------------------------ jobs
 

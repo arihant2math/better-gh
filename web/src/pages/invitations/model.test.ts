@@ -1,19 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import type { OrgMembership, UserRepoInvitation, ViewerOrganization } from '../../api/invitations';
+import type { UserRepoInvitation, ViewerOrganization } from '../../api/invitations';
 import { findRepoInvitation, invitationTarget, invitationTargetLabel, leaveBlockReason, orgRoleLabel, pendingItems, permissionLabel } from './model';
+import { simpleUser } from '../../test/fixtures';
+import type { OrgMembership } from '../../api/types';
 
 const org = (login: string, id: number, state: 'active' | 'pending' = 'pending', role: 'admin' | 'member' = 'member'): OrgMembership => ({
+  url: `/api/v3/user/memberships/orgs/${login}`,
   state,
   role,
-  organization: { login, id, avatar_url: `/avatars/${id}`, description: null },
+  organization_url: `/api/v3/orgs/${login}`,
+  organization: { login, id, node_id: `O_${id}`, avatar_url: `/avatars/${id}`, description: null },
+  user: null,
+  permissions: { can_create_repository: true },
 });
 
 const repoInv = (id: number, fullName: string, permissions = 'write', expired = false): UserRepoInvitation => {
   const [owner, name] = fullName.split('/') as [string, string];
   return {
     id,
-    repository: { id: id + 100, name, full_name: fullName, private: true, description: null, owner: { login: owner, id: 9, avatar_url: '/a/9' } },
-    inviter: { login: owner, id: 9, avatar_url: '/a/9' },
+    repository: { id: id + 100, name, full_name: fullName, private: true, description: null, owner: simpleUser(owner, 9) },
+    inviter: simpleUser(owner, 9),
     permissions,
     created_at: '2026-10-01T00:00:00Z',
     expired,

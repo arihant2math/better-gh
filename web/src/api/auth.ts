@@ -5,7 +5,7 @@
  * `bgh-accounts/src/validate.rs`.
  */
 import { api } from './client';
-import type { RestUser } from './types';
+import type { SimpleUser } from './types';
 
 // ------------------------------------------------------------------ SSO
 
@@ -68,7 +68,7 @@ export interface PublicApp {
   description: string | null;
   homepage_url: string;
   client_id: string;
-  owner: RestUser | null;
+  owner: SimpleUser | null;
 }
 
 export interface DeviceInfo {

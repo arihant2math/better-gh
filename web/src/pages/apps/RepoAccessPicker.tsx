@@ -4,7 +4,7 @@
  * (fine-grained personal access tokens); `mode` is then also `'public'`.
  */
 import { useMemo, useState } from 'react';
-import { listAccountRepos, type SimpleUser } from '../../api/apps';
+import { listAccountRepos } from '../../api/apps';
 import { useResource } from '../../api/cache';
 import { session } from '../../app/session';
 import { RadioCards } from '../../components/settings/kit';
@@ -12,6 +12,7 @@ import { IconButton } from '../../ui/Button';
 import { LockIcon, RepoIcon, SearchIcon, XIcon } from '../../ui/icons';
 import { Input } from '../../ui/Input';
 import styles from './apps.module.css';
+import type { SimpleUser } from '../../api/types';
 
 export interface PickedRepo {
   id: number;
@@ -30,7 +31,7 @@ export function RepoAccessPicker<S extends { mode: string; repos: PickedRepo[] }
   onChange,
   publicOption,
 }: {
-  account: SimpleUser;
+  account: Pick<SimpleUser, 'login' | 'id' | 'avatar_url' | 'type'>;
   value: S;
   onChange: (v: S) => void;
   publicOption?: { label: string; description: string };

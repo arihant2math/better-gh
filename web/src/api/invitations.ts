@@ -6,28 +6,13 @@
  */
 import { invalidate } from './cache';
 import { api, v3 } from './client';
-import type { RestUser } from './types';
-
-/** `organization-simple` (subset). */
-export interface OrgSimple {
-  login: string;
-  id: number;
-  avatar_url: string;
-  description: string | null;
-}
-
-/** `org-membership` (subset) from `GET /user/memberships/orgs`. */
-export interface OrgMembership {
-  state: 'active' | 'pending';
-  role: 'admin' | 'member';
-  organization: OrgSimple;
-}
+import type { OrganizationSimple, OrgMembership, SimpleUser } from './types';
 
 /** `repository-invitation` (subset) from `GET /user/repository_invitations`. */
 export interface UserRepoInvitation {
   id: number;
-  repository: { id: number; name: string; full_name: string; private: boolean; description: string | null; owner: RestUser };
-  inviter: RestUser | null;
+  repository: { id: number; name: string; full_name: string; private: boolean; description: string | null; owner: SimpleUser };
+  inviter: SimpleUser | null;
   permissions: string;
   created_at: string;
   expired: boolean;
@@ -37,18 +22,18 @@ export interface UserRepoInvitation {
 /** `GET /_bgh/orgs/{org}/invitation`. */
 export interface ViewerOrgInvitation {
   state: 'pending' | 'active';
-  organization: OrgSimple;
+  organization: OrganizationSimple;
   organization_name: string | null;
   role: 'admin' | 'member';
   invitation_id: number | null;
-  inviter: RestUser | null;
+  inviter: SimpleUser | null;
   created_at: string | null;
   teams: string[];
 }
 
 /** `GET /_bgh/user/organizations` item. */
 export interface ViewerOrganization {
-  organization: OrgSimple;
+  organization: OrganizationSimple;
   organization_name: string | null;
   role: 'admin' | 'member';
   public: boolean;

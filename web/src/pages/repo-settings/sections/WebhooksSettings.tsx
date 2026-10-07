@@ -11,7 +11,6 @@ import {
   redeliver,
   testHook,
   updateHook,
-  type DeliveryItem,
   type Hook,
   type HookInput,
 } from '../../../api/repoSettings';
@@ -29,6 +28,7 @@ import { HOOK_EVENTS, deliveryOk, eventsFor, eventsMode, eventsSummary, type Eve
 import styles from '../RepoSettings.module.css';
 import { ListSkeleton, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';
 import { hookUrlError } from '../validation';
+import type { HookDeliveryItem } from '../../../api/types';
 
 export default function WebhooksSettings({ repo, rest, base }: SectionProps) {
   if (rest[0] === 'new') return <HookForm key="new" repo={repo} base={base} />;
@@ -427,7 +427,7 @@ function DeliveryRow({
 }: {
   repo: Repo;
   hookId: number;
-  d: DeliveryItem;
+  d: HookDeliveryItem;
   open: boolean;
   onToggle: () => void;
   onRedelivered: () => void;

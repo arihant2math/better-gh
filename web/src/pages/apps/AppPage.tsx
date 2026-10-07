@@ -4,7 +4,7 @@
  * then all or selected repositories, review permissions, install).
  */
 import { useState } from 'react';
-import { getInstallInfo, installApp, type InstallInfo, type SimpleUser } from '../../api/apps';
+import { getInstallInfo, installApp, type InstallInfo } from '../../api/apps';
 import { invalidate, useResource } from '../../api/cache';
 import { Banner, ButtonRow, errorMessage, PageHeader, Section } from '../../components/settings/kit';
 import { Link, navigate, useLocation, useParams } from '../../router';
@@ -17,6 +17,7 @@ import { AppIcon } from './AppsManager';
 import styles from './apps.module.css';
 import { ACCESS_LABEL, installationPath, permissionEntries, permissionLabel } from './logic';
 import { RepoAccessPicker, type RepoSelection } from './RepoAccessPicker';
+import type { SimpleUser } from '../../api/types';
 
 export default function AppPage() {
   const { slug = '' } = useParams<{ slug: string }>();

@@ -5,6 +5,7 @@
  * (settings.rs).
  */
 import { api } from './client';
+import type { UserEmail } from './types';
 
 // ------------------------------------------------------------------ keys
 
@@ -163,12 +164,5 @@ export interface NotificationSettingsPatch {
 
 export const getNotificationSettings = () => api.get<NotificationSettings>('/_bgh/notifications/settings');
 export const putNotificationSettings = (patch: NotificationSettingsPatch) => api.put<NotificationSettings>('/_bgh/notifications/settings', patch);
-
-export interface UserEmail {
-  email: string;
-  primary: boolean;
-  verified: boolean;
-  visibility: string | null;
-}
 
 export const listUserEmails = () => api.get<UserEmail[]>('/api/v3/user/emails?per_page=100');

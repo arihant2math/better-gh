@@ -112,6 +112,32 @@ export default observer(function MyPage() {
   `api/endpoints.ts`. Key by SHA and pass `immutable: true` when content
   addressed; warm it from the route's `prefetch`.
 
+## API types
+
+REST response shapes are hand-written TypeScript; nothing checks them
+against the backend yet, so keep one copy per resource.
+
+* A resource that more than one feature module reads (or that the backend
+  embeds in other resources: `SimpleUser`, `MinimalRepository`,
+  `OrganizationSimple`, `TeamSimple`/`RestTeam`, `OrgMembership`,
+  `RestCommit`/`RestCommitDetail`/`RestCompare`, `RestDiffEntry`, `UserEmail`,
+  `HookDelivery`/`HookDeliveryItem`, …) is declared once in
+  `src/api/types.ts`. Feature modules (`api/<feature>.ts`,
+  `pages/*/api.ts`) import it from there; never redeclare it under a new
+  name or as an inline `{ login: string; … }` literal.
+* Match the Rust struct that serializes it (`bgh_core::models::api` or the
+  producing crate's `json.rs`), and name it in the doc comment. Declare the
+  fields the UI reads; their nullability follows the backend: `Option<T>`
+  is `T | null`, `#[serde(skip_serializing_if = …)]` is `field?: T`, and
+  everything else is required. Don't loosen a field to `?` or add fields
+  the backend never sends to make a fixture or another endpoint fit.
+* A shape used by one feature only, or a request body, stays in that
+  feature's module. A genuinely different resource gets a distinct name
+  (e.g. `AdminAuditEntry` for `/_bgh/admin/audit-log` vs the org
+  `audit-log` entry).
+* Test fixtures build complete objects (`simpleUser()` in
+  `src/test/fixtures.ts`) instead of casting partial ones.
+
 ## Optimistic mutations
 
 All writes go through `sync/mutations.ts`. A mutation = overlay ops (applied

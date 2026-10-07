@@ -2,9 +2,9 @@ import { observer } from 'mobx-react-lite';
 import { useMemo } from 'react';
 import { peek, prefetch, useResource } from '../../api/cache';
 import { ApiError } from '../../api/client';
-import { codeKeys, getCommit, getCommitDiff, getCommitStatuses, type GitPerson, type RestCommitDetail } from '../../api/code';
+import { codeKeys, getCommit, getCommitDiff, getCommitStatuses } from '../../api/code';
 import { isSha } from '../../api/endpoints';
-import type { RestUser } from '../../api/types';
+import type { GitPerson, RestCommitDetail, SimpleUser } from '../../api/types';
 import type { DiffSource } from '../../components/diff/DiffView';
 import { DiffViewer } from '../../components/diff/DiffViewer';
 import { Link, navigate, useParams } from '../../router';
@@ -80,7 +80,7 @@ function CommitView({ repo, refName }: { repo: Repo; refName: string }) {
   );
 }
 
-function asPerson(user: RestUser | null, git: GitPerson) {
+function asPerson(user: SimpleUser | null, git: GitPerson) {
   return { name: git.name, login: user?.login ?? null, avatar_url: user?.avatar_url ?? null };
 }
 

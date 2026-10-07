@@ -16,7 +16,8 @@ import {
   type Collaborator,
   type RepoInvitation,
 } from '../../../api/repoSettings';
-import type { RestUser } from '../../../api/types';
+import type { RestAccount } from '../../../api/profile';
+import type { RestTeam } from '../../../api/types';
 import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, RadioCards, Section, errorMessage, useDebounced } from '../../../components/settings/kit';
 import { store } from '../../../sync';
 import type { Permission, Repo, Team } from '../../../sync/models';
@@ -133,12 +134,9 @@ export default observer(function AccessSettings({ repo }: SectionProps) {
               return (
                 <ItemRow
                   key={c.login}
-                  leading={<Avatar user={{ login: c.login, avatarUrl: c.avatar_url, name: c.name }} size={32} />}
+                  leading={<Avatar user={{ login: c.login, avatarUrl: c.avatar_url }} size={32} />}
                   title={
-                    <span className={styles.row}>
-                      {c.login}
-                      {c.name && <span className={styles.small}>{c.name}</span>}
-                    </span>
+                    <span className={styles.row}>{c.login}</span>
                   }
                   meta={isOwner ? 'Owner' : `${roleLabel(c.role_name)} access`}
                   actions={
@@ -240,7 +238,7 @@ const AddPersonDialog = observer(function AddPersonDialog({
   const [picked, setPicked] = useState<Candidate | null>(null);
   const [role, setRole] = useState<Permission>('write');
   const [active, setActive] = useState(0);
-  const [remote, setRemote] = useState<{ q: string; user: RestUser | null } | null>(null);
+  const [remote, setRemote] = useState<{ q: string; user: RestAccount | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const q = query.trim().replace(/^@/, '');
@@ -420,7 +418,8 @@ const AddPersonDialog = observer(function AddPersonDialog({
 const TeamsSection = observer(function TeamsSection({ repo }: { repo: Repo }) {
   const org = store().get('org', repo.ownerId)!;
   const teams = teamsWithAccess(repo.id, repo.ownerId);
-  const grants = useLocalResource(repoKey(repo, 'teams'), () => listRepoTeams(repo.owner, repo.name));
+  // Optimistic grants are built from the sync `Team`, so only the fields this section reads.
+  const grants = useLocalResource<Pick<RestTeam, 'id' | 'slug' | 'name' | 'description' | 'permission'>[]>(repoKey(repo, 'teams'), () => listRepoTeams(repo.owner, repo.name));
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Team | null>(null);
   const roleOf = (t: Team): Permission => roleName(grants.data?.find((g) => g.id === t.id || g.slug === t.slug)?.permission);
