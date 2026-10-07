@@ -38,6 +38,7 @@ appears on resize). Every page is checked for:
 | `offscreen` | an element sticks out of the viewport without a scrolling ancestor (wholly off-screen positioned layers such as skip links are ignored) |
 | `unreachable` | a control is clipped out of an `overflow: hidden` box |
 | `clipped-text` | text is cut by an `overflow: hidden/clip` box (its own or an ancestor's) without `text-overflow: ellipsis` / line clamp |
+| `squeezed-text` | text is squeezed to under 3 characters per line over 3+ lines (e.g. a title crushed by header actions) |
 | `overlap` | the centre of a control is covered by another control |
 | `tap-target` | touch viewports only: a control smaller than 32 px (inline links in running text and inputs inside a big enough `<label>` are exempt) |
 | `console`, `request` | console errors / uncaught exceptions, failed requests, HTTP 5xx |

@@ -3,7 +3,8 @@
 /* ------------------------------------------------------------------ layout */
 .layout {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr);
+  /* The nav sizes to its longest label + shortcut hint, within bounds (#75). */
+  grid-template-columns: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
@@ -13,9 +14,13 @@
   flex-direction: column;
   gap: 1px;
   min-height: 0;
+  width: max-content;
+  min-width: 208px;
+  max-width: 256px;
   padding: 14px 8px;
   border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .subnavTitle {
@@ -67,7 +72,15 @@
   color: var(--fg);
 }
 
+.subnavLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .subnavKey {
+  flex-shrink: 0;
   margin-left: auto;
   color: var(--fg-faint);
   font-size: var(--fs-xs);
@@ -75,6 +88,7 @@
 }
 
 .dirtyDot {
+  flex-shrink: 0;
   width: 6px;
   height: 6px;
   margin-left: auto;
@@ -132,9 +146,20 @@
   .subnav {
     flex-direction: row;
     padding: 6px 8px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
     overflow-x: auto;
+  }
+
+  .subnavItem {
+    flex-shrink: 0;
+  }
+
+  .subnavLabel {
+    overflow: visible;
   }
 
   .subnavTitle,
@@ -151,9 +176,11 @@
 
 /* ------------------------------------------------------------------ header */
 .pageHeader {
+  container: page-header / inline-size;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 12px;
+  gap: 8px 12px;
   margin-bottom: 16px;
 }
 
@@ -163,8 +190,10 @@
 }
 
 .pageHeaderText {
-  flex: 1;
-  min-width: 0;
+  /* Below title + actions width the actions wrap under the title instead of
+     squeezing it to one letter per line (#74). */
+  flex: 1 1 24ch;
+  min-width: min(100%, 12ch);
 }
 
 .pageTitle {
@@ -183,7 +212,30 @@
 .pageActions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  max-width: 100%;
+}
+
+/* `ShortLabel`: the short form replaces the long one in narrow headers; the
+   long one stays the accessible name. */
+.labelShort {
+  display: none;
+}
+
+@container page-header (max-width: 520px) {
+  .labelLong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .labelShort {
+    display: inline;
+  }
 }
 
 .toolbar {
