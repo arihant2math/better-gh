@@ -8,13 +8,14 @@ Merge flow: reviewers APPROVE, set S-Approved and update the branch, then send_m
 
 ### Open PRs at 09:05
 - #312 (#138 SECURITY, author session_015sx68MN6HVyxjdYqcwsVzi): S-Approved at 0a50a76, but the r2 security reviewer session_01SDYuLDtD7CYXTmwcLjoC1n was told to review only the FINAL head, after (a) a main merge following #323 (they overlap) and (b) the author covers the #329 org-invite repro (test, plus Fixes #329 if fully covered). Wait for its report and re-verify the SHA.
-- #309 (#275 SECURITY GraphQL cost, author session_01PoLx449ncVkpwQdp2GCpmb): adversarial r2 reviewer session_01Mgvsx8ABCZHLFeU4x5VMdn running on d1cafe7.
+- #309 (#275 SECURITY GraphQL cost, author session_01PoLx449ncVkpwQdp2GCpmb): r2 REQUEST_CHANGES at d1cafe7. Anonymous DoS also present on main: 30 doubling fragments pin a CPU for ~12 min, because async-graphql's validation expands spreads before MAX_VISITS. Fix is a memoized fragment-size pre-check in CostExt::parse_query plus a test. Start a fresh adversarial r3 when the author pings.
 - #316 (#288 merge-queue service, lead session_01Kq9BfEn4RqooYm2643Ah6e): r2 REQUEST_CHANGES at 055aef2. Round-1 items are fixed, but a flaky test (a dequeue destroys the whole group, and the rebuild SHA is timestamp-dependent) leaves CI red. The lead is fixing it by keeping the valid prefix. Start a fresh r3 reviewer when it pings.
 - #315 (#290 merge-queue GraphQL, same lead): r2 reviewer session_015Gpod5tzkrNKtz7Mi2ZxHc on 9a96154. It was told about the #322 loop (GITHUB_TOKEN auto-merge toggle).
 - #322 (#289 merge_group trigger, same lead, STACKED on #316): REQUEST_CHANGES at f53ad4f. Unbounded run loop: with #315, a job token's disable/enable auto-merge re-enqueues and the merge_group exemption re-runs. The lead must fix it (exempt only non-bot enqueuers, or cap runs) and add a test. Fresh adversarial reviewer when it pings. Merges only after #316, then retargets to main.
 - #319 (#245 hub recheck, author session_012T1MW3bqBQbQPoRqYR2z4G): REQUEST_CHANGES. A failed recheck pass drops targets, delaying revokes; plus a minor first-subscriber race. Fresh adversarial reviewer when it pings.
 - #330 (#85 item 4, worker session_011YDWD7b7snUjdLSGdr2vq4): reviewer (sonnet) session_01W5eCBySQcV5TFQ6miPpKZ3.
 - #150: the user's own; don't touch it.
+- #331 fixer (orchestrator-approved CI health): session_01HiZuw5TZdK2DU9KPyfjtRs, branch agent/331-insights-time-flake. Start a reviewer when it pings.
 
 ### #85 track
 Items 1 (#152), 2 (#311) and 3 (#320, saves a runner but not wall-clock) are merged; item 4 is #330. Then items 5-10 in issue order, one worker PR at a time, "Part of #85", labels T-Perf A-Ops; each is reviewed and merged before the next starts. Close #85 at the end.
@@ -44,6 +45,7 @@ When every open PR is merged or parked (parked = a PR status comment saying what
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:13: #309 r2 REQUEST_CHANGES (fragment-doubling validation DoS); author told; reviewer archived. The orchestrator approved a #331 fixer: session_01HiZuw5TZdK2DU9KPyfjtRs.
 09:13: filed #331 (P-High T-Test): insights::stats_accepted_then_computed fails Wed 09:00-09:59 UTC (seed commit uses the current time). Any backend PR CI is red until 10:00 UTC; it is not the PRs' fault. Orchestrator told; no fixer unless directed.
 09:09: #312 r2: the org-invite takeover and OIDC link from #329 are already fixed at 0a50a76. Still open: invite-mode sign-up admits an unverified account, and the allow-list checks only the claimed address (the @-parser mismatch is out of scope). Label back to NeedsReview; the reviewer stays subscribed and will re-review the final head after the author's #323 merge and #329 pushes.
 09:06: #316 r2 REQUEST_CHANGES (flaky dequeue_after_green test, CI red). Lead told; reviewer archived.
