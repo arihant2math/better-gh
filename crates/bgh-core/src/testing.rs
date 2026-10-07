@@ -99,8 +99,8 @@ fn pid_alive(pid: u32) -> bool {
         return false;
     };
     // SAFETY: signal 0 only checks that `pid` exists and may be signalled.
-    unsafe { libc::kill(pid, 0) == 0 }
-    || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    let rc = unsafe { libc::kill(pid, 0) };
+    rc == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// Migrate the template database once per process (under a cross-process
