@@ -68,13 +68,12 @@ pub struct MergeQueue {
 impl MergeQueue {
     /// `repo`'s `branch` queue; `None` when no merge queue rule targets it.
     pub async fn load(ctx: &Context<'_>, repo: Repository, branch: &str) -> GResult<Option<Self>> {
-        let config = mq::config_for(&gql(ctx).state.db, repo.rid(), branch)
-            .await
-            .gql()?;
-        Ok(config.map(|c| Self {
+        let l = ctx.data_unchecked::<Loaders>();
+        let config = one(&l.queue_configs, (repo.rid(), branch.to_string())).await?;
+        Ok(config.map(|config| Self {
             repo,
             branch: branch.to_string(),
-            config: Arc::new(c),
+            config,
         }))
     }
 
@@ -281,11 +280,11 @@ pub async fn entry_by_id(ctx: &Context<'_>, id: i64) -> GResult<Option<MergeQueu
     if repo::load(ctx, repo_id).await?.is_none() {
         return Ok(None);
     }
-    Ok(mq::entry_for_pull(&g.state.db, pull_id)
-        .await
-        .gql()?
+    let l = ctx.data_unchecked::<Loaders>();
+    Ok(one(&l.queue_entries, pull_id)
+        .await?
         .filter(|e| e.id == id)
-        .map(|e| MergeQueueEntry(Arc::new(e))))
+        .map(MergeQueueEntry))
 }
 
 /// The queue for a `MergeQueue` node key (`"{repo_id}:{branch}"`).
@@ -308,10 +307,9 @@ pub struct PullMergeQueue {
 }
 
 impl PullMergeQueue {
-    async fn entry(&self, ctx: &Context<'_>) -> GResult<Option<Entry>> {
-        mq::entry_for_pull(&gql(ctx).state.db, self.pull_id)
-            .await
-            .gql()
+    async fn entry(&self, ctx: &Context<'_>) -> GResult<Option<Arc<Entry>>> {
+        let l = ctx.data_unchecked::<Loaders>();
+        one(&l.queue_entries, self.pull_id).await
     }
 }
 
@@ -324,12 +322,10 @@ impl PullMergeQueue {
     }
     /// Whether the pull request's base ref has a merge queue enabled.
     pub async fn is_merge_queue_enabled(&self, ctx: &Context<'_>) -> GResult<bool> {
-        Ok(
-            mq::config_for(&gql(ctx).state.db, self.repo_id, &self.base_ref)
-                .await
-                .gql()?
-                .is_some(),
-        )
+        let l = ctx.data_unchecked::<Loaders>();
+        Ok(one(&l.queue_configs, (self.repo_id, self.base_ref.clone()))
+            .await?
+            .is_some())
     }
     /// The merge queue for the pull request's base branch.
     pub async fn merge_queue(&self, ctx: &Context<'_>) -> GResult<Option<MergeQueue>> {
@@ -339,6 +335,6 @@ impl PullMergeQueue {
     /// The merge queue entry of the pull request in the base branch's merge
     /// queue.
     pub async fn merge_queue_entry(&self, ctx: &Context<'_>) -> GResult<Option<MergeQueueEntry>> {
-        Ok(self.entry(ctx).await?.map(|e| MergeQueueEntry(Arc::new(e))))
+        Ok(self.entry(ctx).await?.map(MergeQueueEntry))
     }
 }

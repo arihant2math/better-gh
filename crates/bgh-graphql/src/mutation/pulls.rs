@@ -821,18 +821,21 @@ impl PullMutations {
     ) -> GResult<EnablePullRequestAutoMergePayload> {
         let a = guard(ctx)?;
         let (issue, repo) = pull_by_node(ctx, &input.pull_request_id).await?;
-        // Like GitHub (and what `gh pr merge --auto` relies on): a base
-        // branch with a merge queue adds the PR to the queue instead.
-        if super::merge_queue::queue_required(ctx, &issue).await? {
-            super::merge_queue::enqueue(
+        // Like GitHub (and what `gh pr merge --auto` relies on): on a base
+        // branch with a merge queue the PR joins the queue, right away when
+        // only checks are missing (they run on the merge group), else once
+        // the remaining requirements pass (auto-merge stays enabled until
+        // then; `bgh_pulls::automerge::try_merge` enqueues it).
+        if super::merge_queue::queue_required(ctx, &issue).await?
+            && super::merge_queue::enqueue_if_ready(
                 ctx,
                 a,
                 &issue,
                 &repo,
-                false,
                 input.expected_head_oid.as_ref(),
             )
-            .await?;
+            .await?
+        {
             return Ok(EnablePullRequestAutoMergePayload {
                 pull_request: Some(pr(ctx, issue.id).await?),
                 client_mutation_id: input.client_mutation_id,
@@ -868,8 +871,23 @@ impl PullMutations {
         let a = guard(ctx)?;
         let (issue, repo) = pull_by_node(ctx, &input.pull_request_id).await?;
         let (o, r) = owner_repo(&repo);
+        // Author or write access (same check as the queue's dequeue);
+        // clears a pending auto-merge.
         into_json(bgh_pulls::automerge::delete(st(ctx), user(a), Path((o, r, issue.number))).await)
             .await?;
+        // On a queue branch auto-merge means "in the queue": leave it, like
+        // `gh pr merge --disable-auto` on GitHub.
+        if super::merge_queue::queue_required(ctx, &issue).await? {
+            bgh_pulls::merge_queue::dequeue(
+                &gql(ctx).state,
+                repo.repo.id,
+                issue.id,
+                Some(a.user.id),
+                "dequeued",
+            )
+            .await
+            .map_err(crate::ctx::api_err)?;
+        }
         Ok(DisablePullRequestAutoMergePayload {
             pull_request: Some(pr(ctx, issue.id).await?),
             client_mutation_id: input.client_mutation_id,

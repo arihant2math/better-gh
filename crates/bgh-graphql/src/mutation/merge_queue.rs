@@ -1,6 +1,6 @@
 //! Merge queue mutations (`bgh_pulls::merge_queue`): `enqueuePullRequest`,
 //! `dequeuePullRequest`, and the enqueue path of
-//! `enablePullRequestAutoMerge` ([`enqueue`]).
+//! `enablePullRequestAutoMerge` ([`enqueue_if_ready`]).
 
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ use bgh_core::prelude::*;
 use bgh_pulls::merge_queue::{self as mq, web};
 use serde_json::json;
 
-use super::{body, decode, guard, into_json, issue_by_node, owner_repo, repo_by_id};
+use super::{body, decode, guard, into_json, issue_by_node, owner_repo};
 use crate::ctx::{GResult, OrGql, err, gql, not_found};
 use crate::loaders::{Loaders, RepoRow, one};
 use crate::model::merge_queue::MergeQueueEntry;
@@ -61,16 +61,7 @@ pub async fn enqueue(
     expected_head_oid: Option<&GitObjectID>,
 ) -> GResult<MergeQueueEntry> {
     let g = gql(ctx);
-    if let Some(oid) = expected_head_oid {
-        let l = ctx.data_unchecked::<Loaders>();
-        let head = one(&l.pulls, issue.id).await?.map(|p| p.head_sha.clone());
-        if head.as_deref() != Some(oid.0.as_str()) {
-            return Err(err(
-                "UNPROCESSABLE",
-                "Head branch was modified. Review and try again.",
-            ));
-        }
-    }
+    check_head(ctx, issue, expected_head_oid).await?;
     let (o, r) = owner_repo(repo);
     into_json(
         web::put(
@@ -87,6 +78,56 @@ pub async fn enqueue(
         .gql()?
         .map(|e| MergeQueueEntry(Arc::new(e)))
         .ok_or_else(|| err("UNPROCESSABLE", "Pull request left the merge queue"))
+}
+
+/// 422 unless `issue`'s head is `expected` (when given).
+async fn check_head(
+    ctx: &Context<'_>,
+    issue: &db::Issue,
+    expected: Option<&GitObjectID>,
+) -> GResult<()> {
+    let Some(oid) = expected else {
+        return Ok(());
+    };
+    let l = ctx.data_unchecked::<Loaders>();
+    let head = one(&l.pulls, issue.id).await?.map(|p| p.head_sha.clone());
+    if head.as_deref() != Some(oid.0.as_str()) {
+        return Err(err(
+            "UNPROCESSABLE",
+            "Head branch was modified. Review and try again.",
+        ));
+    }
+    Ok(())
+}
+
+/// `enablePullRequestAutoMerge` on a queue branch: add the PR to the queue
+/// now when only status checks (which run on the merge group) are
+/// missing; `false` when other requirements (e.g. reviews) still block it,
+/// in which case the caller enables auto-merge and
+/// `bgh_pulls::automerge::try_merge` enqueues it once they pass.
+pub async fn enqueue_if_ready(
+    ctx: &Context<'_>,
+    a: &AuthContext,
+    issue: &db::Issue,
+    repo: &RepoRow,
+    expected_head_oid: Option<&GitObjectID>,
+) -> GResult<bool> {
+    let g = gql(ctx);
+    check_head(ctx, issue, expected_head_oid).await?;
+    let (o, r) = owner_repo(repo);
+    let (access, pull) = bgh_pulls::pulls::load_pull(&g.state, Some(a), &o, &r, issue.number)
+        .await
+        .gql()?;
+    match mq::enqueue(&g.state, &access, &pull, &a.user, false).await {
+        Ok(_) => Ok(true),
+        // `merge_queue::enqueue`'s requirements message.
+        Err(ApiError::Validation { message, .. })
+            if message.starts_with("Pull request is not ready for the merge queue") =>
+        {
+            Ok(false)
+        }
+        Err(e) => Err(crate::ctx::api_err(e)),
+    }
 }
 
 /// Whether `issue`'s base branch requires the merge queue.
@@ -152,21 +193,26 @@ impl MergeQueueMutations {
         };
         let eid = decode(&input.id, &[NodeType::MergeQueueEntry], "a MergeQueueEntry")?;
         let g = gql(ctx);
-        let pull_id: Option<i64> = sqlx::query_scalar(
-            "SELECT pull_id FROM merge_queue_entries
+        let row: Option<(i64, i64)> = sqlx::query_as(
+            "SELECT repo_id, pull_id FROM merge_queue_entries
               WHERE id = $1 AND state IN ('queued', 'awaiting_checks', 'mergeable')",
         )
         .bind(eid)
         .fetch_optional(&g.state.db)
         .await
         .gql()?;
-        let pull_id = pull_id.ok_or_else(missing)?;
+        let (repo_id, pull_id) = row.ok_or_else(missing)?;
+        // An entry of a repository the viewer can't read doesn't exist.
+        let l = ctx.data_unchecked::<Loaders>();
+        let repo = one(&l.repos, repo_id)
+            .await?
+            .filter(|r| r.readable())
+            .ok_or_else(missing)?;
         let entry = mq::entry_for_pull(&g.state.db, pull_id)
             .await
             .gql()?
             .filter(|e| e.id == eid)
             .ok_or_else(missing)?;
-        let repo = repo_by_id(ctx, entry.repo_id).await?;
         let (o, r) = owner_repo(&repo);
         into_json(
             web::delete(

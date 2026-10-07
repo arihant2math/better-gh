@@ -85,6 +85,8 @@ pub struct Loaders {
     pub issue_deps: DataLoader<crate::model::issue_type::DependencySummaryLoader>,
     pub minimized: DataLoader<crate::model::moderation::MinimizedLoader>,
     pub content_edits: DataLoader<crate::model::moderation::ContentEditsLoader>,
+    pub queue_entries: DataLoader<QueueEntryLoader>,
+    pub queue_configs: DataLoader<QueueConfigLoader>,
 }
 
 impl Loaders {
@@ -149,6 +151,8 @@ impl Loaders {
                 crate::model::moderation::ContentEditsLoader(s()),
                 tokio::spawn,
             ),
+            queue_entries: DataLoader::new(QueueEntryLoader(s()), tokio::spawn),
+            queue_configs: DataLoader::new(QueueConfigLoader(s()), tokio::spawn),
         }
     }
 }
@@ -1057,5 +1061,82 @@ impl Loader<i64> for PinnedLoader {
                 .await
                 .map_err(db_err)?;
         Ok(keys.iter().map(|k| (*k, pinned.contains(k))).collect())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Merge queues
+// ---------------------------------------------------------------------------
+
+/// The active merge queue entry of a pull request (by pull id), with its
+/// position in its (repo, base) queue: one query for every key.
+pub struct QueueEntryLoader(pub AppState);
+
+impl Loader<i64> for QueueEntryLoader {
+    type Value = Arc<bgh_pulls::merge_queue::Entry>;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[i64]) -> LResult<i64, Self::Value> {
+        // Positions are numbered over the whole queue of each key's entry,
+        // in queue order (as `merge_queue::entries_for`).
+        let rows: Vec<bgh_pulls::merge_queue::Entry> = sqlx::query_as(
+            "WITH queues AS (
+                 SELECT DISTINCT repo_id, base_ref FROM merge_queue_entries
+                  WHERE pull_id = ANY($1) AND state IN ('queued', 'awaiting_checks', 'mergeable'))
+             SELECT * FROM (
+                 SELECT e.id, e.repo_id, e.pull_id, e.base_ref, e.head_sha, e.enqueuer_id,
+                        e.state, e.jump, e.group_id, e.failure_reason, e.enqueued_at,
+                        e.updated_at, i.number::bigint AS number, i.title, i.author_id,
+                        g.head_sha AS group_head_sha,
+                        row_number() OVER (PARTITION BY e.repo_id, e.base_ref
+                                           ORDER BY e.jump DESC, e.enqueued_at, e.id) AS position
+                   FROM merge_queue_entries e
+                   JOIN queues q ON q.repo_id = e.repo_id AND q.base_ref = e.base_ref
+                   JOIN issues i ON i.id = e.pull_id
+                   LEFT JOIN merge_groups g ON g.id = e.group_id
+                  WHERE e.state IN ('queued', 'awaiting_checks', 'mergeable')) t
+              WHERE t.pull_id = ANY($1)",
+        )
+        .bind(keys)
+        .fetch_all(&self.0.db)
+        .await
+        .map_err(db_err)?;
+        Ok(rows.into_iter().map(|e| (e.pull_id, Arc::new(e))).collect())
+    }
+}
+
+/// The merge queue settings of a (repo id, branch); absent when no merge
+/// queue rule targets the branch. Rules are loaded once per repository.
+pub struct QueueConfigLoader(pub AppState);
+
+impl Loader<(i64, String)> for QueueConfigLoader {
+    type Value = Arc<bgh_pulls::merge_queue::QueueConfig>;
+    type Error = Arc<ApiError>;
+
+    async fn load(&self, keys: &[(i64, String)]) -> LResult<(i64, String), Self::Value> {
+        let mut ids: Vec<i64> = keys.iter().map(|k| k.0).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let repos: Vec<db::Repository> = sqlx::query_as(&format!(
+            "SELECT {} FROM repositories WHERE id = ANY($1)",
+            db::Repository::COLUMNS
+        ))
+        .bind(&ids)
+        .fetch_all(&self.0.db)
+        .await
+        .map_err(db_err)?;
+        let mut out = HashMap::new();
+        for repo in repos {
+            let all = bgh_repos::protection::RepoRules::load(&self.0.db, &repo)
+                .await
+                .map_err(Arc::new)?;
+            for key in keys.iter().filter(|k| k.0 == repo.id) {
+                let rules = bgh_pulls::protection::effective(&all, &key.1);
+                if let Some(c) = bgh_pulls::merge_queue::QueueConfig::from_rules(&rules) {
+                    out.insert(key.clone(), Arc::new(c));
+                }
+            }
+        }
+        Ok(out)
     }
 }

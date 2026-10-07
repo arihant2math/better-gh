@@ -245,3 +245,179 @@ async fn auto_merge_enqueues_on_queue_branch() {
     assert_eq!(p["mergeQueueEntry"]["position"], 1);
     assert_eq!(p["mergeQueueEntry"]["state"], "QUEUED");
 }
+
+/// Add `user` to `alice/hello` with `permission`, accepting the invitation.
+async fn collaborator(app: &TestApp, alice: &TestUser, user: &TestUser, permission: &str) {
+    rest(
+        app,
+        alice,
+        "PUT",
+        &format!("/api/v3/repos/alice/hello/collaborators/{}", user.login),
+        json!({ "permission": permission }),
+    )
+    .await;
+    let invites = rest(
+        app,
+        user,
+        "GET",
+        "/api/v3/user/repository_invitations",
+        json!(null),
+    )
+    .await;
+    for inv in invites.as_array().cloned().unwrap_or_default() {
+        let id = inv["id"].as_i64().unwrap();
+        let res = app
+            .patch(&format!("/api/v3/user/repository_invitations/{id}"))
+            .auth(user)
+            .send()
+            .await;
+        assert!(res.status() < 300);
+    }
+}
+
+/// A `pull_request` ruleset on `main` requiring one approval.
+async fn require_approval(app: &TestApp, alice: &TestUser) {
+    rest(
+        app,
+        alice,
+        "POST",
+        "/api/v3/repos/alice/hello/rulesets",
+        json!({
+            "name": "Reviews",
+            "target": "branch",
+            "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+            "rules": [{"type": "pull_request",
+                       "parameters": {"required_approving_review_count": 1}}],
+        }),
+    )
+    .await;
+}
+
+const ENABLE_AUTO: &str = r#"mutation($id: ID!) {
+    enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: MERGE}) {
+      pullRequest { isInMergeQueue autoMergeRequest { mergeMethod } } } }"#;
+
+const DISABLE_AUTO: &str = r#"mutation($id: ID!) {
+    disablePullRequestAutoMerge(input: {pullRequestId: $id}) {
+      pullRequest { isInMergeQueue autoMergeRequest { mergeMethod } mergeQueueEntry { id } } } }"#;
+
+const PR_AUTO: &str = r#"query { repository(owner: "alice", name: "hello") {
+    pullRequest(number: 1) { isInMergeQueue autoMergeRequest { mergeMethod }
+      mergeQueueEntry { position } } } }"#;
+
+#[tokio::test]
+async fn auto_merge_waits_for_requirements_then_enqueues() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let bob = app.create_user("bob").await;
+    let pr = setup(&app, &alice).await;
+    require_approval(&app, &alice).await;
+    collaborator(&app, &alice, &bob, "push").await;
+    app.drain_jobs().await;
+
+    // An approval is missing: auto-merge is enabled, the PR waits.
+    let d = data(&app, &alice, ENABLE_AUTO, json!({"id": pr["node_id"]})).await;
+    let p = &d["enablePullRequestAutoMerge"]["pullRequest"];
+    assert_eq!(p["isInMergeQueue"], false);
+    assert_eq!(p["autoMergeRequest"]["mergeMethod"], "MERGE");
+    app.drain_jobs().await;
+    let d = data(&app, &alice, PR_AUTO, json!({})).await;
+    assert_eq!(d["repository"]["pullRequest"]["isInMergeQueue"], false);
+
+    // Approved: the PR joins the queue and auto-merge is cleared.
+    rest(
+        &app,
+        &bob,
+        "POST",
+        "/api/v3/repos/alice/hello/pulls/1/reviews",
+        json!({"event": "APPROVE"}),
+    )
+    .await;
+    app.drain_jobs().await;
+    let d = data(&app, &alice, PR_AUTO, json!({})).await;
+    let p = &d["repository"]["pullRequest"];
+    assert_eq!(p["isInMergeQueue"], true, "{d:#}");
+    assert_eq!(p["mergeQueueEntry"]["position"], 1);
+    assert_eq!(p["autoMergeRequest"], Value::Null);
+}
+
+#[tokio::test]
+async fn disable_auto_merge_dequeues() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let carol = app.create_user("carol").await;
+    let pr = setup(&app, &alice).await;
+    collaborator(&app, &alice, &carol, "pull").await;
+    let id = json!({"id": pr["node_id"]});
+    let d = data(&app, &alice, ENABLE_AUTO, id.clone()).await;
+    assert_eq!(
+        d["enablePullRequestAutoMerge"]["pullRequest"]["isInMergeQueue"],
+        true
+    );
+
+    // Neither the author nor a writer: refused, still queued.
+    let body = gql(&app, &carol, DISABLE_AUTO, id.clone()).await;
+    error_message(&body);
+    let d = data(&app, &alice, PR_AUTO, json!({})).await;
+    assert_eq!(d["repository"]["pullRequest"]["isInMergeQueue"], true);
+
+    let d = data(&app, &alice, DISABLE_AUTO, id.clone()).await;
+    let p = &d["disablePullRequestAutoMerge"]["pullRequest"];
+    assert_eq!(p["isInMergeQueue"], false);
+    assert_eq!(p["mergeQueueEntry"], Value::Null);
+    assert_eq!(p["autoMergeRequest"], Value::Null);
+    // Idempotent.
+    data(&app, &alice, DISABLE_AUTO, id).await;
+}
+
+#[tokio::test]
+async fn disable_auto_merge_clears_pending_request_on_queue_branch() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let pr = setup(&app, &alice).await;
+    require_approval(&app, &alice).await;
+    let id = json!({"id": pr["node_id"]});
+    let d = data(&app, &alice, ENABLE_AUTO, id.clone()).await;
+    let p = &d["enablePullRequestAutoMerge"]["pullRequest"];
+    assert_eq!(p["isInMergeQueue"], false);
+    assert_eq!(p["autoMergeRequest"]["mergeMethod"], "MERGE");
+    let d = data(&app, &alice, DISABLE_AUTO, id).await;
+    let p = &d["disablePullRequestAutoMerge"]["pullRequest"];
+    assert_eq!(p["isInMergeQueue"], false);
+    assert_eq!(p["autoMergeRequest"], Value::Null);
+}
+
+#[tokio::test]
+async fn dequeue_private_entry_does_not_leak() {
+    let app = bgh_server::test_app().await;
+    let alice = app.create_user("alice").await;
+    let bob = app.create_user("bob").await;
+    let pr = setup(&app, &alice).await;
+    rest(
+        &app,
+        &alice,
+        "PATCH",
+        "/api/v3/repos/alice/hello",
+        json!({"private": true}),
+    )
+    .await;
+    let d = data(&app, &alice, ENQUEUE, json!({"id": pr["node_id"]})).await;
+    let entry_id = d["enqueuePullRequest"]["mergeQueueEntry"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let missing_id =
+        bgh_core::node_id::encode(bgh_core::node_id::NodeType::MergeQueueEntry, 999_999);
+
+    let expect =
+        |id: &str| format!("Could not resolve to a MergeQueueEntry with the global id of '{id}'.");
+    let hidden = gql(&app, &bob, DEQUEUE, json!({"id": entry_id})).await;
+    let absent = gql(&app, &bob, DEQUEUE, json!({"id": missing_id})).await;
+    assert_eq!(error_message(&hidden), expect(&entry_id));
+    assert_eq!(error_message(&absent), expect(&missing_id));
+    assert_eq!(hidden["errors"][0]["type"], absent["errors"][0]["type"]);
+    // Still queued.
+    let d = data(&app, &alice, PR_QUEUE, json!({})).await;
+    assert_eq!(d["repository"]["pullRequest"]["isInMergeQueue"], true);
+}
