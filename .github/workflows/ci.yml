@@ -88,6 +88,10 @@ jobs:
           - { name: linux-arm64, os: ubuntu-24.04-arm, cache: clippy-linux-arm64 }
           - { name: macos-arm64, os: macos-latest, cache: clippy-macos-arm64 }
     runs-on: ${{ matrix.os }}
+    # Must match rust-test's: rust-cache hashes CARGO_* env into the key, and
+    # linux-x86_64 restores rust-test's entry. Check mode ignores it anyway.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       # openssl-sys (via webauthn-rs) links the system OpenSSL.
@@ -141,6 +145,12 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost/bgh
       REDIS_URL: redis://127.0.0.1/
+      # CI only (#85): no DWARF for workspace crates either (deps already have
+      # none), so a smaller target dir and cache and faster test-binary links.
+      # Backtraces keep function names (symbol table) and panic messages keep
+      # file:line; only per-frame file:line goes. Mirrored in rust-lint so the
+      # shared x86_64-debug cache key matches. Not set for release builds.
+      CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
