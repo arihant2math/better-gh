@@ -55,6 +55,7 @@ Archive all sessions; post a final status on #46; copy FLEET2.md into a docs PR 
 (Previous: 03:23 FULL SPEED.)
 
 ## History
+09:03: #323 READY (security APPROVE on d1584fb; head 2c0dac6 is a main merge; CI result green). Forwarded; reviewer archived. #329 (P-Critical) flagged to the orchestrator; the #312 r2 reviewer will report the overlap. No worker under wind-down unless directed. #315 lead confirmed fixes at 9a96154 (r2 running).
 08:55: orchestrator MERGED #320 (0fb60f3); #85 item 3 done; its worker archived. #85 item 4 (Docker prebuilt cargo-chef + buildx scope=bgh, cache-to main only) worker session_011YDWD7b7snUjdLSGdr2vq4, branch agent/85-docker-chef; it also ticks items 1-3 on #85.
 08:55: #320 READY (APPROVE on 5de74ec; head 48f6507 is a main merge; CI passed). Forwarded with the caveat that it saves runner minutes, not wall-clock. Reviewer archived; the worker is filling in Timings in the PR body. #85 item 4 is next after the merge.
 08:54: The #323 author reports a security APPROVE (waiting on reviewer session_015XU9jpf2gN1d2vsSNDywG6 to report the SHA). #329 (P-Critical, filed by the #323 reviewer) shares #138's root cause; asked the #312 r2 reviewer to run its repro on #312, and commented on #329. The #312 and #309 authors acknowledged the wind-down.
