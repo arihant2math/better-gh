@@ -5,7 +5,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
-| B frontend | session_01BF2q8w4NGQHvfGwdr2WaiP | #162 | #363 | session_01ReGmTBE9uy9LYP5q5eNrXU (sonnet) |
+| B frontend | session_01FwzbaGyJE4uCRRUTB6Vn72 | #156 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #362 (AdvisoryLock connect timeout, P-High) next after #181, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247; now #162; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358 → web of the backlog.
+B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
 ## Log
@@ -62,3 +62,4 @@ C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open f
 - 00:18Z: #357 merged as 2fc6db8; A worker+reviewer archived; fresh A worker for #362. TODO: verify main CI green on 2fc6db8 (its PR CI predates #355).
 - 00:18Z: B opened #363 (Fixes #162), green; sonnet reviewer spawned.
 - 00:24Z: #363 APPROVE @770f50d (=head), CI green; sent to coordinator. Filed #364 (inline error text follow-up). Main CI on 2fc6db8 (run 37706942560) in progress.
+- 00:26Z: #363 merged as 17f2a01; B worker+reviewer archived; fresh B worker for #156 (cross-account cache leak). Closed my dup #364 in favour of worker's #365 (queued in B). Main CI: run 37706942560 (2fc6db8) in progress, 37707598561 (17f2a01) pending.
