@@ -5,7 +5,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
-| B frontend | session_01Mnhu15W2Y1gc2EKjb9eY6Q | #255 | #369 | session_01L1ZriKfQdL8m4RMGK6Q9YX (opus) |
+| B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #362 (AdvisoryLock connect timeout, P-High) → #5 (P44 GraphQL org/repo/git; user-confirmed 01:0xZ; 4 sequential PRs, fresh worker each, opus reviewers + authz check on every new mutation, acceptance = Terraform+Backstage fixtures from the issue: (1) branch protection rules+rulesets, (2) commit history/trees/createCommitOnBranch, (3) org/team members+deployments+environments, (4) label mutations+cloneTemplateRepository+node() coverage) → #158, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367 → web of the backlog.
+B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367, #370 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
 ## Log
@@ -101,3 +101,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:05Z: User confirmed: #5 queued in lane A after #362, ahead of #158 (4 sequential PRs).
 - 01:09Z: B opened #369 (Fixes #255; #96 already fixed by #274/#295), green @4d234a0; opus reviewer session_01L1ZriKfQdL8m4RMGK6Q9YX (return_to security).
 - 01:12Z: #369 APPROVE @4d234a0 (=head), CI green; sent to coordinator. Nits to file after merge: SSO/SAML return_to builders (api/auth.ts:25, LoginPage.tsx:179) → withReturnTo; replaceHash('#') bare #; loginHrefFor alias.
+- 01:13Z: #369 merged as 27fe31a (#255 auto-closed); B worker+reviewer archived; filed #370 (nits, queued in B). #229 already closed (#301). Fresh B worker session_01LxeZ2H6K6CWF4y9HAkQHxa for #233.
