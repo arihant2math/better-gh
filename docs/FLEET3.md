@@ -6,7 +6,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | — |
 | B frontend | session_01MEwAYhDftCiBV5uWWXbvqt | #189 | — | — |
-| C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | #372 | session_01Wxf4ssodfe5Hs5gCzvUqKe (opus) |
+| C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | — | — |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -139,3 +139,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:18Z: Coordinator relayed user request: wind down from 03:20Z (no new items/workers/reviewers; finish #372 + #5 PR1, park PR1 as draft if not approved+green by ~04:30Z; idle lanes archived; final status on #46; archive all, delete triggers, send #46 link). Workers A/B warned. Triggers: trig_018WsqbM1oNGJR6bDQqKxVqd (02:25 check-in), trig_01SMYcWyEURJiGv5HpLJz4pp (03:20 wind-down).
 - 02:19Z: A: #5 PR1/4 open as #374, CI running.
 - 02:22Z: #372 APPROVE @55c9eb4 (=head), CI green; sent to coordinator. Nits to file after merge: 500 ms lock-hold in regression test; unify settle (bgh-repos metadata.rs drain-only, bgh-security fixed 3 rounds, bgh-pulls 40 ms sleep) into TestApp::settle.
+- 02:23Z: #372 merged as 2e56e18 (closes #343); C worker+reviewer archived; filed #376 (shared TestApp::settle + deterministic regression test). No open flaky issues; fresh C worker session_01N6s124BzQU31yCTnQ43Hf7 for #376 (small, test-only, deadline 03:20Z).
