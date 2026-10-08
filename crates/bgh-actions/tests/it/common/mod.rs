@@ -84,21 +84,9 @@ impl WorkingCopy {
     }
 }
 
-/// Run jobs and event listeners until nothing is left.
-///
-/// Each round first waits for every durable listener to process every
-/// event emitted so far ([`TestApp::settle_events`] also flushes events
-/// passed to `EventBus::emit` directly, which reach the outbox
-/// asynchronously), so the jobs those listeners enqueue are visible to
-/// the drain; it stops once a round finds no job to run.
+/// Run event listeners and jobs until nothing is left ([`TestApp::settle`]).
 pub async fn settle(app: &TestApp) {
-    for _ in 0..200 {
-        app.settle_events().await;
-        if app.drain_jobs().await == 0 {
-            return;
-        }
-    }
-    panic!("jobs did not settle");
+    app.settle().await;
 }
 
 pub async fn runs(app: &TestApp, user: &TestUser, repo: &str) -> Vec<Value> {

@@ -393,6 +393,25 @@ impl TestApp {
         );
     }
 
+    /// Run event listeners and background jobs to a fixpoint.
+    ///
+    /// Each round first waits for every durable listener to process every
+    /// event emitted so far ([`TestApp::settle_events`] also flushes events
+    /// passed to `EventBus::emit` directly, which reach the outbox
+    /// asynchronously), so the jobs those listeners enqueue are visible to
+    /// the drain; it stops once a round runs no job and panics if that
+    /// never happens. Jobs scheduled for later (including retries in
+    /// backoff) are not run.
+    pub async fn settle(&self) {
+        for _ in 0..200 {
+            self.settle_events().await;
+            if self.drain_jobs().await == 0 {
+                return;
+            }
+        }
+        panic!("event listeners and jobs did not settle");
+    }
+
     /// Absolute URL for a path on the TCP listener.
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)

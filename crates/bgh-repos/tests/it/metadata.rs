@@ -33,13 +33,10 @@ async fn put_file(app: &TestApp, user: &TestUser, repo: &str, path: &str, conten
     assert!(res.status() == 200 || res.status() == 201, "{}", res.text());
 }
 
-/// Run jobs until the queue is empty (post-receive enqueues detection).
+/// Run listeners and jobs until nothing is left (post-receive enqueues
+/// detection).
 async fn settle(app: &TestApp) {
-    for _ in 0..5 {
-        if app.drain_jobs().await == 0 {
-            break;
-        }
-    }
+    app.settle().await;
 }
 
 fn license_simple_keys(v: &Value) {

@@ -128,11 +128,7 @@ pub async fn seeded(app: &TestApp, user: &TestUser, name: &str, files: &[(&str, 
 /// Run jobs and listeners until nothing is left (post-receive job → push
 /// event → scan job).
 pub async fn settle(app: &TestApp) {
-    for _ in 0..3 {
-        app.drain_jobs().await;
-        app.settle_events().await;
-    }
-    app.drain_jobs().await;
+    app.settle().await;
 }
 
 /// Turn secret scanning (and optionally push protection) on.

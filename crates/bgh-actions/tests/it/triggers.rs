@@ -567,7 +567,8 @@ async fn issues_and_issue_comment_activity_types() {
 /// Regression for #343: a direct `EventBus::emit` reaches the outbox
 /// through an asynchronous writer, so `settle` must wait for it (and for
 /// the listeners) rather than for a quiet job queue. The outbox is locked
-/// while settling so the writer cannot append before `settle` checks.
+/// while settling: `settle` must not return while the writer is blocked
+/// on that lock.
 #[tokio::test]
 async fn settle_waits_for_events_emitted_outside_a_tx() {
     let issues = wf("  issues:\n    types: [pinned]");
@@ -590,8 +591,8 @@ async fn settle_waits_for_events_emitted_outside_a_tx() {
             .await
             .unwrap();
 
-    // Hold off outbox inserts (reads still proceed) until well after a
-    // settle that only watched the job queue would have returned.
+    // Hold off outbox inserts (reads still proceed) until the writer is
+    // blocked on the lock, then check that settle is still waiting.
     let mut lock = app.state.db.begin().await.unwrap();
     sqlx::query("LOCK TABLE event_outbox IN EXCLUSIVE MODE")
         .execute(&mut *lock)
@@ -602,12 +603,42 @@ async fn settle_waits_for_events_emitted_outside_a_tx() {
         issue_id,
         actor_id: alice.id,
     });
-    let release = tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        lock.rollback().await.unwrap();
-    });
-    settle(&app).await;
-    release.await.unwrap();
+    let settling = settle(&app);
+    tokio::pin!(settling);
+    // Wait for the writer to block on the lock, then keep holding it well
+    // past the time any settle that ignores the outbox needs to return.
+    // A correct settle cannot return here: `settle_events` flushes the
+    // writer, which is blocked until the lock is released.
+    let held = async {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let waiting: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_locks
+                  WHERE relation = 'event_outbox'::regclass AND NOT granted
+                    AND database = (SELECT oid FROM pg_database
+                                     WHERE datname = current_database())",
+            )
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+            if waiting > 0 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "outbox writer never blocked on the lock"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    };
+    tokio::select! {
+        () = &mut settling => panic!("settle returned before the emitted event reached the outbox"),
+        () = held => {}
+    }
+    assert_eq!(runs_of(&app, &alice, "issues").await.len(), 0);
+    lock.rollback().await.unwrap();
+    settling.await;
     let rs = runs_of(&app, &alice, "issues").await;
     assert_eq!(rs.len(), 1);
     let p = payload_of(&app, rs[0]["id"].as_i64().unwrap()).await;
