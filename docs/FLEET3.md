@@ -1,6 +1,6 @@
-# FLEET3 — FOREMAN8 state
+# FLEET3 — FOREMAN9 state
 
-Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7Xkd3JPXv32wzv3nZSSw) · Coordinator: session_01U7ukQiQRpcMMA4n4VDVQR7
+Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4SBV7BPC5zy8yjUQD9AU) · Coordinator: session_01U7ukQiQRpcMMA4n4VDVQR7
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
@@ -132,3 +132,4 @@ FOREMAN8 (session_01PM4SBV7BPC5zy8yjUQD9AU) hands off at 262k context. Main CI i
 
 Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:09Z: FOREMAN8 handed off to FOREMAN9 session_013BAw4vJVDBeTY5fj4G8BmX; coordinator informed.
+- 02:12Z: FOREMAN9 active; A/B/C + #372 reviewer told to report to FOREMAN9; status sent to coordinator. #372 green @55c9eb4, no review posted yet.
