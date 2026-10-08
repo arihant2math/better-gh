@@ -4,7 +4,7 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | #357 @3269e31 | session_0178thbBf64HrWoBpDo3PABv (opus) |
+| A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
 | B frontend | session_01BF2q8w4NGQHvfGwdr2WaiP | #162 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
@@ -59,3 +59,4 @@ C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open f
 - 00:09Z: #355 APPROVE @85a51fb (=head), CI green; sent to coordinator. Nits → #353.
 - 00:10Z: #355 merged as 87088f4 (closes #341); C worker+reviewer archived; fresh C worker for #343. Filed #362 (AdvisoryLock connect timeout) → front of lane A after #181.
 - 00:17Z: #357 APPROVE @3269e31 (=head), CI green; sent to coordinator. Nits (manage_accounts.rs:317 String role; explicit Some(OrgRole::Member) arms) → #158 session.
+- 00:18Z: #357 merged as 2fc6db8; A worker+reviewer archived; fresh A worker for #362. TODO: verify main CI green on 2fc6db8 (its PR CI predates #355).
