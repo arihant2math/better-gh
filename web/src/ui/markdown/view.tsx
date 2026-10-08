@@ -5,7 +5,7 @@
  */
 import { useEffect, useReducer, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { api } from '../../api/client';
-import { navigate, prefetch } from '../../router';
+import { navigate, prefetch, replaceHash } from '../../router';
 import { cx } from '../Button';
 import { enhance } from './enhance';
 import { renderMarkdown, type RenderContext } from './render';
@@ -74,7 +74,7 @@ function handleClick(e: ReactMouseEvent<HTMLElement>, root: HTMLElement, source:
   if (!el) return false;
   e.preventDefault();
   el.scrollIntoView({ block: 'start' });
-  history.replaceState(history.state, '', href);
+  replaceHash(href);
   return true;
 }
 

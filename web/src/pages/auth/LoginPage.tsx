@@ -6,7 +6,7 @@ import { session } from '../../app/session';
 import type { PublicSiteInfo } from '../../app/site';
 import { passkeySignIn, securityKeyTwoFactor, webauthnError } from '../../api/webauthn';
 import { getBoot, isMockMode, type BootData } from '../../boot';
-import { Link, navigate, returnTo, useLocation } from '../../router';
+import { Link, navigate, returnTo, useLocation, withReturnTo } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { ArrowLeftIcon, DeviceMobileIcon, KeyIcon, ShieldLockIcon } from '../../ui/icons';
@@ -231,7 +231,7 @@ function Login({ search }: { search: string }) {
       below={
         config.signupEnabled ? (
           <>
-            New to {config.siteName}? <Link to={`/signup${target === '/' ? '' : `?return_to=${encodeURIComponent(target)}`}`}>Create an account</Link>
+            New to {config.siteName}? <Link to={withReturnTo('/signup', target)}>Create an account</Link>
           </>
         ) : undefined
       }

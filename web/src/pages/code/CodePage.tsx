@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useState } from 'react';
 import { isSha } from '../../api/endpoints';
 import { RefPicker } from '../../components/code/RefPicker';
-import { Link, navigate, useLocation, useParams } from '../../router';
+import { Link, navigate, replaceHash, useLocation, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
@@ -17,7 +17,7 @@ import { prefetchFileList, useRefsData, useTree } from './data';
 import { DirView } from './DirView';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
-import { copyText, resolveTarget, setHash, type CodeTarget } from './util';
+import { copyText, resolveTarget, type CodeTarget } from './util';
 import { codeUrl, historyUrl, parseCodeUrl } from '../../components/code/urls';
 
 const FileFinder = lazy(() => import('./FileFinder'));
@@ -101,7 +101,7 @@ const CodeView = observer(function CodeView({ repo, t, mode }: { repo: Repo; t: 
     escape: {
       handler: () => {
         if (!window.location.hash) return false;
-        setHash('');
+        replaceHash('');
       },
     },
   });

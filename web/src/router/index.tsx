@@ -202,6 +202,8 @@ if (typeof window !== 'undefined') {
     pendingScroll = { restore: scrollPositions.get(scrollKey) ?? 0 };
     notify();
   });
+  // In-page `<a href="#x">` links change only the hash.
+  window.addEventListener('hashchange', () => notify());
 }
 
 export interface NavigateOptions {
@@ -231,6 +233,21 @@ export function sameOriginPath(to: string, origin: string): string | null {
 export function returnTo(search = window.location.search, origin = window.location.origin): string {
   const ret = new URLSearchParams(search).get('return_to');
   return (ret && sameOriginPath(ret, origin)) || '/';
+}
+
+/** The current `pathname + search + hash`. */
+export function currentHref(): string {
+  return window.location.pathname + window.location.search + window.location.hash;
+}
+
+/** `path` with a `?return_to=to`, omitted when `to` is home. */
+export function withReturnTo(path: string, to: string): string {
+  return to === '/' ? path : `${path}?return_to=${encodeURIComponent(to)}`;
+}
+
+/** The sign-in page, returning to `to` (default: here) afterwards. */
+export function loginHref(to = currentHref()): string {
+  return withReturnTo('/login', to);
 }
 
 export function navigate(to: string, opts: NavigateOptions = {}): void {
@@ -282,6 +299,34 @@ export function setQuery(patch: Record<string, string | null | undefined>, opts:
   }
   const s = q.toString();
   navigate(window.location.pathname + (s ? `?${s}` : ''), opts);
+}
+
+/** Replace the URL hash (`#x`, or '' to clear) in place: no history entry or scroll reset. */
+export function replaceHash(hash: string): void {
+  const next = hash && !hash.startsWith('#') ? `#${hash}` : hash;
+  if (next === window.location.hash || (next === '' && !window.location.hash)) return;
+  history.replaceState(history.state, '', window.location.pathname + window.location.search + next);
+  notify();
+}
+
+const getHash = () => window.location.hash;
+
+/** Current `location.hash`; re-renders on `replaceHash`, navigation and hash links. */
+export function useHash(): string {
+  return useSyncExternalStore(subscribe, getHash, () => '');
+}
+
+/** The route matching the current URL (non-reactive; see `useCurrentMatch`). */
+export function currentMatch(): Match | null {
+  return matchPath(window.location.pathname);
+}
+
+/**
+ * The route matching the current URL, for components outside `RouterView`
+ * (where `useMatch` is null); re-renders on navigation.
+ */
+export function useCurrentMatch(): Match | null {
+  return matchPath(useLocation().pathname);
 }
 
 // ----------------------------------------------------------------- rendering

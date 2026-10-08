@@ -22,6 +22,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { replaceHash } from '../../../router';
 import { jobLogStreamPath, jobLogUrl, type JobStep, type WorkflowJob } from '../../../api/actions';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
 import { Kbd } from '../../../ui/Badge';
@@ -348,7 +349,7 @@ export function JobLogView({ owner, repo, job, className }: JobLogViewProps) {
         : { step: stepNum, from: n, to: n, anchor: n };
       setSel(next);
       const hash = `#step:${stepNum}:${next.from}${next.to !== next.from ? `-${next.to}` : ''}`;
-      history.replaceState(history.state, '', `${location.pathname}${location.search}${hash}`);
+      replaceHash(hash);
     },
     [sel],
   );

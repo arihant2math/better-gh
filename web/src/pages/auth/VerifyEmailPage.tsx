@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { verifyEmail, type VerifiedEmail } from '../../api/auth';
 import { session } from '../../app/session';
-import { navigate, useLocation } from '../../router';
+import { loginHref, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
 import { AlertIcon, CheckCircleIcon } from '../../ui/icons';
@@ -28,7 +28,7 @@ export default observer(function VerifyEmailPage() {
       Go to email settings
     </Button>
   ) : (
-    <Button size="lg" variant="primary" block onClick={() => navigate('/login?return_to=%2Fsettings%2Femails')}>
+    <Button size="lg" variant="primary" block onClick={() => navigate(loginHref('/settings/emails'))}>
       Sign in
     </Button>
   );
