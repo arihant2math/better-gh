@@ -6,9 +6,10 @@ import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
 import { AlertIcon, CheckCircleIcon } from '../../ui/icons';
 import { AuthLayout, authStyles as styles, messageOf, StateBlock, statusOf, useLoad } from './AuthPage';
+import { resettableMap } from '../../api/reset';
 
 /** Tokens are single use: one request per token even if the page remounts. */
-const inflight = new Map<string, Promise<VerifiedEmail>>();
+const inflight = resettableMap<string, Promise<VerifiedEmail>>();
 
 function verifyOnce(token: string): Promise<VerifiedEmail> {
   let p = inflight.get(token);

@@ -39,6 +39,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import review from '../pulls/Review.module.css';
 import styles from './CommitComments.module.css';
+import { onReset, resettableSet, sameSession } from '../../api/reset';
 
 const EMOJI: Record<CommitReactionContent, string> = {
   '+1': '👍',
@@ -57,14 +58,17 @@ const HideDialog = lazy(() => import('../issues/Moderation').then((m) => ({ defa
 
 /** Hidden states of loaded commit comments (not part of GitHub's REST shape). */
 const hiddenReasons = observable.map<number, string>();
+onReset(() => runInAction(() => hiddenReasons.clear()));
 
 function useHiddenStates(repo: Repo, comments: CommitComment[] | undefined) {
   const ids = (comments ?? []).map((c) => c.id).join(',');
   useEffect(() => {
     if (!ids) return;
     const list = ids.split(',').map(Number);
+    const live = sameSession();
     minimizedStates(repo.owner, repo.name, 'commit_comment', list).then(
       (states) =>
+        live() &&
         runInAction(() => {
           for (const id of list) hiddenReasons.delete(id);
           for (const st of states) if (st.minimizedReason) hiddenReasons.set(st.id, st.minimizedReason);
@@ -87,7 +91,7 @@ async function setHidden(repo: Repo, c: CommitComment, reason: MinimizedReason |
 }
 
 /** Reactions the viewer toggled this session (`{id}:{content}`); the REST list has no "viewer reacted" flag. */
-const myReactions = new Set<string>();
+const myReactions = resettableSet<string>();
 
 function useComments(repo: Repo, sha: string | undefined) {
   const key = sha ? commitCommentKeys.forCommit(repo.owner, repo.name, sha) : null;

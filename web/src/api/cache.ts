@@ -1,4 +1,5 @@
 import { useEffect, useReducer } from 'react';
+import { onReset, sameSession } from './reset';
 
 /**
  * Resource cache for data that is NOT in the synced store (file contents,
@@ -33,6 +34,9 @@ export interface ResourceOptions {
 
 const MAX_ENTRIES = 400;
 const entries = new Map<string, Entry>();
+// Everything goes on reset, `immutable` entries included: SHA-addressed
+// content can still be another viewer's private data.
+onReset(() => entries.clear());
 
 function touch(key: string, e: Entry): void {
   entries.delete(key);
@@ -55,8 +59,11 @@ function start<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions, 
     immutable: !!opts.immutable,
     listeners: new Set(),
   };
+  const live = sameSession();
   const p = loader().then(
     (value) => {
+      // Started for the previous viewer: hand the value to that caller only.
+      if (!live()) return value;
       entry.status = 'ok';
       entry.value = value;
       entry.error = undefined;
@@ -65,6 +72,7 @@ function start<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions, 
       return value;
     },
     (error: unknown) => {
+      if (!live()) throw error;
       // Keep stale data on revalidation failure.
       if (entry.status !== 'ok') entry.status = 'error';
       entry.error = error;
@@ -106,6 +114,18 @@ export function peek<T>(key: string): T | undefined {
 export function refresh<T>(key: string, loader: () => Promise<T>, opts: ResourceOptions = {}): Promise<T> {
   const e = entries.get(key) as Entry<T> | undefined;
   return start(key, loader, opts, e).promise;
+}
+
+/**
+ * Cached value for `key` if it was fetched (or set) at most `maxAgeMs` ago,
+ * for callers that run their own request (abortable, per keystroke) and store
+ * the result with `mutate`.
+ */
+export function peekFresh<T>(key: string, maxAgeMs: number): T | undefined {
+  const e = entries.get(key) as Entry<T> | undefined;
+  if (e?.status !== 'ok' || Date.now() - e.fetchedAt > maxAgeMs) return undefined;
+  touch(key, e);
+  return e.value;
 }
 
 export function invalidate(prefix: string): void {

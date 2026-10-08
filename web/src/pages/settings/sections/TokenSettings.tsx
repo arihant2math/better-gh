@@ -16,11 +16,13 @@ import { FineGrainedSection, NewFineGrainedToken } from '../developer/FineGraine
 import { dateInDays, expiresInDays, expiryStatus, formatDate, selectedScopes, type ExpiryChoice } from '../developer/logic';
 import { ScopeTree } from '../developer/ScopeTree';
 import { useList } from '../developer/useList';
+import { onReset } from '../../../api/reset';
 
 const LIST_KEY = 'dev:tokens';
 
 /** The token just created, kept in memory only until the list page unmounts. */
 let justCreated: AccessToken | null = null;
+onReset(() => (justCreated = null));
 
 /**
  * `/settings/tokens` (fine-grained + classic tokens), `/settings/tokens/new`
