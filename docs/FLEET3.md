@@ -6,7 +6,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | session_01DvsYP6qu5d4Y2CERtNDcZA (opus) |
 | B frontend | — (lane done: freeze) | — | — | — |
-| C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | — | — |
+| C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | #379 | session_01EJFrgfEermuAzyYjSP2ip8 (opus) |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -145,3 +145,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:30Z: B opened #377 (Fixes #189) @632d73d, CI running; sonnet reviewer session_01DPnzTscPYbqfXEWj5cgKpR (before 02:59Z cutoff).
 - 02:36Z: #377 APPROVE @632d73d (=head), CI green; sent to coordinator. Nits to file after merge: docs/packages/{p47-fine-grained-pats,p24-rulesets-ui,admin-web}.md stale pages/orgsettings; 1 unidentified web test file flaked once locally; lint rule misses vi.mock string paths. #374 green @a9d8a3f, review in progress.
 - 02:37Z: #377 merged as 08ad195 (closes #189); B worker+reviewer archived; filed #378 (nits). Lane B DONE per freeze. Verifying main CI on 08ad195.
+- 02:41Z: C opened #379 (Fixes #376) @dbc7ba9, CI running; opus reviewer session_01EJFrgfEermuAzyYjSP2ip8. All open PRs (#374, #379) have reviewers before 02:59Z cutoff; cutoff trigger deleted. No further agent launches.
