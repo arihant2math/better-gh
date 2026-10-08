@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { mutate, refresh, useResource } from '../../../api/cache';
+import { mutate, refresh, useResource } from '@/api/cache';
 import {
   alertsPrefix,
   getScanHistory,
@@ -12,14 +12,14 @@ import {
   type ScanHistory,
   type SecretScanningSettings,
   type SecurityAndAnalysisPatch,
-} from '../../../api/secretScanning';
-import { Banner, PageHeader, Section, Toggle, errorMessage } from '../../../components/settings/kit';
-import { formatDateTime } from '../../../components/admin/format';
-import { invalidateLists } from '../../../components/admin/usePagedList';
-import { Link } from '../../../router';
-import { Button } from '../../../ui/Button';
-import { SyncIcon } from '../../../ui/icons';
-import { toast } from '../../../ui/Toast';
+} from '@/api/secretScanning';
+import { Banner, PageHeader, Section, Toggle, errorMessage } from '@/components/settings/kit';
+import { formatDateTime } from '@/components/admin/format';
+import { invalidateLists } from '@/api/usePagedList';
+import { Link } from '@/router';
+import { Button } from '@/ui/Button';
+import { SyncIcon } from '@/ui/icons';
+import { toast } from '@/ui/Toast';
 import { CustomPatternsPanel } from '../../security/CustomPatternsPanel';
 import sec from '../../security/Security.module.css';
 import styles from '../RepoSettings.module.css';

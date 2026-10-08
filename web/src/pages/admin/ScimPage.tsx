@@ -12,7 +12,7 @@ import { Dialog } from '../../ui/Dialog';
 import { Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, ChevronLeftIcon, ChevronRightIcon, KeyIcon } from '../../ui/icons';
 import { Field, Input, Select } from '../../ui/Input';
-import { getSettings, listScim, scimBase, scimPath, scimUserNameFilter, type ScimGroup, type ScimUser } from './api';
+import { getSettings, listScim, scimBase, scimPath, scimUserNameFilter, type ScimGroup, type ScimUser } from '../../api/admin';
 import d from './AdminDetail.module.css';
 import sc from './scim.module.css';
 

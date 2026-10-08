@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, type CSSProperties, type KeyboardEvent } from 'react';
-import { cx } from '../../../ui/Button';
+import { cx } from '@/ui/Button';
 import type { IndentStyle } from './text';
 import styles from './Edit.module.css';
 

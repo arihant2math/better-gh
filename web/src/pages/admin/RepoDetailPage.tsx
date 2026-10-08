@@ -4,7 +4,7 @@ import styles from '../../components/admin/admin.module.css';
 import { StatTile } from '../../components/admin/charts';
 import { formatCount, formatDateTime, formatDuration, formatKb } from '../../components/admin/format';
 import { CopyButton, ErrorState, KeyValue, PageHeader, Panel, RadioCards, StatusPill, attempt, errorMessage, useConfirm, type PillStatus } from '../../components/admin/kit';
-import { invalidateLists, updateLists } from '../../components/admin/usePagedList';
+import { invalidateLists, updateLists } from '../../api/usePagedList';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Tag } from '../../ui/Badge';
@@ -48,7 +48,7 @@ import {
   type MaintenanceRun,
   type RepoDetail,
   type Visibility,
-} from './api';
+} from '../../api/admin';
 
 const enc = encodeURIComponent;
 const repoKey = (owner: string, repo: string) => `admin:repo:${owner}/${repo}`;

@@ -25,7 +25,7 @@ import {
   type LdapTestResult,
   type SamlCertInfo,
   type Visibility,
-} from './api';
+} from '../../api/admin';
 import {
   domainError,
   emptyOidc,

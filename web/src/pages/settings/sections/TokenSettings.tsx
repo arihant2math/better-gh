@@ -1,22 +1,22 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { session } from '../../../app/session';
-import { invalidate } from '../../../api/cache';
-import { createToken, deleteToken, listTokens, type AccessToken } from '../../../api/developerSettings';
-import { describeScope } from '../../../api/scopes';
-import { apiFieldErrors, Banner, ButtonRow, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section } from '../../../components/settings/kit';
-import { Link, navigate, useLocation, useQuery } from '../../../router';
-import { Button, cx } from '../../../ui/Button';
-import { AlertIcon, ArrowLeftIcon, KeyAsteriskIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+import { session } from '@/app/session';
+import { invalidate } from '@/api/cache';
+import { createToken, deleteToken, listTokens, type AccessToken } from '@/api/developerSettings';
+import { describeScope } from '@/api/scopes';
+import { apiFieldErrors, Banner, ButtonRow, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section } from '@/components/settings/kit';
+import { Link, navigate, useLocation, useQuery } from '@/router';
+import { Button, cx } from '@/ui/Button';
+import { AlertIcon, ArrowLeftIcon, KeyAsteriskIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { ListSkeleton, OneTimeSecret, lastUsedText, subPath } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { FineGrainedSection, NewFineGrainedToken } from '../developer/FineGrainedTokens';
 import { dateInDays, expiresInDays, expiryStatus, formatDate, selectedScopes, type ExpiryChoice } from '../developer/logic';
 import { ScopeTree } from '../developer/ScopeTree';
-import { useList } from '../developer/useList';
-import { onReset } from '../../../api/reset';
+import { useList } from '@/api/useList';
+import { onReset } from '@/api/reset';
 
 const LIST_KEY = 'dev:tokens';
 

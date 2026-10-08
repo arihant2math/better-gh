@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import type { SettingsScope } from '../../../api/actions';
-import { refresh, useResource } from '../../../api/cache';
-import { api, v3 } from '../../../api/client';
-import { errorMessage, isAccessError } from '../../../api/errors';
-import { Button } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { EmptyState, Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon, LockIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+import type { SettingsScope } from '@/api/actions';
+import { refresh, useResource } from '@/api/cache';
+import { api, v3 } from '@/api/client';
+import { errorMessage, isAccessError } from '@/api/errors';
+import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { EmptyState, Skeleton } from '@/ui/EmptyState';
+import { AlertIcon, LockIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import styles from './Settings.module.css';
 
 /** A cached REST resource: key + loader (shared by `useResource` and `refresh`). */
@@ -28,7 +28,7 @@ export function useRes<T>(r: Res<T> | null) {
 
 export const reload = <T,>(r: Res<T>): Promise<T> => refresh(r.key, r.load).catch(() => undefined as T);
 
-export { errorMessage, isAccessError } from '../../../api/errors';
+export { errorMessage, isAccessError } from '@/api/errors';
 
 export function toastError(title: string, e: unknown): void {
   toast({ kind: 'error', title, description: errorMessage(e) });

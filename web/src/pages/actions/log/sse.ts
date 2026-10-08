@@ -3,7 +3,7 @@
  * in-browser mock backend and tests can serve the stream), plus the job log
  * stream client with reconnect + backoff.
  */
-import { transport } from '../../../api/transport';
+import { transport } from '@/api/transport';
 
 export interface SseEvent {
   event: string;

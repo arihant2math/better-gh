@@ -4,7 +4,7 @@
  * (`/settings/tokens/new?type=fine-grained`). Part of the TokenSettings chunk.
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useResource, invalidate } from '../../../api/cache';
+import { useResource, invalidate } from '@/api/cache';
 import {
   createFineGrainedToken,
   deleteFineGrainedToken,
@@ -16,14 +16,14 @@ import {
   type FgSelection,
   type FgTokenOwner,
   type FineGrainedToken,
-} from '../../../api/fineGrainedTokens';
-import { apiFieldErrors, Banner, ButtonRow, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section } from '../../../components/settings/kit';
-import { Link, navigate } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button, cx } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon, ArrowLeftIcon, ClockIcon, KeyIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input, Select, Textarea } from '../../../ui/Input';
+} from '@/api/fineGrainedTokens';
+import { apiFieldErrors, Banner, ButtonRow, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section } from '@/components/settings/kit';
+import { Link, navigate } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button, cx } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { AlertIcon, ArrowLeftIcon, ClockIcon, KeyIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input, Select, Textarea } from '@/ui/Input';
 import appStyles from '../../apps/apps.module.css';
 import { RepoAccessPicker, type PickedRepo } from '../../apps/RepoAccessPicker';
 import { ListSkeleton, OneTimeSecret, lastUsedText } from './common';
@@ -50,8 +50,8 @@ import {
 } from './fineGrained';
 import fg from './fineGrained.module.css';
 import { expiryStatus, formatDate } from './logic';
-import { useList } from './useList';
-import { onReset } from '../../../api/reset';
+import { useList } from '@/api/useList';
+import { onReset } from '@/api/reset';
 
 export const FG_LIST_KEY = 'dev:fg-tokens';
 const OWNERS_KEY = 'dev:fg-owners';

@@ -1,26 +1,26 @@
 import { observer } from 'mobx-react-lite';
 import { useId, useState } from 'react';
-import { invalidate, useResource } from '../../../api/cache';
+import { invalidate, useResource } from '@/api/cache';
 import {
   deleteProtection,
   getProtection,
   listProtectionRules,
   putProtection,
   type BranchProtection,
-} from '../../../api/repoSettings';
-import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section, apiFieldErrors } from '../../../components/settings/kit';
-import { Link, navigate, useQuery } from '../../../router';
-import { store } from '../../../sync';
-import type { Repo } from '../../../sync/models';
-import { Button } from '../../../ui/Button';
-import { EmptyState } from '../../../ui/EmptyState';
-import { ArrowLeftIcon, GitBranchIcon, PencilIcon, PlusIcon, ShieldLockIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/api/repoSettings';
+import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section, apiFieldErrors } from '@/components/settings/kit';
+import { Link, navigate, useQuery } from '@/router';
+import { store } from '@/sync';
+import type { Repo } from '@/sync/models';
+import { Button } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
+import { ArrowLeftIcon, GitBranchIcon, PencilIcon, PlusIcon, ShieldLockIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { EMPTY_PROTECTION, fromProtection, protectionFormError, summarizeRule, toProtectionInput, type ProtectionForm } from '../model';
 import styles from '../RepoSettings.module.css';
 import { ChipInput, DefaultBranchDialog, ListSkeleton, LoadError, repoKey, useBranches, useLocalResource, type SectionProps } from '../shared';
-import { orNullOn404 } from '../../../api/client';
+import { orNullOn404 } from '@/api/client';
 
 export default observer(function BranchesSettings({ repo, rest, base }: SectionProps) {
   const query = useQuery();

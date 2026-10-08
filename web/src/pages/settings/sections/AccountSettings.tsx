@@ -1,13 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { KEYS, listIdentities, unlinkIdentity, useEditableResource, type SsoIdentity } from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Section, errorMessage } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { InfoIcon, KeyIcon, LinkIcon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+import { KEYS, listIdentities, unlinkIdentity, useEditableResource, type SsoIdentity } from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Section, errorMessage } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { InfoIcon, KeyIcon, LinkIcon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import { DeleteAccountDialog, RenameUserDialog } from './AccountDialogs';
 import styles from './userSettings.module.css';
 

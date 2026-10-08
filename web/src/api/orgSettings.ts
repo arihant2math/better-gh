@@ -9,10 +9,10 @@
  * paging); every list path carries a query string so `updateLists(prefix)`
  * with `…?` never matches a nested resource.
  */
-import { api, v3 } from '../../api/client';
-import { getBoot } from '../../boot';
-import { parseLink } from '../../components/admin/usePagedList';
-import type { HookDelivery, OrgMembership, RestTeam, SimpleUser, TeamSimple } from '../../api/types';
+import { api, v3 } from './client';
+import { getBoot } from '../boot';
+import { parseLink } from './usePagedList';
+import type { HookDelivery, OrgMembership, RestTeam, SimpleUser, TeamSimple } from './types';
 
 // ------------------------------------------------------------------ helpers
 

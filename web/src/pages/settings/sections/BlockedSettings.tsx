@@ -1,16 +1,16 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
-import { ApiError } from '../../../api/client';
-import { KEYS, blockUser, getUser, listBlocks, unblockUser, useEditableResource, type BlockedUser, type PublicUser } from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, ItemList, ItemRow, PageHeader, Section, errorMessage, useDebounced } from '../../../components/settings/kit';
-import { Link } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { BlockedIcon, CheckIcon, PersonIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { Spinner } from '../../../ui/Spinner';
-import { toast } from '../../../ui/Toast';
+import { ApiError } from '@/api/client';
+import { KEYS, blockUser, getUser, listBlocks, unblockUser, useEditableResource, type BlockedUser, type PublicUser } from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, ItemList, ItemRow, PageHeader, Section, errorMessage, useDebounced } from '@/components/settings/kit';
+import { Link } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { BlockedIcon, CheckIcon, PersonIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { Spinner } from '@/ui/Spinner';
+import { toast } from '@/ui/Toast';
 import styles from './userSettings.module.css';
 
 const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;

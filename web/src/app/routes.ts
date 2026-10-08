@@ -58,7 +58,7 @@ const RepoPeoplePage = () => import('../pages/repo/RepoPeoplePage');
 const InsightsPage = () => import('../pages/repo/insights/InsightsPage');
 const RepoSettings = () => import('../pages/repo-settings/RepoSettingsPage');
 const AdminLayout = () => import('../pages/admin/AdminLayout');
-const OrgSettingsLayout = () => import('../pages/orgsettings/OrgSettingsLayout');
+const OrgSettingsLayout = () => import('../pages/org-settings/OrgSettingsLayout');
 const ProjectsListPage = () => import('../pages/projects/ProjectsListPage');
 const ProjectPage = () => import('../pages/projects/ProjectPage');
 const WikiPage = () => import('../pages/wiki/WikiPage');
@@ -180,24 +180,24 @@ export function registerRoutes(): void {
     { path: '/site-admin/hooks', layout: AdminLayout, load: () => import('../pages/admin/HooksPage'), title: () => 'Global webhooks · Site admin' },
     { path: '/site-admin/actions/runners', layout: AdminLayout, load: () => import('../pages/admin/RunnersPage'), title: () => 'Runners · Site admin' },
     // Organization settings.
-    { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
-    { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
-    { path: '/organizations/:org/settings/members', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgMembersPage'), title: (p) => `Members · ${p.org}` },
-    { path: '/organizations/:org/settings/teams', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgTeamsPage'), title: (p) => `Teams · ${p.org}` },
-    { path: '/organizations/:org/settings/teams/:team', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
+    { path: '/organizations/:org/settings', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
+    { path: '/organizations/:org/settings/profile', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgProfilePage'), title: (p) => `Settings · ${p.org}` },
+    { path: '/organizations/:org/settings/members', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgMembersPage'), title: (p) => `Members · ${p.org}` },
+    { path: '/organizations/:org/settings/teams', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgTeamsPage'), title: (p) => `Teams · ${p.org}` },
+    { path: '/organizations/:org/settings/teams/:team', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
     {
       path: '/organizations/:org/settings/outside-collaborators',
       layout: OrgSettingsLayout,
-      load: () => import('../pages/orgsettings/OrgCollaboratorsPage'),
+      load: () => import('../pages/org-settings/OrgCollaboratorsPage'),
       title: (p) => `Outside collaborators · ${p.org}`,
     },
-    { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
-    { path: '/organizations/:org/settings/security', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecurityPage'), title: (p) => `Authentication security · ${p.org}` },
-    { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
-    { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
-    { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportPage'), title: (p) => `Import · ${p.org}` },
-    { path: '/organizations/:org/settings/mannequins', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgMannequinsPage'), title: (p) => `Mannequins · ${p.org}` },
-    { path: '/organizations/:org/settings/import/:id', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgImportDetailPage'), title: (p) => `Import #${p.id} · ${p.org}` },
+    { path: '/organizations/:org/settings/invitations', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgInvitationsPage'), title: (p) => `Invitations · ${p.org}` },
+    { path: '/organizations/:org/settings/security', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgSecurityPage'), title: (p) => `Authentication security · ${p.org}` },
+    { path: '/organizations/:org/settings/audit-log', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgAuditLogPage'), title: (p) => `Audit log · ${p.org}` },
+    { path: '/organizations/:org/settings/hooks', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgHooksPage'), title: (p) => `Webhooks · ${p.org}` },
+    { path: '/organizations/:org/settings/import', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgImportPage'), title: (p) => `Import · ${p.org}` },
+    { path: '/organizations/:org/settings/mannequins', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgMannequinsPage'), title: (p) => `Mannequins · ${p.org}` },
+    { path: '/organizations/:org/settings/import/:id', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgImportDetailPage'), title: (p) => `Import #${p.id} · ${p.org}` },
     // GitHub Apps (P17): org registrations and installations, public app pages and the install flow.
     { path: '/organizations/:org/settings/apps', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `GitHub Apps · ${p.org}` },
     { path: '/organizations/:org/settings/apps/*', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `GitHub Apps · ${p.org}` },
@@ -205,11 +205,11 @@ export function registerRoutes(): void {
     { path: '/organizations/:org/settings/installations/*', layout: OrgSettingsLayout, load: OrgAppsPage, title: (p) => `Installed GitHub Apps · ${p.org}` },
     { path: '/apps/:slug', load: AppPage, title: (p) => `${p.slug} · GitHub Apps` },
     { path: '/apps/:slug/installations/new', load: AppPage, title: (p) => `Install ${p.slug}` },
-    { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
-    { path: '/organizations/:org/settings/issue-types', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgIssueTypesPage'), title: (p) => `Issue types · ${p.org}` },
-    { path: '/organizations/:org/settings/security_analysis', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgSecretScanningPage'), title: (p) => `Secret scanning · ${p.org}` },
-    { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
-    { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/orgsettings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
+    { path: '/organizations/:org/settings/personal-access-tokens', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgPatPage'), title: (p) => `Personal access tokens · ${p.org}` },
+    { path: '/organizations/:org/settings/issue-types', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgIssueTypesPage'), title: (p) => `Issue types · ${p.org}` },
+    { path: '/organizations/:org/settings/security_analysis', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgSecretScanningPage'), title: (p) => `Secret scanning · ${p.org}` },
+    { path: '/organizations/:org/settings/rules', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
+    { path: '/organizations/:org/settings/rules/*', layout: OrgSettingsLayout, load: () => import('../pages/org-settings/OrgRulesetsPage'), title: (p) => `Rulesets · ${p.org}` },
     { path: '/search', load: () => import('../pages/search/SearchPage'), title: () => {
       const q = new URLSearchParams(window.location.search).get('q');
       return q ? `${q} · Search` : 'Search';
@@ -225,7 +225,7 @@ export function registerRoutes(): void {
     { path: '/users/:owner/projects/:number', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     { path: '/users/:owner/projects/:number/views/:view', load: ProjectPage, prefetch: prefetchProject, title: (p) => `Project #${p.number} · ${p.owner}` },
     // Organization `html_url`s (teams, people, repositories) — package P12.
-    { path: '/orgs/:org/teams/:team', load: () => import('../pages/orgsettings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
+    { path: '/orgs/:org/teams/:team', load: () => import('../pages/org-settings/OrgTeamPage'), title: (p) => `${p.team} · ${p.org}` },
     { path: '/orgs/:org/teams', load: AliasPage, title: (p) => `Teams · ${p.org}` },
     { path: '/orgs/:org/people', load: AliasPage, title: (p) => `People · ${p.org}` },
     { path: '/orgs/:org/repositories', load: AliasPage, title: (p) => `Repositories · ${p.org}` },

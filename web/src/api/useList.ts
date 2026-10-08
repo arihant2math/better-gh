@@ -1,7 +1,7 @@
 import { useCallback, useReducer, useRef, useState } from 'react';
-import { invalidate, load, useResource } from '../../../api/cache';
-import { toast } from '../../../ui/Toast';
-import { errorMessage } from '../../../components/settings/kit';
+import { invalidate, load, useResource } from './cache';
+import { toast } from '../ui/Toast';
+import { errorMessage } from '../components/settings/kit';
 
 /**
  * A REST-backed list (not synced) with optimistic add/remove on top of the

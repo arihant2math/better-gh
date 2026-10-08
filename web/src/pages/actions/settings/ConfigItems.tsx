@@ -16,16 +16,16 @@ import {
   updateVariable,
   type Secret,
   type SettingsScope,
-} from '../../../api/actions';
-import { fieldErrors } from '../../../api/errors';
-import { Tag } from '../../../ui/Badge';
-import { Button, IconButton } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { EmptyState } from '../../../ui/EmptyState';
-import { CodeIcon, LockIcon, PencilIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input, Textarea } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+} from '@/api/actions';
+import { fieldErrors } from '@/api/errors';
+import { Tag } from '@/ui/Badge';
+import { Button, IconButton } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { EmptyState } from '@/ui/EmptyState';
+import { CodeIcon, LockIcon, PencilIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input, Textarea } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import {
   ConfirmDialog,
   ErrorState,

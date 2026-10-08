@@ -13,7 +13,7 @@ import {
   type Resolution,
   type SecretScanningAlert,
 } from '../../api/secretScanning';
-import { invalidateLists } from '../../components/admin/usePagedList';
+import { invalidateLists } from '../../api/usePagedList';
 import { CopyButton, errorMessage } from '../../components/settings/kit';
 import { Link, useParams } from '../../router';
 import { Button, IconButton } from '../../ui/Button';

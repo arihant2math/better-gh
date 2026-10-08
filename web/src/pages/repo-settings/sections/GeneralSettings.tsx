@@ -9,19 +9,19 @@ import {
   updateRepo,
   type FullRepository,
   type RepoPatch,
-} from '../../../api/repoSettings';
-import { isPendingTransfer, requestTransfer } from '../../../api/lifecycle';
-import { session } from '../../../app/session';
-import { site, visibilityPolicy, type RepoVisibility } from '../../../app/site';
-import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Section, Toggle, useDebounced } from '../../../components/settings/kit';
-import { navigate } from '../../../router';
-import { store } from '../../../sync';
-import type { Repo } from '../../../sync/models';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { CheckIcon, GitBranchIcon, AlertIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/api/repoSettings';
+import { isPendingTransfer, requestTransfer } from '@/api/lifecycle';
+import { session } from '@/app/session';
+import { site, visibilityPolicy, type RepoVisibility } from '@/app/site';
+import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Section, Toggle, useDebounced } from '@/components/settings/kit';
+import { navigate } from '@/router';
+import { store } from '@/sync';
+import type { Repo } from '@/sync/models';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { CheckIcon, GitBranchIcon, AlertIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { MERGE_MESSAGE_OPTIONS, SQUASH_MESSAGE_OPTIONS, messageOptionId } from '../model';
 import styles from '../RepoSettings.module.css';
 import { PendingTransferBanner, usePendingTransfer } from './PendingTransfer';

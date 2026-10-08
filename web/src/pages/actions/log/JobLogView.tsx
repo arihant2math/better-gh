@@ -22,11 +22,11 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { replaceHash } from '../../../router';
-import { jobLogStreamPath, jobLogUrl, type JobStep, type WorkflowJob } from '../../../api/actions';
-import { useShortcuts } from '../../../shortcuts/useShortcuts';
-import { Kbd } from '../../../ui/Badge';
-import { cx, IconButton } from '../../../ui/Button';
+import { replaceHash } from '@/router';
+import { jobLogStreamPath, jobLogUrl, type JobStep, type WorkflowJob } from '@/api/actions';
+import { useShortcuts } from '@/shortcuts/useShortcuts';
+import { Kbd } from '@/ui/Badge';
+import { cx, IconButton } from '@/ui/Button';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -37,10 +37,10 @@ import {
   FoldIcon,
   SearchIcon,
   UnfoldIcon,
-} from '../../../ui/icons';
-import { Input } from '../../../ui/Input';
-import { Spinner } from '../../../ui/Spinner';
-import { Tooltip } from '../../../ui/Tooltip';
+} from '@/ui/icons';
+import { Input } from '@/ui/Input';
+import { Spinner } from '@/ui/Spinner';
+import { Tooltip } from '@/ui/Tooltip';
 import { Duration, StatusIcon, visualStatus } from '../shared';
 import { markMatches, parseAnsi, type AnsiSpan } from './ansi';
 import styles from './JobLog.module.css';

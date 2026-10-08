@@ -9,19 +9,19 @@ import {
   type Runner,
   type RunnerLabel,
   type SettingsScope,
-} from '../../../api/actions';
-import { listOrgGroups, runnerArch } from '../../../api/runners';
-import { Link } from '../../../router';
-import { Tag } from '../../../ui/Badge';
-import { Button, IconButton, cx } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { EmptyState } from '../../../ui/EmptyState';
-import { CheckIcon, CopyIcon, LockIcon, PlusIcon, ServerIcon, TrashIcon, XIcon } from '../../../ui/icons';
-import { Input } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { Spinner } from '../../../ui/Spinner';
-import { toast } from '../../../ui/Toast';
-import { Tooltip } from '../../../ui/Tooltip';
+} from '@/api/actions';
+import { listOrgGroups, runnerArch } from '@/api/runners';
+import { Link } from '@/router';
+import { Tag } from '@/ui/Badge';
+import { Button, IconButton, cx } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { EmptyState } from '@/ui/EmptyState';
+import { CheckIcon, CopyIcon, LockIcon, PlusIcon, ServerIcon, TrashIcon, XIcon } from '@/ui/icons';
+import { Input } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { Spinner } from '@/ui/Spinner';
+import { toast } from '@/ui/Toast';
+import { Tooltip } from '@/ui/Tooltip';
 import { ConfirmDialog, ErrorState, ListSkeleton, Section, errorMessage, reload, scopeKey, toastError, useHidden, useRes, type Res } from './shared';
 import styles from './Settings.module.css';
 

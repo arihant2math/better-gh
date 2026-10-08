@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useMemo } from 'react';
 import { repoListPaths } from '../../api/endpoints';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { EyeIcon, StarIcon } from '../../ui/icons';

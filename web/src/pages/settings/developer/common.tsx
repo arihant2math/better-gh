@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { CopyButton, ItemList } from '../../../components/settings/kit';
-import { Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon } from '../../../ui/icons';
+import { CopyButton, ItemList } from '@/components/settings/kit';
+import { Skeleton } from '@/ui/EmptyState';
+import { AlertIcon } from '@/ui/icons';
 import styles from './developer.module.css';
 
 /** A secret shown once (new token, new client secret): highlighted, with Copy. */

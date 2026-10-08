@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, plural } from '../../components/admin/format';
 import { Drawer, PageHeader, RadioCards, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
-import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
+import { invalidateLists, usePagedList } from '../../api/usePagedList';
 import { Link, setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar } from '../../ui/Badge';
@@ -12,7 +12,7 @@ import { EmptyState } from '../../ui/EmptyState';
 import { CheckIcon, LinkExternalIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { collaboratorsPrefix, convertToOutsideCollaborator, membersPath, removeMember, setMembership, type OrgRole } from './api';
+import { collaboratorsPrefix, convertToOutsideCollaborator, membersPath, removeMember, setMembership, type OrgRole } from '../../api/orgSettings';
 import { InviteDialog, RowMenu, useLoadAll, useOrgAccess, userCell } from './common';
 import type { SimpleUser } from '../../api/types';
 

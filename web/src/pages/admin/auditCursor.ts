@@ -4,7 +4,7 @@
  * read. Results are cached per query so going back renders instantly.
  */
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { searchAudit, type AdminAuditEntry, type AuditQuery } from './api';
+import { searchAudit, type AdminAuditEntry, type AuditQuery } from '../../api/admin';
 import { resettableMap } from '../../api/reset';
 
 export interface AuditListState {

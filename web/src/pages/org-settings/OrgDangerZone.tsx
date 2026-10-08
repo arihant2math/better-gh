@@ -9,7 +9,7 @@ import { Dialog } from '../../ui/Dialog';
 import { AlertIcon } from '../../ui/icons';
 import { Field, Input } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
-import { orgKey, type OrgFull } from './api';
+import { orgKey, type OrgFull } from '../../api/orgSettings';
 import { orgSettingsPath } from './OrgSettingsLayout';
 import local from './OrgSettings.module.css';
 

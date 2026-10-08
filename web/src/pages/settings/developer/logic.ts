@@ -1,5 +1,5 @@
 /** Pure helpers for the token and OAuth app forms (unit tested). */
-import { childScopes, scopeInfo, SCOPES } from '../../../api/scopes';
+import { childScopes, scopeInfo, SCOPES } from '@/api/scopes';
 
 // ------------------------------------------------------------------ scope tree
 

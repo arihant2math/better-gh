@@ -8,7 +8,7 @@ import { Banner } from '../../components/settings/kit';
 import { Skeleton } from '../../ui/EmptyState';
 import { AlertIcon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
-import { getOrg, listWithoutTwoFactor, orgKey, updateOrg, type NoTwoFactorAccount, type OrgFull } from './api';
+import { getOrg, listWithoutTwoFactor, orgKey, updateOrg, type NoTwoFactorAccount, type OrgFull } from '../../api/orgSettings';
 import { OwnerRequired, useOrgAccess } from './common';
 import local from './OrgSettings.module.css';
 

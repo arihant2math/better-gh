@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError } from '../../../api/client';
+import { ApiError } from '@/api/client';
 
 const api = vi.hoisted(() => ({
   listSecrets: vi.fn(),
@@ -16,7 +16,7 @@ const api = vi.hoisted(() => ({
   listOrgSecretsForRepo: vi.fn(),
   listOrgVariablesForRepo: vi.fn(),
 }));
-vi.mock('../../../api/actions', () => api);
+vi.mock('@/api/actions', () => api);
 vi.mock('./sealedBox', () => ({ sealSecret: () => 'sealed' }));
 
 const { ConfigList } = await import('./ConfigItems');

@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatKb, plural } from '../../components/admin/format';
 import { PageHeader, SearchInput, StatusPill, errorMessage } from '../../components/admin/kit';
-import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
+import { invalidateLists, usePagedList } from '../../api/usePagedList';
 import { navigate, setQuery, useQuery } from '../../router';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -14,7 +14,7 @@ import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { createUser, usersPath, type AccountSummary } from './api';
+import { createUser, usersPath, type AccountSummary } from '../../api/admin';
 
 const FILTERS = [
   { id: '', label: 'All' },

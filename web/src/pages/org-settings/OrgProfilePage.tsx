@@ -24,7 +24,7 @@ import {
   type DefaultRepoPermission,
   type OrgFull,
   type OrgPatch,
-} from './api';
+} from '../../api/orgSettings';
 import { useOrgAccess } from './common';
 import { OrgDangerZone } from './OrgDangerZone';
 import local from './OrgSettings.module.css';

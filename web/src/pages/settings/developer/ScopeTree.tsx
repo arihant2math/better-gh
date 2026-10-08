@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { childScopes, topScopes, type ScopeInfo } from '../../../api/scopes';
-import { cx } from '../../../ui/Button';
+import { childScopes, topScopes, type ScopeInfo } from '@/api/scopes';
+import { cx } from '@/ui/Button';
 import styles from './developer.module.css';
 import { scopeState, toggleScope, type CheckState } from './logic';
 

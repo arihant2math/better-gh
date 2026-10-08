@@ -1,5 +1,5 @@
 /** Pure helpers of the Insights pages (P31): periods, series and summaries. */
-import type { ContributorStats, WeekActivity } from '../../../api/insights';
+import type { ContributorStats, WeekActivity } from '@/api/insights';
 
 export type PulsePeriod = 'daily' | 'halfweekly' | 'weekly' | 'monthly';
 

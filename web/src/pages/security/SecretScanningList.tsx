@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useResource } from '../../api/cache';
 import { alertsPath, listPatterns, resolutionLabel, ssKeys, type SecretScanningAlert } from '../../api/secretScanning';
 import { errorMessage } from '../../components/settings/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, setQuery, useParams, useQuery } from '../../router';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';

@@ -1,10 +1,10 @@
 import { useEffect, type ReactNode } from 'react';
-import { isSha } from '../../../api/endpoints';
-import { useRefs } from '../../../components/code/RefPicker';
-import { useParams } from '../../../router';
-import { canPush } from '../../../sync/selectors';
-import { cx } from '../../../ui/Button';
-import { AlertIcon, InfoIcon, LockIcon } from '../../../ui/icons';
+import { isSha } from '@/api/endpoints';
+import { useRefs } from '@/components/code/RefPicker';
+import { useParams } from '@/router';
+import { canPush } from '@/sync/selectors';
+import { cx } from '@/ui/Button';
+import { AlertIcon, InfoIcon, LockIcon } from '@/ui/icons';
 import { useRouteRepo } from '../../repo/useRouteRepo';
 import { splitRefPath } from '../util';
 import styles from './Edit.module.css';

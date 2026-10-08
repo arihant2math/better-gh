@@ -1,12 +1,12 @@
 import { useId, useState } from 'react';
-import { convertMirror, getMirror, syncMirror, updateMirror, type Mirror, type MirrorUpdate } from '../../../api/imports';
-import { apiFieldErrors, Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Pill, Section, type FieldErrors } from '../../../components/settings/kit';
-import { navigate } from '../../../router';
-import { Button } from '../../../ui/Button';
-import { AlertIcon, SyncIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+import { convertMirror, getMirror, syncMirror, updateMirror, type Mirror, type MirrorUpdate } from '@/api/imports';
+import { apiFieldErrors, Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, Pill, Section, type FieldErrors } from '@/components/settings/kit';
+import { navigate } from '@/router';
+import { Button } from '@/ui/Button';
+import { AlertIcon, SyncIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import styles from '../RepoSettings.module.css';
 import { ListSkeleton, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';
 

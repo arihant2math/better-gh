@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { store } from '../../../sync';
+import { store } from '@/sync';
 import RulesetsSection from '../../rulesets/RulesetsSection';
 import type { SectionProps } from '../shared';
 

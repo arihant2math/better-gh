@@ -1,5 +1,5 @@
 /** Issue forms (GitHub's `.github/ISSUE_TEMPLATE/*.yml`): state, validation, markdown output. */
-import type { IssueFormElement } from '../../../api/endpoints';
+import type { IssueFormElement } from '@/api/endpoints';
 
 export type FormValue = string | boolean[];
 export type FormValues = Record<string, FormValue>;

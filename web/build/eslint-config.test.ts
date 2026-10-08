@@ -32,7 +32,7 @@ describe('eslint.config.js', () => {
     const eslint = new ESLint({
       cwd: process.cwd(),
       overrideConfig: { languageOptions: { parserOptions: { project: null } } },
-      ruleFilter: ({ ruleId }) => ['no-restricted-imports', 'no-restricted-globals', 'bgh/observer-reads-store'].includes(ruleId),
+      ruleFilter: ({ ruleId }) => ['no-restricted-imports', 'no-restricted-globals', 'no-restricted-syntax', 'bgh/observer-reads-store'].includes(ruleId),
     });
     const [result] = await eslint.lintText(code, { filePath });
     return result.messages.map((m) => m.ruleId);
@@ -58,6 +58,15 @@ describe('eslint.config.js', () => {
     expect(await lint('src/sync/client.ts', code)).toEqual(['no-restricted-globals']);
     expect(await lint('src/pages/actions/log/sse.ts', code)).toEqual(['no-restricted-globals']);
     for (const ok of ['src/api/transport.ts', 'src/main.tsx', 'src/sw.ts']) expect(await lint(ok, code)).toEqual([]);
+  });
+
+  it('sends imports that climb 3+ folders through the @/ alias', async () => {
+    const deep = "import { api } from '../../../api/client';\nexport const x = api;\n";
+    expect(await lint('src/pages/repo/insights/Chart.tsx', deep)).toEqual(['no-restricted-syntax']);
+    expect(await lint('src/pages/repo/insights/Chart.test.ts', deep)).toEqual(['no-restricted-syntax']);
+    expect(await lint('src/pages/repo/insights/Chart.tsx', "export const p = () => import('../../../api/client');\n")).toEqual(['no-restricted-syntax']);
+    expect(await lint('src/pages/repo/insights/Chart.tsx', "export { api } from '../../../api/client';\n")).toEqual(['no-restricted-syntax']);
+    expect(await lint('src/pages/repo/insights/Chart.tsx', "import { api } from '@/api/client';\nimport { x } from '../../y';\nexport const z = [api, x];\n")).toEqual([]);
   });
 
   it('requires observer for components that read the store', async () => {

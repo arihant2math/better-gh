@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { alertsPath } from '../../api/secretScanning';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, useParams } from '../../router';
 import { Skeleton } from '../../ui/EmptyState';
 import { CheckCircleIcon, CircleSlashIcon, InfoIcon, KeyAsteriskIcon } from '../../ui/icons';

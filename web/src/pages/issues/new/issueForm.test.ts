@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { IssueFormElement } from '../../../api/endpoints';
+import type { IssueFormElement } from '@/api/endpoints';
 import { formToMarkdown, initialValues, missingRequired } from './issueForm';
 
 const form: IssueFormElement[] = [

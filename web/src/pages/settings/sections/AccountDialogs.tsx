@@ -1,13 +1,13 @@
 import { useEffect, useId, useState } from 'react';
-import { deleteAccount, loginError, renameErrorMessage, renameUser } from '../../../api/lifecycle';
-import { applyViewerPatch } from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, errorMessage } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { AlertIcon, InfoIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+import { deleteAccount, loginError, renameErrorMessage, renameUser } from '@/api/lifecycle';
+import { applyViewerPatch } from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, errorMessage } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { AlertIcon, InfoIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import styles from './userSettings.module.css';
 
 /** `PATCH /user {login}`: old links and git remotes redirect, the old name is reserved for 90 days. */

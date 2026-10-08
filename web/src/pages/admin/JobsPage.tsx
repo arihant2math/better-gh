@@ -6,7 +6,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatDateTime, plural } from '../../components/admin/format';
 import { Drawer, JsonView, KeyValue, PageHeader, Panel, ShortLabel, StatusPill, errorMessage, useConfirm, type PillStatus } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button } from '../../ui/Button';
@@ -16,7 +16,7 @@ import { Select } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { cancelJob, getJob, getJobStats, jobsPath, retryFailedJobs, retryJob, type Job, type JobState, type JobStats } from './api';
+import { cancelJob, getJob, getJobStats, jobsPath, retryFailedJobs, retryJob, type Job, type JobState, type JobStats } from '../../api/admin';
 import j from './jobs.module.css';
 
 const STATS_KEY = 'admin:jobs:stats';

@@ -5,7 +5,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime } from '../../components/admin/format';
 import { CopyButton, Drawer, ErrorState, JsonView, KeyValue, PageHeader, RadioCards, StatusPill, Switch, attempt, errorMessage, useConfirm } from '../../components/admin/kit';
-import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
+import { invalidateLists, usePagedList } from '../../api/usePagedList';
 import { setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, IconButton, cx } from '../../ui/Button';
@@ -31,7 +31,7 @@ import {
   updateHook,
   type HookInput,
   type OrgHook,
-} from './api';
+} from '../../api/orgSettings';
 import { OwnerRequired } from './common';
 import local from './OrgSettings.module.css';
 import type { HookDeliveryItem } from '../../api/types';

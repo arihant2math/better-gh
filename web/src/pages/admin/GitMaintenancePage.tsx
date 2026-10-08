@@ -5,7 +5,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatDateTime } from '../../components/admin/format';
 import { PageHeader, Panel, StatusPill, Switch, attempt, errorMessage, type PillStatus } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button } from '../../ui/Button';
@@ -24,7 +24,7 @@ import {
   type GitMaintenanceSettings,
   type GitMaintenanceState,
   type GitMaintenanceStatus,
-} from './api';
+} from '../../api/admin';
 import g from './gitMaintenance.module.css';
 
 const STATES: {

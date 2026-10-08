@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { deleteAuthorization, listAuthorizations, type Authorization } from '../../../api/developerSettings';
-import { describeScope } from '../../../api/scopes';
-import { ConfirmDialog, ItemList, ItemRow, PageHeader, Section } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { toast } from '../../../ui/Toast';
+import { deleteAuthorization, listAuthorizations, type Authorization } from '@/api/developerSettings';
+import { describeScope } from '@/api/scopes';
+import { ConfirmDialog, ItemList, ItemRow, PageHeader, Section } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { toast } from '@/ui/Toast';
 import { ListSkeleton } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate } from '../developer/logic';
-import { useList } from '../developer/useList';
-import { formatRelative } from '../../../ui/RelativeTime';
+import { useList } from '@/api/useList';
+import { formatRelative } from '@/ui/RelativeTime';
 
 /** `/settings/applications`: OAuth apps the user has authorized. */
 export default function ApplicationSettings() {

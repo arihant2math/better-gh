@@ -4,14 +4,14 @@
  * commands, the runner group create/edit dialog and the "add runner" row.
  */
 import { useState, type ReactNode } from 'react';
-import type { Runner, RunnerLabel } from '../../../api/actions';
-import { parseWorkflows, runnerArch, type GroupVisibility, type RunnerGroup } from '../../../api/runners';
-import { CopyButton, RadioCards, Switch, errorMessage } from '../../../components/admin/kit';
-import { Button, cx } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon, LockIcon, PlusIcon } from '../../../ui/icons';
-import { Field, Input, Select, Textarea } from '../../../ui/Input';
+import type { Runner, RunnerLabel } from '@/api/actions';
+import { parseWorkflows, runnerArch, type GroupVisibility, type RunnerGroup } from '@/api/runners';
+import { CopyButton, RadioCards, Switch, errorMessage } from '@/components/admin/kit';
+import { Button, cx } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { Skeleton } from '@/ui/EmptyState';
+import { AlertIcon, LockIcon, PlusIcon } from '@/ui/icons';
+import { Field, Input, Select, Textarea } from '@/ui/Input';
 import s from './runnerKit.module.css';
 
 export { s as runnerStyles };
