@@ -150,3 +150,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:50Z: #374 merged as c19ac1f (#5 PR1/4: branch protection rules only; rulesets still pending under #5 with PRs 2–4; #5 stays open). A worker+reviewer archived; filed #380 (nits; oracle first, PAT gap second). Lane A DONE per freeze. Waiting: #379 review; main CI 08ad195, c19ac1f.
 - 02:59Z: main CI b1f71fe (#373) GREEN; 08ad195 (#377+#372) in progress; c19ac1f (#374) pending. #379 Rust tests running, no review yet. Reviewer cutoff passed; no new agents.
 - 03:10Z: #379 REQUEST_CHANGES @dbc7ba9: regression test passes 8/8 against pre-#372 settle (lock released too early); fix = hold lock until settle returns or 2s bound. Relayed to C worker; deadline green ~03:45Z else park.
+- 03:16Z: main CI 08ad195 (#377+#372) GREEN; c19ac1f (#374) in progress. #379 fix in progress.
