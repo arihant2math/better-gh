@@ -402,8 +402,13 @@ pub async fn service(state: AppState, shutdown: CancellationToken) -> anyhow::Re
             _ = shutdown.cancelled() => return Ok(()),
             _ = tick.tick() => {}
         }
-        let Some(leader) = AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await? else {
-            continue;
+        let leader = match AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await {
+            Ok(Some(leader)) => leader,
+            Ok(None) => continue,
+            Err(err) => {
+                tracing::warn!(?err, "token expiry reminders: leader lock");
+                continue;
+            }
         };
         match send_expiry_reminders(&state).await {
             Ok(0) => {}
