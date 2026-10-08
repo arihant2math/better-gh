@@ -1,10 +1,10 @@
 import { useId, useState } from 'react';
-import { createAutolink, deleteAutolink, listAutolinks, type Autolink } from '../../../api/repoSettings';
-import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section, apiFieldErrors } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { LinkIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+import { createAutolink, deleteAutolink, listAutolinks, type Autolink } from '@/api/repoSettings';
+import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, Section, apiFieldErrors } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { LinkIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import styles from '../RepoSettings.module.css';
 import { ListSkeleton, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';
 import { autolinkPrefixError, autolinkTemplateError } from '../validation';

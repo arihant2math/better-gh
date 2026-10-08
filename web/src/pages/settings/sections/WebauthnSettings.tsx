@@ -1,6 +1,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
-import { invalidate } from '../../../api/cache';
-import { KEYS, useEditableResource } from '../../../api/userSettings';
+import { invalidate } from '@/api/cache';
+import { KEYS, useEditableResource } from '@/api/userSettings';
 import {
   deleteCredential,
   listCredentials,
@@ -10,16 +10,16 @@ import {
   webauthnSupported,
   type CredentialKind,
   type WebauthnCredential,
-} from '../../../api/webauthn';
-import { isMockMode } from '../../../boot';
-import { Banner, FormStack, Pill, Section, errorMessage } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { Box, Skeleton } from '../../../ui/EmptyState';
-import { KeyIcon, PencilIcon, ShieldLockIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+} from '@/api/webauthn';
+import { isMockMode } from '@/boot';
+import { Banner, FormStack, Pill, Section, errorMessage } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { Box, Skeleton } from '@/ui/EmptyState';
+import { KeyIcon, PencilIcon, ShieldLockIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import styles from './userSettings.module.css';
 
 const COPY: Record<

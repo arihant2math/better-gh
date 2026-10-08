@@ -61,6 +61,15 @@ export default tseslint.config(
       // REST goes through api/client (CSRF, 401 handling, rate limits).
       'no-restricted-globals': ['error', { name: 'fetch', message: 'Use api/client (or the api/transport seam); raw fetch skips CSRF and 401 handling.' }],
       'bgh/observer-reads-store': 'error',
+      // docs/FRONTEND.md "Where code lives": climb at most two folders, else `@/…`
+      // (scripts/codemod-imports.mjs rewrites them). Also covers import() and tests.
+      'no-restricted-syntax': [
+        'error',
+        ...['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration', 'ImportExpression'].map((node) => ({
+          selector: `${node} > Literal.source[value=/^(\\.\\.\\/){3}/]`,
+          message: "Import climbs 3+ folders: use the '@/' alias (src/).",
+        })),
+      ],
     },
   },
   // Owners of the restricted libraries.

@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { invalidate, useResource } from '../../../api/cache';
+import { invalidate, useResource } from '@/api/cache';
 import {
   getNotificationSettings,
   listUserEmails,
@@ -7,12 +7,12 @@ import {
   NOTIFICATION_REASONS,
   type NotificationSettings,
   type NotificationSettingsPatch,
-} from '../../../api/developerSettings';
-import { Banner, errorMessage, FormStack, PageHeader, Section, Toggle } from '../../../components/settings/kit';
-import { Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon } from '../../../ui/icons';
-import { Field, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/api/developerSettings';
+import { Banner, errorMessage, FormStack, PageHeader, Section, Toggle } from '@/components/settings/kit';
+import { Skeleton } from '@/ui/EmptyState';
+import { AlertIcon } from '@/ui/icons';
+import { Field, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import styles from '../developer/developer.module.css';
 
 const KEY = 'dev:notification-settings';

@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { restoreRepo, type DeletedRepo } from '../../../api/lifecycle';
-import type { FullRepository } from '../../../api/repoSettings';
-import { ItemList, ItemRow, Pill, errorMessage } from '../../../components/settings/kit';
-import { Link } from '../../../router';
-import { Button } from '../../../ui/Button';
-import { LockIcon, RepoIcon, UndoIcon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
-import { Tooltip } from '../../../ui/Tooltip';
+import { restoreRepo, type DeletedRepo } from '@/api/lifecycle';
+import type { FullRepository } from '@/api/repoSettings';
+import { ItemList, ItemRow, Pill, errorMessage } from '@/components/settings/kit';
+import { Link } from '@/router';
+import { Button } from '@/ui/Button';
+import { LockIcon, RepoIcon, UndoIcon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
+import { Tooltip } from '@/ui/Tooltip';
 import styles from './userSettings.module.css';
 
 /** Why a row can't be restored (shown as the tooltip of the disabled button). */

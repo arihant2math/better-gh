@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { invalidate, useResource } from '../../../api/cache';
+import { invalidate, useResource } from '@/api/cache';
 import {
   createHook,
   deleteHook,
@@ -13,22 +13,22 @@ import {
   updateHook,
   type Hook,
   type HookInput,
-} from '../../../api/repoSettings';
-import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, RadioCards, Section, apiFieldErrors, errorMessage } from '../../../components/settings/kit';
-import { Link, navigate, setQuery, useQuery } from '../../../router';
-import type { Repo } from '../../../sync/models';
-import { Button, cx } from '../../../ui/Button';
-import { EmptyState } from '../../../ui/EmptyState';
-import { AlertIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon, PlusIcon, SyncIcon, TrashIcon, WebhookIcon, ZapIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { Tabs } from '../../../ui/Tabs';
-import { toast } from '../../../ui/Toast';
+} from '@/api/repoSettings';
+import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, ItemList, ItemRow, PageHeader, Pill, RadioCards, Section, apiFieldErrors, errorMessage } from '@/components/settings/kit';
+import { Link, navigate, setQuery, useQuery } from '@/router';
+import type { Repo } from '@/sync/models';
+import { Button, cx } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
+import { AlertIcon, CheckCircleIcon, ChevronRightIcon, ClockIcon, PlusIcon, SyncIcon, TrashIcon, WebhookIcon, ZapIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { Tabs } from '@/ui/Tabs';
+import { toast } from '@/ui/Toast';
 import { HOOK_EVENTS, deliveryOk, eventsFor, eventsMode, eventsSummary, type EventsMode } from '../model';
 import styles from '../RepoSettings.module.css';
 import { ListSkeleton, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';
 import { hookUrlError } from '../validation';
-import type { HookDeliveryItem } from '../../../api/types';
+import type { HookDeliveryItem } from '@/api/types';
 
 export default function WebhooksSettings({ repo, rest, base }: SectionProps) {
   if (rest[0] === 'new') return <HookForm key="new" repo={repo} base={base} />;

@@ -4,8 +4,8 @@
  * multi-file commits through the git data API (with a contents-API
  * fallback), error classification and cache invalidation.
  */
-import { invalidate } from '../../../api/cache';
-import { ApiError } from '../../../api/client';
+import { invalidate } from '@/api/cache';
+import { ApiError } from '@/api/client';
 import {
   bytesToBase64,
   codeKeys,
@@ -19,12 +19,12 @@ import {
   putContents,
   updateBranchRef,
   type GitTreeEntryInput,
-} from '../../../api/code';
-import { browseKeys, getBlob, getRefs, isSha } from '../../../api/endpoints';
-import { CommitError, type CommitRequest } from '../../../components/code/CommitDialog';
-import { navigate } from '../../../router';
-import { compareUrl } from '../../../components/code/urls';
-import { toast } from '../../../ui/Toast';
+} from '@/api/code';
+import { browseKeys, getBlob, getRefs, isSha } from '@/api/endpoints';
+import { CommitError, type CommitRequest } from '@/components/code/CommitDialog';
+import { navigate } from '@/router';
+import { compareUrl } from '@/components/code/urls';
+import { toast } from '@/ui/Toast';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 

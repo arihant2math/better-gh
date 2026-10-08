@@ -3,7 +3,7 @@
  * form validation, the create payload and permission summaries (shared by
  * `/settings/tokens` and the org "Personal access tokens" page).
  */
-import type { FgAccess, FgCreateBody, FgPermCatalog, FgPermissions, FgSelection, FgStatus, FgTokenOwner } from '../../../api/fineGrainedTokens';
+import type { FgAccess, FgCreateBody, FgPermCatalog, FgPermissions, FgSelection, FgStatus, FgTokenOwner } from '@/api/fineGrainedTokens';
 
 /** Hard upper bound on `expires_in_days` (the server's 1–366 range). */
 export const MAX_TOKEN_DAYS = 366;

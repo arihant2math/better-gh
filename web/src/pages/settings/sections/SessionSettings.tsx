@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { KEYS, listSessions, revokeOtherSessions, revokeSession, useEditableResource, type SessionInfo } from '../../../api/userSettings';
-import { session as appSession } from '../../../app/session';
-import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { DeviceDesktopIcon, DeviceMobileIcon, TerminalIcon, type Icon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+import { KEYS, listSessions, revokeOtherSessions, revokeSession, useEditableResource, type SessionInfo } from '@/api/userSettings';
+import { session as appSession } from '@/app/session';
+import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { DeviceDesktopIcon, DeviceMobileIcon, TerminalIcon, type Icon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import styles from './userSettings.module.css';
 
 export interface ParsedAgent {

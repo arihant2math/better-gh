@@ -16,7 +16,7 @@ imports no pages or `api/*` modules; `mermaid`/`temml` are only `import()`ed,
 `marked`/`dompurify` stay in `ui/markdown/`, `@tanstack/react-virtual` in
 `ui/VirtualList` or page chunks; raw `fetch` only in `api/`, `main.tsx` and
 `sw.ts`; a component that calls `store()` or a `sync/selectors` reader during
-render must be `observer`.
+render must be `observer`; no import climbs 3+ folders (use `@/`).
 
 Open any URL with `?mock` to use the mock backend (sticky for the tab;
 `?mock=0` leaves). Extra flags: `&reset` (fresh seed + empty local DB),
@@ -32,12 +32,34 @@ from the mock, handy for testing rollbacks.
 | `src/app/` | shell (sidebar, top bar), `routes.ts`, command palette + `commands.ts`, session, theme, shortcut help |
 | `src/router/` | the router (`Link`, `navigate`, `useParams`, `useQuery`, `setQuery`, `prefetch`) |
 | `src/sync/` | local-first store: `models.ts`, `schema.ts`, `pool.ts`, `client.ts`, `transactions.ts`, `mutations.ts`, `selectors.ts`, `hooks.ts` |
-| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`), per-viewer state lifetime (`reset.ts`) |
+| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`), per-viewer state lifetime (`reset.ts`), list hooks (`usePagedList`, `useList`), one typed module per resource |
 | `src/ui/` | design system (import from `ui/…` files or the `ui` barrel) |
 | `src/shortcuts/` | `useShortcuts`, `formatKeys` |
-| `src/components/` | domain components shared by pages: `diff/DiffViewer`, `editor/MarkdownEditor` (toolbar, preview, `@`/`#` autocomplete), `labels/ColorPicker`, `ConfirmDialog`; `admin/` = kit for admin-style pages |
+| `src/components/` | domain components shared by pages: `diff/DiffViewer`, `editor/MarkdownEditor` (toolbar, preview, `@`/`#` autocomplete), `labels/ColorPicker`, `ConfirmDialog`; `admin/` = UI kit for admin-style pages |
 | `src/pages/<area>/` | route pages, one folder per area, each with its own CSS module |
 | `src/mock/` | in-browser backend (reference implementation of the sync protocol) |
+
+## Where code lives
+
+New code goes where this table says; don't start a third home for something.
+
+| Kind | Where |
+|------|-------|
+| Typed REST calls for a resource (no React, no UI) | `api/<resource>.ts` (camelCase file: `api/orgSettings.ts`, `api/repoSettings.ts`) |
+| Hooks shared across areas (`useResource`, `usePagedList`, `useList`) | `api/` |
+| Hooks used by one area | `pages/<area>/hooks.ts` (or next to the one component that uses them) |
+| Route UI | `pages/<area>/<Name>Page.tsx`, area folders in kebab-case (`repo-settings`, `org-settings`) |
+| Route prefetch glue (what a route loads before render) | `pages/<area>/data.ts`, no REST wrappers of its own: call `api/` |
+| Domain components shared by several areas | `components/<domain>/` |
+| Synced-model selectors/mutations only lazy pages need | `sync/features/<name>.ts` (see "Feature-local sync code"; the older `sync/projects.ts`, `pullMutations.ts`, `pullSelectors.ts`, `moderation.ts`, `issueRelations.ts`, `viewerReactions.ts` predate the folder) |
+
+**Imports.** `@/x` is `src/x` (tsconfig `paths` + Vite `resolve.alias`, so
+vitest too). Use it for anything that would climb three or more folders;
+lint rejects `../../../`. Siblings and near relatives stay relative.
+Moving a file or folder: `node scripts/codemod-imports.mjs --move
+<from>=<to>` (paths under `src/`) does the `git mv` and fixes every import of
+and inside it; run it without `--move` to turn deep relative imports into
+`@/`. Route URLs live in `app/routes.ts` and don't depend on folder names.
 
 ## Router choice
 
@@ -127,8 +149,8 @@ Pick by what the data is; don't hand-roll a new cache.
 |------|-----|
 | Synced model (issues, PRs, labels, notifications…) | the store (`store()`, `sync/selectors`, mutations) |
 | One REST resource (detail, settings, a short list) | `useResource` / `load` / `mutate` (`api/cache`) |
-| Server-paginated REST list (`Link: rel="next"`) | `usePagedList` (`components/admin`) |
-| REST list with optimistic add/edit/remove | `useList` (`pages/settings/developer/useList.ts`, built on `useResource`) |
+| Server-paginated REST list (`Link: rel="next"`) | `usePagedList` (`api/usePagedList.ts`) |
+| REST list with optimistic add/edit/remove | `useList` (`api/useList.ts`, built on `useResource`) |
 | Your own abortable request whose result should be reused (per keystroke) | `peekFresh` + `mutate` on an `api/cache` key (see `search/api.ts`) |
 | Local UI state | `useState` |
 | Cross-page UI state (palette, dialogs, sidebar) | `app/uiState.ts` |
@@ -286,7 +308,8 @@ animations ≤ 150 ms and use `var(--dur)` / `var(--ease)`.
 
 Data that isn't synced (site admin, org settings, audit logs, jobs) is read
 over REST with `useResource` (detail) or `usePagedList` (lists that follow
-`Link: rel="next"`, cached per URL), and written with plain requests;
+`Link: rel="next"`, cached per URL) through the typed calls in `api/admin.ts`
+and `api/orgSettings.ts`, and written with plain requests;
 update caches with `mutate`/`refresh` (`api/cache`) and
 `updateLists`/`invalidateLists`. Build pages from `components/admin`:
 
@@ -303,7 +326,7 @@ update caches with `mutate`/`refresh` (`api/cache`) and
 
 Site admin lives under `/site-admin/*` (`pages/admin`, guarded by
 `site.viewerSiteAdmin` from `app/site.ts`), org settings under
-`/organizations/:org/settings/*` (`pages/orgsettings`). App-wide
+`/organizations/:org/settings/*` (`pages/org-settings`). App-wide
 announcement / maintenance banners come from `GET /_bgh/site` and are a lazy
 chunk loaded only while one is active. The admin UI has no mock backend
 (org rulesets, the org danger zone and admin deleted repositories excepted):
@@ -349,7 +372,8 @@ login form.
 
 Synced models used only by lazy pages may keep their selectors and mutations
 next to the feature instead of in `sync/selectors.ts` / `sync/mutations.ts`
-(which load on first paint). Projects do this in `sync/projects.ts`. Child
+(which load on first paint). New ones go in `sync/features/<name>.ts`;
+projects did this first in `sync/projects.ts`. Child
 models whose scope depends on a parent row (project fields/views/items) get
 their scope through the optional `lookup` argument of the schema's `scope`
 function.

@@ -1,8 +1,8 @@
 import { observer } from 'mobx-react-lite';
-import { theme, type Density, type ThemePref } from '../../../app/theme';
-import { PageHeader, Section } from '../../../components/settings/kit';
-import { cx } from '../../../ui/Button';
-import { CheckIcon } from '../../../ui/icons';
+import { theme, type Density, type ThemePref } from '@/app/theme';
+import { PageHeader, Section } from '@/components/settings/kit';
+import { cx } from '@/ui/Button';
+import { CheckIcon } from '@/ui/icons';
 import styles from './userSettings.module.css';
 
 const THEMES: { value: ThemePref; label: string; description: string }[] = [

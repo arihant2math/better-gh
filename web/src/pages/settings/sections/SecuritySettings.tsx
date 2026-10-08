@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { invalidate } from '../../../api/cache';
+import { invalidate } from '@/api/cache';
 import {
   KEYS,
   MIN_PASSWORD_LEN,
@@ -12,8 +12,8 @@ import {
   startTotp,
   useEditableResource,
   type TotpSetup,
-} from '../../../api/userSettings';
-import { session } from '../../../app/session';
+} from '@/api/userSettings';
+import { session } from '@/app/session';
 import {
   Banner,
   ButtonRow,
@@ -27,14 +27,14 @@ import {
   downloadText,
   errorMessage,
   type FieldErrors,
-} from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { Box, Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon, DeviceMobileIcon, DownloadIcon, KeyIcon, ShieldCheckIcon } from '../../../ui/icons';
-import { Field, Input } from '../../../ui/Input';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+} from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { Box, Skeleton } from '@/ui/EmptyState';
+import { AlertIcon, DeviceMobileIcon, DownloadIcon, KeyIcon, ShieldCheckIcon } from '@/ui/icons';
+import { Field, Input } from '@/ui/Input';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import { encodeQr, qrPath } from '../qr';
 import styles from './userSettings.module.css';
 import { WebauthnSection } from './WebauthnSettings';

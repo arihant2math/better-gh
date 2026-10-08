@@ -1,5 +1,5 @@
-import { Link } from '../../../router';
-import { ArrowLeftIcon, CodeIcon, LockIcon, ServerIcon, WorkflowIcon, type Icon } from '../../../ui/icons';
+import { Link } from '@/router';
+import { ArrowLeftIcon, CodeIcon, LockIcon, ServerIcon, WorkflowIcon, type Icon } from '@/ui/icons';
 import styles from './Settings.module.css';
 
 export interface NavItem {

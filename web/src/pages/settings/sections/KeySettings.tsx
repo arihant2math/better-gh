@@ -12,16 +12,16 @@ import {
   type GpgKey,
   type SshKey,
   type SshSigningKey,
-} from '../../../api/developerSettings';
-import { apiFieldErrors, ButtonRow, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { KeyIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input, Textarea } from '../../../ui/Input';
+} from '@/api/developerSettings';
+import { apiFieldErrors, ButtonRow, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { KeyIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input, Textarea } from '@/ui/Input';
 import { ListSkeleton, lastUsedText } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate } from '../developer/logic';
 import { checkArmoredGpg, fingerprintOf, keyTypeLabel, parseSshKey } from '../developer/sshKey';
-import { useList } from '../../../api/useList';
+import { useList } from '@/api/useList';
 
 /** `/settings/keys`: SSH authentication keys, SSH signing keys and GPG keys. */
 export default function KeySettings() {

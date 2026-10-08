@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { invalidate, useResource } from '../../../api/cache';
-import { createApp, deleteApp, getApp, listApps, regenerateSecret, updateApp, type OAuthApp } from '../../../api/developerSettings';
+import { invalidate, useResource } from '@/api/cache';
+import { createApp, deleteApp, getApp, listApps, regenerateSecret, updateApp, type OAuthApp } from '@/api/developerSettings';
 import {
   apiFieldErrors,
   Banner,
@@ -12,18 +12,18 @@ import {
   ItemList,
   PageHeader,
   Section,
-} from '../../../components/settings/kit';
-import { Link, navigate, useLocation } from '../../../router';
-import { Button } from '../../../ui/Button';
-import { EmptyState, Skeleton } from '../../../ui/EmptyState';
-import { AlertIcon, ArrowLeftIcon, CodeIcon, PlusIcon, TrashIcon } from '../../../ui/icons';
-import { Field, Input, Textarea } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/components/settings/kit';
+import { Link, navigate, useLocation } from '@/router';
+import { Button } from '@/ui/Button';
+import { EmptyState, Skeleton } from '@/ui/EmptyState';
+import { AlertIcon, ArrowLeftIcon, CodeIcon, PlusIcon, TrashIcon } from '@/ui/icons';
+import { Field, Input, Textarea } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { ListSkeleton, OneTimeSecret, subPath } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate, validateApp, type AppFormValues } from '../developer/logic';
-import { useList } from '../../../api/useList';
-import { onReset } from '../../../api/reset';
+import { useList } from '@/api/useList';
+import { onReset } from '@/api/reset';
 
 const LIST_KEY = 'dev:apps';
 

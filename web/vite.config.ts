@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type ProxyOptions } from 'vite';
 import { compression } from 'vite-plugin-compression2';
@@ -24,6 +25,8 @@ const preloadDedupe = bghPreloadDedupe();
 const VENDOR = /[\\/]node_modules[\\/](react|react-dom|scheduler|mobx|mobx-react-lite|idb)[\\/]/;
 
 export default defineConfig({
+  // `@/x` = `src/x` (tsconfig `paths`); docs/FRONTEND.md "Where code lives".
+  resolve: { alias: [{ find: /^@\//, replacement: fileURLToPath(new URL('./src/', import.meta.url)) }] },
   plugins: [
     react(),
     bghFontPreload(),

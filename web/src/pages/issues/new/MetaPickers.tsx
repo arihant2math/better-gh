@@ -1,12 +1,12 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
-import { store } from '../../../sync';
-import type { ID, Repo } from '../../../sync/models';
-import { projectsForOwner, projectsLinkedToRepo } from '../../../sync/projects';
-import { assignableUsers, labelsForRepo, milestonesForRepo } from '../../../sync/selectors';
-import { Avatar, ColorDot, LabelPill } from '../../../ui/Badge';
-import { GearIcon, MilestoneIcon, PeopleIcon, ProjectIcon } from '../../../ui/icons';
-import { SelectPanel } from '../../../ui/Menu';
+import { store } from '@/sync';
+import type { ID, Repo } from '@/sync/models';
+import { projectsForOwner, projectsLinkedToRepo } from '@/sync/projects';
+import { assignableUsers, labelsForRepo, milestonesForRepo } from '@/sync/selectors';
+import { Avatar, ColorDot, LabelPill } from '@/ui/Badge';
+import { GearIcon, MilestoneIcon, PeopleIcon, ProjectIcon } from '@/ui/icons';
+import { SelectPanel } from '@/ui/Menu';
 import styles from './NewIssue.module.css';
 
 const toggle = <T,>(list: T[], id: T) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);

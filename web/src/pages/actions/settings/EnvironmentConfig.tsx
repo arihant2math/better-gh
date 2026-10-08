@@ -8,14 +8,14 @@ import {
   type BranchPolicy,
   type Environment,
   type EnvironmentReviewer,
-} from '../../../api/actions';
-import { api, v3 } from '../../../api/client';
-import { Link } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button, IconButton } from '../../../ui/Button';
-import { GitBranchIcon, PeopleIcon, PlusIcon, TagIcon, TrashIcon, XIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/api/actions';
+import { api, v3 } from '@/api/client';
+import { Link } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button, IconButton } from '@/ui/Button';
+import { GitBranchIcon, PeopleIcon, PlusIcon, TagIcon, TrashIcon, XIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { ConfigList } from './ConfigItems';
 import { ErrorState, ListSkeleton, Section, reload, toastError, useRes, type Res } from './shared';
 import styles from './Settings.module.css';

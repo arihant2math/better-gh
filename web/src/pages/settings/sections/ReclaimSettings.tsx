@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { refresh, useResource } from '../../../api/cache';
-import { MANNEQUIN_KEYS, acceptReclaim, declineReclaim, listMyReclaims, movedTotal, type Reclaim } from '../../../api/mannequins';
-import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage, useAction } from '../../../components/settings/kit';
-import { Link } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { RelativeTime } from '../../../ui/RelativeTime';
+import { refresh, useResource } from '@/api/cache';
+import { MANNEQUIN_KEYS, acceptReclaim, declineReclaim, listMyReclaims, movedTotal, type Reclaim } from '@/api/mannequins';
+import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage, useAction } from '@/components/settings/kit';
+import { Link } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { RelativeTime } from '@/ui/RelativeTime';
 
 const TONE: Record<Reclaim['status'], 'accent' | 'success' | 'neutral' | 'warning'> = {
   pending: 'accent',

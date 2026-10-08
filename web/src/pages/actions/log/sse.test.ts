@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { browserTransport, setTransport, type Transport } from '../../../api/transport';
+import { browserTransport, setTransport, type Transport } from '@/api/transport';
 import { SseParser, streamJobLog, type SseEvent } from './sse';
 
 function parseAll(chunks: string[]): SseEvent[] {

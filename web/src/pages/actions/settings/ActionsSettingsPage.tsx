@@ -1,11 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense } from 'react';
-import type { SettingsScope } from '../../../api/actions';
-import { useLocation, useParams } from '../../../router';
-import { store } from '../../../sync';
-import { repoByName } from '../../../sync/selectors';
-import { EmptyState } from '../../../ui/EmptyState';
-import { CodeIcon, LockIcon, OrganizationIcon, RocketIcon, ServerIcon } from '../../../ui/icons';
+import type { SettingsScope } from '@/api/actions';
+import { useLocation, useParams } from '@/router';
+import { store } from '@/sync';
+import { repoByName } from '@/sync/selectors';
+import { EmptyState } from '@/ui/EmptyState';
+import { CodeIcon, LockIcon, OrganizationIcon, RocketIcon, ServerIcon } from '@/ui/icons';
 import { ConfigList, OrgItemsForRepo } from './ConfigItems';
 import { EnvironmentGroups, Environments } from './Environments';
 import { ActionsNav, orgNavItems, type NavItem } from './nav';

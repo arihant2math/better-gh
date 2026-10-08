@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { FgPermCatalog, FgTokenOwner } from '../../../api/fineGrainedTokens';
+import type { FgPermCatalog, FgTokenOwner } from '@/api/fineGrainedTokens';
 import {
   allowedLevels,
   buildCreateBody,

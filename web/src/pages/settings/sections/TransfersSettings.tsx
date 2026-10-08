@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { invalidate } from '../../../api/cache';
-import { ApiError } from '../../../api/client';
-import { acceptTransfer, declineTransfer, lifecycleKeys, listIncomingTransfers, type RepoTransfer } from '../../../api/lifecycle';
-import { useEditableResource } from '../../../api/userSettings';
-import { Banner, ItemList, ItemRow, Pill, PageHeader, Section, errorMessage } from '../../../components/settings/kit';
-import { Link, navigate, useQuery } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { CheckIcon, InfoIcon, XIcon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+import { invalidate } from '@/api/cache';
+import { ApiError } from '@/api/client';
+import { acceptTransfer, declineTransfer, lifecycleKeys, listIncomingTransfers, type RepoTransfer } from '@/api/lifecycle';
+import { useEditableResource } from '@/api/userSettings';
+import { Banner, ItemList, ItemRow, Pill, PageHeader, Section, errorMessage } from '@/components/settings/kit';
+import { Link, navigate, useQuery } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { CheckIcon, InfoIcon, XIcon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import styles from './userSettings.module.css';
 
 /** `/settings/repositories/transfers`: repositories other users want to transfer to you. `?id=` highlights one (the email links here). */

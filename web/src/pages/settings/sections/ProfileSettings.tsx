@@ -13,17 +13,17 @@ import {
   useEditableResource,
   type PrivateUser,
   type ProfilePatch,
-} from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, apiFieldErrors, type FieldErrors } from '../../../components/settings/kit';
-import { Link } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { MentionIcon, PencilIcon, TrashIcon, UploadIcon } from '../../../ui/icons';
-import { Field, Input, Select, Textarea } from '../../../ui/Input';
-import { Spinner } from '../../../ui/Spinner';
-import { toast } from '../../../ui/Toast';
+} from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, ButtonRow, Checkbox, ConfirmDialog, FormStack, PageHeader, apiFieldErrors, type FieldErrors } from '@/components/settings/kit';
+import { Link } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { MentionIcon, PencilIcon, TrashIcon, UploadIcon } from '@/ui/icons';
+import { Field, Input, Select, Textarea } from '@/ui/Input';
+import { Spinner } from '@/ui/Spinner';
+import { toast } from '@/ui/Toast';
 import { AvatarCropDialog } from '../avatarCrop';
 import styles from './userSettings.module.css';
 

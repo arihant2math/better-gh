@@ -1,11 +1,11 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState, type DragEvent } from 'react';
-import { CommitDialog, type CommitRequest } from '../../../components/code/CommitDialog';
-import { navigate } from '../../../router';
-import { treeUrl } from '../../../components/code/urls';
-import { useShortcuts } from '../../../shortcuts/useShortcuts';
-import { Button, IconButton, cx } from '../../../ui/Button';
-import { AlertIcon, FileIcon, GitCommitIcon, UploadIcon, XIcon } from '../../../ui/icons';
+import { CommitDialog, type CommitRequest } from '@/components/code/CommitDialog';
+import { navigate } from '@/router';
+import { treeUrl } from '@/components/code/urls';
+import { useShortcuts } from '@/shortcuts/useShortcuts';
+import { Button, IconButton, cx } from '@/ui/Button';
+import { AlertIcon, FileIcon, GitCommitIcon, UploadIcon, XIcon } from '@/ui/icons';
 import { MAX_FILE_BYTES, commitFiles, finishCommit, formatBytes, joinPath, pathProblem, prepareTarget, type FileChange } from './commit';
 import { NoPushNotice, Notice, directBlockedReason, useEditTarget, useUnloadGuard } from './shared';
 import styles from './Edit.module.css';

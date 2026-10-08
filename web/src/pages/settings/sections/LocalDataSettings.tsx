@@ -1,8 +1,8 @@
 import { observer } from 'mobx-react-lite';
-import { PageHeader } from '../../../components/settings/kit';
-import { MODEL_NAMES } from '../../../sync/schema';
-import { store, sync } from '../../../sync';
-import { Button } from '../../../ui/Button';
+import { PageHeader } from '@/components/settings/kit';
+import { MODEL_NAMES } from '@/sync/schema';
+import { store, sync } from '@/sync';
+import { Button } from '@/ui/Button';
 import styles from '../SettingsLayout.module.css';
 
 export default observer(function LocalDataSettings() {

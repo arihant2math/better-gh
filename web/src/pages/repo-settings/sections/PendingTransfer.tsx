@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { mutate, refresh, useResource } from '../../../api/cache';
-import { cancelTransfer, getPendingTransfer, lifecycleKeys, type RepoTransfer } from '../../../api/lifecycle';
-import { Banner, errorMessage } from '../../../components/settings/kit';
-import { Button } from '../../../ui/Button';
-import { ClockIcon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
-import { toast } from '../../../ui/Toast';
+import { mutate, refresh, useResource } from '@/api/cache';
+import { cancelTransfer, getPendingTransfer, lifecycleKeys, type RepoTransfer } from '@/api/lifecycle';
+import { Banner, errorMessage } from '@/components/settings/kit';
+import { Button } from '@/ui/Button';
+import { ClockIcon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
+import { toast } from '@/ui/Toast';
 import styles from '../RepoSettings.module.css';
 
 /** The repository's pending outgoing transfer (`GET /_bgh/repos/{o}/{r}/transfer`, `null` when none). */

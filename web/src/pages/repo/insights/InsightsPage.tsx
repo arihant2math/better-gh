@@ -5,8 +5,8 @@
  */
 import { observer } from 'mobx-react-lite';
 import { useMemo, type ReactNode } from 'react';
-import { useResource } from '../../../api/cache';
-import { listForks } from '../../../api/endpoints';
+import { useResource } from '@/api/cache';
+import { listForks } from '@/api/endpoints';
 import {
   getCommunityProfile,
   getPopularPaths,
@@ -18,17 +18,17 @@ import {
   type CommunityProfile,
   type ContributorStats,
   type WeekActivity,
-} from '../../../api/insights';
-import { canPush } from '../../../sync/selectors';
+} from '@/api/insights';
+import { canPush } from '@/sync/selectors';
 import { useRouteRepo } from '../useRouteRepo';
-import type { RestFork } from '../../../api/types';
-import { Link, useLocation } from '../../../router';
-import { store } from '../../../sync';
-import type { Issue, Repo } from '../../../sync/models';
-import { Avatar } from '../../../ui/Badge';
-import { Box, EmptyState, Skeleton } from '../../../ui/EmptyState';
-import { CheckCircleFillIcon, CircleIcon, GitMergeIcon, GitPullRequestIcon, GraphIcon, IssueClosedIcon, IssueOpenedIcon, RepoForkedIcon, RepoIcon } from '../../../ui/icons';
-import { RelativeTime } from '../../../ui/RelativeTime';
+import type { RestFork } from '@/api/types';
+import { Link, useLocation } from '@/router';
+import { store } from '@/sync';
+import type { Issue, Repo } from '@/sync/models';
+import { Avatar } from '@/ui/Badge';
+import { Box, EmptyState, Skeleton } from '@/ui/EmptyState';
+import { CheckCircleFillIcon, CircleIcon, GitMergeIcon, GitPullRequestIcon, GraphIcon, IssueClosedIcon, IssueOpenedIcon, RepoForkedIcon, RepoIcon } from '@/ui/icons';
+import { RelativeTime } from '@/ui/RelativeTime';
 import { PunchCard, TimeChart } from './charts';
 import { authorsSince, commitsSince, compact, formatDay, formatWeek, PULSE_PERIODS, pulsePeriod, rankContributors, weeklyTotals } from './data';
 import styles from './Insights.module.css';

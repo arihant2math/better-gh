@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidEmail } from '../../../api/userSettings';
+import { isValidEmail } from '@/api/userSettings';
 import { clampCrop, coverScale, cropRect } from '../avatarCrop';
 import { emailError } from './EmailSettings';
 import { profileDiff, validateProfile } from './ProfileSettings';

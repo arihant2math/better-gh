@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { cx } from '../../../ui/Button';
-import { EmptyState } from '../../../ui/EmptyState';
-import { FileDiffIcon } from '../../../ui/icons';
+import { cx } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
+import { FileDiffIcon } from '@/ui/icons';
 import { diffRows } from './lineDiff';
 import styles from './Edit.module.css';
 

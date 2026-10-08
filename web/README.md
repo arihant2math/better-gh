@@ -16,6 +16,7 @@ feature work: [`docs/FRONTEND.md`](../docs/FRONTEND.md). Wire protocol:
 | `npm run typecheck` | `tsc` for app, build config and service worker |
 | `npm run lint` | ESLint (type-aware typescript-eslint, react-hooks v7 rules; about 2 min) |
 | `npm test` | vitest (store, reconciliation, sync client vs. mock, query language, diff parser) |
+| `node scripts/codemod-imports.mjs [--move <from>=<to>]` | rewrites `../../../` imports to `@/` and moves files/folders under `src/` with their imports fixed ([FRONTEND.md](../docs/FRONTEND.md#where-code-lives)) |
 | `npm run viewports -- [options]` | device-testing matrix: screenshots + layout checks at 9 viewports × 2 themes + live resize, see [below](#device-testing-viewport-matrix) |
 | `node scripts/screenshots.mjs [url] [dir]` | Playwright screenshots of key pages (mock mode) |
 | `node scripts/smoke.mjs [url]` | Playwright interaction smoke test (optimistic writes, rollback, reload, keyboard) |

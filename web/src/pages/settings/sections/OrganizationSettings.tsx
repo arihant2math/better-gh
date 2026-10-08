@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useResource } from '../../../api/cache';
+import { useResource } from '@/api/cache';
 import {
   INVITE_KEYS,
   leaveOrganization,
@@ -7,16 +7,16 @@ import {
   listPendingOrgInvitations,
   setMembershipPublic,
   type ViewerOrganization,
-} from '../../../api/invitations';
-import { useEditableResource } from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage } from '../../../components/settings/kit';
-import { Link } from '../../../router';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { EyeClosedIcon, EyeIcon, SignOutIcon } from '../../../ui/icons';
-import { toast } from '../../../ui/Toast';
+} from '@/api/invitations';
+import { useEditableResource } from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, Section, errorMessage } from '@/components/settings/kit';
+import { Link } from '@/router';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { EyeClosedIcon, EyeIcon, SignOutIcon } from '@/ui/icons';
+import { toast } from '@/ui/Toast';
 import { leaveBlockReason, orgInvitationHref, orgRoleLabel } from '../../invitations/model';
 
 /** `/settings/organizations`: the viewer's memberships (leave, publicize) and pending invitations. */

@@ -1,15 +1,15 @@
 import { observer } from 'mobx-react-lite';
 import { useId, useState } from 'react';
-import { invalidate } from '../../../api/cache';
-import { lifecycleKeys, listDeletedRepos } from '../../../api/lifecycle';
-import { useEditableResource } from '../../../api/userSettings';
-import { session } from '../../../app/session';
-import { Banner, PageHeader, Section, errorMessage } from '../../../components/settings/kit';
-import { hasSync, store } from '../../../sync';
-import { Button } from '../../../ui/Button';
-import { Skeleton } from '../../../ui/EmptyState';
-import { InfoIcon } from '../../../ui/icons';
-import { Select } from '../../../ui/Input';
+import { invalidate } from '@/api/cache';
+import { lifecycleKeys, listDeletedRepos } from '@/api/lifecycle';
+import { useEditableResource } from '@/api/userSettings';
+import { session } from '@/app/session';
+import { Banner, PageHeader, Section, errorMessage } from '@/components/settings/kit';
+import { hasSync, store } from '@/sync';
+import { Button } from '@/ui/Button';
+import { Skeleton } from '@/ui/EmptyState';
+import { InfoIcon } from '@/ui/icons';
+import { Select } from '@/ui/Input';
 import { DeletedReposList } from './DeletedReposList';
 import styles from './userSettings.module.css';
 

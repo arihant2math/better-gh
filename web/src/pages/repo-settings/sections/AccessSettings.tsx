@@ -15,18 +15,18 @@ import {
   updateInvitation,
   type Collaborator,
   type RepoInvitation,
-} from '../../../api/repoSettings';
-import type { RestAccount } from '../../../api/profile';
-import type { RestTeam } from '../../../api/types';
-import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, RadioCards, Section, errorMessage, useDebounced } from '../../../components/settings/kit';
-import { store } from '../../../sync';
-import type { Permission, Repo, Team } from '../../../sync/models';
-import { Avatar } from '../../../ui/Badge';
-import { Button } from '../../../ui/Button';
-import { Dialog } from '../../../ui/Dialog';
-import { GlobeIcon, LockIcon, OrganizationIcon, PeopleIcon, PersonAddIcon, PersonIcon, SearchIcon } from '../../../ui/icons';
-import { Field, Input, Select } from '../../../ui/Input';
-import { toast } from '../../../ui/Toast';
+} from '@/api/repoSettings';
+import type { RestAccount } from '@/api/profile';
+import type { RestTeam } from '@/api/types';
+import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, RadioCards, Section, errorMessage, useDebounced } from '@/components/settings/kit';
+import { store } from '@/sync';
+import type { Permission, Repo, Team } from '@/sync/models';
+import { Avatar } from '@/ui/Badge';
+import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+import { GlobeIcon, LockIcon, OrganizationIcon, PeopleIcon, PersonAddIcon, PersonIcon, SearchIcon } from '@/ui/icons';
+import { Field, Input, Select } from '@/ui/Input';
+import { toast } from '@/ui/Toast';
 import { ROLES, roleLabel } from '../model';
 import styles from '../RepoSettings.module.css';
 import { ListSkeleton, LoadError, repoKey, useLocalResource, type SectionProps } from '../shared';

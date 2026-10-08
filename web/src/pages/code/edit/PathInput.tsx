@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { cx } from '../../../ui/Button';
+import { cx } from '@/ui/Button';
 import { joinPath } from './commit';
 import styles from './Edit.module.css';
 

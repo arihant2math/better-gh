@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useResource } from '../../../api/cache';
-import { api, v3 } from '../../../api/client';
+import { useResource } from '@/api/cache';
+import { api, v3 } from '@/api/client';
 import {
   addOrgGroupRunner,
   createOrgGroup,
@@ -13,15 +13,15 @@ import {
   setOrgGroupRepos,
   updateOrgGroup,
   type RunnerGroup,
-} from '../../../api/runners';
-import { attempt, useConfirm } from '../../../components/admin/kit';
-import { Link, navigate, useParams } from '../../../router';
-import type { MinimalRepository } from '../../../api/types';
-import { Tag } from '../../../ui/Badge';
-import { Button, IconButton } from '../../../ui/Button';
-import { EmptyState } from '../../../ui/EmptyState';
-import { ArrowLeftIcon, LockIcon, OrganizationIcon, PencilIcon, PlusIcon, RepoIcon, ServerIcon, TrashIcon, WorkflowIcon } from '../../../ui/icons';
-import { toast } from '../../../ui/Toast';
+} from '@/api/runners';
+import { attempt, useConfirm } from '@/components/admin/kit';
+import { Link, navigate, useParams } from '@/router';
+import type { MinimalRepository } from '@/api/types';
+import { Tag } from '@/ui/Badge';
+import { Button, IconButton } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
+import { ArrowLeftIcon, LockIcon, OrganizationIcon, PencilIcon, PlusIcon, RepoIcon, ServerIcon, TrashIcon, WorkflowIcon } from '@/ui/icons';
+import { toast } from '@/ui/Toast';
 import { ActionsNav, orgNavItems, orgSettingsBase } from './nav';
 import { AddRunnerRow, GroupDialog, LabelChips, RunnerStatus, osArch, runnerStyles as k, visibilityText, type GroupValues } from './runnerKit';
 import { ErrorState, ListSkeleton, Section, errorMessage } from './shared';
