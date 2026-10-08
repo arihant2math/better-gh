@@ -4,7 +4,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | — |
+| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | session_01DvsYP6qu5d4Y2CERtNDcZA (opus) |
 | B frontend | session_01MEwAYhDftCiBV5uWWXbvqt | #189 | — | — |
 | C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | — | — |
 
@@ -140,3 +140,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:19Z: A: #5 PR1/4 open as #374, CI running.
 - 02:22Z: #372 APPROVE @55c9eb4 (=head), CI green; sent to coordinator. Nits to file after merge: 500 ms lock-hold in regression test; unify settle (bgh-repos metadata.rs drain-only, bgh-security fixed 3 rounds, bgh-pulls 40 ms sleep) into TestApp::settle.
 - 02:23Z: #372 merged as 2e56e18 (closes #343); C worker+reviewer archived; filed #376 (shared TestApp::settle + deterministic regression test). No open flaky issues; fresh C worker session_01N6s124BzQU31yCTnQ43Hf7 for #376 (small, test-only, deadline 03:20Z).
+- 02:26Z: #374 fmt/clippy green, Rust tests running; opus reviewer session_01DvsYP6qu5d4Y2CERtNDcZA spawned early (authz on every mutation) given 03:20Z wind-down.
