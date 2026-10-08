@@ -5,6 +5,7 @@
 mod common;
 
 mod access_policy;
+mod branch_protection;
 mod cost_limits;
 mod merge_queue;
 mod moderation;

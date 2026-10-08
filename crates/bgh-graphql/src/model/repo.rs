@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use async_graphql::{Context, ID, Object, SimpleObject};
+use async_graphql::{Context, ID, Object};
 use bgh_core::node_id::{self, NodeType};
 use bgh_core::perms::Permission;
 use bgh_core::prelude::*;
@@ -717,7 +717,18 @@ impl Repository {
         pull::by_number(ctx, self, i64::from(number)).await
     }
 
-    // --- rulesets ----------------------------------------------------------
+    // --- branch protection and rulesets ------------------------------------
+
+    pub async fn branch_protection_rules(
+        &self,
+        ctx: &Context<'_>,
+        first: Option<i32>,
+        last: Option<i32>,
+        after: Option<String>,
+        before: Option<String>,
+    ) -> GResult<super::branch_protection::BranchProtectionRuleConnection> {
+        super::branch_protection::list(ctx, self, ConnArgs::new(first, last, after, before)).await
+    }
 
     pub async fn rulesets(
         &self,
@@ -975,8 +986,14 @@ impl Ref {
     pub async fn target(&self, ctx: &Context<'_>) -> GResult<Option<GitObject>> {
         git::object(ctx, self.repo.clone(), &self.target).await
     }
-    pub async fn branch_protection_rule(&self) -> Option<BranchProtectionRule> {
-        None
+    pub async fn branch_protection_rule(
+        &self,
+        ctx: &Context<'_>,
+    ) -> GResult<Option<super::branch_protection::BranchProtectionRule>> {
+        match self.name.strip_prefix("refs/heads/") {
+            Some(b) => super::branch_protection::for_branch(ctx, &self.repo, b).await,
+            None => Ok(None),
+        }
     }
     pub async fn associated_pull_requests(
         &self,
@@ -1023,15 +1040,6 @@ impl Ref {
 }
 
 connection!(RefConnection, RefEdge, Ref);
-
-/// A branch protection rule (none are exposed; kept for query shape).
-#[derive(SimpleObject, Clone)]
-pub struct BranchProtectionRule {
-    pub pattern: String,
-    pub requires_strict_status_checks: bool,
-    pub requires_approving_reviews: bool,
-    pub required_approving_review_count: Option<i32>,
-}
 
 /// Represents a comparison between two commit revisions.
 pub struct Comparison {

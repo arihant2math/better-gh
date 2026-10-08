@@ -1018,6 +1018,9 @@ pub struct App {
 
 #[Object]
 impl App {
+    pub async fn id(&self) -> ID {
+        nid_str(NodeType::Integration, &self.slug)
+    }
     pub async fn slug(&self) -> &str {
         &self.slug
     }

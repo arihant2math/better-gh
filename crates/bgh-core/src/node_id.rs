@@ -64,6 +64,8 @@ pub enum NodeType {
     MergeQueueEntry,
     /// A branch's merge queue (string key `"{repo_id}:{branch}"`).
     MergeQueue,
+    /// A classic (pattern) branch protection rule.
+    BranchProtectionRule,
 }
 
 impl NodeType {
@@ -117,6 +119,7 @@ impl NodeType {
         Self::EnvironmentProtectionRule,
         Self::MergeQueueEntry,
         Self::MergeQueue,
+        Self::BranchProtectionRule,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -170,6 +173,7 @@ impl NodeType {
             Self::EnvironmentProtectionRule => "Gate",
             Self::MergeQueueEntry => "MergeQueueEntry",
             Self::MergeQueue => "MergeQueue",
+            Self::BranchProtectionRule => "BranchProtectionRule",
         }
     }
 

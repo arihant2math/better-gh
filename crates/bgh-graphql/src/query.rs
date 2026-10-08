@@ -333,6 +333,9 @@ pub async fn resolve_node(ctx: &Context<'_>, id: &ID) -> GResult<Option<Node>> {
         (NodeType::MergeQueueEntry, Some(n)) => crate::model::merge_queue::entry_by_id(ctx, n)
             .await?
             .map(Node::MergeQueueEntry),
+        (NodeType::BranchProtectionRule, Some(n)) => crate::model::branch_protection::by_id(ctx, n)
+            .await?
+            .map(Node::BranchProtectionRule),
         (NodeType::MergeQueue, None) => crate::model::merge_queue::queue_by_key(ctx, &key)
             .await?
             .map(Node::MergeQueue),
