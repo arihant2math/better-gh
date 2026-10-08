@@ -5,7 +5,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
-| B frontend | session_01Mnhu15W2Y1gc2EKjb9eY6Q | #255 | — | — |
+| B frontend | session_01Mnhu15W2Y1gc2EKjb9eY6Q | #255 | #369 | session_01L1ZriKfQdL8m4RMGK6Q9YX (opus) |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -99,3 +99,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 00:46Z: #366 merged as 02b8d98; B worker+reviewer archived; filed #367 (nits, queued in B); fresh B worker session_01Mnhu15W2Y1gc2EKjb9eY6Q for #255.
 - 01:01Z: main CI 17f2a01 GREEN; 02b8d98 (37709363111) in progress. Status sent to coordinator.
 - 01:05Z: User confirmed: #5 queued in lane A after #362, ahead of #158 (4 sequential PRs).
+- 01:09Z: B opened #369 (Fixes #255; #96 already fixed by #274/#295), green @4d234a0; opus reviewer session_01L1ZriKfQdL8m4RMGK6Q9YX (return_to security).
