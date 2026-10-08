@@ -108,3 +108,26 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:35Z: #368 merged as fd0d9f2 (closes #362); A worker+reviewer archived; filed #371 (LDAP slot before lock, queued A after #5); acquire doc nit → #353. Fresh A worker session_01Nxezvn8wLKbBzCeE2gjekB for #5 PR1/4.
 - 01:51Z: main CI 27fe31a GREEN; fd0d9f2 (37713589109) in progress. B #233, C #343, A #5 PR1 working. Foreman context 233k.
 - 02:02Z: C opened #372 (Fixes #343: settle() now waits for event listeners), green @55c9eb4; opus reviewer session_01Wxf4ssodfe5Hs5gCzvUqKe.
+- 02:08Z: main CI fd0d9f2 (#368) GREEN. Foreman context 262k → handing off.
+
+## HANDOFF (FOREMAN8 → FOREMAN9, 2026-10-08 02:08Z)
+
+FOREMAN8 (session_01PM4SBV7BPC5zy8yjUQD9AU) hands off at 262k context. Main CI is green through fd0d9f2 (#357, #355, #363, #366, #369, #368 all confirmed).
+
+**Active workers (one per lane):**
+- A: session_01Nxezvn8wLKbBzCeE2gjekB, #5 PR 1/4 (GraphQL branch protection rules + rulesets; body "Part of #5 (1/4)"). No PR yet. Use an OPUS reviewer with an authz check on every new mutation; acceptance is the Terraform github_branch_protection fixtures.
+- B: session_01LxeZ2H6K6CWF4y9HAkQHxa, #233 (useRouteRepo + canPush). No PR yet. A sonnet reviewer is fine (mechanical refactor), unless it touches permissions logic beyond the selector.
+- C: session_018dCXjMFpbE2aTaTUgaRMBs, #343 → PR #372 @55c9eb4, CI green. Opus reviewer session_01Wxf4ssodfe5Hs5gCzvUqKe is running and will report to FOREMAN8. CHECK the review on #372 yourself (get_reviews; commit_id must equal the head).
+
+**Next items per lane:**
+- A: #5 PR 2/4 (commit history, trees, createCommitOnBranch with expectedHeadOid), then 3/4 (org/team members, deployments, environments), then 4/4 (label mutations, cloneTemplateRepository, node() coverage, Backstage fixtures; that one says "Fixes #5"). Each gets a fresh worker and an opus reviewer that checks authz. Then #371 (LDAP slot claimed before lock), then #158 (+ #357 nits), then the rest of #286 per the Queues above.
+- B: after #233: #189, #251, #249, #254, the design-system section of #280, then #349, #350, #360, #358, #365, #367, #370, then the web items of the backlog.
+- C: after #372 merges, any other open flaky-test issues (search "flaky", "flake"); otherwise the lane is idle.
+
+**Nits issues:** #353 (collected), #367 (#366 follow-ups), #370 (#369 follow-ups), #371 (real bug, lane A).
+
+**User decisions this shift:** the user directly confirmed queuing #5 in lane A (4 sequential PRs) at ~01:05Z.
+
+**Process notes:** forward the PR#, approved SHA and head SHA to the coordinator; after a merge, archive the worker and reviewer, file the nits, and start the lane's next item fresh. The last hourly status went to the coordinator at 01:01Z, so one is due now.
+
+Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
