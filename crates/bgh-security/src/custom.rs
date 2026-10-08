@@ -130,7 +130,7 @@ async fn org_owner(state: &AppState, auth: &AuthContext, org: &str) -> ApiResult
         .ok_or(ApiError::NotFound)?;
     if !auth.user.site_admin {
         match bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await? {
-            Some(r) if r == "admin" => auth.require_scope("admin:org")?,
+            Some(r) if r.is_admin() => auth.require_scope("admin:org")?,
             Some(_) => return Err(ApiError::forbidden("Must be an organization owner.")),
             None => return Err(ApiError::NotFound),
         }

@@ -582,8 +582,8 @@ pub async fn org_audit_log(
 ) -> ApiResult<Response> {
     let org = common::org(&state, &org).await?;
     let role = perms::org_role(&state.db, org.id, auth.user.id).await?;
-    match role.as_deref() {
-        Some("admin") => {}
+    match role {
+        Some(perms::OrgRole::Admin) => {}
         _ if auth.user.site_admin => {}
         Some(_) => {
             return Err(ApiError::forbidden(

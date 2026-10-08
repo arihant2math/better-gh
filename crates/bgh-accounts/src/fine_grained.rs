@@ -562,7 +562,7 @@ pub async fn owners(
     struct Row {
         #[sqlx(flatten)]
         org: db::User,
-        role: String,
+        role: bgh_core::perms::OrgRole,
         fine_grained_allowed: Option<bool>,
         fine_grained_require_approval: Option<bool>,
         fine_grained_max_lifetime_days: Option<i32>,
@@ -602,7 +602,7 @@ pub async fn owners(
             avatar_url: simple.avatar_url,
             kind: row.org.kind.clone(),
             fine_grained_allowed: policy.fine_grained_allowed,
-            requires_approval: policy.fine_grained_require_approval && row.role != "admin",
+            requires_approval: policy.fine_grained_require_approval && !row.role.is_admin(),
             max_lifetime_days: policy.max_lifetime_days(),
         });
     }

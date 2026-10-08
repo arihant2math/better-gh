@@ -135,8 +135,8 @@ pub(crate) async fn authorize_org(
     body: &CreateRepoBody,
 ) -> ApiResult<()> {
     let role = perms::org_role(&state.db, org.id, auth.user.id).await?;
-    let allowed = match role.as_deref() {
-        Some("admin") => true,
+    let allowed = match role {
+        Some(perms::OrgRole::Admin) => true,
         Some(_) => {
             let s = db::OrgSettings::find(&state.db, org.id)
                 .await?

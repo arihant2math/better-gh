@@ -42,11 +42,8 @@ pub async fn owner_role(
     let role = if auth.user.site_admin || auth.user.id == owner.id {
         Some(Role::Admin)
     } else if owner.is_org() {
-        match perms::org_role(&state.db, owner.id, auth.user.id)
-            .await?
-            .as_deref()
-        {
-            Some("admin") => Some(Role::Admin),
+        match perms::org_role(&state.db, owner.id, auth.user.id).await? {
+            Some(perms::OrgRole::Admin) => Some(Role::Admin),
             Some(_) => Some(Role::Write),
             None => None,
         }

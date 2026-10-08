@@ -88,8 +88,7 @@ async fn may_reclaim(
     for org in &orgs {
         if bgh_core::perms::org_role(&state.db, *org, user.id)
             .await?
-            .as_deref()
-            == Some("admin")
+            .is_some_and(|r| r.is_admin())
         {
             return Ok(Some(Some(*org)));
         }
@@ -228,7 +227,7 @@ pub async fn list_org(
         .filter(|o| o.kind == "Organization")
         .ok_or(ApiError::NotFound)?;
     let role = bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await?;
-    if !auth.user.site_admin && role.as_deref() != Some("admin") {
+    if !auth.user.site_admin && !role.is_some_and(|r| r.is_admin()) {
         return Err(match role {
             Some(_) => ApiError::forbidden("Must be an organization owner."),
             None => ApiError::NotFound,

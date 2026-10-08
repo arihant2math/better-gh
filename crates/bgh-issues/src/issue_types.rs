@@ -187,7 +187,7 @@ async fn require_org_admin(state: &AppState, auth: &AuthContext, org: &db::User)
         return Ok(());
     }
     match bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await? {
-        Some(r) if r == "admin" => auth.require_scope("admin:org"),
+        Some(r) if r.is_admin() => auth.require_scope("admin:org"),
         Some(_) => Err(ApiError::forbidden("Must be an organization owner.")),
         None => Err(ApiError::NotFound),
     }

@@ -15,6 +15,7 @@ mod invitations;
 mod ldap;
 mod lifecycle;
 mod oauth;
+mod org_role;
 mod orgs;
 mod root;
 mod saml;

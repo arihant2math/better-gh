@@ -40,13 +40,13 @@ pub async fn list(
         } else if a.has_scope("read:packages") {
             all = a.user.site_admin;
             uid = Some(a.user.id);
-            let orgs: Vec<(i64, String)> =
+            let orgs: Vec<(i64, perms::OrgRole)> =
                 sqlx::query_as("SELECT org_id, role FROM org_members WHERE user_id = $1")
                     .bind(a.user.id)
                     .fetch_all(&state.db)
                     .await?;
             for (id, role) in orgs {
-                if role == "admin" {
+                if role.is_admin() {
                     admin_orgs.push(id);
                 }
                 member_orgs.push(id);

@@ -7,7 +7,7 @@ use bgh_core::models::api::{
     OrganizationFull, OrganizationSimple, RepoPermissions, Repository, SimpleUser, TeamSimple,
 };
 use bgh_core::node_id::{self, NodeType};
-use bgh_core::perms::Permission;
+use bgh_core::perms::{OrgRole, Permission};
 use bgh_core::prelude::*;
 use bgh_core::time::ts;
 use bgh_core::urls::Urls;
@@ -214,7 +214,7 @@ impl GpgKey {
 pub struct OrgMembership {
     pub url: String,
     pub state: String,
-    pub role: String,
+    pub role: OrgRole,
     pub organization_url: String,
     pub organization: OrganizationSimple,
     pub user: Option<SimpleUser>,
@@ -233,13 +233,13 @@ impl OrgMembership {
         description: Option<&str>,
         user: &db::User,
         state: &str,
-        role: &str,
+        role: OrgRole,
         can_create_repository: bool,
     ) -> Self {
         Self {
             url: urls.api(&format!("/orgs/{}/memberships/{}", org.login, user.login)),
             state: state.into(),
-            role: role.into(),
+            role,
             organization_url: urls.org(&org.login),
             organization: OrganizationSimple::new(urls, org, description),
             user: Some(SimpleUser::new(urls, user)),

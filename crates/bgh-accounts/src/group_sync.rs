@@ -83,7 +83,15 @@ async fn add(tx: &mut Tx, team: &db::Team, user: &db::User, provider: &str) -> A
             return Ok(());
         };
         // Adds the team membership too.
-        orgs::add_member(tx, &org, user, "member", &[team.id], user.id).await?;
+        orgs::add_member(
+            tx,
+            &org,
+            user,
+            bgh_core::perms::OrgRole::Member,
+            &[team.id],
+            user.id,
+        )
+        .await?;
     } else {
         let inserted = sqlx::query(
             "INSERT INTO team_members (team_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
