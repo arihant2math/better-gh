@@ -228,7 +228,13 @@ pub async fn backfill_service(
 ) -> anyhow::Result<()> {
     const LOCK: i64 = 0x7700_0000_0001;
     loop {
-        if let Some(leader) = AdvisoryLock::try_acquire(&state.db, LOCK).await? {
+        let leader = AdvisoryLock::try_acquire(&state.db, LOCK)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("secret scanning backfill: leader lock: {e:#}");
+                None
+            });
+        if let Some(leader) = leader {
             loop {
                 if let Err(e) = backfill_pending(&state).await {
                     tracing::warn!("secret scanning backfill: {e:#}");
