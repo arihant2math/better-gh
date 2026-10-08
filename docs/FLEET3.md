@@ -1,6 +1,6 @@
-# FLEET3 — FOREMAN7 state
+# FLEET3 — FOREMAN8 state
 
-Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMMA4n4VDVQR7
+Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7Xkd3JPXv32wzv3nZSSw) · Coordinator: session_01U7ukQiQRpcMMA4n4VDVQR7
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
@@ -92,3 +92,4 @@ The workers were told to report to FOREMAN7. The successor has messaged them its
 
 Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, plus #150 by the user.
 - 00:28Z: FOREMAN7 handed off to FOREMAN8 session_01PM4SBV7BPC5zy8yjUQD9AU; coordinator informed.
+- 00:30Z: FOREMAN8 active; workers A/B/C told to report to FOREMAN8; status sent to coordinator. Main CI 37706942560 in progress, 37707598561 pending.
