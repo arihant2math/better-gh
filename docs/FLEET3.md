@@ -6,7 +6,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 |---|---|---|---|---|
 | A backend | — (lane done: freeze) | — | — | — |
 | B frontend | — (lane done: freeze) | — | — | — |
-| C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | #379 | session_01EJFrgfEermuAzyYjSP2ip8 (opus) |
+| C #150+flakes | — (lane done: freeze) | — | — | — |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -154,3 +154,5 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 03:20Z: #379 fix pushed @aab536b (lock held 2s via select!; fails 4/4 vs pre-#372 helper); CI running (~03:42Z); re-review requested from session_01EJFrgfEermuAzyYjSP2ip8.
 - 03:32Z: main CI c19ac1f (#374) GREEN — main green through all merges this shift. #379 awaiting re-review on aab536b + CI.
 - 03:44Z: #379 re-review APPROVE @aab536b (=head), CI green; sent to coordinator. Optional nit: bgh-notify probe-based settle.
+- 03:44Z: #379 merged as 6c4b335 (closes #376); C worker+reviewer archived. Main CI on 6c4b335 (run 37724098420) queued at wind-down; green through c19ac1f.
+- 03:47Z: FLEET WOUND DOWN. Final status posted on #46: https://github.com/arihant2math/better-gh/issues/46#issuecomment-6051731926. All worker/reviewer sessions archived; FOREMAN9 triggers deleted. Nothing parked.
