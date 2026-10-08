@@ -5,6 +5,7 @@
 #![allow(clippy::duplicated_attributes)]
 
 pub mod actor;
+pub mod branch_protection;
 pub mod enums;
 pub mod git;
 pub mod issue;
@@ -62,6 +63,7 @@ pub enum Node {
     ProjectV2View(project::ProjectV2View),
     MergeQueue(merge_queue::MergeQueue),
     MergeQueueEntry(merge_queue::MergeQueueEntry),
+    BranchProtectionRule(branch_protection::BranchProtectionRule),
 }
 
 /// Represents an object which can take actions on GitHub.

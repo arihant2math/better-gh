@@ -6,6 +6,7 @@
 //! the REST path parameters / bodies, and the result is re-read for the
 //! payload.
 
+mod branch_protection;
 mod issues;
 mod merge_queue;
 mod moderation;
@@ -47,6 +48,7 @@ pub fn guard<'a>(ctx: &Context<'a>) -> GResult<&'a AuthContext> {
 
 #[derive(MergedObject, Default)]
 pub struct Mutation(
+    branch_protection::BranchProtectionMutations,
     issues::IssueMutations,
     merge_queue::MergeQueueMutations,
     moderation::ModerationMutations,

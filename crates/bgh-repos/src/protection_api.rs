@@ -776,6 +776,101 @@ impl People {
     }
 }
 
+/// Sync, audit and events for a saved rule (`before` is the old row of an
+/// update), within the writing transaction.
+async fn record_saved(
+    tx: &mut Tx,
+    access: &RepoAccess,
+    user: &db::User,
+    before: Option<&ProtectionRow>,
+    row: &ProtectionRow,
+) -> ApiResult<()> {
+    let (action, verb) = if before.is_some() {
+        (SyncAction::Update, "update")
+    } else {
+        (SyncAction::Insert, "create")
+    };
+    tx.sync(
+        &access.scope(),
+        "branch_protection",
+        row.id,
+        action,
+        &sync_json(row),
+    )
+    .await?;
+    audit::log(
+        &mut **tx,
+        Some(user),
+        &format!("protected_branch.{verb}"),
+        audit_target(access),
+        json!({"branch": row.pattern, "protection_id": row.id}),
+    )
+    .await?;
+    tx.emit(Event::RepositoryUpdated {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+    });
+    let rule = webhook_rule_json(row);
+    let (action, changes) = match before {
+        Some(old) => ("edited", rule_changes(&webhook_rule_json(old), &rule)),
+        None => ("created", Value::Null),
+    };
+    if action == "created" || changes.as_object().is_some_and(|c| !c.is_empty()) {
+        tx.emit(Event::BranchProtectionRuleChanged {
+            repo_id: access.repo.id,
+            actor_id: user.id,
+            action: action.into(),
+            rule,
+            changes,
+        });
+    }
+    Ok(())
+}
+
+/// Sync, audit and events for a deleted rule, within the transaction.
+async fn record_deleted(
+    tx: &mut Tx,
+    access: &RepoAccess,
+    user: &db::User,
+    row: &ProtectionRow,
+) -> ApiResult<()> {
+    tx.sync(
+        &access.scope(),
+        "branch_protection",
+        row.id,
+        SyncAction::Delete,
+        &json!({"id": row.id}),
+    )
+    .await?;
+    audit::log(
+        &mut **tx,
+        Some(user),
+        "protected_branch.destroy",
+        audit_target(access),
+        json!({"branch": row.pattern, "protection_id": row.id}),
+    )
+    .await?;
+    tx.emit(Event::RepositoryUpdated {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+    });
+    tx.emit(Event::BranchProtectionRuleChanged {
+        repo_id: access.repo.id,
+        actor_id: user.id,
+        action: "deleted".into(),
+        rule: webhook_rule_json(row),
+        changes: Value::Null,
+    });
+    Ok(())
+}
+
+fn audit_target(access: &RepoAccess) -> audit::Target {
+    audit::Target::Repo {
+        id: access.repo.id,
+        org_id: access.owner.is_org().then_some(access.owner.id),
+    }
+}
+
 // ----- handlers ------------------------------------------------------------------
 
 struct Cx<'a> {
@@ -817,13 +912,6 @@ impl Cx<'_> {
         .bind(self.branch)
         .fetch_optional(&mut **tx)
         .await?)
-    }
-
-    fn audit_target(&self) -> audit::Target {
-        audit::Target::Repo {
-            id: self.access.repo.id,
-            org_id: self.access.owner.is_org().then_some(self.access.owner.id),
-        }
     }
 
     /// Upsert the rule within `tx`, with sync, audit and event.
@@ -873,45 +961,7 @@ impl Cx<'_> {
         .bind(d.allow_fork_syncing)
         .fetch_one(&mut **tx)
         .await?;
-        let (action, verb) = if existed {
-            (SyncAction::Update, "update")
-        } else {
-            (SyncAction::Insert, "create")
-        };
-        tx.sync(
-            &self.access.scope(),
-            "branch_protection",
-            row.id,
-            action,
-            &sync_json(&row),
-        )
-        .await?;
-        audit::log(
-            &mut **tx,
-            Some(self.user),
-            &format!("protected_branch.{verb}"),
-            self.audit_target(),
-            json!({"branch": self.branch, "protection_id": row.id}),
-        )
-        .await?;
-        tx.emit(Event::RepositoryUpdated {
-            repo_id: self.access.repo.id,
-            actor_id: self.user.id,
-        });
-        let rule = webhook_rule_json(&row);
-        let (action, changes) = match &before {
-            Some(old) => ("edited", rule_changes(&webhook_rule_json(old), &rule)),
-            None => ("created", Value::Null),
-        };
-        if action == "created" || changes.as_object().is_some_and(|c| !c.is_empty()) {
-            tx.emit(Event::BranchProtectionRuleChanged {
-                repo_id: self.access.repo.id,
-                actor_id: self.user.id,
-                action: action.into(),
-                rule,
-                changes,
-            });
-        }
+        record_saved(tx, self.access, self.user, before.as_ref(), &row).await?;
         Ok(row)
     }
 
@@ -1126,33 +1176,7 @@ impl Cx<'_> {
             .bind(row.id)
             .execute(&mut *tx)
             .await?;
-        tx.sync(
-            &self.access.scope(),
-            "branch_protection",
-            row.id,
-            SyncAction::Delete,
-            &json!({"id": row.id}),
-        )
-        .await?;
-        audit::log(
-            &mut *tx,
-            Some(self.user),
-            "protected_branch.destroy",
-            self.audit_target(),
-            json!({"branch": self.branch, "protection_id": row.id}),
-        )
-        .await?;
-        tx.emit(Event::RepositoryUpdated {
-            repo_id: self.access.repo.id,
-            actor_id: self.user.id,
-        });
-        tx.emit(Event::BranchProtectionRuleChanged {
-            repo_id: self.access.repo.id,
-            actor_id: self.user.id,
-            action: "deleted".into(),
-            rule: webhook_rule_json(&row),
-            changes: Value::Null,
-        });
+        record_deleted(&mut tx, self.access, self.user, &row).await?;
         tx.commit().await?;
         no_content()
     }
@@ -1498,4 +1522,383 @@ fn string_list(body: &[u8], key: &str) -> ApiResult<Vec<String>> {
         .iter()
         .map(|x| x.as_str().map(str::to_string).ok_or_else(invalid))
         .collect()
+}
+
+// ----- pattern rules (GraphQL `*BranchProtectionRule`) ---------------------------
+
+/// Users and teams (database ids) a rule setting lists.
+#[derive(Debug, Clone, Default)]
+pub struct RuleActors {
+    pub users: Vec<i64>,
+    pub teams: Vec<i64>,
+}
+
+/// A pattern rule write (GraphQL `create/updateBranchProtectionRule`).
+/// `None` keeps the current value (the default on create).
+#[derive(Debug, Clone, Default)]
+pub struct RuleInput {
+    pub pattern: Option<String>,
+    pub requires_approving_reviews: Option<bool>,
+    pub required_approving_review_count: Option<i64>,
+    pub dismisses_stale_reviews: Option<bool>,
+    pub requires_code_owner_reviews: Option<bool>,
+    pub require_last_push_approval: Option<bool>,
+    pub restricts_review_dismissals: Option<bool>,
+    pub review_dismissal_actors: Option<RuleActors>,
+    pub bypass_pull_request_actors: Option<RuleActors>,
+    pub requires_status_checks: Option<bool>,
+    pub requires_strict_status_checks: Option<bool>,
+    /// `(context, app_id)` pairs.
+    pub required_status_checks: Option<Vec<(String, Option<i64>)>>,
+    pub restricts_pushes: Option<bool>,
+    pub push_actors: Option<RuleActors>,
+    pub is_admin_enforced: Option<bool>,
+    pub requires_commit_signatures: Option<bool>,
+    pub requires_linear_history: Option<bool>,
+    pub requires_conversation_resolution: Option<bool>,
+    pub allows_force_pushes: Option<bool>,
+    pub allows_deletions: Option<bool>,
+    pub blocks_creations: Option<bool>,
+    pub lock_branch: Option<bool>,
+    pub lock_allows_fetch_and_merge: Option<bool>,
+    pub requires_deployments: Option<bool>,
+    pub required_deployment_environments: Option<Vec<String>>,
+}
+
+/// The same rule as the REST protection endpoints: admins only (403 for
+/// other readers, 404 for callers who can't read), never on archived repos.
+fn require_rule_admin(access: &RepoAccess) -> ApiResult<()> {
+    access.require(Permission::Admin)?;
+    access.require_not_archived()
+}
+
+fn rule_field(field: &str, message: impl Into<String>) -> ApiError {
+    ApiError::invalid_field(FieldError::custom("BranchProtectionRule", field, message))
+}
+
+/// Check that `actors` name users and teams of the repository's owner.
+async fn check_actors(state: &AppState, access: &RepoAccess, input: &RuleInput) -> ApiResult<()> {
+    let lists = [
+        &input.review_dismissal_actors,
+        &input.bypass_pull_request_actors,
+        &input.push_actors,
+    ];
+    let mut users: Vec<i64> = lists
+        .iter()
+        .filter_map(|a| a.as_ref())
+        .flat_map(|a| a.users.clone())
+        .collect();
+    let mut teams: Vec<i64> = lists
+        .iter()
+        .filter_map(|a| a.as_ref())
+        .flat_map(|a| a.teams.clone())
+        .collect();
+    users.sort_unstable();
+    users.dedup();
+    teams.sort_unstable();
+    teams.dedup();
+    if !teams.is_empty() {
+        org_only(access)?;
+        let (n,): (i64,) =
+            sqlx::query_as("SELECT count(*) FROM teams WHERE id = ANY($1) AND org_id = $2")
+                .bind(&teams)
+                .bind(access.owner.id)
+                .fetch_one(&state.db)
+                .await?;
+        if n != teams.len() as i64 {
+            return Err(rule_field(
+                "actorIds",
+                "Could not resolve a team of this organization.",
+            ));
+        }
+    }
+    if !users.is_empty() {
+        let (n,): (i64,) =
+            sqlx::query_as("SELECT count(*) FROM users WHERE id = ANY($1) AND type = 'User'")
+                .bind(&users)
+                .fetch_one(&state.db)
+                .await?;
+        if n != users.len() as i64 {
+            return Err(rule_field("actorIds", "Could not resolve a user."));
+        }
+    }
+    Ok(())
+}
+
+fn actors_value(a: &RuleActors) -> Value {
+    json!({"users": a.users, "teams": a.teams, "apps": []})
+}
+
+/// A people setting (`dismissal_restrictions`, ...): `on` decides whether
+/// it is set, `actors` replaces its lists.
+fn people_setting(base: Option<&Value>, on: bool, actors: Option<&RuleActors>) -> Option<Value> {
+    if !on {
+        return None;
+    }
+    Some(match (actors, base) {
+        (Some(a), _) => actors_value(a),
+        (None, Some(b)) => b.clone(),
+        (None, None) => actors_value(&RuleActors::default()),
+    })
+}
+
+/// Apply `input` on top of `base` (the stored row, or the defaults).
+fn apply_rule(access: &RepoAccess, base: &Draft, input: &RuleInput) -> ApiResult<Draft> {
+    let mut d = base.clone();
+    let flag = |v: Option<bool>, cur: bool| v.unwrap_or(cur);
+
+    let reviews_on = flag(
+        input.requires_approving_reviews,
+        base.required_pull_request_reviews.is_some(),
+    );
+    d.required_pull_request_reviews = if reviews_on {
+        let b = base
+            .required_pull_request_reviews
+            .clone()
+            .unwrap_or_else(|| json!({}));
+        let cur = |k: &str| b[k].as_bool().unwrap_or(false);
+        let count = match input.required_approving_review_count {
+            Some(n) => review_count(n).map_err(|_| {
+                rule_field("requiredApprovingReviewCount", "must be between 0 and 6")
+            })?,
+            None => b["required_approving_review_count"].as_i64().unwrap_or(1),
+        };
+        let mut v = json!({
+            "dismiss_stale_reviews": flag(input.dismisses_stale_reviews, cur("dismiss_stale_reviews")),
+            "require_code_owner_reviews":
+                flag(input.requires_code_owner_reviews, cur("require_code_owner_reviews")),
+            "required_approving_review_count": count,
+            "require_last_push_approval":
+                flag(input.require_last_push_approval, cur("require_last_push_approval")),
+        });
+        let dismissal = b.get("dismissal_restrictions").filter(|x| !x.is_null());
+        let dismissal_on = flag(input.restricts_review_dismissals, dismissal.is_some());
+        if let Some(x) = people_setting(
+            dismissal,
+            dismissal_on,
+            input.review_dismissal_actors.as_ref(),
+        ) {
+            v["dismissal_restrictions"] = x;
+        }
+        let bypass = b
+            .get("bypass_pull_request_allowances")
+            .filter(|x| !x.is_null());
+        let bypass_on = match &input.bypass_pull_request_actors {
+            Some(a) => !a.users.is_empty() || !a.teams.is_empty(),
+            None => bypass.is_some(),
+        };
+        if let Some(x) =
+            people_setting(bypass, bypass_on, input.bypass_pull_request_actors.as_ref())
+        {
+            v["bypass_pull_request_allowances"] = x;
+        }
+        Some(v)
+    } else {
+        None
+    };
+
+    let checks_on = flag(
+        input.requires_status_checks,
+        base.required_status_checks.is_some(),
+    );
+    d.required_status_checks = if checks_on {
+        let b = base.required_status_checks.as_ref();
+        let existing = checks_of(b);
+        let strict = flag(
+            input.requires_strict_status_checks,
+            b.and_then(|v| v["strict"].as_bool()).unwrap_or(false),
+        );
+        let checks = match &input.required_status_checks {
+            Some(c) => c
+                .iter()
+                .map(|(ctx, app)| {
+                    let app =
+                        app.or_else(|| checks_from_contexts(vec![ctx.clone()], &existing)[0].1);
+                    (ctx.clone(), app)
+                })
+                .collect(),
+            None => existing,
+        };
+        Some(status_checks_value(strict, checks))
+    } else {
+        None
+    };
+
+    let push_on = flag(input.restricts_pushes, base.restrictions.is_some());
+    d.restrictions = people_setting(
+        base.restrictions.as_ref(),
+        push_on,
+        input.push_actors.as_ref(),
+    );
+    if d.restrictions.is_some() {
+        org_only(access)?;
+    }
+
+    d.enforce_admins = flag(input.is_admin_enforced, base.enforce_admins);
+    d.required_signatures = flag(input.requires_commit_signatures, base.required_signatures);
+    d.required_linear_history = flag(input.requires_linear_history, base.required_linear_history);
+    d.required_conversation_resolution = flag(
+        input.requires_conversation_resolution,
+        base.required_conversation_resolution,
+    );
+    d.allow_force_pushes = flag(input.allows_force_pushes, base.allow_force_pushes);
+    d.allow_deletions = flag(input.allows_deletions, base.allow_deletions);
+    d.block_creations = flag(input.blocks_creations, base.block_creations);
+    d.lock_branch = flag(input.lock_branch, base.lock_branch);
+    d.allow_fork_syncing = flag(input.lock_allows_fetch_and_merge, base.allow_fork_syncing);
+    Ok(d)
+}
+
+/// The deployment environments `input` leaves on the rule.
+fn apply_deployments(current: &[String], input: &RuleInput) -> Vec<String> {
+    let envs = match &input.required_deployment_environments {
+        Some(e) => e
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        None => current.to_vec(),
+    };
+    match input.requires_deployments {
+        Some(false) => vec![],
+        _ => envs,
+    }
+}
+
+fn valid_pattern(p: &str) -> ApiResult<&str> {
+    let p = p.trim();
+    if p.is_empty() {
+        return Err(rule_field("pattern", "Pattern can't be blank"));
+    }
+    Ok(p)
+}
+
+fn already_protected(e: sqlx::Error, pattern: &str) -> ApiError {
+    match bgh_core::db::unique_violation(&e).as_deref() {
+        Some("branch_protections_repo_id_pattern_key") => {
+            rule_field("pattern", format!("Name already protected: {pattern}"))
+        }
+        _ => e.into(),
+    }
+}
+
+/// Write all mutable columns plus `pattern` of rule `id`.
+async fn write_rule(
+    tx: &mut Tx,
+    id: i64,
+    pattern: &str,
+    d: &Draft,
+    envs: &[String],
+) -> ApiResult<ProtectionRow> {
+    sqlx::query_as(&format!(
+        "UPDATE branch_protections SET pattern = $2, required_status_checks = $3,
+             required_pull_request_reviews = $4, restrictions = $5, enforce_admins = $6,
+             required_linear_history = $7, allow_force_pushes = $8, allow_deletions = $9,
+             block_creations = $10, required_conversation_resolution = $11,
+             required_signatures = $12, lock_branch = $13, allow_fork_syncing = $14,
+             required_deployment_environments = $15, updated_at = now()
+         WHERE id = $1
+         RETURNING {}",
+        ProtectionRow::COLUMNS
+    ))
+    .bind(id)
+    .bind(pattern)
+    .bind(&d.required_status_checks)
+    .bind(&d.required_pull_request_reviews)
+    .bind(&d.restrictions)
+    .bind(d.enforce_admins)
+    .bind(d.required_linear_history)
+    .bind(d.allow_force_pushes)
+    .bind(d.allow_deletions)
+    .bind(d.block_creations)
+    .bind(d.required_conversation_resolution)
+    .bind(d.required_signatures)
+    .bind(d.lock_branch)
+    .bind(d.allow_fork_syncing)
+    .bind(envs)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| already_protected(e, pattern))
+}
+
+/// Create a pattern rule (`input.pattern` required).
+pub async fn create_rule(
+    state: &AppState,
+    access: &RepoAccess,
+    user: &db::User,
+    input: &RuleInput,
+) -> ApiResult<ProtectionRow> {
+    require_rule_admin(access)?;
+    let pattern = valid_pattern(input.pattern.as_deref().unwrap_or_default())?;
+    check_actors(state, access, input).await?;
+    let d = apply_rule(access, &Draft::default(), input)?;
+    let envs = apply_deployments(&[], input);
+    let mut tx = Tx::begin(state).await?;
+    let (id,): (i64,) = sqlx::query_as(
+        "INSERT INTO branch_protections (repo_id, pattern) VALUES ($1, $2) RETURNING id",
+    )
+    .bind(access.repo.id)
+    .bind(pattern)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| already_protected(e, pattern))?;
+    let row = write_rule(&mut tx, id, pattern, &d, &envs).await?;
+    record_saved(&mut tx, access, user, None, &row).await?;
+    tx.commit().await?;
+    Ok(row)
+}
+
+/// Update pattern rule `id` of the repository (404 when it has none).
+pub async fn update_rule(
+    state: &AppState,
+    access: &RepoAccess,
+    user: &db::User,
+    id: i64,
+    input: &RuleInput,
+) -> ApiResult<ProtectionRow> {
+    require_rule_admin(access)?;
+    check_actors(state, access, input).await?;
+    let mut tx = Tx::begin(state).await?;
+    let before = lock_rule(&mut tx, access, id).await?;
+    let pattern = match &input.pattern {
+        Some(p) => valid_pattern(p)?.to_string(),
+        None => before.pattern.clone(),
+    };
+    let d = apply_rule(access, &Draft::from(&before), input)?;
+    let envs = apply_deployments(&before.required_deployment_environments, input);
+    let row = write_rule(&mut tx, id, &pattern, &d, &envs).await?;
+    record_saved(&mut tx, access, user, Some(&before), &row).await?;
+    tx.commit().await?;
+    Ok(row)
+}
+
+/// Delete pattern rule `id` of the repository (404 when it has none).
+pub async fn delete_rule(
+    state: &AppState,
+    access: &RepoAccess,
+    user: &db::User,
+    id: i64,
+) -> ApiResult<()> {
+    require_rule_admin(access)?;
+    let mut tx = Tx::begin(state).await?;
+    let row = lock_rule(&mut tx, access, id).await?;
+    sqlx::query("DELETE FROM branch_protections WHERE id = $1")
+        .bind(row.id)
+        .execute(&mut *tx)
+        .await?;
+    record_deleted(&mut tx, access, user, &row).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn lock_rule(tx: &mut Tx, access: &RepoAccess, id: i64) -> ApiResult<ProtectionRow> {
+    sqlx::query_as(&format!(
+        "SELECT {} FROM branch_protections WHERE id = $1 AND repo_id = $2 FOR UPDATE",
+        ProtectionRow::COLUMNS
+    ))
+    .bind(id)
+    .bind(access.repo.id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ApiError::NotFound)
 }
