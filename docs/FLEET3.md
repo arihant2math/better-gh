@@ -4,7 +4,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | — | — |
+| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | — |
 | B frontend | session_01MEwAYhDftCiBV5uWWXbvqt | #189 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | #372 | session_01Wxf4ssodfe5Hs5gCzvUqKe (opus) |
 
@@ -137,3 +137,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:17Z: #373 APPROVE @b6d65e6 (=head), CI green; sent to coordinator. Nits to file after merge: CodePage.tsx:65 inline canPush; inline admin checks (RunsPage:36, CachesPage:48, ImportProgressPage:53, RepoLayout:131) → canAdmin selector; releases canPushTo alias; import order.
 - 02:18Z: #373 merged as b1f71fe (closes #233); B worker+reviewer archived; filed #375 (nits, queued in B). Fresh B worker session_01MEwAYhDftCiBV5uWWXbvqt for #189.
 - 02:18Z: Coordinator relayed user request: wind down from 03:20Z (no new items/workers/reviewers; finish #372 + #5 PR1, park PR1 as draft if not approved+green by ~04:30Z; idle lanes archived; final status on #46; archive all, delete triggers, send #46 link). Workers A/B warned. Triggers: trig_018WsqbM1oNGJR6bDQqKxVqd (02:25 check-in), trig_01SMYcWyEURJiGv5HpLJz4pp (03:20 wind-down).
+- 02:19Z: A: #5 PR1/4 open as #374, CI running.
