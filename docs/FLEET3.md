@@ -97,3 +97,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 00:45Z: #366 APPROVE @49de4f6 (=head), CI green; sent to coordinator. Nits to file after merge: cross-tab BroadcastChannel reset; viewerReactions catch live() check; settle pending sudo prompt on reset.
 - 00:45Z: main CI 2fc6db8 (37706942560) GREEN; 17f2a01 (37707598561) in progress.
 - 00:46Z: #366 merged as 02b8d98; B worker+reviewer archived; filed #367 (nits, queued in B); fresh B worker session_01Mnhu15W2Y1gc2EKjb9eY6Q for #255.
+- 01:01Z: main CI 17f2a01 GREEN; 02b8d98 (37709363111) in progress. Status sent to coordinator.
