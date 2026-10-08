@@ -106,3 +106,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:22Z: A #368 (Fixes #362) green @9d23afa; opus reviewer session_015EKCTXXGKv4axQE1DT6WzW spawned.
 - 01:34Z: #368 APPROVE @9d23afa (=head), CI green; sent to coordinator. Nits to file after merge: acquire doc caveat (dropped future vs backend briefly holding lock); LDAP tick claims Redis ldap_sync:scheduled before lock → timeout skips a sync interval. Main CI 02b8d98 GREEN; 27fe31a in progress.
 - 01:35Z: #368 merged as fd0d9f2 (closes #362); A worker+reviewer archived; filed #371 (LDAP slot before lock, queued A after #5); acquire doc nit → #353. Fresh A worker session_01Nxezvn8wLKbBzCeE2gjekB for #5 PR1/4.
+- 01:51Z: main CI 27fe31a GREEN; fd0d9f2 (37713589109) in progress. B #233, C #343, A #5 PR1 working. Foreman context 233k.
