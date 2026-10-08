@@ -134,3 +134,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:09Z: FOREMAN8 handed off to FOREMAN9 session_013BAw4vJVDBeTY5fj4G8BmX; coordinator informed.
 - 02:12Z: FOREMAN9 active; A/B/C + #372 reviewer told to report to FOREMAN9; status sent to coordinator. #372 green @55c9eb4, no review posted yet.
 - 02:13Z: B opened #373 (Fixes #233; + RouterView layout-chunk race fix), green @b6d65e6; opus reviewer session_01Q36FrwUk7vqRxzDkW23e1Y (permission selectors).
+- 02:17Z: #373 APPROVE @b6d65e6 (=head), CI green; sent to coordinator. Nits to file after merge: CodePage.tsx:65 inline canPush; inline admin checks (RunsPage:36, CachesPage:48, ImportProgressPage:53, RepoLayout:131) → canAdmin selector; releases canPushTo alias; import order.
