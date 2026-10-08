@@ -32,7 +32,7 @@ from the mock, handy for testing rollbacks.
 | `src/app/` | shell (sidebar, top bar), `routes.ts`, command palette + `commands.ts`, session, theme, shortcut help |
 | `src/router/` | the router (`Link`, `navigate`, `useParams`, `useQuery`, `setQuery`, `prefetch`) |
 | `src/sync/` | local-first store: `models.ts`, `schema.ts`, `pool.ts`, `client.ts`, `transactions.ts`, `mutations.ts`, `selectors.ts`, `hooks.ts` |
-| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`) |
+| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`), per-viewer state lifetime (`reset.ts`) |
 | `src/ui/` | design system (import from `ui/…` files or the `ui` barrel) |
 | `src/shortcuts/` | `useShortcuts`, `formatKeys` |
 | `src/components/` | domain components shared by pages: `diff/DiffViewer`, `editor/MarkdownEditor` (toolbar, preview, `@`/`#` autocomplete), `labels/ColorPicker`, `ConfirmDialog`; `admin/` = kit for admin-style pages |
@@ -112,6 +112,33 @@ export default observer(function MyPage() {
   `api/endpoints.ts`. Key by SHA and pass `immutable: true` when content
   addressed; warm it from the route's `prefetch`.
 
+## Where remote and UI state lives
+
+Pick by what the data is; don't hand-roll a new cache.
+
+| Data | Use |
+|------|-----|
+| Synced model (issues, PRs, labels, notifications…) | the store (`store()`, `sync/selectors`, mutations) |
+| One REST resource (detail, settings, a short list) | `useResource` / `load` / `mutate` (`api/cache`) |
+| Server-paginated REST list (`Link: rel="next"`) | `usePagedList` (`components/admin`) |
+| REST list with optimistic add/edit/remove | `useList` (`pages/settings/developer/useList.ts`, built on `useResource`) |
+| Your own abortable request whose result should be reused (per keystroke) | `peekFresh` + `mutate` on an `api/cache` key (see `search/api.ts`) |
+| Local UI state | `useState` |
+| Cross-page UI state (palette, dialogs, sidebar) | `app/uiState.ts` |
+
+**Sign-out.** Logout, session expiry and an account switch call
+`resetClientState()` (`api/reset.ts`) from `session.teardown()`: it clears
+`api/cache` (immutable entries too), the ETag cache and every registered
+module cache, and bumps a generation so responses to requests started for
+the previous viewer reject with an `AbortError` instead of reaching their
+callers. Anything else that holds per-viewer data at module level (a `Map`,
+a `let`, an `observable.map`, a MobX singleton) must take part: use
+`resettableMap()` / `resettableSet()` or register `onReset(() => …)`, and
+when it writes after async work that is not an `api` call (or in a `catch`
+fallback), capture `const live = sameSession()` first and write only if
+`live()`. Content-only caches (rendered syntax highlighting keyed by the
+code itself) can stay.
+
 ## API types
 
 REST response shapes are hand-written TypeScript; nothing checks them
@@ -137,6 +164,24 @@ against the backend yet, so keep one copy per resource.
   `audit-log` entry).
 * Test fixtures build complete objects (`simpleUser()` in
   `src/test/fixtures.ts`) instead of casting partial ones.
+
+## API errors
+
+`src/api/errors.ts` is the only code that reads an `ApiError`'s body; both
+settings kits re-export it. Never cast `e.body as { errors?: … }` in a page.
+
+* `errorMessage(e)`: the response `message` plus the first validation
+  error when it adds something (`Validation Failed: name already exists`);
+  `Error.message` for other errors; else `Something went wrong. Try again.`
+* `fieldErrors(e, labels?)`: a 422's per-field messages. The server's
+  `message` wins; a code-only entry reads `<field> is required` /
+  `<field> already exists` / `<field> is invalid`. Screens that want their
+  own wording (signup, new org) pass `labels` (`{ field: { code | '*': text
+  | (err) => text } }`) at the call site.
+* `validationErrors(e)`: the typed `errors[]` (string entries become
+  `{ message }`) for mappers that need more than `fieldErrors`.
+* `isAccessError(e)`: 401/403/404, for "you can't manage this here" states.
+  `isNotFound` / `orNullOn404` / `errorMessageOf` stay in `api/client.ts`.
 
 ## Optimistic mutations
 

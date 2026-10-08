@@ -15,6 +15,7 @@ import {
   type RestAsset,
   type RestRelease,
 } from '../../api/code';
+import { describeCode, errorMessage, validationErrors } from '../../api/errors';
 import { RefPicker, useRefs } from '../../components/code/RefPicker';
 import { UploadStatus, useAttachments } from '../../components/editor/useAttachments';
 import { Link, navigate, useParams } from '../../router';
@@ -105,14 +106,10 @@ type Intent = 'publish' | 'draft' | 'update';
 
 let uploadSeq = 0;
 
-function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
 /** Map a GitHub 422 `errors[]` onto the form fields. */
-function validationErrors(e: unknown): Errors | null {
+function releaseErrors(e: unknown): Errors | null {
   if (!(e instanceof ApiError) || e.status !== 422) return null;
-  const list = ((e.body as { errors?: { field?: string; code?: string; message?: string }[] } | null)?.errors ?? []).filter(Boolean);
+  const list = validationErrors(e);
   const out: Errors = {};
   for (const err of list) {
     if (err.field === 'tag_name') {
@@ -124,7 +121,7 @@ function validationErrors(e: unknown): Errors | null {
             : (err.message ?? 'This is not a valid tag name.');
     } else if (err.field === 'target_commitish') out.target = err.message ?? 'The target is not a valid branch or commit.';
     else if (err.field === 'name') out.name = err.message ?? 'Invalid title.';
-    else out.form = err.message ?? `${err.field ?? 'Release'} ${err.code ?? 'is invalid'}`;
+    else out.form = err.message ?? describeCode(err.field ?? 'release', err.code);
   }
   if (!list.length) out.form = e.message;
   return out;
@@ -196,7 +193,7 @@ const Editor = observer(function Editor({
       },
       (e: unknown) => {
         if (ctrl.signal.aborted) return true;
-        patchUpload(u.key, { status: 'error', error: errorText(e) });
+        patchUpload(u.key, { status: 'error', error: errorMessage(e) });
         return false;
       },
     );
@@ -241,7 +238,7 @@ const Editor = observer(function Editor({
       () => invalidateReleases(owner, repo),
       (e: unknown) => {
         setAssets((as) => (as.some((x) => x.id === a.id) ? as : [...as, a]));
-        toast({ kind: 'error', title: `Could not delete ${a.name}`, description: errorText(e) });
+        toast({ kind: 'error', title: `Could not delete ${a.name}`, description: errorMessage(e) });
       },
     );
   };
@@ -270,8 +267,8 @@ const Editor = observer(function Editor({
       setBody((b) => (b.trim() ? `${b.replace(/\s+$/, '')}\n\n${notes.body}` : notes.body));
       setTab('write');
     } catch (e) {
-      const v = validationErrors(e);
-      toast({ kind: 'error', title: 'Could not generate release notes', description: v ? Object.values(v)[0] : errorText(e) });
+      const v = releaseErrors(e);
+      toast({ kind: 'error', title: 'Could not generate release notes', description: v ? Object.values(v)[0] : errorMessage(e) });
     } finally {
       setGenerating(false);
     }
@@ -337,9 +334,9 @@ const Editor = observer(function Editor({
     } catch (e) {
       setBusy(null);
       if (rel) invalidateReleases(owner, repo);
-      const v = validationErrors(e);
+      const v = releaseErrors(e);
       if (v) setErrors(v);
-      else toast({ kind: 'error', title: 'Could not save the release', description: errorText(e) });
+      else toast({ kind: 'error', title: 'Could not save the release', description: errorMessage(e) });
     }
   };
 

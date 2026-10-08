@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { mutate, refresh, useResource } from '../../api/cache';
+import { fieldErrors, type FieldErrors } from '../../api/errors';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime } from '../../components/admin/format';
 import { ErrorState, PageHeader, Panel, RadioCards, Switch, errorMessage, useConfirm } from '../../components/admin/kit';
@@ -16,7 +17,6 @@ import {
   AVATAR_TYPES,
   MAX_AVATAR_BYTES,
   deleteOrgAvatar,
-  fieldErrors,
   getOrg,
   orgKey,
   updateOrg,
@@ -116,7 +116,7 @@ export default function OrgProfilePage() {
   const [base, setBase] = useState<OrgFull | null>(null);
   const [baseForm, setBaseForm] = useState<Form | null>(null);
   const [form, setForm] = useState<Form | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const patch = baseForm && form ? diff(baseForm, form) : {};

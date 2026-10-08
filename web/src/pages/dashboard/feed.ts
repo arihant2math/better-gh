@@ -5,6 +5,7 @@
  */
 import { makeAutoObservable, runInAction } from 'mobx';
 import { api } from '../../api/client';
+import { resettableMap } from '../../api/reset';
 
 export interface FeedActor {
   id: number;
@@ -193,7 +194,7 @@ export function shouldAutoLoad(f: Pick<Feed, 'done' | 'loading' | 'error' | 'eve
   return !f.done && !f.loading && !f.error && f.events.length > 0;
 }
 
-const feeds = new Map<string, Feed>();
+const feeds = resettableMap<string, Feed>();
 
 export function feedFor(org: string | null): Feed {
   const key = org?.toLowerCase() ?? '';

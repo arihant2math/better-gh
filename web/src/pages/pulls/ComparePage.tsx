@@ -29,6 +29,7 @@ import { MetaPickers, projectCandidates } from '../issues/new/MetaPickers';
 import styles from './Compare.module.css';
 import { carriedQuery, initialBody, parseCompareParams } from './compareParams';
 import { applyNewPullMeta, hasMeta, type NewPullMeta } from './newPull';
+import { resettableMap } from '../../api/reset';
 
 /** `base...head` (or just `head`, compared with the default branch). Head may be `owner:branch`. */
 export function parseSpec(spec: string, defaultBranch: string): { base: string; head: string } {
@@ -88,7 +89,7 @@ export default observer(function ComparePage() {
 });
 
 /** Forks are listed lazily by the picker; remember their repo names for the head branch list. */
-const forkNames = new Map<string, string>();
+const forkNames = resettableMap<string, string>();
 function forkName(owner: string, repo: string, forkOwner: string): string | undefined {
   return forkNames.get(`${owner}/${repo}:${forkOwner}`);
 }

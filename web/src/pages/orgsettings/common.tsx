@@ -1,6 +1,7 @@
 /** Pieces shared by the organization settings pages. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { mutate, useResource } from '../../api/cache';
+import { fieldErrors, type FieldErrors } from '../../api/errors';
 import { getBoot } from '../../boot';
 import { navigate } from '../../router';
 import styles from '../../components/admin/admin.module.css';
@@ -18,7 +19,6 @@ import {
   allTeamsKey,
   createInvitation,
   createTeam,
-  fieldErrors,
   getMembership,
   getUser,
   invitationsPrefix,
@@ -113,7 +113,7 @@ export function InviteDialog({ org, open, onClose, initialLogin = '' }: { org: s
   const [teamIds, setTeamIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [shownFor, setShownFor] = useState<boolean>(false);
   if (open !== shownFor) {
     setShownFor(open);
@@ -295,7 +295,7 @@ export const privacyPill = (p: TeamPrivacy) =>
 /** Create a team (name, description, privacy, parent). */
 export function TeamDialog({ org, open, onClose, teams, parentId }: { org: string; open: boolean; onClose: () => void; teams: readonly RestTeam[]; parentId?: number }) {
   const [form, setForm] = useState({ name: '', description: '', privacy: 'closed' as TeamPrivacy, parent: '' });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [shownFor, setShownFor] = useState(false);

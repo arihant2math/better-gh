@@ -1,5 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { api } from '../api/client';
+import { sameSession } from '../api/reset';
 import { getBoot } from '../boot';
 
 /** `GET /_bgh/site` (public): banner, maintenance and sign-in options. */
@@ -95,11 +96,13 @@ export class SiteState {
   }
 
   private async loadViewer(): Promise<void> {
+    // Signed out while loading: the answer belongs to the previous viewer.
+    const live = sameSession();
     try {
       const me = await api.get<{ site_admin?: boolean }>('/api/v3/user');
-      runInAction(() => (this.viewerSiteAdmin = !!me?.site_admin));
+      if (live()) runInAction(() => (this.viewerSiteAdmin = !!me?.site_admin));
     } catch {
-      runInAction(() => (this.viewerSiteAdmin = false));
+      if (live()) runInAction(() => (this.viewerSiteAdmin = false));
     }
   }
 

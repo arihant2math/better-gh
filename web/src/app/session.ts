@@ -1,5 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { ApiError, api, requestSudo } from '../api/client';
+import { resetClientState } from '../api/reset';
 import { transport } from '../api/transport';
 import { getBoot, isMockMode, setBoot, type BootData, type BootUser } from '../boot';
 import { navigate } from '../router';
@@ -157,7 +158,13 @@ class Session {
     navigate(`/login?return_to=${encodeURIComponent(location.pathname)}`);
   }
 
+  /**
+   * End the viewer's session client-side (logout, expiry, account switch):
+   * stop sync and drop every per-viewer cache (`api/reset`) before the next
+   * sign-in can render anything.
+   */
   private teardown() {
+    resetClientState();
     if (hasSync()) {
       sync().stop();
       setSyncClient(null);

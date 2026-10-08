@@ -1,5 +1,6 @@
 import { getBoot } from '../boot';
 import { ApiError, api, errorMessageOf, parseRetryAfter } from './client';
+import { validationErrors } from './errors';
 import { browserTransport, transport } from './transport';
 
 /** `POST /_bgh/uploads` response (crates/bgh-uploads). */
@@ -87,7 +88,7 @@ export async function uploadFile<T>(path: string, file: Blob, opts: { accept: st
 export function uploadAttachment(file: File, target: UploadTarget, onProgress: (fraction: number) => void = () => {}, signal?: AbortSignal): Promise<Attachment> {
   return uploadFile<Attachment>(uploadPath(file, target), file, { accept: 'application/json', onProgress, signal }).catch((e: unknown) => {
     // The upload endpoint explains rejected files in a field error ("Validation Failed").
-    const detail = e instanceof ApiError ? (e.body as { errors?: { message?: string }[] } | null)?.errors?.find((x) => x.message)?.message : undefined;
+    const detail = e instanceof ApiError ? validationErrors(e).find((x) => x.message)?.message : undefined;
     throw detail && e instanceof ApiError ? new ApiError(detail, e.status, e.body, e.retryAfterMs) : e;
   });
 }

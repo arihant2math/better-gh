@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { mutate, refresh, useResource } from '../../api/cache';
+import { isAccessError } from '../../api/errors';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime } from '../../components/admin/format';
@@ -24,7 +25,6 @@ import {
   deliveryKey,
   getDelivery,
   hooksKey,
-  isNotAllowed,
   listHooks,
   pingHook,
   redeliver,
@@ -128,7 +128,7 @@ export default function OrgHooksPage() {
     return (
       <div className={styles.page}>
         <PageHeader title="Webhooks" />
-        {isNotAllowed(hooks.error) ? <OwnerRequired org={org} what="manage webhooks" /> : <ErrorState error={hooks.error} onRetry={reloadHooks} />}
+        {isAccessError(hooks.error) ? <OwnerRequired org={org} what="manage webhooks" /> : <ErrorState error={hooks.error} onRetry={reloadHooks} />}
       </div>
     );
   }

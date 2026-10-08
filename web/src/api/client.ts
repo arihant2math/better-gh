@@ -1,4 +1,5 @@
 import { getBoot } from '../boot';
+import { onReset, sameSession } from './reset';
 import { transport } from './transport';
 
 export class ApiError extends Error {
@@ -102,6 +103,8 @@ export interface ApiResponse<T> {
 
 const ETAG_CACHE_MAX = 300;
 
+const signedOut = () => new DOMException('Signed out while the request was in flight', 'AbortError');
+
 /**
  * Fetch-based client for `/api/v3` (GitHub REST) and `/_bgh` (private).
  * - sends CSRF + X-Client-Tx headers;
@@ -110,6 +113,11 @@ const ETAG_CACHE_MAX = 300;
  */
 export class ApiClient {
   private etags = new Map<string, { etag: string; data: unknown }>();
+
+  constructor() {
+    // ETag bodies are the previous viewer's responses.
+    onReset(() => this.etags.clear());
+  }
 
   async request<T>(path: string, opts: RequestOptions = {}): Promise<ApiResponse<T>> {
     try {
@@ -148,7 +156,11 @@ export class ApiClient {
     // always revalidate so the browser's HTTP cache can't serve data we just
     // changed. ETags make that a cheap 304; immutable SHA-addressed data is
     // kept by the in-memory resource cache and never refetched anyway.
+    const live = sameSession();
     const res = await transport().fetch(path, { method, headers, body, signal: opts.signal, cache: 'no-cache' });
+    // Signed out (or switched account) while in flight: never hand the
+    // previous viewer's response to callers that cache it.
+    if (!live()) throw signedOut();
 
     if (res.status === 304 && cached) {
       // Refresh LRU position.
@@ -159,6 +171,7 @@ export class ApiClient {
     const isJson = (res.headers.get('content-type') ?? '').includes('json');
     const data: unknown =
       res.status === 204 ? null : opts.text || !isJson ? await res.text() : await res.json().catch(() => null);
+    if (!live()) throw signedOut();
     if (!res.ok) {
       const message = errorMessageOf(data, `${method} ${path} failed (${res.status})`);
       throw new ApiError(message, res.status, data, parseRetryAfter(res.headers.get('retry-after')));

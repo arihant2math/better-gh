@@ -23,11 +23,13 @@ import { ListSkeleton, OneTimeSecret, subPath } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate, validateApp, type AppFormValues } from '../developer/logic';
 import { useList } from '../developer/useList';
+import { onReset } from '../../../api/reset';
 
 const LIST_KEY = 'dev:apps';
 
 /** Client secret returned by create/regenerate, kept in memory only. */
 let freshSecret: { appId: number; secret: string } | null = null;
+onReset(() => (freshSecret = null));
 
 /** `/settings/developers`, `/settings/developers/new`, `/settings/developers/{id}`. */
 export default function DeveloperSettings() {

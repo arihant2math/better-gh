@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { mutate, peek } from '../../api/cache';
 import { ApiError } from '../../api/client';
 import { Link, navigate, setQuery, useQuery } from '../../router';
 import {
@@ -99,24 +100,25 @@ interface Loaded<T> {
   loading: boolean;
 }
 
-const pageCache = new Map<string, Page<unknown>>();
-const countCache = new Map<string, number>();
+// Result pages and counts live in `api/cache` (dropped on sign-out), kept
+// for the session for back/forward.
+const pageKey = (type: SearchType, q: string, page: number, sort: string) => `search:page:${type}|${q}|${page}|${sort}`;
+const countKey = (type: SearchType, q: string) => `search:count:${type}|${q}`;
 
 /** One search request per (type, q, page, sort); aborted when the inputs change; cached for back/forward. */
 function useSearch<T extends SearchType>(type: T, q: string, page: number, sort: string): Loaded<SearchItemMap[T]> {
-  const key = `${type}|${q}|${page}|${sort}`;
-  const cached = pageCache.get(key) as Page<SearchItemMap[T]> | undefined;
+  const key = pageKey(type, q, page, sort);
+  const cached = peek<Page<SearchItemMap[T]>>(key);
   const [state, setState] = useState<{ key: string; data?: Page<SearchItemMap[T]>; error?: string }>({ key: '' });
   useEffect(() => {
-    if (!q || pageCache.has(key)) return;
+    if (!q || peek(key)) return;
     const ctrl = new AbortController();
     const [s, o] = sort.endsWith('-asc') ? [sort.slice(0, -4), 'asc' as const] : [sort, sort ? ('desc' as const) : undefined];
     const t0 = performance.now();
     search(type, { q, page, perPage: PER_PAGE, sort: s || undefined, order: o }, ctrl.signal).then(
       (data) => {
         recordPerf(`search.${type}`, performance.now() - t0);
-        pageCache.set(key, data);
-        if (pageCache.size > 60) pageCache.delete(pageCache.keys().next().value!);
+        mutate(key, () => data);
         if (!ctrl.signal.aborted) setState({ key, data });
       },
       (e: unknown) => {
@@ -137,11 +139,11 @@ function useCounts(q: string): Partial<Record<SearchType, number>> {
     if (!q) return;
     const ctrl = new AbortController();
     for (const t of TYPES) {
-      const key = `${t.id}|${q}`;
-      if (countCache.has(key)) continue;
+      const key = countKey(t.id, q);
+      if (peek(key) !== undefined) continue;
       searchCount(t.id, q, ctrl.signal).then(
         (n) => {
-          countCache.set(key, n);
+          mutate(key, () => n);
           if (!ctrl.signal.aborted) rerender((x) => x + 1);
         },
         () => undefined,
@@ -151,7 +153,7 @@ function useCounts(q: string): Partial<Record<SearchType, number>> {
   }, [q]);
   const out: Partial<Record<SearchType, number>> = {};
   for (const t of TYPES) {
-    const n = countCache.get(`${t.id}|${q}`);
+    const n = peek<number>(countKey(t.id, q));
     if (n !== undefined) out[t.id] = n;
   }
   return out;

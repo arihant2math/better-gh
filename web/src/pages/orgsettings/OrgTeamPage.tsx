@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { invalidate, mutate, refresh, useResource } from '../../api/cache';
+import { fieldErrors, type FieldErrors } from '../../api/errors';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { plural } from '../../components/admin/format';
@@ -19,7 +20,6 @@ import {
   allTeamsKey,
   childTeamsPath,
   deleteTeam,
-  fieldErrors,
   getTeam,
   listOrgRepos,
   orgReposKey,
@@ -635,7 +635,7 @@ function SettingsTab({ org, team }: { org: string; team: TeamFull }) {
   const initial = { name: team.name, description: team.description ?? '', privacy: team.privacy, parent: team.parent ? String(team.parent.id) : '' };
   const [form, setForm] = useState(initial);
   const [baseFor, setBaseFor] = useState(team);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const confirm = useConfirm();

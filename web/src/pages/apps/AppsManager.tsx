@@ -57,12 +57,14 @@ import {
   validateAppForm,
   type AppFormValues,
 } from './logic';
+import { onReset } from '../../api/reset';
 
 const listKey = (owner: string) => `apps:list:${owner}`;
 const appKey = (slug: string) => `apps:app:${slug}`;
 
 /** PEM of a key generated in this page view, kept in memory only. */
 let freshKey: { slug: string; key: AppKey } | null = null;
+onReset(() => (freshKey = null));
 
 export function AppIcon({ name, size = 40 }: { name: string; size?: number }) {
   return (
