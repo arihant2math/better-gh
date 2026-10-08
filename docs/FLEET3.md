@@ -63,3 +63,31 @@ C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open f
 - 00:18Z: B opened #363 (Fixes #162), green; sonnet reviewer spawned.
 - 00:24Z: #363 APPROVE @770f50d (=head), CI green; sent to coordinator. Filed #364 (inline error text follow-up). Main CI on 2fc6db8 (run 37706942560) in progress.
 - 00:26Z: #363 merged as 17f2a01; B worker+reviewer archived; fresh B worker for #156 (cross-account cache leak). Closed my dup #364 in favour of worker's #365 (queued in B). Main CI: run 37706942560 (2fc6db8) in progress, 37707598561 (17f2a01) pending.
+
+## HANDOFF (FOREMAN7 → successor, 2026-10-08 00:27Z)
+
+FOREMAN7 (session_01Wn7Xkd3JPXv32wzv3nZSSw) passed 300k context and hands off. No reviewers are currently active.
+
+**Active workers (one per lane; each owns ONE item and is archived when its PR merges):**
+- A: session_01J27YQ2Nq6mU1pTws88tTBt, #362 (AdvisoryLock connect timeout, P-High). No PR yet.
+- B: session_01FwzbaGyJE4uCRRUTB6Vn72, #156 (clear client caches on logout; cross-account leak; use an opus reviewer). No PR yet.
+- C: session_018dCXjMFpbE2aTaTUgaRMBs, #343 (actions triggers flake). No PR yet.
+The workers were told to report to FOREMAN7. The successor has messaged them its new ID.
+
+**Pending check:** main CI on 2fc6db8 (#357, also covers #355, run 37706942560) and on 17f2a01 (#363, run 37707598561). Confirm green. If red, a fixer session is pre-authorized.
+
+**Next items per lane:**
+- A: #158 (OrgAccess "org owner or 404"; fold in the #357 nits: manage_accounts.rs:317 String role, explicit Some(OrgRole::Member) arms), then the rest of #286 in order (#173, #196, #167, #172, #185, #212, #216+#209, Phase 2…). Then the backend items of backlog #324 #325 #326 #333 #281 #282 #157 #262, then #336, then the #319 notes (file an issue from the final status comment on #46). Also #348 (rules-engine move, from #226).
+- B: rest of #280 in order (#255, #229, #233, #189, #251, #249, #254, design-system section…), then #349, #350, #360, #358, #365, then the web items of the backlog. #203 stays open for --max-warnings 0 after #349.
+- C: after #343, any other open flaky-test issues. Then the lane is free.
+
+**Collected nits issue:** #353 (lint/release/doc/log-viewer/raw-body/xhr/advisory-lock-session-death).
+
+**Process (as practised):**
+- A fresh worker session per PR. Each worker prompt includes "push polish BEFORE reporting; no pushes after approval".
+- One reviewer per PR: opus for security, auth or concurrency work, sonnet otherwise. The reviewer posts a COMMENT review starting "Verdict: …".
+- Before forwarding, verify the review commit_id equals the head and `CI result` is green.
+- Forward PR#, approved SHA and head SHA to the coordinator. On merge, archive the worker and reviewer, and file or queue the nits.
+- Hourly status to the coordinator (last sent 23:21Z; one is due now).
+
+Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, plus #150 by the user.
