@@ -31,24 +31,38 @@ pub async fn migrate(db: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
 /// starting together on a small pool) deadlock until the acquire timeout
 /// (#341). Released by [`AdvisoryLock::release`] or by dropping it (the
 /// connection closes, which ends the session and its locks).
+///
+/// Opening the connection is bounded by the pool's `acquire_timeout`, as a
+/// pooled acquire would be (#362): a hung connect fails with a
+/// [`std::io::ErrorKind::TimedOut`] error, which callers log and retry on
+/// their next tick.
 pub struct AdvisoryLock {
     conn: PgConnection,
 }
 
 impl AdvisoryLock {
-    /// Take `key` if it is free, else `None`.
+    /// Take `key` if it is free, else `None`. The connect and the
+    /// `pg_try_advisory_lock` round-trip together are bounded by the pool's
+    /// `acquire_timeout`.
     pub async fn try_acquire(db: &PgPool, key: i64) -> sqlx::Result<Option<Self>> {
-        let mut conn = PgConnection::connect_with(&db.connect_options()).await?;
-        let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(key)
-            .fetch_one(&mut conn)
-            .await?;
-        Ok(got.then_some(Self { conn }))
+        bounded(db, async {
+            let mut conn = PgConnection::connect_with(&db.connect_options()).await?;
+            let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+                .bind(key)
+                .fetch_one(&mut conn)
+                .await?;
+            Ok(got.then_some(Self { conn }))
+        })
+        .await
     }
 
-    /// Take `key`, waiting while another session holds it.
+    /// Take `key`, waiting while another session holds it. Only the connect
+    /// is bounded (by the pool's `acquire_timeout`); the wait for the lock
+    /// itself is not, since waiting is the point. Callers that need a bound
+    /// on the wait drop the future (e.g. `tokio::time::timeout`), which
+    /// closes the connection.
     pub async fn acquire(db: &PgPool, key: i64) -> sqlx::Result<Self> {
-        let mut conn = PgConnection::connect_with(&db.connect_options()).await?;
+        let mut conn = bounded(db, PgConnection::connect_with(&db.connect_options())).await?;
         sqlx::query("SELECT pg_advisory_lock($1)")
             .bind(key)
             .execute(&mut conn)
@@ -60,6 +74,20 @@ impl AdvisoryLock {
     pub async fn release(self) {
         let _ = self.conn.close().await;
     }
+}
+
+/// Run `fut` within the pool's `acquire_timeout`.
+async fn bounded<T>(
+    db: &PgPool,
+    fut: impl std::future::Future<Output = sqlx::Result<T>>,
+) -> sqlx::Result<T> {
+    let limit = db.options().get_acquire_timeout();
+    tokio::time::timeout(limit, fut).await.unwrap_or_else(|_| {
+        Err(sqlx::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("advisory lock: no connection within {limit:?}"),
+        )))
+    })
 }
 
 /// A database transaction that also collects post-commit side effects.

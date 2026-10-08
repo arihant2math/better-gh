@@ -270,3 +270,45 @@ async fn advisory_lock_does_not_pin_a_pooled_connection() {
         .unwrap();
     waited.release().await;
 }
+
+/// A hung connect fails within the pool's acquire timeout instead of
+/// stalling the leader services forever (#362).
+#[tokio::test]
+async fn advisory_lock_connect_is_bounded() {
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
+    // Accepts connections but never answers the startup message.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let held = tokio::spawn(async move {
+        let mut socks = Vec::new();
+        while let Ok((sock, _)) = listener.accept().await {
+            socks.push(sock);
+        }
+    });
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(300))
+        .connect_lazy_with(
+            PgConnectOptions::new()
+                .host("127.0.0.1")
+                .port(port)
+                .ssl_mode(PgSslMode::Disable),
+        );
+    const KEY: i64 = 0x7e57_0362;
+
+    let res = tokio::time::timeout(
+        Duration::from_secs(5),
+        AdvisoryLock::try_acquire(&pool, KEY),
+    )
+    .await
+    .expect("try_acquire is bounded");
+    let err = res.err().expect("hung connect is an error");
+    assert!(
+        matches!(&err, sqlx::Error::Io(e) if e.kind() == std::io::ErrorKind::TimedOut),
+        "{err:?}"
+    );
+    let res = tokio::time::timeout(Duration::from_secs(5), AdvisoryLock::acquire(&pool, KEY))
+        .await
+        .expect("acquire's connect is bounded");
+    assert!(res.is_err());
+    held.abort();
+}
