@@ -6,7 +6,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | — | — |
 | B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | — | — |
-| C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
+| C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | #372 | session_01Wxf4ssodfe5Hs5gCzvUqKe (opus) |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
@@ -107,3 +107,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:34Z: #368 APPROVE @9d23afa (=head), CI green; sent to coordinator. Nits to file after merge: acquire doc caveat (dropped future vs backend briefly holding lock); LDAP tick claims Redis ldap_sync:scheduled before lock → timeout skips a sync interval. Main CI 02b8d98 GREEN; 27fe31a in progress.
 - 01:35Z: #368 merged as fd0d9f2 (closes #362); A worker+reviewer archived; filed #371 (LDAP slot before lock, queued A after #5); acquire doc nit → #353. Fresh A worker session_01Nxezvn8wLKbBzCeE2gjekB for #5 PR1/4.
 - 01:51Z: main CI 27fe31a GREEN; fd0d9f2 (37713589109) in progress. B #233, C #343, A #5 PR1 working. Foreman context 233k.
+- 02:02Z: C opened #372 (Fixes #343: settle() now waits for event listeners), green @55c9eb4; opus reviewer session_01Wxf4ssodfe5Hs5gCzvUqKe.
