@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { NotFound } from '../../app/NotFound';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
-import { issuesForRepo, canPush, milestoneByNumber, repoByName } from '../../sync/selectors';
+import { issuesForRepo, canPush, milestoneByNumber } from '../../sync/selectors';
 import { updateMilestone } from '../../sync/mutations';
 import { Button, cx } from '../../ui/Button';
 import { CalendarIcon, MilestoneIcon } from '../../ui/icons';
@@ -11,20 +11,20 @@ import { Markdown } from '../../ui/Markdown';
 import { IssueList } from '../issues/IssueList';
 import { dueText, percentDone } from './due';
 import styles from './Milestones.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** Milestone detail: header with progress, then its issues and PRs (filterable list). */
 export default observer(function MilestonePage() {
-  const { owner, repo: name, number } = useParams<{ owner: string; repo: string; number: string }>();
-  const repo = repoByName(owner, name);
-  const m = repo ? milestoneByNumber(repo.id, Number(number)) : undefined;
+  const { number } = useParams<{ number: string }>();
+  const repo = useRouteRepo();
+  const m = milestoneByNumber(repo.id, Number(number));
   const mid = m?.id;
-  const repoId = repo?.id;
-  const source = useCallback(() => (repoId && mid ? issuesForRepo(repoId).filter((i) => i.milestoneId === mid) : []), [repoId, mid]);
-  const base = `/${owner}/${name}`;
+  const repoId = repo.id;
+  const source = useCallback(() => (mid ? issuesForRepo(repoId).filter((i) => i.milestoneId === mid) : []), [repoId, mid]);
+  const base = `/${repo.owner}/${repo.name}`;
   useShortcuts('Milestone', {
-    e: { handler: () => (m && repo && canPush(repo.id) ? navigate(`${base}/milestones/${m.number}/edit`) : false), description: 'Edit milestone', group: 'Milestone' },
+    e: { handler: () => (m && canPush(repo.id) ? navigate(`${base}/milestones/${m.number}/edit`) : false), description: 'Edit milestone', group: 'Milestone' },
   });
-  if (!repo) return null;
   if (!m) return <NotFound what="milestone" />;
   const due = dueText(m);
   const pct = percentDone(m);

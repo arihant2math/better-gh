@@ -402,7 +402,9 @@ export function RouterView({ notFound: NotFound }: { notFound: ComponentType }) 
   if (!m) return <NotFound />;
   const Page = loaded(m.route.load)?.default as ComponentType | undefined;
   const Layout = loaded(m.route.layout)?.default;
-  if (!Page) return null;
+  // The initial match renders before its chunks finish loading: never show a
+  // page without its layout (pages may rely on what the layout provides).
+  if (!Page || (m.route.layout && !Layout)) return null;
   const page = <Page />;
   return <RouteContext value={m}>{Layout ? <Layout>{page}</Layout> : page}</RouteContext>;
 }

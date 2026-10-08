@@ -8,7 +8,7 @@ import { formatKeys } from '../../../shortcuts/manager';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
 import type { ID, Repo } from '../../../sync/models';
 import { createIssue } from '../../../sync/mutations';
-import { canTriage, labelByName, milestonesForRepo, repoByName, userByLogin } from '../../../sync/selectors';
+import { canTriage, labelByName, milestonesForRepo, userByLogin } from '../../../sync/selectors';
 import { Button } from '../../../ui/Button';
 import { Skeleton } from '../../../ui/EmptyState';
 import { FileIcon, IssueOpenedIcon, LinkExternalIcon } from '../../../ui/icons';
@@ -18,6 +18,7 @@ import { toast } from '../../../ui/Toast';
 import { MetaPickers } from './MetaPickers';
 import { dropdownOptions, fieldKey, formToMarkdown, initialValues, missingRequired, type FormValues } from './issueForm';
 import styles from './NewIssue.module.css';
+import { useRouteRepo } from '../../repo/useRouteRepo';
 
 /** Templates are addressed by basename in URLs (`?template=bug_report.yml`), like GitHub. */
 const templateId = (t: IssueTemplate) => t.filename.split('/').pop() ?? t.filename;
@@ -26,9 +27,8 @@ const templateId = (t: IssueTemplate) => t.filename.split('/').pop() ?? t.filena
 export default observer(function NewIssuePage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
   const { pathname } = useLocation();
-  const repo = repoByName(owner, name);
-  const res = useResource<IssueTemplates>(repo ? `issue-templates:${owner}/${name}`.toLowerCase() : null, () => getIssueTemplates(owner, name), { ttlMs: 60_000 });
-  if (!repo) return null;
+  const repo = useRouteRepo();
+  const res = useResource<IssueTemplates>(`issue-templates:${owner}/${name}`.toLowerCase(), () => getIssueTemplates(owner, name), { ttlMs: 60_000 });
   const choosing = pathname.endsWith('/choose');
   const templates = res.data?.templates ?? [];
   if (choosing) {

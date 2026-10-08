@@ -10,12 +10,14 @@ import { Button, IconButton } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, PencilIcon, TagIcon } from '../../ui/icons';
 import styles from './Releases.module.css';
-import { CardSkeletons, PER_PAGE, ReleaseCard, ReleasesHeader, editHref, releasesBase, useCanPush, useLatestRelease, useTagShas } from './shared';
+import { CardSkeletons, PER_PAGE, ReleaseCard, ReleasesHeader, editHref, releasesBase, useLatestRelease, useTagShas } from './shared';
+import { canPush as canPushTo } from '../../sync/selectors';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** `/:owner/:repo/releases` — newest first, paginated with "Load more". */
 export default observer(function ReleasesPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
-  const canPush = useCanPush(owner, repo);
+  const canPush = canPushTo(useRouteRepo().id);
   const latest = useLatestRelease(owner, repo).data ?? null;
   const shas = useTagShas(owner, repo);
   const newHref = `${releasesBase(owner, repo)}/new`;

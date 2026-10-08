@@ -7,7 +7,7 @@ import { store } from '../../sync';
 import { usePullDetails } from '../../sync/hooks';
 import type { Issue, Review } from '../../sync/models';
 import { checkRunsFor, statusesFor, threadsForPull } from '../../sync/pullSelectors';
-import { issueByNumber, repoByName, repoFullName } from '../../sync/selectors';
+import { issueByNumber, repoFullName } from '../../sync/selectors';
 import { CheckCircleIcon, CommentDiscussionIcon, FileDiffIcon, GitCommitIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
@@ -22,6 +22,7 @@ import { MergeBox } from './MergeBox';
 import pr from './PullDetail.module.css';
 import { ReviewThreadView } from './ReviewThread';
 import { Reviewers } from './Reviewers';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 // Heavy tabs are separate chunks (prefetched by the route on link intent).
 export const loadFilesTab = () => import('./FilesTab');
@@ -43,19 +44,18 @@ const FULL_HEIGHT = new Set(['files', 'checks', 'commit']);
 
 export default observer(function PullDetailPage() {
   const params = useParams<{ owner: string; repo: string; number: string; tab?: string; sha?: string }>();
-  const { owner, repo: name, number, sha } = params;
+  const { number, sha } = params;
   const tab = params.tab ?? (sha ? 'commits' : 'conversation');
-  const repo = repoByName(owner, name);
-  const issue = repo ? issueByNumber(repo.id, Number(number)) : undefined;
+  const repo = useRouteRepo();
+  const issue = issueByNumber(repo.id, Number(number));
   usePullDetails(issue?.isPr ? issue.id : undefined);
-  const base = repo && issue ? `/${repo.owner}/${repo.name}/pull/${issue.number}` : '';
+  const base = issue ? `/${repo.owner}/${repo.name}/pull/${issue.number}` : '';
   useShortcuts('Pull request', {
     'g c': { handler: () => navigate(base), description: 'Conversation', group: 'Pull request' },
     'g m': { handler: () => navigate(`${base}/commits`), description: 'Commits', group: 'Pull request' },
     'g k': { handler: () => navigate(`${base}/checks`), description: 'Checks', group: 'Pull request' },
     'g f': { handler: () => navigate(`${base}/files`), description: 'Files changed', group: 'Pull request' },
   });
-  if (!repo) return null;
   if (!issue || !issue.isPr) return <NotFound what="pull request" />;
 
   const author = store().get('user', issue.authorId);

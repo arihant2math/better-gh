@@ -4,18 +4,19 @@ import { useCommands } from '../../app/commands';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ColorPicker } from '../../components/labels/ColorPicker';
 import { randomLabelColor } from '../../components/labels/colors';
-import { Link, setQuery, useParams, useQuery } from '../../router';
+import { Link, setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { useComputed } from '../../sync/hooks';
 import type { Label, Repo } from '../../sync/models';
 import { createLabel, deleteLabel, updateLabel } from '../../sync/mutations';
-import { canPush, labelByName, labelsForRepo, labelUsage, repoByName } from '../../sync/selectors';
+import { canPush, labelByName, labelsForRepo, labelUsage } from '../../sync/selectors';
 import { LabelPill } from '../../ui/Badge';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { IssueOpenedIcon, PlusIcon, SearchIcon, TagIcon } from '../../ui/icons';
 import { Input, Select } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
+import { useRouteRepo } from '../repo/useRouteRepo';
 import styles from './Labels.module.css';
 
 type Sort = 'name' | 'name-desc' | 'most' | 'fewest';
@@ -29,13 +30,7 @@ const SORTS: { key: Sort; label: string }[] = [
 const q = (s: string) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '')}"` : s);
 
 export default observer(function LabelsPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
-  if (!repo) return null;
-  return <Labels repo={repo} />;
-});
-
-const Labels = observer(function Labels({ repo }: { repo: Repo }) {
+  const repo = useRouteRepo();
   const query = useQuery();
   const filter = query.get('q') ?? '';
   const sort = (query.get('sort') as Sort | null) ?? 'name';

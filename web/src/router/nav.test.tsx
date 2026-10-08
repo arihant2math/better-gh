@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { defineRoutes, loginHref, navigate, replaceHash, useCurrentMatch, useHash, withReturnTo } from './index';
+import { defineRoutes, loginHref, navigate, preloadRoute, replaceHash, RouterView, useCurrentMatch, useHash, withReturnTo } from './index';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -87,5 +87,32 @@ describe('useCurrentMatch', () => {
     expect(params).toEqual({ owner: 'acme', repo: 'api' });
     act(() => navigate('/octo'));
     expect(params).toEqual({ owner: 'octo' });
+  });
+});
+
+describe('RouterView', () => {
+  it('waits for the layout chunk before rendering a page that has one', async () => {
+    let resolveLayout!: () => void;
+    const layoutLoaded = new Promise<void>((r) => (resolveLayout = r));
+    const Layout = ({ children }: { children: ReactNode }) => <section data-layout>{children}</section>;
+    defineRoutes([
+      {
+        path: '/:owner/:repo',
+        layout: () => layoutLoaded.then(() => ({ default: Layout })),
+        load: () => Promise.resolve({ default: () => <p data-page /> }),
+      },
+    ]);
+    history.replaceState(null, '', '/acme/api');
+    const done = preloadRoute('/acme/api');
+    await act(async () => {}); // page chunk resolves, layout chunk still pending
+    const host = document.createElement('div');
+    root = createRoot(host);
+    act(() => root!.render(<RouterView notFound={() => null} />));
+    expect(host.querySelector('[data-page]')).toBeNull();
+    await act(async () => {
+      resolveLayout();
+      await done;
+    });
+    expect(host.querySelector('[data-layout] > [data-page]')).not.toBeNull();
   });
 });

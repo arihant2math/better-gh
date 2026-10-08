@@ -7,7 +7,6 @@ import { useCommands } from '../../app/commands';
 import { Link, navigate, setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
-import { repoByName } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { ChevronDownIcon, KebabHorizontalIcon, PlayIcon, WorkflowIcon, XIcon } from '../../ui/icons';
@@ -22,6 +21,8 @@ import { RunRow } from './RunRow';
 import { EVENTS, STATUS_FILTERS, workflowFile } from './shared';
 import { WorkflowsSidebar } from './WorkflowsSidebar';
 import styles from './Runs.module.css';
+import { canPush } from '../../sync/selectors';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const PER_PAGE = 50;
 
@@ -30,10 +31,10 @@ type FilterName = 'event' | 'status' | 'branch' | 'actor';
 export default observer(function RunsPage() {
   const { owner, repo: name, workflow: wfParam } = useParams<{ owner: string; repo: string; workflow?: string }>();
   const query = useQuery();
-  const repo = repoByName(owner, name);
+  const repo = useRouteRepo();
   const base = `/${owner}/${name}`;
-  const canAdmin = !!repo && store().get('viewerRepo', repo.id)?.permission === 'admin';
-  const canWrite = !!repo && ['admin', 'maintain', 'write'].includes(store().get('viewerRepo', repo.id)?.permission ?? '');
+  const canAdmin = store().get('viewerRepo', repo.id)?.permission === 'admin';
+  const canWrite = canPush(repo.id);
 
   const workflows = useResource(workflowsKey(owner, name), loadWorkflows(owner, name));
   const workflow: Workflow | undefined = wfParam ? workflows.data?.find((w) => workflowFile(w.path) === wfParam || String(w.id) === wfParam) : undefined;
@@ -86,7 +87,7 @@ export default observer(function RunsPage() {
 
   // Live: a run we haven't seen → refetch page 1 once (debounced).
   const refetchFirst = () => firstKey && void refresh(firstKey, loadRuns(owner, name, { ...filters, page: 1 })).catch(() => undefined);
-  useOnNewRun(repo?.id, refetchFirst);
+  useOnNewRun(repo.id, refetchFirst);
   const anyRunning = items.some((r) => (liveRuns.get(r.id) ?? r).status !== 'completed');
   usePolling(anyRunning, refetchFirst);
 
@@ -121,8 +122,6 @@ export default observer(function RunsPage() {
     ],
     [base, workflows.data],
   );
-
-  if (!repo) return null;
 
   return (
     <div className={styles.page}>

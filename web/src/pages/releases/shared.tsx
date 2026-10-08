@@ -7,7 +7,6 @@ import { browseKeys } from '../../api/endpoints';
 import { useRefs } from '../../components/code/RefPicker';
 import { Link, navigate, prefetch as prefetchRoute } from '../../router';
 import { archiveUrl, treeUrl } from '../../components/code/urls';
-import { store } from '../../sync';
 import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { Button, cx } from '../../ui/Button';
@@ -23,13 +22,6 @@ export const PER_PAGE = 20;
 export const releasesBase = (o: string, r: string) => `/${o}/${r}/releases`;
 export const releaseHref = (o: string, r: string, tag: string) => `${releasesBase(o, r)}/tag/${encodeURIComponent(tag)}`;
 export const editHref = (o: string, r: string, tag: string) => `${releasesBase(o, r)}/edit/${encodeURIComponent(tag)}`;
-
-/** Push access (admin / maintain / write). Call from an observer. */
-export function useCanPush(owner: string, name: string): boolean {
-  const repo = repoByName(owner, name);
-  const p = repo ? store().get('viewerRepo', repo.id)?.permission : undefined;
-  return p === 'admin' || p === 'maintain' || p === 'write';
-}
 
 const NO_LATEST: ResourceState<RestRelease | null> = { data: null, error: undefined, loading: false };
 

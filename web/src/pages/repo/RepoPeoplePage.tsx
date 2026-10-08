@@ -2,21 +2,18 @@ import { observer } from 'mobx-react-lite';
 import { useMemo } from 'react';
 import { repoListPaths } from '../../api/endpoints';
 import { usePagedList } from '../../components/admin/usePagedList';
-import { useLocation, useParams } from '../../router';
-import { repoByName } from '../../sync/selectors';
+import { useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { EyeIcon, StarIcon } from '../../ui/icons';
 import { personFromRest, UserList } from '../profile/UserList';
 import styles from './RepoNav.module.css';
 import type { SimpleUser } from '../../api/types';
+import { useRouteRepo } from './useRouteRepo';
 
 /** `/:owner/:repo/stargazers` and `/:owner/:repo/watchers` (paginated, `Link: rel="next"`). */
 export default observer(function RepoPeoplePage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
   const watchers = useLocation().pathname.endsWith('/watchers');
-  const repo = repoByName(owner, name);
-  const o = repo?.owner ?? owner;
-  const n = repo?.name ?? name;
+  const { owner: o, name: n } = useRouteRepo();
   const list = usePagedList<SimpleUser>(watchers ? repoListPaths.watchers(o, n) : repoListPaths.stargazers(o, n));
   const people = useMemo(() => (list.items.length || list.done ? list.items.map(personFromRest) : undefined), [list.items, list.done]);
   const Icon = watchers ? EyeIcon : StarIcon;

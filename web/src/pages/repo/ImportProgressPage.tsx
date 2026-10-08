@@ -6,7 +6,6 @@ import { formatBytes } from '../../components/admin/format';
 import { Banner, ButtonRow, errorMessage, FormStack, PageHeader } from '../../components/settings/kit';
 import { Link, useParams } from '../../router';
 import { store } from '../../sync';
-import { repoByName } from '../../sync/selectors';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CheckCircleFillIcon, CircleIcon, StopIcon, SyncIcon, XCircleFillIcon } from '../../ui/icons';
@@ -14,6 +13,7 @@ import { Field, Input } from '../../ui/Input';
 import { Spinner } from '../../ui/Spinner';
 import { toast } from '../../ui/Toast';
 import styles from './ImportProgress.module.css';
+import { useRouteRepo } from './useRouteRepo';
 
 const POLL_MS = 1000;
 const running = (s?: string) => s === 'queued' || s === 'importing';
@@ -49,8 +49,8 @@ function useImport(owner: string, repo: string) {
 /** `/:owner/:repo/import`: import progress, cancel and retry. */
 export default observer(function ImportProgressPage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
-  const isAdmin = repo ? store().get('viewerRepo', repo.id)?.permission === 'admin' : false;
+  const repo = useRouteRepo();
+  const isAdmin = store().get('viewerRepo', repo.id)?.permission === 'admin';
   const imp = useImport(owner, name);
   const [busy, setBusy] = useState(false);
   const [showCreds, setShowCreds] = useState(false);

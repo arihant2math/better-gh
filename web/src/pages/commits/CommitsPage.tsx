@@ -11,7 +11,6 @@ import { LoadMore } from '../../components/LoadMore';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Repo } from '../../sync/models';
-import { repoByName } from '../../sync/selectors';
 import { IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon, HistoryIcon, KebabHorizontalIcon } from '../../ui/icons';
@@ -26,14 +25,14 @@ import { commitDate, groupByDay, splitMessage, type CommitListRow } from './grou
 import { CiIcon, Person, copyText, samePerson } from './parts';
 import { SignatureBadge, useSignatures, type CommitSignature } from './Signature';
 import styles from './Commits.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** Commits list / file history: `/:owner/:repo/commits[/:ref/*path]`. */
 export default observer(function CommitsPage() {
   const params = useParams<{ owner: string; repo: string; ref?: string; '*'?: string }>();
-  const repo = repoByName(params.owner, params.repo);
+  const repo = useRouteRepo();
   // Splits `{ref}/{path}` once the ref list arrives (refs may contain slashes).
   useRefsData(params.owner, params.repo);
-  if (!repo) return null;
   // The history fetch keeps the URL's split (the server resolves the joined
   // spec itself, and the route prefetch uses the same key); the header shows
   // the resolved ref and path.

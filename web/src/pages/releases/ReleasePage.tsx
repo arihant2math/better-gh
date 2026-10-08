@@ -10,7 +10,9 @@ import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, ChevronRightIcon, PencilIcon, TagIcon, TrashIcon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
 import styles from './Releases.module.css';
-import { CardSkeletons, ReleaseCard, editHref, invalidateReleases, isNotFound, releasesBase, useCanPush, useLatestRelease, useTagShas } from './shared';
+import { CardSkeletons, ReleaseCard, editHref, invalidateReleases, isNotFound, releasesBase, useLatestRelease, useTagShas } from './shared';
+import { canPush as canPushTo } from '../../sync/selectors';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** `/:owner/:repo/releases/tag/:tag` and `/:owner/:repo/releases/latest`. */
 export default observer(function ReleasePage() {
@@ -18,7 +20,7 @@ export default observer(function ReleasePage() {
   const byTag = useResource<RestRelease>(tag ? codeKeys.release(owner, repo, tag) : null, () => findReleaseByTag(owner, repo, tag!));
   const latest = useLatestRelease(owner, repo);
   const release = tag ? byTag.data : (latest.data ?? undefined);
-  const canPush = useCanPush(owner, repo);
+  const canPush = canPushTo(useRouteRepo().id);
   const shas = useTagShas(owner, repo);
   const base = releasesBase(owner, repo);
 

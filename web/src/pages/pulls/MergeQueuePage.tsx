@@ -4,7 +4,6 @@ import { ApiError } from '../../api/client';
 import { getMergeQueue } from '../../api/endpoints';
 import type { MergeQueue, MergeQueueEntry } from '../../api/types';
 import { Link, useParams } from '../../router';
-import { repoByName } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { cx } from '../../ui/Button';
 import { Box, EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -13,16 +12,16 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { entryState, etaLabel, positionLabel, QUEUE_POLL_MS, type QueueTone } from './mergeQueue';
 import styles from './MergeQueue.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const METHOD: Record<string, string> = { MERGE: 'merge commit', SQUASH: 'squash', REBASE: 'rebase' };
 
 /** `/:owner/:repo/queue/*`: the merge queue of one branch (P39). */
 export default observer(function MergeQueuePage() {
-  const params = useParams<{ owner: string; repo: string; '*': string }>();
-  const repo = repoByName(params.owner, params.repo);
-  const owner = repo?.owner ?? params.owner;
-  const name = repo?.name ?? params.repo;
-  const branch = params['*'] || repo?.defaultBranch || '';
+  const params = useParams<{ '*': string }>();
+  const repo = useRouteRepo();
+  const { owner, name } = repo;
+  const branch = params['*'] || repo.defaultBranch;
   const key = branch ? `merge-queue:${owner}/${name}:${branch}` : null;
   const load = () => getMergeQueue(owner, name, branch);
   const { data, error, loading } = useResource<MergeQueue>(key, load, { ttlMs: 10_000 });

@@ -2,10 +2,10 @@ import { useEffect, type ReactNode } from 'react';
 import { isSha } from '../../../api/endpoints';
 import { useRefs } from '../../../components/code/RefPicker';
 import { useParams } from '../../../router';
-import { store } from '../../../sync';
-import { repoByName } from '../../../sync/selectors';
+import { canPush } from '../../../sync/selectors';
 import { cx } from '../../../ui/Button';
 import { AlertIcon, InfoIcon, LockIcon } from '../../../ui/icons';
+import { useRouteRepo } from '../../repo/useRouteRepo';
 import { splitRefPath } from '../util';
 import styles from './Edit.module.css';
 
@@ -14,17 +14,15 @@ export function useEditTarget() {
   const params = useParams<{ owner: string; repo: string; ref: string; '*'?: string }>();
   const owner = params.owner;
   const name = params.repo;
-  const repo = repoByName(owner, name);
+  const repo = useRouteRepo();
   const refs = useRefs(owner, name);
   // Same split as the code view (longest branch/tag prefix wins).
-  const refParam = params.ref ?? repo?.defaultBranch ?? '';
+  const refParam = params.ref ?? repo.defaultBranch;
   const rest = (params['*'] ?? '').replace(/^\/+|\/+$/g, '');
   const { ref, path } = (refs.data && splitRefPath(refs.data, refParam, rest)) || { ref: refParam, path: rest };
   const isBranch = refs.data ? refs.data.branches.some((b) => b.name === ref) : !isSha(ref);
   const isTag = !!refs.data?.tags.some((t) => t.name === ref);
-  const permission = repo ? store().get('viewerRepo', repo.id)?.permission : undefined;
-  const canPush = permission === 'admin' || permission === 'maintain' || permission === 'write';
-  return { owner, name, repo, ref, path, refs, isBranch, isTag, canPush, permission };
+  return { owner, name, repo, ref, path, refs, isBranch, isTag, canPush: canPush(repo.id) };
 }
 
 export function directBlockedReason(t: { ref: string; isBranch: boolean; isTag: boolean }): string | undefined {

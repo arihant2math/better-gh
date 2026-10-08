@@ -2,13 +2,14 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { NotFound } from '../../app/NotFound';
 import { navigate, useParams } from '../../router';
-import { issueByNumber, repoByName, repoFullName } from '../../sync/selectors';
+import { issueByNumber, repoFullName } from '../../sync/selectors';
 import { IssueActions } from './IssueActions';
 import { IssueHeader } from './IssueHeader';
 import { IssueSidebar } from './IssueSidebar';
 import styles from './IssueView.module.css';
 import { SubIssuesPanel } from './SubIssuesPanel';
 import { Timeline } from './Timeline';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /**
  * Issue detail. Renders instantly from the store (title, labels, state...);
@@ -16,16 +17,15 @@ import { Timeline } from './Timeline';
  * already prefetched when the link was hovered.
  */
 export default observer(function IssueDetailPage() {
-  const { owner, repo: name, number } = useParams<{ owner: string; repo: string; number: string }>();
-  const repo = repoByName(owner, name);
-  const issue = repo ? issueByNumber(repo.id, Number(number)) : undefined;
+  const { number } = useParams<{ number: string }>();
+  const repo = useRouteRepo();
+  const issue = issueByNumber(repo.id, Number(number));
 
   useEffect(() => {
     // GitHub redirects /issues/N to /pull/N for pull requests.
-    if (issue?.isPr && repo) navigate(`/${repo.owner}/${repo.name}/pull/${issue.number}`, { replace: true });
+    if (issue?.isPr) navigate(`/${repo.owner}/${repo.name}/pull/${issue.number}`, { replace: true });
   }, [issue?.isPr, issue?.number, repo]);
 
-  if (!repo) return null;
   if (!issue) return <NotFound what="issue" />;
 
   return (

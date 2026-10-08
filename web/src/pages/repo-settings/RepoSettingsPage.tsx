@@ -1,13 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react';
 import { Banner } from '../../components/settings/kit';
-import { Link, useLocation, useParams } from '../../router';
+import { Link, useLocation } from '../../router';
 import { store } from '../../sync';
-import { repoByName } from '../../sync/selectors';
 import { EmptyState } from '../../ui/EmptyState';
 import { ArchiveIcon, GearIcon, GitBranchIcon, KeyIcon, LinkIcon, LockIcon, PeopleIcon, ShieldIcon, ShieldLockIcon, SyncIcon, WebhookIcon, type Icon } from '../../ui/icons';
 import styles from './RepoSettings.module.css';
 import { ListSkeleton, type SectionProps } from './shared';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 interface NavItem {
   id: string;
@@ -54,10 +54,8 @@ const ALL = [...NAV.flatMap((g) => g.items), MIRROR];
  * Renders synchronously from the synced `repo` row; sections fetch the rest.
  */
 export default observer(function RepoSettingsPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
   const { pathname } = useLocation();
-  const repo = repoByName(owner, name);
-  if (!repo) return null; // RepoLayout shows loading / not found
+  const repo = useRouteRepo();
   const permission = store().get('viewerRepo', repo.id)?.permission;
   const base = `/${repo.owner}/${repo.name}/settings`;
   const segs = pathname.split('/').slice(4).filter(Boolean).map(decodeURIComponent);

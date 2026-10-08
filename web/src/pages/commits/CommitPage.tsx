@@ -11,7 +11,6 @@ import { Link, navigate, useParams } from '../../router';
 import { repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Repo } from '../../sync/models';
-import { repoByName } from '../../sync/selectors';
 import { Button, IconButton } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CodeIcon, CopyIcon, GitCommitIcon } from '../../ui/icons';
@@ -23,12 +22,12 @@ import { CiIcon, Person, copyText } from './parts';
 import { SignatureBadge, useSignatures } from './Signature';
 import commentStyles from './CommitComments.module.css';
 import styles from './Commits.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** Single commit: message, people, parents, CI, stats and the diff. */
 export default observer(function CommitPage() {
-  const params = useParams<{ owner: string; repo: string; sha: string }>();
-  const repo = repoByName(params.owner, params.repo);
-  if (!repo) return null;
+  const params = useParams<{ sha: string }>();
+  const repo = useRouteRepo();
   return <CommitView key={params.sha} repo={repo} refName={params.sha} />;
 });
 

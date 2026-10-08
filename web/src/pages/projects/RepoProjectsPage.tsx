@@ -5,22 +5,22 @@ import { listRepoProjects, repoProjectsKey } from '../../api/projects';
 import { useParams } from '../../router';
 import { store } from '../../sync';
 import { projectsForOwner, projectsLinkedToRepo, setRepoLinked } from '../../sync/projects';
-import { canWrite, repoByName } from '../../sync/selectors';
+import { canWrite } from '../../sync/selectors';
 import { Button } from '../../ui/Button';
 import { LinkIcon, PlusIcon } from '../../ui/icons';
 import { SelectPanel } from '../../ui/Menu';
 import { canCreateFor, mergeProjects, NewProjectDialog, ProjectListBody, projectHref } from './ProjectList';
 import styles from './Projects.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** Repo "Projects" tab: projects linked to the repo (or containing its issues). */
 export default observer(function RepoProjectsPage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name)!;
+  const repo = useRouteRepo();
   const remote = useResource(repoProjectsKey(owner, name), () => listRepoProjects(owner, name), { ttlMs: 15_000 });
   const [linking, setLinking] = useState(false);
   const [creating, setCreating] = useState(false);
   const linkBtn = useRef<HTMLButtonElement>(null);
-  if (!repo) return null;
   const owners = new Map((remote.data?.owners ?? []).map((o) => [o.id, o]));
   const projects = mergeProjects(projectsLinkedToRepo(repo.id), remote.data?.projects);
   const candidates = projectsForOwner(repo.ownerId).filter((p) => p.id > 0);

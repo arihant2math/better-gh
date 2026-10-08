@@ -9,7 +9,7 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { hasSync, store, sync } from '../../sync';
 import { useComputed } from '../../sync/hooks';
 import type { ID, Notification } from '../../sync/models';
-import { repoByName } from '../../sync/selectors';
+import { repoByName, splitFullName } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import {
@@ -190,7 +190,8 @@ export default observer(function NotificationsPage() {
   const markAll = () => {
     const onlyRepo = filter.repos.length === 1 && !filter.unread && !filter.participating && !filter.reasons.length && !filter.types.length;
     const isAll = currentKey === '' || currentKey === filterKey({ ...DEFAULT_FILTER, unread: true });
-    const repo = onlyRepo ? repoByName(...(filter.repos[0]!.split('/') as [string, string])) : undefined;
+    const parts = onlyRepo ? splitFullName(filter.repos[0]!) : undefined;
+    const repo = parts ? repoByName(...parts) : undefined;
     const list = selectedRows.length ? selectedRows : rows;
     const count = markAllRead(list, selectedRows.length ? null : isAll ? { all: true } : repo ? { repo } : null);
     if (count) toast({ kind: 'success', title: `Marked ${count} notification${count > 1 ? 's' : ''} as read` });

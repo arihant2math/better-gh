@@ -6,7 +6,6 @@ import { treeUrl } from '../../../components/code/urls';
 import { useShortcuts } from '../../../shortcuts/useShortcuts';
 import { Button, IconButton, cx } from '../../../ui/Button';
 import { AlertIcon, FileIcon, GitCommitIcon, UploadIcon, XIcon } from '../../../ui/icons';
-import { Spinner } from '../../../ui/Spinner';
 import { MAX_FILE_BYTES, commitFiles, finishCommit, formatBytes, joinPath, pathProblem, prepareTarget, type FileChange } from './commit';
 import { NoPushNotice, Notice, directBlockedReason, useEditTarget, useUnloadGuard } from './shared';
 import styles from './Edit.module.css';
@@ -114,16 +113,6 @@ export default observer(function UploadPage() {
   useShortcuts('Upload', {
     'mod+enter': { handler: openDialog, description: 'Commit changes', group: 'Editor' },
   });
-
-  if (!t.repo) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.center}>
-          <Spinner />
-        </div>
-      </div>
-    );
-  }
 
   const totalBytes = valid.reduce((n, s) => n + s.file.size, 0);
   const folderProps = { webkitdirectory: '', directory: '' } as Record<string, string>;

@@ -33,15 +33,6 @@ export default observer(function EditPage() {
   const t = useEditTarget();
   const view = parseCodeUrl(pathname)?.view;
   const mode: Mode = view === 'new' ? 'new' : view === 'delete' ? 'delete' : 'edit';
-  if (!t.repo) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.center}>
-          <Spinner />
-        </div>
-      </div>
-    );
-  }
   return (
     <div className={styles.page}>
       {mode === 'new' ? (

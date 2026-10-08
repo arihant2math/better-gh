@@ -10,7 +10,7 @@ import { Link, loginHref, navigate, useLocation, useParams, useScrollContainer }
 import { hasSync, store, sync } from '../../sync';
 import type { Repo } from '../../sync/models';
 import { setStarred } from '../../sync/mutations';
-import { repoByName } from '../../sync/selectors';
+import { canPush, repoByName } from '../../sync/selectors';
 import { Tag } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Spinner } from '../../ui/Spinner';
@@ -39,6 +39,7 @@ import {
 } from '../../ui/icons';
 import { TabNav } from '../../ui/Tabs';
 import styles from './RepoLayout.module.css';
+import { RouteRepoContext } from './useRouteRepo';
 
 /** Header badge: "Public", "Internal" or "Private". */
 function visibilityLabel(repo: { private: boolean; visibility?: string }): string {
@@ -146,7 +147,7 @@ export default observer(function RepoLayout({ children }: { children: ReactNode 
         <TabNav items={tabs} current={current} aria-label="Repository" className={styles.tabs} />
       </header>
       <div ref={setBody} className={styles.body}>
-        {children}
+        <RouteRepoContext value={repo}>{children}</RouteRepoContext>
       </div>
     </div>
   );
@@ -161,7 +162,6 @@ const RepoHeader = observer(function RepoHeader({ repo, base }: { repo: Repo; ba
   const label = watchLabel(viewer?.watching, watchCustom);
   const parent = repo.fork ? rest?.parent : null;
   const template = rest?.template_repository;
-  const canPush = viewer?.permission === 'write' || viewer?.permission === 'maintain' || viewer?.permission === 'admin';
   const forkable = rest?.allow_forking !== false || !repo.private;
   const requireLogin = () => navigate(loginHref());
 
@@ -191,7 +191,7 @@ const RepoHeader = observer(function RepoHeader({ repo, base }: { repo: Repo; ba
               Use this template
             </Button>
           )}
-          {parent && <SyncFork owner={repo.owner} name={repo.name} branch={repo.defaultBranch} upstream={{ owner: parent.owner.login, name: parent.name }} canPush={canPush && !repo.archived} />}
+          {parent && <SyncFork owner={repo.owner} name={repo.name} branch={repo.defaultBranch} upstream={{ owner: parent.owner.login, name: parent.name }} canPush={canPush(repo.id) && !repo.archived} />}
           <span className={styles.split}>
             <Button size="sm" leadingIcon={EyeIcon} onClick={() => (signedIn ? ui.openWatch(repo.id) : requireLogin())} aria-haspopup="dialog" title="Notification settings for this repository">
               {label}

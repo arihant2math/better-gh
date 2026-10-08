@@ -2,8 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { repoListPaths } from '../../api/endpoints';
 import type { RestFork } from '../../api/types';
 import { usePagedList } from '../../components/admin/usePagedList';
-import { Link, setQuery, useParams, useQuery } from '../../router';
-import { repoByName } from '../../sync/selectors';
+import { Link, setQuery, useQuery } from '../../router';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Box, EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -11,6 +10,7 @@ import { IssueOpenedIcon, RepoForkedIcon, StarIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Select } from '../../ui/Input';
 import styles from './RepoNav.module.css';
+import { useRouteRepo } from './useRouteRepo';
 
 const SORTS = [
   { id: 'newest', label: 'Newest' },
@@ -21,11 +21,10 @@ const SORTS = [
 
 /** `/:owner/:repo/forks`: direct forks, paginated, sortable like GitHub's forks list. */
 export default observer(function ForksPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
+  const repo = useRouteRepo();
   const wanted = useQuery().get('sort');
   const sort = wanted && SORTS.some((s) => s.id === wanted) ? wanted : 'newest';
-  const list = usePagedList<RestFork>(repoListPaths.forks(repo?.owner ?? owner, repo?.name ?? name, sort));
+  const list = usePagedList<RestFork>(repoListPaths.forks(repo.owner, repo.name, sort));
   return (
     <div className={styles.page}>
       <h2 className={styles.pageTitle}>
