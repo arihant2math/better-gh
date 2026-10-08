@@ -61,3 +61,4 @@ C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open f
 - 00:17Z: #357 APPROVE @3269e31 (=head), CI green; sent to coordinator. Nits (manage_accounts.rs:317 String role; explicit Some(OrgRole::Member) arms) → #158 session.
 - 00:18Z: #357 merged as 2fc6db8; A worker+reviewer archived; fresh A worker for #362. TODO: verify main CI green on 2fc6db8 (its PR CI predates #355).
 - 00:18Z: B opened #363 (Fixes #162), green; sonnet reviewer spawned.
+- 00:24Z: #363 APPROVE @770f50d (=head), CI green; sent to coordinator. Filed #364 (inline error text follow-up). Main CI on 2fc6db8 (run 37706942560) in progress.
