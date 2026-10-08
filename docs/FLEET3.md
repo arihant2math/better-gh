@@ -12,7 +12,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
 
 ## Queues
-A: #362 (AdvisoryLock connect timeout, P-High) next after #181, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
+A: #362 (AdvisoryLock connect timeout, P-High) → #5 (P44 GraphQL org/repo/git; user-confirmed 01:0xZ; 4 sequential PRs, fresh worker each, opus reviewers + authz check on every new mutation, acceptance = Terraform+Backstage fixtures from the issue: (1) branch protection rules+rulesets, (2) commit history/trees/createCommitOnBranch, (3) org/team members+deployments+environments, (4) label mutations+cloneTemplateRepository+node() coverage) → #158, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
@@ -98,3 +98,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 00:45Z: main CI 2fc6db8 (37706942560) GREEN; 17f2a01 (37707598561) in progress.
 - 00:46Z: #366 merged as 02b8d98; B worker+reviewer archived; filed #367 (nits, queued in B); fresh B worker session_01Mnhu15W2Y1gc2EKjb9eY6Q for #255.
 - 01:01Z: main CI 17f2a01 GREEN; 02b8d98 (37709363111) in progress. Status sent to coordinator.
+- 01:05Z: User confirmed: #5 queued in lane A after #362, ahead of #158 (4 sequential PRs).
