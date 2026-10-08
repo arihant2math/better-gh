@@ -4,7 +4,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | #368 | session_015EKCTXXGKv4axQE1DT6WzW (opus) |
+| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | — | — |
 | B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
@@ -12,7 +12,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
 
 ## Queues
-A: #362 (AdvisoryLock connect timeout, P-High) → #5 (P44 GraphQL org/repo/git; user-confirmed 01:0xZ; 4 sequential PRs, fresh worker each, opus reviewers + authz check on every new mutation, acceptance = Terraform+Backstage fixtures from the issue: (1) branch protection rules+rulesets, (2) commit history/trees/createCommitOnBranch, (3) org/team members+deployments+environments, (4) label mutations+cloneTemplateRepository+node() coverage) → #158, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
+A: #362 (AdvisoryLock connect timeout, P-High) → #5 (P44 GraphQL org/repo/git; user-confirmed 01:0xZ; 4 sequential PRs, fresh worker each, opus reviewers + authz check on every new mutation, acceptance = Terraform+Backstage fixtures from the issue: (1) branch protection rules+rulesets, (2) commit history/trees/createCommitOnBranch, (3) org/team members+deployments+environments, (4) label mutations+cloneTemplateRepository+node() coverage) → #371 (LDAP slot-before-lock bug) → #158, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367, #370 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
@@ -105,3 +105,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:18Z: main CI 02b8d98 (37709363111) still in progress. A: PR #368 open, Rust tests running. C: 30-run loop of triggers:: on agent/343-settle-in-memory-emits before PR. Foreman context 190k.
 - 01:22Z: A #368 (Fixes #362) green @9d23afa; opus reviewer session_015EKCTXXGKv4axQE1DT6WzW spawned.
 - 01:34Z: #368 APPROVE @9d23afa (=head), CI green; sent to coordinator. Nits to file after merge: acquire doc caveat (dropped future vs backend briefly holding lock); LDAP tick claims Redis ldap_sync:scheduled before lock → timeout skips a sync interval. Main CI 02b8d98 GREEN; 27fe31a in progress.
+- 01:35Z: #368 merged as fd0d9f2 (closes #362); A worker+reviewer archived; filed #371 (LDAP slot before lock, queued A after #5); acquire doc nit → #353. Fresh A worker session_01Nxezvn8wLKbBzCeE2gjekB for #5 PR1/4.
