@@ -6,15 +6,15 @@ Foreman: session_01Wn7Xkd3JPXv32wzv3nZSSw · Coordinator: session_01U7ukQiQRpcMM
 |---|---|---|---|---|
 | A backend | session_01DD6W81P3DU6tbHSmXQzn6L | #181 | #357 @3269e31 | session_0178thbBf64HrWoBpDo3PABv (opus) |
 | B frontend | session_01BF2q8w4NGQHvfGwdr2WaiP | #162 | — | — |
-| C #150+flakes | session_01VkCMGpBQsEJ3rQM7gJpwEy | #341 | #355 @85a51fb | session_017xe6qtipj6znd78dRydAF2 (opus) |
+| C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
 New worker session per PR/task, archived on merge/close; still one active worker per lane. Current lane sessions finish their in-flight item, then are archived.
 
 ## Queues
-A: #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
+A: #362 (AdvisoryLock connect timeout, P-High) next after #181, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
 B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247; now #162; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358 → web of the backlog.
-C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test issues.
+C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
 ## Log
 - 2026-10-07 21:07Z: created workers A, B, C.
@@ -57,3 +57,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 00:00Z: #361 APPROVE @a043c16 (=head), CI green; sent to coordinator. Nits → #353.
 - 00:01Z: #361 merged as 8c86ce1; B worker+reviewer archived; nits in #353; fresh B worker for #162.
 - 00:09Z: #355 APPROVE @85a51fb (=head), CI green; sent to coordinator. Nits → #353.
+- 00:10Z: #355 merged as 87088f4 (closes #341); C worker+reviewer archived; fresh C worker for #343. Filed #362 (AdvisoryLock connect timeout) → front of lane A after #181.
