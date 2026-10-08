@@ -91,3 +91,4 @@ The workers were told to report to FOREMAN7. The successor has messaged them its
 - Hourly status to the coordinator (last sent 23:21Z; one is due now).
 
 Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, plus #150 by the user.
+- 00:28Z: FOREMAN7 handed off to FOREMAN8 session_01PM4SBV7BPC5zy8yjUQD9AU; coordinator informed.
