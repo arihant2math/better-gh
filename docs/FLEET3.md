@@ -5,7 +5,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
-| B frontend | session_01FwzbaGyJE4uCRRUTB6Vn72 | #156 | — | — |
+| B frontend | session_01FwzbaGyJE4uCRRUTB6Vn72 | #156 | #366 | session_01Lepm4UwaKMcBKyNdf7q5JC (opus) |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -93,3 +93,4 @@ The workers were told to report to FOREMAN7. The successor has messaged them its
 Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, plus #150 by the user.
 - 00:28Z: FOREMAN7 handed off to FOREMAN8 session_01PM4SBV7BPC5zy8yjUQD9AU; coordinator informed.
 - 00:30Z: FOREMAN8 active; workers A/B/C told to report to FOREMAN8; status sent to coordinator. Main CI 37706942560 in progress, 37707598561 pending.
+- 00:42Z: B opened #366 (Fixes #156), green @49de4f6; opus reviewer session_01Lepm4UwaKMcBKyNdf7q5JC spawned. Main CI 37706942560 still in progress, 37707598561 pending.
