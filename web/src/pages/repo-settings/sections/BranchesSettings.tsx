@@ -20,6 +20,7 @@ import { toast } from '../../../ui/Toast';
 import { EMPTY_PROTECTION, fromProtection, protectionFormError, summarizeRule, toProtectionInput, type ProtectionForm } from '../model';
 import styles from '../RepoSettings.module.css';
 import { ChipInput, DefaultBranchDialog, ListSkeleton, LoadError, repoKey, useBranches, useLocalResource, type SectionProps } from '../shared';
+import { orNullOn404 } from '../../../api/client';
 
 export default observer(function BranchesSettings({ repo, rest, base }: SectionProps) {
   const query = useQuery();
@@ -130,10 +131,7 @@ const RulesList = observer(function RulesList({ repo, base }: { repo: Repo; base
 const RuleEditor = observer(function RuleEditor({ repo, base, branch }: { repo: Repo; base: string; branch: string }) {
   const isNew = !branch;
   const existing = useResource<BranchProtection | null>(isNew ? null : `${repoKey(repo, 'rule')}${branch}`, () =>
-    getProtection(repo.owner, repo.name, branch).catch((e: unknown) => {
-      if ((e as { status?: number }).status === 404) return null;
-      throw e;
-    }),
+    orNullOn404(getProtection(repo.owner, repo.name, branch)),
   );
   if (isNew) return <RuleForm repo={repo} base={base} branch="" initial={EMPTY_PROTECTION} isNew />;
   if (existing.error) return <LoadError error={existing.error} />;

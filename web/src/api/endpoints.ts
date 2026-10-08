@@ -3,7 +3,7 @@
  * (git content, diffs, commits). Pair them with `api/cache` for caching and
  * prefetch: `useResource(key, () => getContents(...))`.
  */
-import { api, encodePath, v3 } from './client';
+import { api, encodePath, orNullOn404, v3 } from './client';
 import type {
   BlobLines,
   BlobView,
@@ -89,11 +89,9 @@ export function dequeuePull(owner: string, repo: string, number: number): Promis
   return api.delete<void>(`${bghRepo(owner, repo)}/pulls/${number}/queue`);
 }
 
-/** Server-side syntax highlighting, immutable per blob sha. 404 → render plain text. */
+/** Server-side syntax highlighting, immutable per blob sha. 404 → null (render plain text); other failures reject. */
 export function getHighlightedBlob(owner: string, repo: string, sha: string, path: string): Promise<HighlightedBlob | null> {
-  return api
-    .get<HighlightedBlob>(`/_bgh/render/blob/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${sha}?path=${encodeURIComponent(path)}`)
-    .catch(() => null);
+  return orNullOn404(api.get<HighlightedBlob>(`/_bgh/render/blob/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${sha}?path=${encodeURIComponent(path)}`));
 }
 
 /**

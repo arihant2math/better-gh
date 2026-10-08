@@ -35,6 +35,34 @@ export interface RequestOptions {
   text?: boolean;
   /** Don't prompt for sudo mode on a sudo 401 (the sudo endpoints themselves). */
   noSudoPrompt?: boolean;
+  /** Send this body as is (Blob, File, …) instead of JSON-encoding `body`; see `ApiClient.raw`. */
+  rawBody?: BodyInit;
+  /** Content-Type of `rawBody`; defaults to `application/octet-stream`. */
+  contentType?: string;
+}
+
+/** Options for `ApiClient.raw`: a binary body instead of a JSON one. */
+export interface RawOptions extends Omit<RequestOptions, 'body' | 'rawBody'> {
+  body?: BodyInit;
+}
+
+/** The error message of a GitHub-style error body, else `fallback`. */
+export function errorMessageOf(data: unknown, fallback: string): string {
+  const body = data as { message?: unknown } | null;
+  return body && typeof body === 'object' && body.message ? String(body.message) : fallback;
+}
+
+/** Whether an error is a 404 from the server. */
+export function isNotFound(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 404;
+}
+
+/** Resolve to null on a 404; every other failure (5xx, auth, network) still rejects. */
+export function orNullOn404<T>(p: Promise<T>): Promise<T | null> {
+  return p.catch((e: unknown) => {
+    if (isNotFound(e)) return null;
+    throw e;
+  });
 }
 
 /** Prefix of the server's 401 for sessions without a fresh sudo mode (`bgh_core::sudo::SUDO_REQUIRED`). */
@@ -105,7 +133,10 @@ export class ApiClient {
     }
     if (opts.tx) headers['X-Client-Tx'] = opts.tx;
     let body: BodyInit | undefined;
-    if (opts.body !== undefined) {
+    if (opts.rawBody !== undefined) {
+      headers['Content-Type'] = opts.contentType ?? 'application/octet-stream';
+      body = opts.rawBody;
+    } else if (opts.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(opts.body);
     }
@@ -129,8 +160,7 @@ export class ApiClient {
     const data: unknown =
       res.status === 204 ? null : opts.text || !isJson ? await res.text() : await res.json().catch(() => null);
     if (!res.ok) {
-      const body = data as { message?: unknown } | null;
-      const message = body && typeof body === 'object' && body.message ? String(body.message) : `${method} ${path} failed (${res.status})`;
+      const message = errorMessageOf(data, `${method} ${path} failed (${res.status})`);
       throw new ApiError(message, res.status, data, parseRetryAfter(res.headers.get('retry-after')));
     }
     const etag = res.headers.get('etag');
@@ -162,6 +192,12 @@ export class ApiClient {
 
   async delete<T>(path: string, opts?: RequestOptions): Promise<T> {
     return (await this.request<T>(path, { ...opts, method: 'DELETE' })).data;
+  }
+
+  /** A request with a binary body (uploads), with the same CSRF, sudo retry and errors as JSON ones. */
+  async raw<T>(path: string, opts: RawOptions = {}): Promise<T> {
+    const { body, ...rest } = opts;
+    return (await this.request<T>(path, { ...rest, rawBody: body })).data;
   }
 }
 

@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
 import { invalidate } from '../../api/cache';
-import { ApiError } from '../../api/client';
+import { isNotFound } from '../../api/client';
 import { deleteRuleset, getRuleset, listRulesets, scopeKey, type Ruleset, type RulesetTarget } from '../../api/rulesets';
 import { Banner, ConfirmDialog, ItemList, ItemRow, PageHeader, Pill, downloadText, errorMessage } from '../../components/settings/kit';
 import { Link, navigate } from '../../router';
@@ -195,7 +195,7 @@ function RowActions({
   );
 }
 
-export const isNotFound = (e: unknown) => e instanceof ApiError && e.status === 404;
+export { isNotFound };
 
 /** The server has no such endpoint (an older bgh-server). */
 export function Unavailable({ what }: { what: string }) {

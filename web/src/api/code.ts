@@ -8,7 +8,8 @@
  * keys that embed a full commit SHA are immutable.
  */
 import { ApiError, api, encodePath, v3 } from './client';
-import { browserTransport, transport } from './transport';
+import { transport } from './transport';
+import { uploadFile } from './uploads';
 import type { BrowseCommit, RestCommitDetail, RestCompare, SimpleUser } from './types';
 
 // ------------------------------------------------------------------ types
@@ -320,7 +321,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
 export async function fetchRaw(url: string): Promise<string> {
   const path = url.startsWith('http') ? new URL(url).pathname : url;
   const res = await transport().fetch(path, { credentials: 'same-origin' });
-  if (!res.ok) throw new Error(`raw ${res.status}`);
+  if (!res.ok) throw new ApiError(`GET ${path} failed (${res.status})`, res.status, null);
   return res.text();
 }
 
@@ -401,46 +402,7 @@ export function uploadReleaseAsset(
   signal?: AbortSignal,
 ): Promise<RestAsset> {
   const path = `/api/uploads/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/${releaseId}/assets?name=${encodeURIComponent(file.name)}`;
-  const contentType = file.type || 'application/octet-stream';
-  if (transport() !== browserTransport) {
-    onProgress(0);
-    return transport()
-      .fetch(path, { method: 'POST', body: file, headers: { 'Content-Type': contentType, 'X-Upload-Size': String(file.size) }, signal })
-      .then(async (r) => {
-        const data = (await r.json()) as RestAsset & { message?: string };
-        if (!r.ok) throw new Error(data.message ?? `Upload failed (${r.status})`);
-        onProgress(1);
-        return data;
-      });
-  }
-  return new Promise<RestAsset>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', path);
-    xhr.withCredentials = true;
-    xhr.setRequestHeader('Content-Type', contentType);
-    xhr.setRequestHeader('Accept', 'application/vnd.github+json');
-    const csrf = (window as { __BGH_BOOT__?: { csrf?: string } }).__BGH_BOOT__?.csrf;
-    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-    xhr.onload = () => {
-      let data: unknown = null;
-      try {
-        data = JSON.parse(xhr.responseText);
-      } catch {
-        /* non-JSON error page */
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress(1);
-        resolve(data as RestAsset);
-      } else {
-        reject(new Error((data as { message?: string } | null)?.message ?? `Upload failed (${xhr.status})`));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload'));
-    xhr.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
-    signal?.addEventListener('abort', () => xhr.abort());
-    xhr.send(file);
-  });
+  return uploadFile<RestAsset>(path, file, { accept: 'application/vnd.github+json', onProgress, signal });
 }
 
 // ------------------------------------------------------------------ cache keys

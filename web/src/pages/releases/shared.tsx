@@ -75,9 +75,7 @@ export function formatBytes(n: number): string {
   return `${v >= 100 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2).replace(/\.?0+$/, '')} ${units[i]}`;
 }
 
-export function isNotFound(e: unknown): boolean {
-  return typeof e === 'object' && e !== null && (e as { status?: number }).status === 404;
-}
+export { isNotFound } from '../../api/client';
 
 // ------------------------------------------------------------------ badges
 
