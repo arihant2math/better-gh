@@ -100,3 +100,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:01Z: main CI 17f2a01 GREEN; 02b8d98 (37709363111) in progress. Status sent to coordinator.
 - 01:05Z: User confirmed: #5 queued in lane A after #362, ahead of #158 (4 sequential PRs).
 - 01:09Z: B opened #369 (Fixes #255; #96 already fixed by #274/#295), green @4d234a0; opus reviewer session_01L1ZriKfQdL8m4RMGK6Q9YX (return_to security).
+- 01:12Z: #369 APPROVE @4d234a0 (=head), CI green; sent to coordinator. Nits to file after merge: SSO/SAML return_to builders (api/auth.ts:25, LoginPage.tsx:179) → withReturnTo; replaceHash('#') bare #; loginHrefFor alias.
