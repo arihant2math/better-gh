@@ -2,8 +2,6 @@
 
 #![allow(dead_code)]
 
-use std::time::Duration;
-
 use bgh_core::events::RefUpdate;
 use bgh_core::testing::{TestApp, TestUser};
 use bgh_git::RepoStore;
@@ -59,21 +57,9 @@ pub async fn tip(app: &TestApp, repo_id: i64, branch: &str) -> Option<String> {
 }
 
 /// Run jobs until the queue (including jobs enqueued by event listeners)
-/// is quiet.
+/// is quiet ([`TestApp::settle`]).
 pub async fn settle(app: &TestApp) {
-    for _ in 0..50 {
-        // Event listeners (e.g. `pulls.push`) enqueue jobs asynchronously:
-        // wait for them before deciding nothing is left to run.
-        app.settle_events().await;
-        let n = app.drain_jobs().await;
-        tokio::time::sleep(Duration::from_millis(40)).await;
-        app.settle_events().await;
-        let m = app.drain_jobs().await;
-        if n + m == 0 {
-            return;
-        }
-    }
-    panic!("jobs did not settle");
+    app.settle().await;
 }
 
 /// Simulate a push of `branch` from `old` to `new` (post-receive job).
