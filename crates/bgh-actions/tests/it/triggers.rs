@@ -567,8 +567,8 @@ async fn issues_and_issue_comment_activity_types() {
 /// Regression for #343: a direct `EventBus::emit` reaches the outbox
 /// through an asynchronous writer, so `settle` must wait for it (and for
 /// the listeners) rather than for a quiet job queue. The outbox is locked
-/// while settling: once the writer is blocked on that lock, the event is
-/// still unprocessed and `settle` must not have returned.
+/// while settling: `settle` must not return while the writer is blocked
+/// on that lock.
 #[tokio::test]
 async fn settle_waits_for_events_emitted_outside_a_tx() {
     let issues = wf("  issues:\n    types: [pinned]");
@@ -603,12 +603,13 @@ async fn settle_waits_for_events_emitted_outside_a_tx() {
         issue_id,
         actor_id: alice.id,
     });
-    let settled = std::sync::atomic::AtomicBool::new(false);
-    let settling = async {
-        settle(&app).await;
-        settled.store(true, std::sync::atomic::Ordering::SeqCst);
-    };
-    let release = async {
+    let settling = settle(&app);
+    tokio::pin!(settling);
+    // Wait for the writer to block on the lock, then keep holding it well
+    // past the time any settle that ignores the outbox needs to return.
+    // A correct settle cannot return here: `settle_events` flushes the
+    // writer, which is blocked until the lock is released.
+    let held = async {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             let waiting: i64 = sqlx::query_scalar(
@@ -629,14 +630,15 @@ async fn settle_waits_for_events_emitted_outside_a_tx() {
             );
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
-        assert_eq!(runs_of(&app, &alice, "issues").await.len(), 0);
-        assert!(
-            !settled.load(std::sync::atomic::Ordering::SeqCst),
-            "settle returned before the emitted event reached the outbox"
-        );
-        lock.rollback().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     };
-    tokio::join!(settling, release);
+    tokio::select! {
+        () = &mut settling => panic!("settle returned before the emitted event reached the outbox"),
+        () = held => {}
+    }
+    assert_eq!(runs_of(&app, &alice, "issues").await.len(), 0);
+    lock.rollback().await.unwrap();
+    settling.await;
     let rs = runs_of(&app, &alice, "issues").await;
     assert_eq!(rs.len(), 1);
     let p = payload_of(&app, rs[0]["id"].as_i64().unwrap()).await;

@@ -56,8 +56,7 @@ pub async fn tip(app: &TestApp, repo_id: i64, branch: &str) -> Option<String> {
         .expect("read ref")
 }
 
-/// Run jobs until the queue (including jobs enqueued by event listeners)
-/// is quiet ([`TestApp::settle`]).
+/// Run event listeners and jobs until nothing is left ([`TestApp::settle`]).
 pub async fn settle(app: &TestApp) {
     app.settle().await;
 }

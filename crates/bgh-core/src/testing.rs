@@ -400,7 +400,8 @@ impl TestApp {
     /// passed to `EventBus::emit` directly, which reach the outbox
     /// asynchronously), so the jobs those listeners enqueue are visible to
     /// the drain; it stops once a round runs no job and panics if that
-    /// never happens.
+    /// never happens. Jobs scheduled for later (including retries in
+    /// backoff) are not run.
     pub async fn settle(&self) {
         for _ in 0..200 {
             self.settle_events().await;
