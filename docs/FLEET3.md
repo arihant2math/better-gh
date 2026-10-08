@@ -94,3 +94,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 00:28Z: FOREMAN7 handed off to FOREMAN8 session_01PM4SBV7BPC5zy8yjUQD9AU; coordinator informed.
 - 00:30Z: FOREMAN8 active; workers A/B/C told to report to FOREMAN8; status sent to coordinator. Main CI 37706942560 in progress, 37707598561 pending.
 - 00:42Z: B opened #366 (Fixes #156), green @49de4f6; opus reviewer session_01Lepm4UwaKMcBKyNdf7q5JC spawned. Main CI 37706942560 still in progress, 37707598561 pending.
+- 00:45Z: #366 APPROVE @49de4f6 (=head), CI green; sent to coordinator. Nits to file after merge: cross-tab BroadcastChannel reset; viewerReactions catch live() check; settle pending sudo prompt on reset.
