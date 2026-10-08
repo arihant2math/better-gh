@@ -21,7 +21,7 @@ import { ListSkeleton, lastUsedText } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate } from '../developer/logic';
 import { checkArmoredGpg, fingerprintOf, keyTypeLabel, parseSshKey } from '../developer/sshKey';
-import { useList } from '../developer/useList';
+import { useList } from '../../../api/useList';
 
 /** `/settings/keys`: SSH authentication keys, SSH signing keys and GPG keys. */
 export default function KeySettings() {

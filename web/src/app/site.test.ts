@@ -1,6 +1,6 @@
 import { runInAction } from 'mobx';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseLink } from '../components/admin/usePagedList';
+import { parseLink } from '../api/usePagedList';
 import { announcementId, site } from './site';
 
 const info = (announcement: { message: string; expires_at: string | null; user_dismissible: boolean } | null) => ({

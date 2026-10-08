@@ -9,7 +9,7 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { PeopleIcon, PlusIcon } from '../../ui/icons';
-import { allTeamsKey, getTeam, listAllTeams, teamKey } from './api';
+import { allTeamsKey, getTeam, listAllTeams, teamKey } from '../../api/orgSettings';
 import { TeamDialog, privacyPill, teamPath, teamTree, useAllTeams, useOrgAccess, type TreeRow } from './common';
 import local from './OrgSettings.module.css';
 

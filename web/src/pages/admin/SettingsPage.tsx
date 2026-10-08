@@ -11,7 +11,7 @@ import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, DotFillIcon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
-import { getSamlInfo, getSettings, patchSettings, SAML_INFO_KEY, type SiteSettings } from './api';
+import { getSamlInfo, getSettings, patchSettings, SAML_INFO_KEY, type SiteSettings } from '../../api/admin';
 import {
   SECTIONS,
   dirtySections,

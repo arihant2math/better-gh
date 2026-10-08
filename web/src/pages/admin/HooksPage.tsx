@@ -4,7 +4,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime } from '../../components/admin/format';
 import { PageHeader, StatusPill, Switch, attempt, errorMessage, useConfirm } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, IconButton } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
@@ -14,7 +14,7 @@ import { Field, Input, Select } from '../../ui/Input';
 import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
-import { createHook, deleteHook, pingHook, updateHook, type GlobalHook, type HookInput } from './api';
+import { createHook, deleteHook, pingHook, updateHook, type GlobalHook, type HookInput } from '../../api/admin';
 import h from './hooks.module.css';
 
 const HOOKS_PATH = `${v3('admin', 'hooks')}?per_page=100`;

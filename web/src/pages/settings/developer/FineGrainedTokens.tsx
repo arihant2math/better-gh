@@ -50,7 +50,7 @@ import {
 } from './fineGrained';
 import fg from './fineGrained.module.css';
 import { expiryStatus, formatDate } from './logic';
-import { useList } from './useList';
+import { useList } from '../../../api/useList';
 import { onReset } from '../../../api/reset';
 
 export const FG_LIST_KEY = 'dev:fg-tokens';

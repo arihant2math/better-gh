@@ -3,7 +3,7 @@ import { invalidate, mutate, refresh, useResource } from '../../api/cache';
 import styles from '../../components/admin/admin.module.css';
 import { formatDateTime, formatKb } from '../../components/admin/format';
 import { CopyButton, ErrorState, KeyValue, PageHeader, Panel, RadioCards, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
-import { invalidateLists, updateLists } from '../../components/admin/usePagedList';
+import { invalidateLists, updateLists } from '../../api/usePagedList';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar, Tag } from '../../ui/Badge';
@@ -15,7 +15,7 @@ import { Menu, type MenuEntry } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
-import { createImpersonationToken, deleteImpersonationTokens, deleteUser, disableTwoFactor, getUser, resetPassword, revokeSessions, updateUser, type AccountSummary, type UserDetail } from './api';
+import { createImpersonationToken, deleteImpersonationTokens, deleteUser, disableTwoFactor, getUser, resetPassword, revokeSessions, updateUser, type AccountSummary, type UserDetail } from '../../api/admin';
 
 import { DetailSkeleton, ItemList, LOGIN_RULE, NotFound, QuotaPanel, RefField, RepoBriefList, isNotFound, isValidLogin, modalOpen, usePrompt } from './detail';
 

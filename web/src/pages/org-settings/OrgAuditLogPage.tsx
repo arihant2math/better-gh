@@ -4,7 +4,7 @@ import styles from '../../components/admin/admin.module.css';
 import { downloadText, toCsv } from '../../components/admin/csv';
 import { formatCount, formatDateTime } from '../../components/admin/format';
 import { CopyButton, Drawer, JsonView, KeyValue, PageHeader, SearchInput, errorMessage } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar } from '../../ui/Badge';
@@ -16,7 +16,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { ApiError } from '../../api/client';
 import { isAccessError } from '../../api/errors';
-import { auditLogPath, viewerLogin, type AuditEntry } from './api';
+import { auditLogPath, viewerLogin, type AuditEntry } from '../../api/orgSettings';
 import { OwnerRequired } from './common';
 import local from './OrgSettings.module.css';
 

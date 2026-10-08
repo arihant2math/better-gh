@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { repoListPaths } from '../../api/endpoints';
 import type { RestFork } from '../../api/types';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, setQuery, useQuery } from '../../router';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';

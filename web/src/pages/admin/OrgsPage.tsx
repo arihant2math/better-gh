@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatKb } from '../../components/admin/format';
 import { PageHeader, SearchInput, StatusPill, errorMessage } from '../../components/admin/kit';
-import { invalidateLists, usePagedList } from '../../components/admin/usePagedList';
+import { invalidateLists, usePagedList } from '../../api/usePagedList';
 import { navigate, setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button } from '../../ui/Button';
@@ -14,7 +14,7 @@ import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import { accountCell } from './UsersPage';
-import { createOrg, orgsPath, type AccountSummary } from './api';
+import { createOrg, orgsPath, type AccountSummary } from '../../api/admin';
 
 const COLUMNS: Column<AccountSummary>[] = [
   { id: 'org', header: 'Organization', width: 'minmax(220px, 3fr)', sort: 'login', render: (o) => accountCell(o, true) },

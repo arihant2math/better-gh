@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import styles from '../../components/admin/admin.module.css';
 import { PageHeader, Panel, errorMessage } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { orgAlertsPath, type SecretScanningAlert } from '../../api/secretScanning';
 import { Link, useParams } from '../../router';
 import { Button } from '../../ui/Button';

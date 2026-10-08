@@ -3,7 +3,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { useResource } from '../../api/cache';
 import { getRuleSuite, ruleSuitesPath, scopeKey, type RuleSuite, type SuiteFilters, type SuiteResult } from '../../api/rulesets';
 import { Drawer, ErrorState, KeyValue } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { PageHeader } from '../../components/settings/kit';
 import { setQuery, useQuery } from '../../router';
 import { Button } from '../../ui/Button';

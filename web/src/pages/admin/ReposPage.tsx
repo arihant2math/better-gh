@@ -3,7 +3,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatKb, plural } from '../../components/admin/format';
 import { PageHeader, SearchInput, ShortLabel, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Tag } from '../../ui/Badge';
@@ -17,7 +17,7 @@ import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
 import { MAINTENANCE_OPS, VisibilityPill } from './detail';
-import { reposPath, runMaintenanceAll, type AdminRepo } from './api';
+import { reposPath, runMaintenanceAll, type AdminRepo } from '../../api/admin';
 
 const VISIBILITY = [
   { id: '', label: 'All' },

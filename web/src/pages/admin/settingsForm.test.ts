@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SiteSettings } from './api';
+import type { SiteSettings } from '../../api/admin';
 import { dirtySections, SAML_DEFAULTS, samlErrors, samlToForm, samlValue, toForm, toPatch, validate } from './settingsForm';
 
 const settings: SiteSettings = {

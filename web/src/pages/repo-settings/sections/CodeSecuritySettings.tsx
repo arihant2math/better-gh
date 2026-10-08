@@ -15,7 +15,7 @@ import {
 } from '../../../api/secretScanning';
 import { Banner, PageHeader, Section, Toggle, errorMessage } from '../../../components/settings/kit';
 import { formatDateTime } from '../../../components/admin/format';
-import { invalidateLists } from '../../../components/admin/usePagedList';
+import { invalidateLists } from '../../../api/usePagedList';
 import { Link } from '../../../router';
 import { Button } from '../../../ui/Button';
 import { SyncIcon } from '../../../ui/icons';

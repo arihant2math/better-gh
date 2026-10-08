@@ -15,7 +15,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { Spinner } from '../../ui/Spinner';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import type { AdminAuditEntry, AuditQuery } from './api';
+import type { AdminAuditEntry, AuditQuery } from '../../api/admin';
 import { EXPORT_LIMIT, fetchAllAudit, useAuditLog } from './auditCursor';
 import a from './audit.module.css';
 

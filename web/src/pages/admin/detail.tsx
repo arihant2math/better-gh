@@ -14,7 +14,7 @@ import { Field, Input } from '../../ui/Input';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { toast } from '../../ui/Toast';
 import d from './AdminDetail.module.css';
-import { deleteQuota, getQuota, setQuota, type MaintenanceOp, type Quota, type RepoBrief } from './api';
+import { deleteQuota, getQuota, setQuota, type MaintenanceOp, type Quota, type RepoBrief } from '../../api/admin';
 
 // ------------------------------------------------------------------ shared helpers (also used by the org / repo pages)
 

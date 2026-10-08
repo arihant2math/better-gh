@@ -22,7 +22,7 @@ import { toast } from '../../../ui/Toast';
 import { ListSkeleton, OneTimeSecret, subPath } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate, validateApp, type AppFormValues } from '../developer/logic';
-import { useList } from '../developer/useList';
+import { useList } from '../../../api/useList';
 import { onReset } from '../../../api/reset';
 
 const LIST_KEY = 'dev:apps';

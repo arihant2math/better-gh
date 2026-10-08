@@ -15,7 +15,7 @@ import styles from '../developer/developer.module.css';
 import { FineGrainedSection, NewFineGrainedToken } from '../developer/FineGrainedTokens';
 import { dateInDays, expiresInDays, expiryStatus, formatDate, selectedScopes, type ExpiryChoice } from '../developer/logic';
 import { ScopeTree } from '../developer/ScopeTree';
-import { useList } from '../developer/useList';
+import { useList } from '../../../api/useList';
 import { onReset } from '../../../api/reset';
 
 const LIST_KEY = 'dev:tokens';

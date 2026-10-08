@@ -28,7 +28,7 @@ import {
   errorMessage,
   useConfirm,
 } from "../../components/admin/kit";
-import { usePagedList } from "../../components/admin/usePagedList";
+import { usePagedList } from "../../api/usePagedList";
 import { useParams } from "../../router";
 import { Avatar } from "../../ui/Badge";
 import { Button } from "../../ui/Button";

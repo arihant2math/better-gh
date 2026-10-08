@@ -9,7 +9,7 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
 import { SyncIcon } from '../../ui/icons';
-import { getHealth, getJobStats, getStats, type Health } from './api';
+import { getHealth, getJobStats, getStats, type Health } from '../../api/admin';
 import dash from './Dashboard.module.css';
 
 const POLL_MS = 10_000;

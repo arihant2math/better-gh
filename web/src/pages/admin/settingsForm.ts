@@ -5,7 +5,7 @@
  * per-section PATCH bodies.
  */
 import { fromLocalInput, toLocalInput } from '../../components/admin/format';
-import { REDACTED, type LdapSettings, type OidcProvider, type SamlSettings, type SecretScanningSiteSettings, type SiteSettings, type Visibility, type patchSettings } from './api';
+import { REDACTED, type LdapSettings, type OidcProvider, type SamlSettings, type SecretScanningSiteSettings, type SiteSettings, type Visibility, type patchSettings } from '../../api/admin';
 
 /** Sections of the settings page (`git_maintenance` has its own page). */
 export type SectionKey = Exclude<keyof SiteSettings, 'git_maintenance'>;

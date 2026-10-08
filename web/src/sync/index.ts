@@ -1,7 +1,7 @@
 /**
  * Public entry point of the local-first store.
  *
- *   import { store, sync } from '../sync';
+ *   import { store, sync } from './';
  *   const issue = store().byKey('issue', 'number', `${repoId}#${n}`);
  *
  * Read in `observer` components; they re-render on exactly what they read.

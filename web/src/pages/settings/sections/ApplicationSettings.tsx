@@ -7,7 +7,7 @@ import { toast } from '../../../ui/Toast';
 import { ListSkeleton } from '../developer/common';
 import styles from '../developer/developer.module.css';
 import { formatDate } from '../developer/logic';
-import { useList } from '../developer/useList';
+import { useList } from '../../../api/useList';
 import { formatRelative } from '../../../ui/RelativeTime';
 
 /** `/settings/applications`: OAuth apps the user has authorized. */

@@ -5,7 +5,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { plural } from '../../components/admin/format';
 import { ErrorState, PageHeader, Panel, SearchInput, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, navigate, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Tag } from '../../ui/Badge';
@@ -36,7 +36,7 @@ import {
   type TeamRepo,
   type TeamRepoPermission,
   type TeamRole,
-} from './api';
+} from '../../api/orgSettings';
 import { RowMenu, TeamDialog, TeamPrivacyChoice, descendants, privacyPill, teamPath, teamTree, useAllTeams, useLoadAll, useOrgAccess, userCell } from './common';
 import { orgSettingsPath } from './OrgSettingsLayout';
 import local from './OrgSettings.module.css';

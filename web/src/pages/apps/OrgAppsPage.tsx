@@ -1,6 +1,6 @@
 import { useLocation, useParams } from '../../router';
 import { Skeleton } from '../../ui/EmptyState';
-import { OwnerRequired, useOrgAccess } from '../orgsettings/common';
+import { OwnerRequired, useOrgAccess } from '../org-settings/common';
 import { AppsManager } from './AppsManager';
 import { InstallationsManager } from './InstallationsManager';
 

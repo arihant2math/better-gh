@@ -4,7 +4,7 @@ import { api, v3 } from '../../api/client';
 import { listTags } from '../../api/code';
 import { listBranchesAll } from '../../api/repoSettings';
 import type { Repo } from '../../sync/models';
-import { fetchAll } from '../orgsettings/api';
+import { fetchAll } from '../../api/orgSettings';
 import { ACTIONS_APP } from './model';
 
 export interface AppRef {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { api } from '../../api/client';
-import { resettableMap } from '../../api/reset';
+import { api } from './client';
+import { resettableMap } from './reset';
 
 /** Parse a GitHub `Link` header into `{rel: url}`. */
 export function parseLink(header: string | null): Record<string, string> {

@@ -5,7 +5,7 @@ import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatDateTime } from '../../components/admin/format';
 import { Drawer, KeyValue, PageHeader, StatusPill, errorMessage, useConfirm } from '../../components/admin/kit';
-import { usePagedList } from '../../components/admin/usePagedList';
+import { usePagedList } from '../../api/usePagedList';
 import { Link, setQuery, useParams, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Avatar } from '../../ui/Badge';
@@ -15,7 +15,7 @@ import { MailIcon, PersonAddIcon, TrashIcon, XIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { cancelInvitation, failedInvitationsPath, invitationTeams, invitationsPath, type OrgInvitation } from './api';
+import { cancelInvitation, failedInvitationsPath, invitationTeams, invitationsPath, type OrgInvitation } from '../../api/orgSettings';
 import { INVITE_ROLE_LABEL, InviteDialog, OwnerRequired, teamPath, useLoadAll, useOrgAccess } from './common';
 
 const ROLE_FILTERS = [

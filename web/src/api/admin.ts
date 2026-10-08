@@ -2,7 +2,7 @@
  * Typed calls for the site administration API (`/_bgh/admin/*` and the GHES
  * `/api/v3/admin`, `/enterprise/*` endpoints). Shapes: docs/packages/admin.md.
  */
-import { api, v3 } from '../../api/client';
+import { api, v3 } from './client';
 
 // ------------------------------------------------------------------ helpers
 

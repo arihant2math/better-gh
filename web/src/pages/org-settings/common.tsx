@@ -6,7 +6,7 @@ import { getBoot } from '../../boot';
 import { navigate } from '../../router';
 import styles from '../../components/admin/admin.module.css';
 import { RadioCards, StatusPill, errorMessage } from '../../components/admin/kit';
-import { invalidateLists } from '../../components/admin/usePagedList';
+import { invalidateLists } from '../../api/usePagedList';
 import { Avatar, Tag } from '../../ui/Badge';
 import { Button, IconButton } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
@@ -29,7 +29,7 @@ import {
   type InvitationInput,
   type TeamFull,
   type TeamPrivacy,
-} from './api';
+} from '../../api/orgSettings';
 import local from './OrgSettings.module.css';
 import type { RestTeam, SimpleUser } from '../../api/types';
 
