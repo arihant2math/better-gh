@@ -19,11 +19,12 @@ import {
   type ContributorStats,
   type WeekActivity,
 } from '../../../api/insights';
+import { canPush } from '../../../sync/selectors';
+import { useRouteRepo } from '../useRouteRepo';
 import type { RestFork } from '../../../api/types';
-import { Link, useLocation, useParams } from '../../../router';
+import { Link, useLocation } from '../../../router';
 import { store } from '../../../sync';
 import type { Issue, Repo } from '../../../sync/models';
-import { repoByName } from '../../../sync/selectors';
 import { Avatar } from '../../../ui/Badge';
 import { Box, EmptyState, Skeleton } from '../../../ui/EmptyState';
 import { CheckCircleFillIcon, CircleIcon, GitMergeIcon, GitPullRequestIcon, GraphIcon, IssueClosedIcon, IssueOpenedIcon, RepoForkedIcon, RepoIcon } from '../../../ui/icons';
@@ -43,20 +44,17 @@ function viewOf(section: string, sub: string | undefined): View | null {
 }
 
 export default observer(function InsightsPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
   const { pathname } = useLocation();
-  const repo = repoByName(owner, name);
-  if (!repo) return null;
+  const repo = useRouteRepo();
   const base = `/${repo.owner}/${repo.name}`;
   const [section = '', sub] = pathname.slice(base.length).split('/').slice(1);
   const view = viewOf(section, sub) ?? 'pulse';
-  const permission = store().get('viewerRepo', repo.id)?.permission;
-  const canPush = permission === 'write' || permission === 'maintain' || permission === 'admin';
+  const pushable = canPush(repo.id);
   const nav: { id: View | 'forks'; label: string; href: string }[] = [
     { id: 'pulse', label: 'Pulse', href: `${base}/pulse` },
     { id: 'contributors', label: 'Contributors', href: `${base}/graphs/contributors` },
     { id: 'community', label: 'Community standards', href: `${base}/community` },
-    ...(canPush ? [{ id: 'traffic' as const, label: 'Traffic', href: `${base}/graphs/traffic` }] : []),
+    ...(pushable ? [{ id: 'traffic' as const, label: 'Traffic', href: `${base}/graphs/traffic` }] : []),
     { id: 'commit-activity', label: 'Commits', href: `${base}/graphs/commit-activity` },
     { id: 'code-frequency', label: 'Code frequency', href: `${base}/graphs/code-frequency` },
     { id: 'forks', label: 'Forks', href: `${base}/forks` },
@@ -77,7 +75,7 @@ export default observer(function InsightsPage() {
         {view === 'community' && <Community repo={repo} />}
         {view === 'commit-activity' && <CommitActivity repo={repo} />}
         {view === 'code-frequency' && <CodeFrequency repo={repo} />}
-        {view === 'traffic' && (canPush ? <Traffic repo={repo} /> : <EmptyState icon={GraphIcon} title="Traffic is visible to people with push access" />)}
+        {view === 'traffic' && (pushable ? <Traffic repo={repo} /> : <EmptyState icon={GraphIcon} title="Traffic is visible to people with push access" />)}
         {view === 'network' && <Network repo={repo} />}
       </main>
     </div>

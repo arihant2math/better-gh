@@ -8,18 +8,18 @@ import { formatKeys } from '../../shortcuts/manager';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import type { Milestone, Repo } from '../../sync/models';
 import { createMilestone, deleteMilestone, updateMilestone } from '../../sync/mutations';
-import { canPush, milestoneByNumber, milestonesForRepo, repoByName } from '../../sync/selectors';
+import { canPush, milestoneByNumber, milestonesForRepo } from '../../sync/selectors';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
 import { fromDateInput, toDateInput } from './due';
 import styles from './Milestones.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** `/milestones/new` and `/milestones/:number/edit`. */
 export default observer(function MilestoneFormPage() {
-  const { owner, repo: name, number } = useParams<{ owner: string; repo: string; number?: string }>();
-  const repo = repoByName(owner, name);
-  if (!repo) return null;
+  const { number } = useParams<{ number?: string }>();
+  const repo = useRouteRepo();
   if (!canPush(repo.id)) return <NotFound what="page" />;
   const m = number ? milestoneByNumber(repo.id, Number(number)) : undefined;
   if (number && !m) return <NotFound what="milestone" />;

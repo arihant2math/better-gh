@@ -9,6 +9,12 @@ export function repoByName(owner: string, name: string): Repo | undefined {
   return store().byKey('repo', 'fullName', `${owner}/${name}`.toLowerCase());
 }
 
+/** `owner/name` → `[owner, name]`; `undefined` unless exactly two non-empty parts. */
+export function splitFullName(fullName: string): [owner: string, name: string] | undefined {
+  const parts = fullName.split('/');
+  return parts.length === 2 && parts[0] && parts[1] ? [parts[0], parts[1]] : undefined;
+}
+
 export function repoFullName(repo: Pick<Repo, 'owner' | 'name'>): string {
   return `${repo.owner}/${repo.name}`;
 }

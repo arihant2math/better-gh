@@ -5,7 +5,6 @@ import { cachesQuery, deleteCache, getCachePolicy, getCacheUsage, listCaches, ty
 import { formatBytes } from '../../../components/admin/format';
 import { setQuery, useParams, useQuery } from '../../../router';
 import { store } from '../../../sync';
-import { repoByName } from '../../../sync/selectors';
 import { Button, IconButton, cx } from '../../../ui/Button';
 import { Dialog } from '../../../ui/Dialog';
 import { EmptyState, Skeleton } from '../../../ui/EmptyState';
@@ -18,6 +17,8 @@ import { loadWorkflows, workflowsKey } from '../data';
 import { WorkflowsSidebar } from '../WorkflowsSidebar';
 import runs from '../Runs.module.css';
 import styles from './Caches.module.css';
+import { canPush } from '../../../sync/selectors';
+import { useRouteRepo } from '../../repo/useRouteRepo';
 
 const PER_PAGE = 30;
 const SORTS: { id: CacheSort; label: string }[] = [
@@ -42,11 +43,10 @@ export function refLabel(ref: string): string {
 export default observer(function CachesPage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
   const query = useQuery();
-  const repo = repoByName(owner, name);
+  const repo = useRouteRepo();
   const base = `/${owner}/${name}`;
-  const perm = repo ? store().get('viewerRepo', repo.id)?.permission : undefined;
-  const canAdmin = perm === 'admin';
-  const canWrite = !!perm && ['admin', 'maintain', 'write'].includes(perm);
+  const canAdmin = store().get('viewerRepo', repo.id)?.permission === 'admin';
+  const canWrite = canPush(repo.id);
   const workflows = useResource(workflowsKey(owner, name), loadWorkflows(owner, name));
 
   const sort = SORTS.find((s) => s.id === query.get('sort'))?.id ?? 'last_accessed_at';
@@ -112,7 +112,6 @@ export default observer(function CachesPage() {
     );
   };
 
-  if (!repo) return null;
   const limitGb = policy.data?.repo_cache_size_limit_in_gb;
   const used = usage.data?.active_caches_size_in_bytes ?? 0;
   const pct = limitGb ? Math.min(100, (used / (limitGb * 1024 ** 3)) * 100) : 0;

@@ -6,13 +6,14 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
 import { setPinned } from '../../sync/mutations';
-import { canPush, issuesForRepo, labelsForRepo, milestonesForRepo, pinnedIssues, repoByName } from '../../sync/selectors';
+import { canPush, issuesForRepo, labelsForRepo, milestonesForRepo, pinnedIssues } from '../../sync/selectors';
 import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, IconButton } from '../../ui/Button';
 import { CommentIcon, MilestoneIcon, PinSlashIcon, PlusIcon, TagIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { IssueList } from './IssueList';
 import styles from './IssueList.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const PinnedIssues = observer(function PinnedIssues({ repo }: { repo: Repo }) {
   const pinned = pinnedIssues(repo.id);
@@ -50,9 +51,9 @@ const PinnedIssues = observer(function PinnedIssues({ repo }: { repo: Repo }) {
 
 export default observer(function IssueListPage() {
   const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
-  const repoId = repo?.id;
-  const source = useCallback(() => (repoId ? issuesForRepo(repoId).filter((i) => !i.isPr) : []), [repoId]);
+  const repo = useRouteRepo();
+  const repoId = repo.id;
+  const source = useCallback(() => issuesForRepo(repoId).filter((i) => !i.isPr), [repoId]);
   const base = `/${owner}/${name}`;
   const openNew = () => navigate(`${base}/issues/new/choose`);
   useShortcuts('Issue list', {
@@ -68,7 +69,6 @@ export default observer(function IssueListPage() {
     ],
     [base],
   );
-  if (!repo) return null; // RepoLayout renders loading / not found
   return (
     <IssueList
       kind="issue"

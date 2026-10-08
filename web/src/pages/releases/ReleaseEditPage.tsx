@@ -20,7 +20,7 @@ import { RefPicker, useRefs } from '../../components/code/RefPicker';
 import { UploadStatus, useAttachments } from '../../components/editor/useAttachments';
 import { Link, navigate, useParams } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
-import { repoByName } from '../../sync/selectors';
+import { canPush as canPushTo } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, CheckIcon, ChevronRightIcon, PackageIcon, PlusIcon, SyncIcon, TagIcon, TrashIcon, UploadIcon, XIcon } from '../../ui/icons';
@@ -28,27 +28,18 @@ import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { Markdown } from '../../ui/Markdown';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
+import { useRouteRepo } from '../repo/useRouteRepo';
 import styles from './Releases.module.css';
-import {
-  AssetRow,
-  PER_PAGE,
-  formatBytes,
-  invalidateReleases,
-  isNotFound,
-  primeRelease,
-  releaseHref,
-  releasesBase,
-  useCanPush,
-  useLatestRelease,
-} from './shared';
+import { AssetRow, PER_PAGE, formatBytes, invalidateReleases, isNotFound, primeRelease, releaseHref, releasesBase, useLatestRelease } from './shared';
 
 /** `/:owner/:repo/releases/new` and `/:owner/:repo/releases/edit/:tag`. */
 export default observer(function ReleaseEditPage() {
   const { owner, repo, tag } = useParams<{ owner: string; repo: string; tag?: string }>();
-  const canPush = useCanPush(owner, repo);
+  const repoRow = useRouteRepo();
+  const canPush = canPushTo(repoRow.id);
   const existing = useResource<RestRelease>(tag ? codeKeys.release(owner, repo, tag) : null, () => findReleaseByTag(owner, repo, tag!));
   const latest = useLatestRelease(owner, repo);
-  const defaultBranch = repoByName(owner, repo)?.defaultBranch ?? 'main';
+  const defaultBranch = repoRow.defaultBranch;
 
   if (!canPush) {
     return (

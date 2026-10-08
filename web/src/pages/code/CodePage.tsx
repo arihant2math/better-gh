@@ -6,7 +6,6 @@ import { Link, navigate, replaceHash, useLocation, useParams } from '../../route
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
-import { repoByName } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { CopyIcon, SearchIcon, SidebarExpandIcon } from '../../ui/icons';
 import { toast } from '../../ui/Toast';
@@ -19,6 +18,7 @@ import { FileTree } from './FileTree';
 import { FileView } from './FileView';
 import { copyText, resolveTarget, type CodeTarget } from './util';
 import { codeUrl, historyUrl, parseCodeUrl } from '../../components/code/urls';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const FileFinder = lazy(() => import('./FileFinder'));
 
@@ -28,10 +28,9 @@ const TREE_KEY = 'bgh:code:tree';
 export default observer(function CodePage() {
   const params = useParams<{ owner: string; repo: string; ref?: string; '*'?: string }>();
   const { pathname } = useLocation();
-  const repo = repoByName(params.owner, params.repo);
+  const repo = useRouteRepo();
   // Re-resolve once the ref list arrives (pins the commit SHA for immutable caching).
   useRefsData(params.owner, params.repo);
-  if (!repo) return null;
   const view = parseCodeUrl(pathname)?.view;
   const mode: 'tree' | 'blob' | 'blame' = view === 'blob' || view === 'blame' ? view : 'tree';
   const t = resolveTarget(repo.owner, repo.name, params.ref ?? repo.defaultBranch, params['*'] ?? '');

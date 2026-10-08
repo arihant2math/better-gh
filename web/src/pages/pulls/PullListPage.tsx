@@ -1,20 +1,19 @@
 import { observer } from 'mobx-react-lite';
 import { useCallback } from 'react';
-import { navigate, useParams } from '../../router';
+import { navigate } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
-import { issuesForRepo, repoByName } from '../../sync/selectors';
+import { issuesForRepo } from '../../sync/selectors';
 import { Button } from '../../ui/Button';
 import { GitPullRequestIcon } from '../../ui/icons';
 import { IssueList } from '../issues/IssueList';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 export default observer(function PullListPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
-  const repoId = repo?.id;
-  const source = useCallback(() => (repoId ? issuesForRepo(repoId).filter((i) => i.isPr) : []), [repoId]);
-  const compare = repo ? `/${repo.owner}/${repo.name}/compare` : '';
+  const repo = useRouteRepo();
+  const repoId = repo.id;
+  const source = useCallback(() => issuesForRepo(repoId).filter((i) => i.isPr), [repoId]);
+  const compare = `/${repo.owner}/${repo.name}/compare`;
   useShortcuts('Pull requests', { c: { handler: () => navigate(compare), description: 'New pull request', group: 'Pull requests' } });
-  if (!repo) return null;
   return (
     <IssueList
       kind="pr"

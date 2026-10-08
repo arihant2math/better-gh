@@ -15,7 +15,7 @@ import { useComputed, usePullDetails } from '../../sync/hooks';
 import type { Issue, Repo } from '../../sync/models';
 import { addPendingComment, addReviewComment } from '../../sync/pullMutations';
 import { checkRunsFor, pendingReview, threadsForPull, type ReviewThread } from '../../sync/pullSelectors';
-import { repoFullName, viewerPermission } from '../../sync/selectors';
+import { canPush, repoFullName } from '../../sync/selectors';
 import { Button, IconButton } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { AlertIcon, ColumnsIcon, CommentIcon, FilterIcon, RowsIcon } from '../../ui/icons';
@@ -167,8 +167,7 @@ export default observer(function FilesTab({ repo, pr }: { repo: Repo; pr: Issue 
   }, [entries, filter, hideViewed, viewed, patches, whitespace, pr.headSha, rangeTag]);
 
   // Highlighting, context expansion, rich/image diffs, file actions and check annotations (P37).
-  const perm = viewerPermission(repo.id);
-  const canEdit = pr.state === 'open' && (pr.headRepoId == null || pr.headRepoId === repo.id) && (perm === 'write' || perm === 'maintain' || perm === 'admin');
+  const canEdit = pr.state === 'open' && (pr.headRepoId == null || pr.headRepoId === repo.id) && canPush(repo.id);
   // Refetch annotations whenever another check run completes.
   const completedRuns = useComputed(
     () =>

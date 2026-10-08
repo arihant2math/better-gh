@@ -6,10 +6,9 @@ import { getHistory } from '../../api/endpoints';
 import { usePager } from '../../api/pager';
 import type { History } from '../../api/types';
 import { LoadMore } from '../../components/LoadMore';
-import { Link, useParams } from '../../router';
+import { Link } from '../../router';
 import { archiveUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import type { Repo } from '../../sync/models';
-import { repoByName } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
 import { AlertIcon, FileZipIcon, GitCommitIcon, RocketIcon, TagIcon } from '../../ui/icons';
@@ -17,6 +16,7 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { TabNav } from '../../ui/Tabs';
 import { VirtualList } from '../../ui/VirtualList';
 import styles from './Branches.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const enc = encodeURIComponent;
 const PER_PAGE = 100;
@@ -24,9 +24,7 @@ const VIRTUALIZE_OVER = 100;
 
 /** `/:owner/:repo/tags`. */
 export default observer(function TagsPage() {
-  const params = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(params.owner, params.repo);
-  if (!repo) return null;
+  const repo = useRouteRepo();
   return <Tags repo={repo} />;
 });
 

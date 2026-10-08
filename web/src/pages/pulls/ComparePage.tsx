@@ -15,7 +15,7 @@ import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import { createPull } from '../../sync/pullMutations';
 import type { ID } from '../../sync/models';
-import { canTriage, issuesForRepo, labelByName, milestonesForRepo, repoByName, userByLogin } from '../../sync/selectors';
+import { canTriage, issuesForRepo, labelByName, milestonesForRepo, userByLogin } from '../../sync/selectors';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -30,6 +30,7 @@ import styles from './Compare.module.css';
 import { carriedQuery, initialBody, parseCompareParams } from './compareParams';
 import { applyNewPullMeta, hasMeta, type NewPullMeta } from './newPull';
 import { resettableMap } from '../../api/reset';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 /** `base...head` (or just `head`, compared with the default branch). Head may be `owner:branch`. */
 export function parseSpec(spec: string, defaultBranch: string): { base: string; head: string } {
@@ -48,10 +49,9 @@ function humanize(branch: string): string {
 }
 
 export default observer(function ComparePage() {
-  const { owner, repo: name, '*': spec = '' } = useParams<{ owner: string; repo: string; '*'?: string }>();
-  const repo = repoByName(owner, name);
+  const { '*': spec = '' } = useParams<{ '*'?: string }>();
+  const repo = useRouteRepo();
   const query = useQuery();
-  if (!repo) return null;
   const { base, head } = parseSpec(spec, repo.defaultBranch);
   const headOwner = head.includes(':') ? head.split(':')[0]! : repo.owner;
   const headBranch = head.includes(':') ? head.split(':').slice(1).join(':') : head;

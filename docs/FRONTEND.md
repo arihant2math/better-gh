@@ -87,17 +87,24 @@ Everything synced is in the object pool; reads are synchronous and reactive.
 ```tsx
 import { observer } from 'mobx-react-lite';
 import { store } from '../../sync';
-import { issueByNumber, labelsForRepo, repoByName } from '../../sync/selectors';
+import { canPush, issueByNumber, repoByName } from '../../sync/selectors';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 export default observer(function MyPage() {
-  const repo = repoByName(owner, name);                 // derived key index
-  const issue = repo && issueByNumber(repo.id, 42);
+  const repo = useRouteRepo();                          // the route's repo, provided by RepoLayout
+  const other = repoByName('acme', 'api');              // derived key index
+  const issue = issueByNumber(repo.id, 42);
   const author = store().get('user', issue?.authorId);  // by id
-  const open = store().byIndex('issue', 'repoId', repo!.id).filter((i) => i.state === 'open'); // secondary index
+  const open = store().byIndex('issue', 'repoId', repo.id).filter((i) => i.state === 'open'); // secondary index
+  const writable = canPush(repo.id);                    // permission rules live in sync/selectors
   …
 });
 ```
 
+* Pages under `RepoLayout` get their repository from `useRouteRepo()`: the
+  layout shows loading / not found until the row exists, so don't re-resolve
+  `:owner/:repo` or guard on a missing repo. Permission checks go through
+  `canPush` / `canWrite` / `viewerPermission`, never inline comparisons.
 * Components that read the store **must** be `observer(...)`. They re-render
   only when a field they read changes (field-level tracking).
 * Expensive derivations (filter/sort thousands of rows): `useComputed(() => …, deps)`

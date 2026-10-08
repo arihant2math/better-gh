@@ -13,8 +13,7 @@ import {
 import { useResource } from '../../api/cache';
 import { Link, navigate, useLocation } from '../../router';
 import { blobUrl } from '../../components/code/urls';
-import { store } from '../../sync';
-import { repoByName } from '../../sync/selectors';
+import { canPush, repoByName } from '../../sync/selectors';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Skeleton } from '../../ui/EmptyState';
 import { ArrowLeftIcon, ChevronDownIcon, DownloadIcon, FileCodeIcon, HomeIcon, KebabHorizontalIcon, StopIcon, SyncIcon } from '../../ui/icons';
@@ -86,8 +85,7 @@ export const RunShell = observer(function RunShell({ data, jobId, children }: { 
   const { run, jobs, graph, base, runId, attempt } = data;
   const { pathname } = useLocation();
   const repo = repoByName(data.owner, data.repo);
-  const perm = repo ? store().get('viewerRepo', repo.id)?.permission : undefined;
-  const canWrite = perm === 'admin' || perm === 'maintain' || perm === 'write';
+  const canWrite = !!repo && canPush(repo.id);
   const runBase = `${base}/actions/runs/${runId}`;
   const summaryHref = attempt ? `${runBase}/attempts/${attempt}` : runBase;
   const groups = jobs ? groupJobs(jobs, graph) : [];

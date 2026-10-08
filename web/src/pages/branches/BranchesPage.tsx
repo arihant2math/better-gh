@@ -10,7 +10,7 @@ import { compareUrl, repoRefOf, treeUrl } from '../../components/code/urls';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { store } from '../../sync';
 import type { Repo } from '../../sync/models';
-import { repoByName, viewerPermission } from '../../sync/selectors';
+import { viewerPermission } from '../../sync/selectors';
 import { Avatar, StateIcon } from '../../ui/Badge';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
@@ -25,6 +25,7 @@ import { VirtualList } from '../../ui/VirtualList';
 import { selectsRef } from '../rulesets/match';
 import { OVERVIEW_LIMIT, barFraction, branchDate, classifyBranches, parseView, type BranchView } from './classify';
 import styles from './Branches.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 const VIRTUALIZE_OVER = 100;
 const NO_RULESETS: Ruleset[] = [];
@@ -46,9 +47,8 @@ function copy(text: string) {
 
 /** `/:owner/:repo/branches[/:view]`. */
 export default observer(function BranchesPage() {
-  const params = useParams<{ owner: string; repo: string; view?: string }>();
-  const repo = repoByName(params.owner, params.repo);
-  if (!repo) return null;
+  const params = useParams<{ view?: string }>();
+  const repo = useRouteRepo();
   return <Branches repo={repo} view={parseView(params.view)} />;
 });
 

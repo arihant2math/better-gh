@@ -2,12 +2,12 @@ import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
 import { useCommands } from '../../app/commands';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { Link, navigate, setQuery, useParams, useQuery } from '../../router';
+import { Link, navigate, setQuery, useQuery } from '../../router';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { useComputed } from '../../sync/hooks';
 import type { Milestone, Repo } from '../../sync/models';
 import { deleteMilestone, updateMilestone } from '../../sync/mutations';
-import { canPush, milestonesForRepo, repoByName } from '../../sync/selectors';
+import { canPush, milestonesForRepo } from '../../sync/selectors';
 import { Button, cx } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { CalendarIcon, CheckIcon, MilestoneIcon, PlusIcon } from '../../ui/icons';
@@ -16,6 +16,7 @@ import { Markdown } from '../../ui/Markdown';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { dueText, percentDone } from './due';
 import styles from './Milestones.module.css';
+import { useRouteRepo } from '../repo/useRouteRepo';
 
 type Sort = 'due' | 'due-desc' | 'updated' | 'completeness' | 'title';
 const SORTS: { key: Sort; label: string }[] = [
@@ -44,13 +45,7 @@ function sortMilestones(list: Milestone[], sort: Sort): Milestone[] {
 }
 
 export default observer(function MilestonesPage() {
-  const { owner, repo: name } = useParams<{ owner: string; repo: string }>();
-  const repo = repoByName(owner, name);
-  if (!repo) return null;
-  return <Milestones repo={repo} />;
-});
-
-const Milestones = observer(function Milestones({ repo }: { repo: Repo }) {
+  const repo = useRouteRepo();
   const query = useQuery();
   const state = query.get('state') === 'closed' ? 'closed' : 'open';
   const sort = (query.get('sort') as Sort | null) ?? 'due';
