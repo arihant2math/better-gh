@@ -32,7 +32,7 @@ from the mock, handy for testing rollbacks.
 | `src/app/` | shell (sidebar, top bar), `routes.ts`, command palette + `commands.ts`, session, theme, shortcut help |
 | `src/router/` | the router (`Link`, `navigate`, `useParams`, `useQuery`, `setQuery`, `prefetch`) |
 | `src/sync/` | local-first store: `models.ts`, `schema.ts`, `pool.ts`, `client.ts`, `transactions.ts`, `mutations.ts`, `selectors.ts`, `hooks.ts` |
-| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`) |
+| `src/api/` | REST client (`api`, `v3()`), `endpoints.ts`, resource cache (`useResource`, `prefetch`), per-viewer state lifetime (`reset.ts`) |
 | `src/ui/` | design system (import from `ui/…` files or the `ui` barrel) |
 | `src/shortcuts/` | `useShortcuts`, `formatKeys` |
 | `src/components/` | domain components shared by pages: `diff/DiffViewer`, `editor/MarkdownEditor` (toolbar, preview, `@`/`#` autocomplete), `labels/ColorPicker`, `ConfirmDialog`; `admin/` = kit for admin-style pages |
@@ -111,6 +111,33 @@ export default observer(function MyPage() {
   `useResource(key, loader, { immutable })` from `api/cache` + typed calls in
   `api/endpoints.ts`. Key by SHA and pass `immutable: true` when content
   addressed; warm it from the route's `prefetch`.
+
+## Where remote and UI state lives
+
+Pick by what the data is; don't hand-roll a new cache.
+
+| Data | Use |
+|------|-----|
+| Synced model (issues, PRs, labels, notifications…) | the store (`store()`, `sync/selectors`, mutations) |
+| One REST resource (detail, settings, a short list) | `useResource` / `load` / `mutate` (`api/cache`) |
+| Server-paginated REST list (`Link: rel="next"`) | `usePagedList` (`components/admin`) |
+| REST list with optimistic add/edit/remove | `useList` (`pages/settings/developer/useList.ts`, built on `useResource`) |
+| Your own abortable request whose result should be reused (per keystroke) | `peekFresh` + `mutate` on an `api/cache` key (see `search/api.ts`) |
+| Local UI state | `useState` |
+| Cross-page UI state (palette, dialogs, sidebar) | `app/uiState.ts` |
+
+**Sign-out.** Logout, session expiry and an account switch call
+`resetClientState()` (`api/reset.ts`) from `session.teardown()`: it clears
+`api/cache` (immutable entries too), the ETag cache and every registered
+module cache, and bumps a generation so responses to requests started for
+the previous viewer reject with an `AbortError` instead of reaching their
+callers. Anything else that holds per-viewer data at module level (a `Map`,
+a `let`, an `observable.map`, a MobX singleton) must take part: use
+`resettableMap()` / `resettableSet()` or register `onReset(() => …)`, and
+when it writes after async work that is not an `api` call (or in a `catch`
+fallback), capture `const live = sameSession()` first and write only if
+`live()`. Content-only caches (rendered syntax highlighting keyed by the
+code itself) can stay.
 
 ## API types
 

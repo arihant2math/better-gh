@@ -51,6 +51,7 @@ import {
 import fg from './fineGrained.module.css';
 import { expiryStatus, formatDate } from './logic';
 import { useList } from './useList';
+import { onReset } from '../../../api/reset';
 
 export const FG_LIST_KEY = 'dev:fg-tokens';
 const OWNERS_KEY = 'dev:fg-owners';
@@ -59,6 +60,7 @@ export const NEW_FG_PATH = '/settings/tokens/new?type=fine-grained';
 
 /** The fine-grained token just created, kept in memory until the list unmounts. */
 let justCreated: FineGrainedToken | null = null;
+onReset(() => (justCreated = null));
 
 // ------------------------------------------------------------------ list
 

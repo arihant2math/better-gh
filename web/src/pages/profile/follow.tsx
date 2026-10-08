@@ -12,6 +12,7 @@ import { session } from '../../app/session';
 import { errorMessage } from '../../components/settings/kit';
 import { Button } from '../../ui/Button';
 import { toast } from '../../ui/Toast';
+import { onReset } from '../../api/reset';
 
 interface Override {
   on: boolean;
@@ -27,6 +28,11 @@ const emit = () => {
   version++;
   listeners.forEach((l) => l());
 };
+onReset(() => {
+  overrides.clear();
+  pending.clear();
+  emit();
+});
 const subscribe = (l: () => void) => {
   listeners.add(l);
   return () => listeners.delete(l);

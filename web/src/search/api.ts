@@ -3,6 +3,7 @@
  * releases-search.md) with an LRU cache and abortable requests, and the
  * GitHub `/search/*` endpoints for the full results page.
  */
+import { mutate, peekFresh } from '../api/cache';
 import { api } from '../api/client';
 import { recordPerf } from './perf';
 import type { SearchType } from './qualifiers';
@@ -48,18 +49,12 @@ export function scopeKey(s: SearchScope): string {
   return s.kind === 'global' ? 'g' : s.kind === 'org' ? `o:${s.login.toLowerCase()}` : `r:${s.fullName.toLowerCase()}`;
 }
 
-const CACHE_MAX = 120;
 const CACHE_TTL = 60_000;
-const paletteCache = new Map<string, { at: number; result: PaletteResult }>();
+const paletteKey = (q: string, scope: SearchScope) => `palette:${scopeKey(scope)}|${q.trim().toLowerCase()}`;
 
-/** Cached palette result for `q` (exact key), if fresh. */
+/** Cached palette result for `q` (exact key), if fresh. Lives in `api/cache`, so sign-out drops it. */
 export function peekPalette(q: string, scope: SearchScope): PaletteResult | undefined {
-  const key = `${scopeKey(scope)}|${q.trim().toLowerCase()}`;
-  const hit = paletteCache.get(key);
-  if (!hit || Date.now() - hit.at > CACHE_TTL) return undefined;
-  paletteCache.delete(key);
-  paletteCache.set(key, hit);
-  return hit.result;
+  return peekFresh<PaletteResult>(paletteKey(q, scope), CACHE_TTL);
 }
 
 export async function paletteSearch(q: string, scope: SearchScope, signal?: AbortSignal): Promise<PaletteResult> {
@@ -72,9 +67,7 @@ export async function paletteSearch(q: string, scope: SearchScope, signal?: Abor
   const result = await api.get<PaletteResult>(`/_bgh/search?${params}`, { signal });
   recordPerf('palette.server.fetch', performance.now() - t0);
   if (typeof result.took_ms === 'number') recordPerf('palette.server.took', result.took_ms);
-  const key = `${scopeKey(scope)}|${q.trim().toLowerCase()}`;
-  paletteCache.set(key, { at: Date.now(), result });
-  if (paletteCache.size > CACHE_MAX) paletteCache.delete(paletteCache.keys().next().value!);
+  mutate(paletteKey(q, scope), () => result);
   return result;
 }
 

@@ -8,9 +8,11 @@ import { navigate } from '../router';
 import { store } from '../sync';
 import type { ID, Notification } from '../sync/models';
 import { session } from './session';
+import { onReset } from '../api/reset';
 
 /** Notification id → arrival time (ms) of threads that came in live. */
 export const arrivals = observable.map<ID, number>();
+onReset(() => runInAction(() => arrivals.clear()));
 
 const DESKTOP_KEY = 'bgh.desktopNotifications';
 

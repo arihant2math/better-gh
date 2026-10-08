@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { searchAudit, type AdminAuditEntry, type AuditQuery } from './api';
+import { resettableMap } from '../../api/reset';
 
 export interface AuditListState {
   entries: AdminAuditEntry[];
@@ -65,7 +66,7 @@ class AuditList {
   }
 }
 
-const cache = new Map<string, AuditList>();
+const cache = resettableMap<string, AuditList>();
 
 function getList(query: AuditQuery): AuditList {
   const key = JSON.stringify(query);
