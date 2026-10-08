@@ -6,6 +6,7 @@
 import { observable, runInAction } from 'mobx';
 import { api } from '../api/client';
 import type { ID, ReactionContent } from './models';
+import { onReset, sameSession } from '../api/reset';
 
 const mine = observable.map<string, readonly ReactionContent[]>();
 const loaded = new Set<string>();
@@ -29,11 +30,13 @@ export async function loadViewerReactions(owner: string, repo: string, issue: { 
   const k = `${owner}/${repo}#${issue.number}`.toLowerCase();
   if (loaded.has(k) || issue.id < 0) return;
   loaded.add(k);
+  const live = sameSession();
   try {
     const enc = encodeURIComponent;
     const res = await api.get<{ issue: ReactionContent[]; comments: Record<string, ReactionContent[]> }>(
       `/_bgh/repos/${enc(owner)}/${enc(repo)}/issues/${issue.number}/viewer-reactions`,
     );
+    if (!live()) return;
     runInAction(() => {
       mine.set(key({ kind: 'issue', id: issue.id }), res.issue ?? []);
       for (const [cid, list] of Object.entries(res.comments ?? {})) mine.set(key({ kind: 'comment', id: Number(cid) }), list);
@@ -55,8 +58,9 @@ export function setReviewCommentReactions(rows: readonly { subjectId: ID; userId
   });
 }
 
-/** Test helper. */
+/** Forget the viewer's reactions (sign-out; tests). */
 export function resetViewerReactions(): void {
   runInAction(() => mine.clear());
   loaded.clear();
 }
+onReset(resetViewerReactions);

@@ -1,8 +1,9 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 import { ApiError, api, requestSudo } from '../api/client';
+import { resetClientState } from '../api/reset';
 import { transport } from '../api/transport';
 import { getBoot, isMockMode, setBoot, type BootData, type BootUser } from '../boot';
-import { navigate } from '../router';
+import { loginHref, navigate } from '../router';
 import { hasSync, setSyncClient, sync } from '../sync';
 import { SyncClient } from '../sync/client';
 import { IdbPersistence, openPersistence } from '../sync/persistence';
@@ -154,10 +155,16 @@ class Session {
     this.teardown();
     dropShellCache();
     toast({ title: 'Your session expired', description: 'Sign in again to continue.' });
-    navigate(`/login?return_to=${encodeURIComponent(location.pathname)}`);
+    navigate(loginHref());
   }
 
+  /**
+   * End the viewer's session client-side (logout, expiry, account switch):
+   * stop sync and drop every per-viewer cache (`api/reset`) before the next
+   * sign-in can render anything.
+   */
   private teardown() {
+    resetClientState();
     if (hasSync()) {
       sync().stop();
       setSyncClient(null);

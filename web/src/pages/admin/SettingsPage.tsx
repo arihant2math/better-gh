@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ApiError } from '../../api/client';
 import { mutate, refresh, useResource } from '../../api/cache';
+import { validationErrors } from '../../api/errors';
 import { site } from '../../app/site';
+import { replaceHash } from '../../router';
 import styles from '../../components/admin/admin.module.css';
 import { ErrorState, PageHeader, Panel, errorMessage, useConfirm } from '../../components/admin/kit';
 import { formatKeys } from '../../shortcuts/manager';
@@ -51,8 +52,7 @@ function scrollToSection(k: SectionKey) {
 
 /** Section of a 422 field error (`smtp`, `auth_providers.oidc.name`, …). */
 function serverSection(err: unknown): SectionKey | null {
-  if (!(err instanceof ApiError)) return null;
-  const field = (err.body as { errors?: { field?: string }[] } | null)?.errors?.[0]?.field;
+  const field = validationErrors(err)[0]?.field;
   if (!field) return null;
   return SECTIONS.find((x) => field === x.key || field.startsWith(`${x.key}.`))?.key ?? null;
 }
@@ -322,7 +322,7 @@ export default function SettingsPage() {
                       onClick={(e) => {
                         e.preventDefault();
                         setActive(sec.key);
-                        history.replaceState(history.state, '', `#${sec.anchor}`);
+                        replaceHash(`#${sec.anchor}`);
                         scrollToSection(sec.key);
                       }}
                     >

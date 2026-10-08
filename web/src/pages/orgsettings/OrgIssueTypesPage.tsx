@@ -5,6 +5,7 @@
  */
 import { useState } from 'react';
 import { mutate, refresh, useResource } from '../../api/cache';
+import { fieldErrors, type FieldErrors } from '../../api/errors';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { PageHeader, StatusPill, Switch, errorMessage, useConfirm } from '../../components/admin/kit';
@@ -27,7 +28,6 @@ import { PencilIcon, PlusIcon, TagIcon, TrashIcon } from '../../ui/icons';
 import { Field, Input, Select, Textarea } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
 import { IssueTypeChip } from '../issues/IssueRelations';
-import { fieldErrors } from './api';
 import { RowMenu, useOrgAccess } from './common';
 
 interface Form {
@@ -39,7 +39,7 @@ interface Form {
 
 function TypeDialog({ org, open, onClose, editing }: { org: string; open: boolean; onClose: () => void; editing: IssueType | null }) {
   const [form, setForm] = useState<Form>({ name: '', description: '', color: 'gray', enabled: true });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [shownFor, setShownFor] = useState<string | null>(null);

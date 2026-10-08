@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useEffect, type ComponentType, type LazyExoticComponent } from 'react';
 import { setSudoHandler } from '../api/client';
-import { navigate, returnTo, RouterView, useLocation } from '../router';
+import { loginHref, navigate, returnTo, RouterView, useLocation } from '../router';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { Toaster } from '../ui/Toast';
 import { NotFound } from './NotFound';
@@ -49,7 +49,7 @@ export const App = observer(function App() {
   const bare = bareFor(pathname);
 
   useEffect(() => {
-    if (!signedIn && !bare?.public) navigate(`/login?return_to=${encodeURIComponent(pathname + search)}`, { replace: true });
+    if (!signedIn && !bare?.public) navigate(loginHref(pathname + search), { replace: true });
     if (signedIn && bare?.guestOnly) navigate(returnTo(search), { replace: true });
     if (signedIn) void session.start();
   }, [signedIn, bare, pathname, search]);

@@ -6,7 +6,7 @@ import type { RestRepository } from '../../api/types';
 import { NotFound } from '../../app/NotFound';
 import { session } from '../../app/session';
 import { ui } from '../../app/uiState';
-import { Link, navigate, useLocation, useParams, useScrollContainer } from '../../router';
+import { Link, loginHref, navigate, useLocation, useParams, useScrollContainer } from '../../router';
 import { hasSync, store, sync } from '../../sync';
 import type { Repo } from '../../sync/models';
 import { setStarred } from '../../sync/mutations';
@@ -163,7 +163,7 @@ const RepoHeader = observer(function RepoHeader({ repo, base }: { repo: Repo; ba
   const template = rest?.template_repository;
   const canPush = viewer?.permission === 'write' || viewer?.permission === 'maintain' || viewer?.permission === 'admin';
   const forkable = rest?.allow_forking !== false || !repo.private;
-  const requireLogin = () => navigate(`/login?return_to=${encodeURIComponent(base)}`);
+  const requireLogin = () => navigate(loginHref());
 
   return (
     <>

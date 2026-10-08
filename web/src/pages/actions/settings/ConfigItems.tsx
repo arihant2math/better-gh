@@ -17,6 +17,7 @@ import {
   type Secret,
   type SettingsScope,
 } from '../../../api/actions';
+import { fieldErrors } from '../../../api/errors';
 import { Tag } from '../../../ui/Badge';
 import { Button, IconButton } from '../../../ui/Button';
 import { Dialog } from '../../../ui/Dialog';
@@ -272,6 +273,11 @@ function ItemForm({
       onSaved();
       onClose();
     } catch (err) {
+      // Show the server's 422 reasons under the fields they belong to (the toast carries the first one too).
+      const fe = fieldErrors(err);
+      const name = nameEditable ? (fe.name ?? null) : null;
+      const valueErr = fe.value ?? fe.encrypted_value ?? null;
+      if (name || valueErr) setErrors({ name, value: valueErr });
       if (isAccessError(err)) toastError(`You don't have permission to change ${kind} here`, err);
       else toastError(`Couldn't save ${noun(kind)}`, err);
       setSaving(false);

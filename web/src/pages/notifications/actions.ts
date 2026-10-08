@@ -11,6 +11,7 @@ import type { ID, Notification, Repo, ViewerRepo } from '../../sync/models';
 import { commit, markNotificationRead, markNotificationUnread, nowIso } from '../../sync/mutations';
 import { ops } from '../../sync/overlay';
 import { toast } from '../../ui/Toast';
+import { onReset, sameSession } from '../../api/reset';
 
 const enc = encodeURIComponent;
 
@@ -67,6 +68,10 @@ export function markAllRead(list: readonly Notification[], scope: { all: true } 
 /** Known subscription state per thread id (`undefined` = not loaded). */
 export const threadSubs = observable.map<ID, boolean>();
 const subLoads = new Map<ID, Promise<void>>();
+onReset(() => {
+  runInAction(() => threadSubs.clear());
+  subLoads.clear();
+});
 
 interface ThreadSubscription {
   subscribed: boolean;
@@ -75,12 +80,14 @@ interface ThreadSubscription {
 
 export function loadThreadSubscription(id: ID): void {
   if (threadSubs.has(id) || subLoads.has(id)) return;
+  const live = sameSession();
+  const set = (on: boolean) => live() && runInAction(() => threadSubs.set(id, on));
   const p = api
     .get<ThreadSubscription>(`/api/v3/notifications/threads/${id}/subscription`)
-    .then((s) => void runInAction(() => threadSubs.set(id, s.subscribed && !s.ignored)))
+    .then((s) => void set(s.subscribed && !s.ignored))
     // 404 = no explicit subscription: you get it through participation / watching.
-    .catch(() => void runInAction(() => threadSubs.set(id, true)))
-    .finally(() => subLoads.delete(id));
+    .catch(() => void set(true))
+    .finally(() => live() && subLoads.delete(id));
   subLoads.set(id, p);
 }
 

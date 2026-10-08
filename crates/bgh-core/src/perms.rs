@@ -96,7 +96,7 @@ struct PermRow {
     repo_id: i64,
     active: Option<bool>,
     collab: Option<String>,
-    org_role: Option<String>,
+    org_role: Option<OrgRole>,
     org_base: Option<String>,
     team_perms: Option<Vec<String>>,
 }
@@ -196,9 +196,9 @@ pub async fn repo_permissions(
             raise(Some(Permission::Read));
         }
         raise(row.collab.as_deref().and_then(Permission::parse));
-        match row.org_role.as_deref() {
-            Some("admin") => raise(Some(Permission::Admin)),
-            Some(_) => raise(row.org_base.as_deref().and_then(Permission::parse)),
+        match row.org_role {
+            Some(OrgRole::Admin) => raise(Some(Permission::Admin)),
+            Some(OrgRole::Member) => raise(row.org_base.as_deref().and_then(Permission::parse)),
             None => {}
         }
         for p in row.team_perms.unwrap_or_default() {
@@ -222,7 +222,7 @@ pub async fn users_repo_permissions(
         site_admin: bool,
         active: bool,
         collab: Option<String>,
-        org_role: Option<String>,
+        org_role: Option<OrgRole>,
         org_base: Option<String>,
         team_perms: Option<Vec<String>>,
     }
@@ -273,9 +273,9 @@ pub async fn users_repo_permissions(
         }
         raise(Some(visibility_floor(repo, row.active)));
         raise(row.collab.as_deref().and_then(Permission::parse));
-        match row.org_role.as_deref() {
-            Some("admin") => raise(Some(Permission::Admin)),
-            Some(_) => raise(row.org_base.as_deref().and_then(Permission::parse)),
+        match row.org_role {
+            Some(OrgRole::Admin) => raise(Some(Permission::Admin)),
+            Some(OrgRole::Member) => raise(row.org_base.as_deref().and_then(Permission::parse)),
             None => {}
         }
         for p in row.team_perms.unwrap_or_default() {
@@ -494,12 +494,43 @@ impl RepoAccess {
     }
 }
 
-/// The caller's role in an organization (`admin` | `member`), if any.
+/// A user's role in an organization (`org_members.role`).
+///
+/// Stored and serialized as lowercase text (`admin` | `member`). Decoding
+/// any other value is an error, never a silent grant or deny.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "text", rename_all = "lowercase")]
+pub enum OrgRole {
+    Admin,
+    Member,
+}
+
+impl OrgRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OrgRole::Admin => "admin",
+            OrgRole::Member => "member",
+        }
+    }
+
+    pub fn is_admin(self) -> bool {
+        self == OrgRole::Admin
+    }
+}
+
+impl std::fmt::Display for OrgRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The caller's role in an organization, if any.
 pub async fn org_role(
     db: impl PgExecutor<'_>,
     org_id: i64,
     user_id: i64,
-) -> Result<Option<String>, sqlx::Error> {
+) -> Result<Option<OrgRole>, sqlx::Error> {
     sqlx::query_scalar("SELECT role FROM org_members WHERE org_id = $1 AND user_id = $2")
         .bind(org_id)
         .bind(user_id)
@@ -634,6 +665,28 @@ pub async fn private_readable_ids(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn org_role_serde_round_trip() {
+        for (role, text) in [(OrgRole::Admin, "admin"), (OrgRole::Member, "member")] {
+            assert_eq!(serde_json::to_value(role).unwrap(), text);
+            assert_eq!(
+                serde_json::from_value::<OrgRole>(text.into()).unwrap(),
+                role
+            );
+            assert_eq!(role.as_str(), text);
+            assert_eq!(role.to_string(), text);
+        }
+        assert!(OrgRole::Admin.is_admin());
+        assert!(!OrgRole::Member.is_admin());
+        // GitHub's UI term and other near-misses are not roles.
+        for bad in ["Admin", "owner", "admins", "billing_manager"] {
+            assert!(
+                serde_json::from_value::<OrgRole>(bad.into()).is_err(),
+                "{bad}"
+            );
+        }
+    }
 
     #[test]
     fn ordering_and_names() {

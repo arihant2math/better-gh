@@ -13,8 +13,9 @@ import { RelativeTime } from '../../ui/RelativeTime';
 import { isSubscribed, loadThreadSubscription } from './actions';
 import { REASON_LABELS } from './inbox';
 import styles from './NotificationsPage.module.css';
+import { resettableSet } from '../../api/reset';
 
-const ensured = new Set<number>();
+const ensured = resettableSet<number>();
 
 interface Props {
   n: Notification;

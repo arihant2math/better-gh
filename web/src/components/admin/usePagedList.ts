@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { api } from '../../api/client';
+import { resettableMap } from '../../api/reset';
 
 /** Parse a GitHub `Link` header into `{rel: url}`. */
 export function parseLink(header: string | null): Record<string, string> {
@@ -93,7 +94,7 @@ class PagedList<T> {
   }
 }
 
-const lists = new Map<string, PagedList<unknown>>();
+const lists = resettableMap<string, PagedList<unknown>>();
 const STALE_MS = 30_000;
 
 function getList<T>(path: string): PagedList<T> {

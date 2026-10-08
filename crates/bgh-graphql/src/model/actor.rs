@@ -314,8 +314,7 @@ impl Organization {
         Ok(bgh_core::perms::org_role(&gql(ctx).state.db, self.0.id, v)
             .await
             .gql()?
-            .as_deref()
-            == Some("admin"))
+            .is_some_and(|r| r.is_admin()))
     }
     #[allow(clippy::too_many_arguments)]
     pub async fn rulesets(

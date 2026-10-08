@@ -5,14 +5,15 @@
  */
 import { useEffect, useReducer, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { api } from '../../api/client';
-import { navigate, prefetch } from '../../router';
+import { navigate, prefetch, replaceHash } from '../../router';
 import { cx } from '../Button';
 import { enhance } from './enhance';
 import { renderMarkdown, type RenderContext } from './render';
 import type { AutolinkRule } from './scan';
 import { countTasks, setTask } from './tasks';
+import { resettableMap, sameSession } from '../../api/reset';
 
-const cache = new Map<string, string>();
+const cache = resettableMap<string, string>();
 
 function render(src: string, ctx: RenderContext): string {
   const key = `${ctx.repo ?? ''}\n${ctx.autolinks?.length ?? 0}\n${ctx.tasks ? 1 : 0}\n${src}`;
@@ -26,7 +27,7 @@ function render(src: string, ctx: RenderContext): string {
 }
 
 /** `GET /_bgh/repos/{o}/{r}/autolinks`, fetched once per repo per session. */
-const autolinks = new Map<string, readonly AutolinkRule[] | Promise<readonly AutolinkRule[]>>();
+const autolinks = resettableMap<string, readonly AutolinkRule[] | Promise<readonly AutolinkRule[]>>();
 
 /** Rules for `repo` if loaded; otherwise starts loading and calls `onLoad` when there are any. */
 function repoAutolinks(repo: string | undefined, onLoad: () => void): readonly AutolinkRule[] | undefined {
@@ -35,11 +36,12 @@ function repoAutolinks(repo: string | undefined, onLoad: () => void): readonly A
   if (Array.isArray(hit)) return hit;
   if (!hit) {
     const [owner, name] = repo.split('/') as [string, string];
+    const live = sameSession();
     hit = api
       .get<AutolinkRule[]>(`/_bgh/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/autolinks`)
       .catch(() => [] as AutolinkRule[])
       .then((rules) => {
-        autolinks.set(repo, rules);
+        if (live()) autolinks.set(repo, rules);
         return rules;
       });
     autolinks.set(repo, hit);
@@ -72,7 +74,7 @@ function handleClick(e: ReactMouseEvent<HTMLElement>, root: HTMLElement, source:
   if (!el) return false;
   e.preventDefault();
   el.scrollIntoView({ block: 'start' });
-  history.replaceState(history.state, '', href);
+  replaceHash(href);
   return true;
 }
 

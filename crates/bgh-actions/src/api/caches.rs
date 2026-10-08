@@ -313,7 +313,7 @@ async fn require_org_owner(state: &AppState, auth: &AuthContext, org: &str) -> A
         return Ok(org);
     }
     match bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await? {
-        Some(r) if r == "admin" => {
+        Some(r) if r.is_admin() => {
             auth.require_scope("read:org")?;
             Ok(org)
         }

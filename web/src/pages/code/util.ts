@@ -1,5 +1,5 @@
 /** Code-browser helpers: ref/path resolution, URLs, line ranges, sizes. */
-import { useEffect, useState, type MouseEvent } from 'react';
+import type { MouseEvent } from 'react';
 import { peek } from '../../api/cache';
 import { browseKeys, isSha } from '../../api/endpoints';
 import type { BrowseRefs } from '../../api/types';
@@ -92,32 +92,6 @@ export function parseLineHash(hash: string): LineRange | null {
 export function lineHash(r: LineRange | null): string {
   if (!r) return '';
   return r.start === r.end ? `#L${r.start}` : `#L${r.start}-L${r.end}`;
-}
-
-const HASH_EVENT = 'bgh:hashchange';
-
-/** Replace the URL hash without a navigation (keeps the router's history state). */
-export function setHash(hash: string): void {
-  const url = window.location.pathname + window.location.search + hash;
-  history.replaceState(history.state, '', url);
-  window.dispatchEvent(new Event(HASH_EVENT));
-}
-
-/** Current `location.hash`, reactive to `setHash`, back/forward and hash links. */
-export function useHash(): string {
-  const [hash, setState] = useState(() => window.location.hash);
-  useEffect(() => {
-    const update = () => setState(window.location.hash);
-    window.addEventListener(HASH_EVENT, update);
-    window.addEventListener('popstate', update);
-    window.addEventListener('hashchange', update);
-    return () => {
-      window.removeEventListener(HASH_EVENT, update);
-      window.removeEventListener('popstate', update);
-      window.removeEventListener('hashchange', update);
-    };
-  }, []);
-  return hash;
 }
 
 /**

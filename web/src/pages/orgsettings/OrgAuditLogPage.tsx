@@ -15,7 +15,8 @@ import { Menu } from '../../ui/Menu';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { ApiError } from '../../api/client';
-import { auditLogPath, isNotAllowed, viewerLogin, type AuditEntry } from './api';
+import { isAccessError } from '../../api/errors';
+import { auditLogPath, viewerLogin, type AuditEntry } from './api';
 import { OwnerRequired } from './common';
 import local from './OrgSettings.module.css';
 
@@ -117,7 +118,7 @@ export default function OrgAuditLogPage() {
     },
   ];
 
-  if (isNotAllowed(list.error)) {
+  if (isAccessError(list.error)) {
     return (
       <div className={styles.page}>
         <PageHeader title="Audit log" />

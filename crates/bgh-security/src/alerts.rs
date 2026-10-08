@@ -159,7 +159,7 @@ pub async fn list_org(
         .ok_or(ApiError::NotFound)?;
     if !auth.user.site_admin {
         match bgh_core::perms::org_role(&state.db, org.id, auth.user.id).await? {
-            Some(r) if r == "admin" => {}
+            Some(r) if r.is_admin() => {}
             Some(_) => return Err(ApiError::forbidden("Must be an organization owner.")),
             None => return Err(ApiError::NotFound),
         }

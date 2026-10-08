@@ -237,8 +237,7 @@ pub async fn administers(state: &AppState, user: &db::User, account: &db::User) 
     }
     Ok(bgh_core::perms::org_role(&state.db, account.id, user.id)
         .await?
-        .as_deref()
-        == Some("admin"))
+        .is_some_and(|r| r.is_admin()))
 }
 
 /// Render one app.

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { checkPasswordReset, passwordProblem, requestPasswordReset, resetPassword, type ResetInfo } from '../../api/auth';
-import { ApiError } from '../../api/client';
+import { validationErrors } from '../../api/errors';
 import { session } from '../../app/session';
 import { Link, navigate, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
@@ -190,8 +190,8 @@ function ChangePassword({ token }: { token: string }) {
     } catch (e) {
       const status = statusOf(e);
       if (status === 404) return setInfo({ status: 'error', error: e });
-      if (status === 422 && e instanceof ApiError) {
-        const errs = (e.body as { errors?: { field?: string; message?: string }[] } | null)?.errors ?? [];
+      if (status === 422) {
+        const errs = validationErrors(e);
         const f: ResetErrors = {};
         for (const er of errs) {
           if (er.field === 'password') f.password = `Password ${er.message?.replace(/^password\s*/i, '') ?? 'is invalid'}.`;

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { isAccessError } from '../../api/errors';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount } from '../../components/admin/format';
@@ -9,7 +10,7 @@ import { EmptyState } from '../../ui/EmptyState';
 import { InfoIcon, LockIcon, PersonAddIcon, PersonIcon, TrashIcon } from '../../ui/icons';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { collaboratorsPath, isNotAllowed, removeOutsideCollaborator } from './api';
+import { collaboratorsPath, removeOutsideCollaborator } from './api';
 import { InviteDialog, RowMenu, useLoadAll, useOrgAccess, userCell } from './common';
 import local from './OrgSettings.module.css';
 import type { SimpleUser } from '../../api/types';
@@ -74,7 +75,7 @@ export default function OrgCollaboratorsPage() {
     },
   ];
 
-  if (isNotAllowed(list.error)) {
+  if (isAccessError(list.error)) {
     return (
       <div className={styles.page}>
         <PageHeader title="Outside collaborators" />

@@ -1629,13 +1629,7 @@ async fn org_member_added(
     let Some(org_json) = organization(state, org_id).await? else {
         return Ok(Vec::new());
     };
-    let role: Option<String> =
-        sqlx::query_scalar("SELECT role FROM org_members WHERE org_id = $1 AND user_id = $2")
-            .bind(org_id)
-            .bind(user_id)
-            .fetch_optional(&state.db)
-            .await?;
-    let Some(role) = role else {
+    let Some(role) = bgh_core::perms::org_role(&state.db, org_id, user_id).await? else {
         return Ok(Vec::new());
     };
     let Some(member) = db::User::find(&state.db, user_id).await? else {

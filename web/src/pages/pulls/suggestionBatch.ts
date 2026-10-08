@@ -1,5 +1,6 @@
 import { observable, runInAction } from 'mobx';
 import type { ID } from '../../sync/models';
+import { onReset } from '../../api/reset';
 
 /**
  * Suggestions queued with "Add suggestion to batch", per PR (in memory, like
@@ -7,6 +8,7 @@ import type { ID } from '../../sync/models';
  * `CommitSuggestionsDialog` as one commit.
  */
 const batches = observable.map<ID, ID[]>();
+onReset(() => runInAction(() => batches.clear()));
 
 export function batchOf(prId: ID): readonly ID[] {
   return batches.get(prId) ?? [];

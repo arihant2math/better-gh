@@ -5,7 +5,7 @@
  * Lives outside `ui/` because it is only used by lazy route chunks.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ApiError } from '../../api/client';
+import { errorMessage, fieldErrors, type FieldErrors } from '../../api/errors';
 import { Button, cx, type ButtonProps } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
 import { CheckIcon, CopyIcon, type Icon } from '../../ui/icons';
@@ -409,50 +409,11 @@ export function ConfirmDialog({
 
 // ------------------------------------------------------------------ errors and async
 
-export interface FieldErrors {
-  [field: string]: string | undefined;
-}
+export { errorMessage, fieldErrors, isAccessError, validationErrors, type FieldErrors } from '../../api/errors';
 
-/**
- * GitHub validation errors: `422 {message, errors: [{resource, field, code, message}]}`.
- * Returns per-field messages plus a general message.
- */
+/** GitHub validation errors as per-field messages plus a general message (`api/errors`). */
 export function apiFieldErrors(e: unknown): { message: string; fields: FieldErrors } {
-  const fields: FieldErrors = {};
-  if (e instanceof ApiError) {
-    const body = e.body as { errors?: ({ field?: string; code?: string; message?: string } | string)[] } | null;
-    for (const err of body?.errors ?? []) {
-      if (typeof err === 'string') continue;
-      if (err.field) fields[err.field] = err.message ?? humanCode(err.field, err.code);
-    }
-  }
-  return { message: errorMessage(e), fields };
-}
-
-function humanCode(field: string, code?: string): string {
-  switch (code) {
-    case 'missing_field':
-    case 'missing':
-      return `${field} is required`;
-    case 'already_exists':
-      return `${field} already exists`;
-    case 'invalid':
-      return `${field} is invalid`;
-    default:
-      return `${field} is invalid`;
-  }
-}
-
-export function errorMessage(e: unknown): string {
-  if (e instanceof ApiError) {
-    const body = e.body as { errors?: ({ message?: string } | string)[] } | null;
-    const first = body?.errors?.find((x) => (typeof x === 'string' ? x : x.message));
-    const detail = typeof first === 'string' ? first : first?.message;
-    if (e.status === 422 && detail && detail !== e.message) return `${e.message}: ${detail}`;
-    return e.message;
-  }
-  if (e instanceof Error) return e.message;
-  return 'Something went wrong. Try again.';
+  return { message: errorMessage(e), fields: fieldErrors(e) };
 }
 
 /**

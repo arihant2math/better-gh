@@ -270,8 +270,7 @@ pub async fn org_rulesets(
         || bgh_core::perms::org_role(&g.state.db, org.0.id, auth.user.id)
             .await
             .gql()?
-            .as_deref()
-            == Some("admin");
+            .is_some_and(|r| r.is_admin());
     if !admin || auth.require_scope("admin:org").is_err() {
         return Err(err(
             "INSUFFICIENT_SCOPES",

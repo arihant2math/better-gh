@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { fetchRaw } from '../../api/code';
 import type { BlobView } from '../../api/types';
-import { Link, navigate, useQuery, setQuery } from '../../router';
+import { Link, navigate, replaceHash, setQuery, useHash, useQuery } from '../../router';
 import type { Repo } from '../../sync/models';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { EmptyState, Skeleton } from '../../ui/EmptyState';
@@ -14,7 +14,7 @@ import styles from './Code.module.css';
 import { CodeLines } from './CodeLines';
 import { prefetchBlame, useBlob } from './data';
 import { LastCommitBar } from './LastCommitBar';
-import { copyText, formatSize, lineHash, parseLineHash, renderModes, routeLinks, setHash, useHash, type CodeTarget, type LineRange, type RenderMode } from './util';
+import { copyText, formatSize, lineHash, parseLineHash, renderModes, routeLinks, type CodeTarget, type LineRange, type RenderMode } from './util';
 import { codeUrl, historyUrl } from '../../components/code/urls';
 import { isNotFound } from '../../api/client';
 
@@ -38,7 +38,7 @@ export const FileView = observer(function FileView({ t, repo, blame, canPush }: 
       next = { start: line, end: line };
       anchor.current = next;
     }
-    setHash(lineHash(next));
+    replaceHash(lineHash(next));
   }, []);
 
   if (error) {

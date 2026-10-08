@@ -386,8 +386,7 @@ impl Actor {
         let org_admin = owner.is_org()
             && bgh_core::perms::org_role(&state.db, owner.id, user_id)
                 .await?
-                .as_deref()
-                == Some("admin");
+                .is_some_and(|r| r.is_admin());
         Ok(Self {
             user_id,
             permission,

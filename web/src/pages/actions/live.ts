@@ -14,9 +14,16 @@ import { useEffect, useRef } from 'react';
 import type { JobStep, WorkflowJob, WorkflowRun } from '../../api/actions';
 import { hasSync, sync } from '../../sync';
 import type { Delta } from '../../sync/protocol';
+import { onReset } from '../../api/reset';
 
 export const runs = observable.map<number, WorkflowRun>({}, { deep: false });
 export const jobs = observable.map<number, WorkflowJob>({}, { deep: false });
+onReset(() =>
+  runInAction(() => {
+    runs.clear();
+    jobs.clear();
+  }),
+);
 
 export function mergeRuns(list: readonly WorkflowRun[]): void {
   runInAction(() => {
