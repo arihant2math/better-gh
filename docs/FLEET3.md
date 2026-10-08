@@ -4,7 +4,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | #368 (CI running) | — |
+| A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | #368 | session_015EKCTXXGKv4axQE1DT6WzW (opus) |
 | B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
@@ -103,3 +103,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 01:12Z: #369 APPROVE @4d234a0 (=head), CI green; sent to coordinator. Nits to file after merge: SSO/SAML return_to builders (api/auth.ts:25, LoginPage.tsx:179) → withReturnTo; replaceHash('#') bare #; loginHrefFor alias.
 - 01:13Z: #369 merged as 27fe31a (#255 auto-closed); B worker+reviewer archived; filed #370 (nits, queued in B). #229 already closed (#301). Fresh B worker session_01LxeZ2H6K6CWF4y9HAkQHxa for #233.
 - 01:18Z: main CI 02b8d98 (37709363111) still in progress. A: PR #368 open, Rust tests running. C: 30-run loop of triggers:: on agent/343-settle-in-memory-emits before PR. Foreman context 190k.
+- 01:22Z: A #368 (Fixes #362) green @9d23afa; opus reviewer session_015EKCTXXGKv4axQE1DT6WzW spawned.
