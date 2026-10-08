@@ -56,3 +56,4 @@ C: #150 DONE (owner merged 22:05) → #341 → #343 → other open flaky-test is
 - 23:55Z: B opened #361 (Fixes #247), green; opus reviewer spawned (CSRF).
 - 00:00Z: #361 APPROVE @a043c16 (=head), CI green; sent to coordinator. Nits → #353.
 - 00:01Z: #361 merged as 8c86ce1; B worker+reviewer archived; nits in #353; fresh B worker for #162.
+- 00:09Z: #355 APPROVE @85a51fb (=head), CI green; sent to coordinator. Nits → #353.
