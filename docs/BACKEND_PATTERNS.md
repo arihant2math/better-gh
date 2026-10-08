@@ -321,6 +321,15 @@ register with `reg.service("name", |state, shutdown| async move { ... })`;
 `shutdown` on exit. The test harness does **not** start services; tests
 start what they need (e.g. `bgh_repos::ssh::spawn(state, "127.0.0.1:0", token)`).
 
+Leader election and other session-level advisory locks go through
+`bgh_core::db::AdvisoryLock` (`try_acquire` / `acquire`, then `release`),
+which holds the lock on its own connection outside the pool. Never take
+`pg_advisory_lock` on a pooled connection and then work through
+`state.db`: each holder needs a second pooled connection, and a few
+services doing so at startup deadlock a small pool until the acquire
+timeout (#341). Transaction-scoped `pg_advisory_xact_lock` inside a `Tx`
+is fine.
+
 ## 10. Events
 
 Add variants to `bgh_core::events::Event` (carry ids, not objects; update

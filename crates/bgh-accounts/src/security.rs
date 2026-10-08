@@ -20,6 +20,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use bgh_core::audit;
 use bgh_core::auth::{self, AuthMethod};
+use bgh_core::db::AdvisoryLock;
 use bgh_core::mail;
 use bgh_core::prelude::*;
 use bgh_core::ratelimit;
@@ -401,23 +402,15 @@ pub async fn service(state: AppState, shutdown: CancellationToken) -> anyhow::Re
             _ = shutdown.cancelled() => return Ok(()),
             _ = tick.tick() => {}
         }
-        let mut conn = state.db.acquire().await?;
-        let leader: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(LEADER_KEY)
-            .fetch_one(&mut *conn)
-            .await?;
-        if !leader {
+        let Some(leader) = AdvisoryLock::try_acquire(&state.db, LEADER_KEY).await? else {
             continue;
-        }
+        };
         match send_expiry_reminders(&state).await {
             Ok(0) => {}
             Ok(n) => tracing::info!(n, "queued token expiry reminders"),
             Err(err) => tracing::warn!(?err, "token expiry reminders failed"),
         }
-        let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-            .bind(LEADER_KEY)
-            .execute(&mut *conn)
-            .await;
+        leader.release().await;
     }
 }
 

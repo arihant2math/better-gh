@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use bgh_core::db::AdvisoryLock;
 use bgh_core::events::{Event, RefUpdate, ZERO_SHA};
 use bgh_core::jobs::JobPayload;
 use bgh_core::state::AppState;
@@ -227,27 +228,20 @@ pub async fn backfill_service(
 ) -> anyhow::Result<()> {
     const LOCK: i64 = 0x7700_0000_0001;
     loop {
-        let mut conn = state.db.acquire().await?;
-        let leader: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
-            .bind(LOCK)
-            .fetch_one(&mut *conn)
-            .await?;
-        if leader {
+        if let Some(leader) = AdvisoryLock::try_acquire(&state.db, LOCK).await? {
             loop {
                 if let Err(e) = backfill_pending(&state).await {
                     tracing::warn!("secret scanning backfill: {e:#}");
                 }
                 tokio::select! {
                     _ = shutdown.cancelled() => {
-                        let _ = sqlx::query("SELECT pg_advisory_unlock($1)")
-                            .bind(LOCK).execute(&mut *conn).await;
+                        leader.release().await;
                         return Ok(());
                     }
                     _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
                 }
             }
         }
-        drop(conn);
         tokio::select! {
             _ = shutdown.cancelled() => return Ok(()),
             _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}

@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use bgh_core::audit;
+use bgh_core::db::AdvisoryLock;
 use bgh_core::jobs::JobPayload;
 use bgh_core::prelude::*;
 use bgh_core::settings::LdapSettings;
@@ -352,6 +353,10 @@ pub async fn sync_team_job(state: AppState, job: LdapSyncTeam) -> anyhow::Result
 /// How often the service checks whether a sync is due.
 const TICK: Duration = Duration::from_secs(300);
 
+/// Advisory-lock key of the sync run: `hashtext('bgh_ldap_sync')`, the key
+/// earlier versions took in SQL.
+const LOCK_KEY: i64 = -2_145_784_662;
+
 /// The `accounts.ldap_sync` service: runs [`sync_all`] every
 /// `sync_interval_hours` while LDAP and sync are enabled. One process runs
 /// it per interval (Redis `SET NX` on the schedule key) and runs never
@@ -389,17 +394,11 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     if !due {
         return Ok(());
     }
-    let mut conn = state.db.acquire().await?;
-    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtext('bgh_ldap_sync'))")
-        .fetch_one(&mut *conn)
-        .await?;
-    if !locked {
+    let Some(lock) = AdvisoryLock::try_acquire(&state.db, LOCK_KEY).await? else {
         return Ok(());
-    }
+    };
     let res = sync_all(state).await;
-    let _ = sqlx::query("SELECT pg_advisory_unlock(hashtext('bgh_ldap_sync'))")
-        .execute(&mut *conn)
-        .await;
+    lock.release().await;
     let report = res.map_err(job_err)?;
     tracing::info!(?report, "LDAP sync finished");
     Ok(())
