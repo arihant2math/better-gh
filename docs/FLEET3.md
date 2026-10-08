@@ -5,7 +5,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | — | — |
-| B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | — | — |
+| B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | #373 | session_01Q36FrwUk7vqRxzDkW23e1Y (opus) |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | #372 | session_01Wxf4ssodfe5Hs5gCzvUqKe (opus) |
 
 ## Rule (user, 21:33Z)
@@ -133,3 +133,4 @@ FOREMAN8 (session_01PM4SBV7BPC5zy8yjUQD9AU) hands off at 262k context. Main CI i
 Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:09Z: FOREMAN8 handed off to FOREMAN9 session_013BAw4vJVDBeTY5fj4G8BmX; coordinator informed.
 - 02:12Z: FOREMAN9 active; A/B/C + #372 reviewer told to report to FOREMAN9; status sent to coordinator. #372 green @55c9eb4, no review posted yet.
+- 02:13Z: B opened #373 (Fixes #233; + RouterView layout-chunk race fix), green @b6d65e6; opus reviewer session_01Q36FrwUk7vqRxzDkW23e1Y (permission selectors).
