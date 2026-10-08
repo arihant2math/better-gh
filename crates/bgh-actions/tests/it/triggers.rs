@@ -564,6 +564,56 @@ async fn issues_and_issue_comment_activity_types() {
     assert_eq!(p["comment"]["id"], cid);
 }
 
+/// Regression for #343: a direct `EventBus::emit` reaches the outbox
+/// through an asynchronous writer, so `settle` must wait for it (and for
+/// the listeners) rather than for a quiet job queue. The outbox is locked
+/// while settling so the writer cannot append before `settle` checks.
+#[tokio::test]
+async fn settle_waits_for_events_emitted_outside_a_tx() {
+    let issues = wf("  issues:\n    types: [pinned]");
+    let (app, alice, _wc, repo_id) = setup(&[(".github/workflows/issues.yml", &issues)]).await;
+    let res = app
+        .post("/api/v3/repos/alice/demo/issues")
+        .auth(&alice)
+        .json(&json!({"title": "Bug"}))
+        .send()
+        .await;
+    res.assert_status(201);
+    let number = res.json()["number"].as_i64().unwrap();
+    settle(&app).await;
+    assert_eq!(runs_of(&app, &alice, "issues").await.len(), 0);
+    let issue_id: i64 =
+        sqlx::query_scalar("SELECT id FROM issues WHERE repo_id = $1 AND number = $2")
+            .bind(repo_id)
+            .bind(number)
+            .fetch_one(&app.state.db)
+            .await
+            .unwrap();
+
+    // Hold off outbox inserts (reads still proceed) until well after a
+    // settle that only watched the job queue would have returned.
+    let mut lock = app.state.db.begin().await.unwrap();
+    sqlx::query("LOCK TABLE event_outbox IN EXCLUSIVE MODE")
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    app.state.events.emit(Event::IssuePinned {
+        repo_id,
+        issue_id,
+        actor_id: alice.id,
+    });
+    let release = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        lock.rollback().await.unwrap();
+    });
+    settle(&app).await;
+    release.await.unwrap();
+    let rs = runs_of(&app, &alice, "issues").await;
+    assert_eq!(rs.len(), 1);
+    let p = payload_of(&app, rs[0]["id"].as_i64().unwrap()).await;
+    assert_eq!(p["action"], "pinned");
+}
+
 #[tokio::test]
 async fn release_activity_types() {
     let release = wf("  release:\n    types: [created, published, edited, deleted, prereleased]");

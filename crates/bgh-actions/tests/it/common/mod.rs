@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use bgh_core::testing::{TestApp, TestUser};
 use serde_json::{Value, json};
@@ -85,21 +84,21 @@ impl WorkingCopy {
     }
 }
 
-/// Run jobs and let event listeners catch up until nothing is left.
+/// Run jobs and event listeners until nothing is left.
+///
+/// Each round first waits for every durable listener to process every
+/// event emitted so far ([`TestApp::settle_events`] also flushes events
+/// passed to `EventBus::emit` directly, which reach the outbox
+/// asynchronously), so the jobs those listeners enqueue are visible to
+/// the drain; it stops once a round finds no job to run.
 pub async fn settle(app: &TestApp) {
-    let mut idle = 0;
     for _ in 0..200 {
-        let n = app.drain_jobs().await;
-        if n == 0 {
-            idle += 1;
-            if idle >= 3 {
-                return;
-            }
-        } else {
-            idle = 0;
+        app.settle_events().await;
+        if app.drain_jobs().await == 0 {
+            return;
         }
-        tokio::time::sleep(Duration::from_millis(30)).await;
     }
+    panic!("jobs did not settle");
 }
 
 pub async fn runs(app: &TestApp, user: &TestUser, repo: &str) -> Vec<Value> {
