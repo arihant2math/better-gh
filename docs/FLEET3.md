@@ -5,7 +5,7 @@ Foreman: session_01PM4SBV7BPC5zy8yjUQD9AU (FOREMAN8; prev FOREMAN7 session_01Wn7
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01J27YQ2Nq6mU1pTws88tTBt | #362 | — | — |
-| B frontend | session_01FwzbaGyJE4uCRRUTB6Vn72 | #156 | #366 | session_01Lepm4UwaKMcBKyNdf7q5JC (opus) |
+| B frontend | session_01Mnhu15W2Y1gc2EKjb9eY6Q | #255 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #362 (AdvisoryLock connect timeout, P-High) next after #181, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365 → web of the backlog.
+B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
 ## Log
@@ -96,3 +96,4 @@ Merged this shift: #346 #345 #347 #351 #352 #354 #356 #359 #361 #355 #357 #363, 
 - 00:42Z: B opened #366 (Fixes #156), green @49de4f6; opus reviewer session_01Lepm4UwaKMcBKyNdf7q5JC spawned. Main CI 37706942560 still in progress, 37707598561 pending.
 - 00:45Z: #366 APPROVE @49de4f6 (=head), CI green; sent to coordinator. Nits to file after merge: cross-tab BroadcastChannel reset; viewerReactions catch live() check; settle pending sudo prompt on reset.
 - 00:45Z: main CI 2fc6db8 (37706942560) GREEN; 17f2a01 (37707598561) in progress.
+- 00:46Z: #366 merged as 02b8d98; B worker+reviewer archived; filed #367 (nits, queued in B); fresh B worker session_01Mnhu15W2Y1gc2EKjb9eY6Q for #255.
