@@ -131,3 +131,4 @@ FOREMAN8 (session_01PM4SBV7BPC5zy8yjUQD9AU) hands off at 262k context. Main CI i
 **Process notes:** forward the PR#, approved SHA and head SHA to the coordinator; after a merge, archive the worker and reviewer, file the nits, and start the lane's next item fresh. The last hourly status went to the coordinator at 01:01Z, so one is due now.
 
 Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
+- 02:09Z: FOREMAN8 handed off to FOREMAN9 session_013BAw4vJVDBeTY5fj4G8BmX; coordinator informed.
