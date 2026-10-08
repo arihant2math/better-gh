@@ -4,7 +4,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
-| A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | session_01DvsYP6qu5d4Y2CERtNDcZA (opus) |
+| A backend | — (lane done: freeze) | — | — | — |
 | B frontend | — (lane done: freeze) | — | — | — |
 | C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | #379 | session_01EJFrgfEermuAzyYjSP2ip8 (opus) |
 
@@ -147,3 +147,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:37Z: #377 merged as 08ad195 (closes #189); B worker+reviewer archived; filed #378 (nits). Lane B DONE per freeze. Verifying main CI on 08ad195.
 - 02:41Z: C opened #379 (Fixes #376) @dbc7ba9, CI running; opus reviewer session_01EJFrgfEermuAzyYjSP2ip8. All open PRs (#374, #379) have reviewers before 02:59Z cutoff; cutoff trigger deleted. No further agent launches.
 - 02:49Z: #374 APPROVE @a9d8a3f (=head), CI green; sent to coordinator. Nits to file after merge: public-repo rule-id oracle (FORBIDDEN vs NOT_FOUND, branch_protection.rs:189-210), App.id slug vs numeric (git.rs:1022), fine-grained PAT/job-token refused (token_permissions.rs:549), allowance ids not Nodes, test gaps (archived, private reader, PAT).
+- 02:50Z: #374 merged as c19ac1f (#5 PR1/4: branch protection rules only; rulesets still pending under #5 with PRs 2–4; #5 stays open). A worker+reviewer archived; filed #380 (nits; oracle first, PAT gap second). Lane A DONE per freeze. Waiting: #379 review; main CI 08ad195, c19ac1f.
