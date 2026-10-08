@@ -5,7 +5,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | #374 | session_01DvsYP6qu5d4Y2CERtNDcZA (opus) |
-| B frontend | session_01MEwAYhDftCiBV5uWWXbvqt | #189 | #377 | session_01DPnzTscPYbqfXEWj5cgKpR (sonnet) |
+| B frontend | — (lane done: freeze) | — | — | — |
 | C #150+flakes | session_01N6s124BzQU31yCTnQ43Hf7 | #376 | — | — |
 
 ## Rule (user, 21:33Z)
@@ -144,3 +144,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:29Z: Coordinator relayed updated user wind-down (supersedes 03:20Z): no new workers now; reviewers only until 02:59Z; after that no new agents; PRs without reviewer at 02:59Z parked as draft + worker archived; hard stop ~04:00Z; then #46 status, archive all, delete triggers, send #46 link. B/C told PR open by 02:55Z. Triggers: trig_012L9Knwx7ZL1op6LMLjLdEs (02:42), trig_01PXPMUbYmx8AjhuWABmps3Y (02:56 cutoff), trig_018s6WBP5CpNyZ3KpdU1wRVP (04:00 hard stop); 03:20 trigger deleted.
 - 02:30Z: B opened #377 (Fixes #189) @632d73d, CI running; sonnet reviewer session_01DPnzTscPYbqfXEWj5cgKpR (before 02:59Z cutoff).
 - 02:36Z: #377 APPROVE @632d73d (=head), CI green; sent to coordinator. Nits to file after merge: docs/packages/{p47-fine-grained-pats,p24-rulesets-ui,admin-web}.md stale pages/orgsettings; 1 unidentified web test file flaked once locally; lint rule misses vi.mock string paths. #374 green @a9d8a3f, review in progress.
+- 02:37Z: #377 merged as 08ad195 (closes #189); B worker+reviewer archived; filed #378 (nits). Lane B DONE per freeze. Verifying main CI on 08ad195.
