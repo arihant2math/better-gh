@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useResource } from '../../api/cache';
+import { isAccessError } from '../../api/errors';
 import { DataTable, type Column } from '../../components/admin/DataTable';
 import styles from '../../components/admin/admin.module.css';
 import { formatCount, formatDateTime } from '../../components/admin/format';
@@ -14,7 +15,7 @@ import { MailIcon, PersonAddIcon, TrashIcon, XIcon } from '../../ui/icons';
 import { RelativeTime } from '../../ui/RelativeTime';
 import { Tabs } from '../../ui/Tabs';
 import { toast } from '../../ui/Toast';
-import { cancelInvitation, failedInvitationsPath, invitationTeams, invitationsPath, isNotAllowed, type OrgInvitation } from './api';
+import { cancelInvitation, failedInvitationsPath, invitationTeams, invitationsPath, type OrgInvitation } from './api';
 import { INVITE_ROLE_LABEL, InviteDialog, OwnerRequired, teamPath, useLoadAll, useOrgAccess } from './common';
 
 const ROLE_FILTERS = [
@@ -104,7 +105,7 @@ export default function OrgInvitationsPage() {
     i: { handler: () => access.isOwner && setInviting(true), description: 'Invite member', group: 'Organization' },
   });
 
-  if (isNotAllowed(list.error) && !access.loading && !access.isOwner) {
+  if (isAccessError(list.error) && !access.loading && !access.isOwner) {
     return (
       <div className={styles.page}>
         <PageHeader title="Invitations" />

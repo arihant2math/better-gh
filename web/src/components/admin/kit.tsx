@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../api/client';
+import { errorMessage } from '../../api/errors';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
 import { Button, IconButton, cx } from '../../ui/Button';
 import { Dialog } from '../../ui/Dialog';
@@ -14,19 +15,7 @@ import { Field, Input, Textarea } from '../../ui/Input';
 import { toast } from '../../ui/Toast';
 import styles from './admin.module.css';
 
-/** Human message of a failed request (GitHub `message` + first field error). */
-export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const body = err.body as { errors?: { field?: string; message?: string; code?: string }[] } | null;
-    const first = body?.errors?.[0];
-    if (first) {
-      const detail = first.message ?? (first.field ? `${first.field} is ${first.code ?? 'invalid'}` : undefined);
-      if (detail && !err.message.includes(detail)) return `${err.message}: ${detail}`;
-    }
-    return err.message;
-  }
-  return err instanceof Error ? err.message : String(err);
-}
+export { errorMessage, fieldErrors, isAccessError, validationErrors, type FieldErrors } from '../../api/errors';
 
 /** Run an action with a success / error toast. Returns whether it succeeded. */
 export async function attempt(label: string, fn: () => Promise<unknown>, success?: string): Promise<boolean> {

@@ -9,6 +9,7 @@
  * `/_bgh` endpoints.
  */
 import { ApiError, api, v3 } from './client';
+import { validationErrors } from './errors';
 import type { FullRepository } from './repoSettings';
 import type { PrivateUser } from './userSettings';
 
@@ -121,8 +122,7 @@ export function renameErrorMessage(e: unknown, login: string): string {
   if (e instanceof ApiError) {
     if (e.status === 429) return e.message || 'You have changed this name too often. Try again later.';
     if (e.status === 422) {
-      const body = e.body as { errors?: ({ field?: string; code?: string; message?: string } | string)[] } | null;
-      const err = body?.errors?.find((x): x is { field?: string; code?: string; message?: string } => typeof x === 'object' && x?.field === 'login');
+      const err = validationErrors(e).find((x) => x.field === 'login');
       if (err?.message) return err.message;
       if (err?.code === 'already_exists') return `The name ${login} is not available. It is in use or reserved.`;
       if (err?.code === 'invalid') return `${login} is not a valid name.`;

@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useId, useRef, useState } from 'react';
 import { invalidate } from '../../api/cache';
-import { ApiError } from '../../api/client';
+import { validationErrors } from '../../api/errors';
 import { createFork } from '../../api/endpoints';
 import { session } from '../../app/session';
 import { navigate } from '../../router';
@@ -76,8 +76,7 @@ export default observer(function ForkDialog({ repo, onClose }: { repo: Repo; onC
       navigate(`/${fork.full_name}`);
     } catch (e) {
       setBusy(false);
-      const body = e instanceof ApiError ? (e.body as { errors?: { message?: string }[] } | null) : null;
-      setError(body?.errors?.[0]?.message ?? (e instanceof Error ? e.message : 'Could not create the fork.'));
+      setError(validationErrors(e)[0]?.message ?? (e instanceof Error ? e.message : 'Could not create the fork.'));
     }
   };
 

@@ -1,10 +1,10 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useId, useRef, useState } from 'react';
-import { ApiError } from '../../api/client';
 import { invalidate } from '../../api/cache';
+import { errorMessage, fieldErrors, type FieldErrorLabels } from '../../api/errors';
 import { accountExists, createOrg } from '../../api/profile';
 import { session } from '../../app/session';
-import { apiFieldErrors, Banner, ButtonRow, FormStack, PageHeader, RadioCards, Section, useDebounced, type FieldErrors } from '../../components/settings/kit';
+import { Banner, ButtonRow, FormStack, PageHeader, RadioCards, Section, useDebounced, type FieldErrors } from '../../components/settings/kit';
 import { navigate } from '../../router';
 import { formatKeys } from '../../shortcuts/manager';
 import { useShortcuts } from '../../shortcuts/useShortcuts';
@@ -18,19 +18,10 @@ import styles from './New.module.css';
 
 type Availability = { key: string; state: 'checking' | 'available' | 'taken' | 'error' } | null;
 
-/** Map server field errors to friendly messages. */
-function friendly(fields: FieldErrors, e: unknown): FieldErrors {
-  const out = { ...fields };
-  if (e instanceof ApiError) {
-    const errs = (e.body as { errors?: { field?: string; code?: string }[] } | null)?.errors ?? [];
-    for (const x of errs) {
-      if (x.field === 'login' && x.code === 'already_exists') out.login = 'This name is already taken';
-      else if (x.field === 'login' && x.code === 'missing_field') out.login = 'Organization name is required';
-      else if (x.field === 'login' && x.code === 'invalid') out.login = 'Organization name is invalid or reserved';
-    }
-  }
-  return out;
-}
+/** Friendlier wording for the login field's 422 codes. */
+const LOGIN_LABELS: FieldErrorLabels = {
+  login: { already_exists: 'This name is already taken', missing_field: 'Organization name is required', invalid: 'Organization name is invalid or reserved' },
+};
 
 /** `/organizations/new`: create an organization owned by the viewer. */
 export default observer(function NewOrgPage() {
@@ -86,12 +77,11 @@ export default observer(function NewOrgPage() {
       if (hasSync()) await Promise.race([sync().ensureScope(`org:${org.id}`).catch(() => false), new Promise((r) => setTimeout(r, 1500))]);
       navigate(`/${org.login}`);
     } catch (e) {
-      const { message, fields } = apiFieldErrors(e);
-      const f = friendly(fields, e);
+      const f = fieldErrors(e, LOGIN_LABELS);
       setErrors(f);
       if (f.login) loginRef.current?.focus();
       else if (f.billing_email) emailRef.current?.focus();
-      else setFormError(message);
+      else setFormError(errorMessage(e));
       setBusy(false);
     }
   };
