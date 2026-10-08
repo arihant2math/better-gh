@@ -19,6 +19,7 @@ import {
   type CommitComment,
   type CommitReactionContent,
 } from '../../api/commitComments';
+import { errorMessage } from '../../api/errors';
 import { minimizedStates, setMinimizedRest } from '../../api/moderation';
 import { session } from '../../app/session';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -81,14 +82,12 @@ async function setHidden(repo: Repo, c: CommitComment, reason: MinimizedReason |
       else hiddenReasons.delete(c.id);
     });
   } catch (e) {
-    toast({ kind: 'error', title: reason ? 'Couldn’t hide the comment' : 'Couldn’t unhide the comment', description: errorText(e) });
+    toast({ kind: 'error', title: reason ? 'Couldn’t hide the comment' : 'Couldn’t unhide the comment', description: errorMessage(e) });
   }
 }
 
 /** Reactions the viewer toggled this session (`{id}:{content}`); the REST list has no "viewer reacted" flag. */
 const myReactions = new Set<string>();
-
-const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined);
 
 function useComments(repo: Repo, sha: string | undefined) {
   const key = sha ? commitCommentKeys.forCommit(repo.owner, repo.name, sha) : null;
@@ -111,7 +110,7 @@ function actions(repo: Repo, sha: string, key: string) {
         patchList(key, (l) => (l.some((x) => x.id === c.id) ? l : [...l, c]));
         return true;
       } catch (e) {
-        toast({ kind: 'error', title: 'Couldn’t add the comment', description: errorText(e) });
+        toast({ kind: 'error', title: 'Couldn’t add the comment', description: errorMessage(e) });
         return false;
       }
     },
@@ -121,7 +120,7 @@ function actions(repo: Repo, sha: string, key: string) {
         patchList(key, (l) => l.map((x) => (x.id === c.id ? next : x)));
         return true;
       } catch (e) {
-        toast({ kind: 'error', title: 'Couldn’t update the comment', description: errorText(e) });
+        toast({ kind: 'error', title: 'Couldn’t update the comment', description: errorMessage(e) });
         return false;
       }
     },
@@ -132,7 +131,7 @@ function actions(repo: Repo, sha: string, key: string) {
         await deleteCommitComment(o, r, c.id);
       } catch (e) {
         patchList(key, (l) => [...l, before].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id));
-        toast({ kind: 'error', title: 'Couldn’t delete the comment', description: errorText(e) });
+        toast({ kind: 'error', title: 'Couldn’t delete the comment', description: errorMessage(e) });
       }
     },
     react: async (c: CommitComment, content: CommitReactionContent) => {
@@ -162,7 +161,7 @@ function actions(repo: Repo, sha: string, key: string) {
         if (guess) myReactions.delete(k);
         else myReactions.add(k);
         bump(guess ? -1 : 1);
-        toast({ kind: 'error', title: 'Couldn’t update the reaction', description: errorText(e) });
+        toast({ kind: 'error', title: 'Couldn’t update the reaction', description: errorMessage(e) });
       }
     },
   };

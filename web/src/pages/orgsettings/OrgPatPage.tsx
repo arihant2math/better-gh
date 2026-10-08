@@ -5,6 +5,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { mutate, useResource } from "../../api/cache";
+import { isAccessError } from "../../api/errors";
 import {
   getPatPolicy,
   patGrantRepositories,
@@ -48,7 +49,6 @@ import {
   selectionText,
   summarizePermissions,
 } from "../settings/developer/fineGrained";
-import { isNotAllowed } from "./api";
 import { OwnerRequired } from "./common";
 import local from "./OrgSettings.module.css";
 
@@ -57,7 +57,7 @@ const policyKey = (org: string) => `org:pat-policy:${org}`;
 export default function OrgPatPage() {
   const { org = "" } = useParams<{ org: string }>();
   const policy = useResource(policyKey(org), () => getPatPolicy(org));
-  if (isNotAllowed(policy.error)) {
+  if (isAccessError(policy.error)) {
     return (
       <div className={styles.page}>
         <PageHeader title="Personal access tokens" />

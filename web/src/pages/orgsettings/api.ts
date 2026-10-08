@@ -9,7 +9,7 @@
  * paging); every list path carries a query string so `updateLists(prefix)`
  * with `…?` never matches a nested resource.
  */
-import { ApiError, api, v3 } from '../../api/client';
+import { api, v3 } from '../../api/client';
 import { getBoot } from '../../boot';
 import { parseLink } from '../../components/admin/usePagedList';
 import type { HookDelivery, OrgMembership, RestTeam, SimpleUser, TeamSimple } from '../../api/types';
@@ -44,20 +44,6 @@ export async function fetchAll<T>(path: string, max = 2000): Promise<T[]> {
   }
   return out;
 }
-
-/** GitHub validation errors of a failed request, keyed by field. */
-export function fieldErrors(err: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!(err instanceof ApiError) || err.status !== 422) return out;
-  const body = err.body as { errors?: { field?: string; message?: string; code?: string }[] } | null;
-  for (const e of body?.errors ?? []) {
-    if (!e.field) continue;
-    out[e.field] = e.message ?? (e.code === 'missing_field' ? 'This field is required.' : e.code === 'already_exists' ? 'Already taken.' : 'Invalid value.');
-  }
-  return out;
-}
-
-export const isNotAllowed = (err: unknown) => err instanceof ApiError && (err.status === 403 || err.status === 404 || err.status === 401);
 
 const orgPath = (org: string, ...rest: (string | number)[]) => v3('orgs', org, ...rest);
 

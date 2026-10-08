@@ -138,6 +138,24 @@ against the backend yet, so keep one copy per resource.
 * Test fixtures build complete objects (`simpleUser()` in
   `src/test/fixtures.ts`) instead of casting partial ones.
 
+## API errors
+
+`src/api/errors.ts` is the only code that reads an `ApiError`'s body; both
+settings kits re-export it. Never cast `e.body as { errors?: … }` in a page.
+
+* `errorMessage(e)`: the response `message` plus the first validation
+  error when it adds something (`Validation Failed: name already exists`);
+  `Error.message` for other errors; else `Something went wrong. Try again.`
+* `fieldErrors(e, labels?)`: a 422's per-field messages. The server's
+  `message` wins; a code-only entry reads `<field> is required` /
+  `<field> already exists` / `<field> is invalid`. Screens that want their
+  own wording (signup, new org) pass `labels` (`{ field: { code | '*': text
+  | (err) => text } }`) at the call site.
+* `validationErrors(e)`: the typed `errors[]` (string entries become
+  `{ message }`) for mappers that need more than `fieldErrors`.
+* `isAccessError(e)`: 401/403/404, for "you can't manage this here" states.
+  `isNotFound` / `orNullOn404` / `errorMessageOf` stay in `api/client.ts`.
+
 ## Optimistic mutations
 
 All writes go through `sync/mutations.ts`. A mutation = overlay ops (applied

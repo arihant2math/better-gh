@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { emailProblem, loginProblem, passwordProblem } from '../../api/auth';
-import { ApiError } from '../../api/client';
+import { fieldErrors, type FieldErrorLabels } from '../../api/errors';
 import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import { getBoot } from '../../boot';
@@ -14,19 +14,20 @@ import { PasswordStrength } from './PasswordStrength';
 type FieldName = 'email' | 'password' | 'login';
 type Errors = Partial<Record<FieldName, string>>;
 
-/** Map a 422 from `create_user` to per-field messages. */
+const FIELDS: readonly FieldName[] = ['login', 'email', 'password'];
+const FIELD_LABEL: Record<FieldName, string> = { login: 'Username', email: 'Email', password: 'Password' };
+const sentence = (m: string) => m.charAt(0).toUpperCase() + m.slice(1) + (m.endsWith('.') ? '' : '.');
+
+/** Map a 422 from `create_user` to per-field messages (signup's own wording over `api/errors`). */
 export function signupFieldErrors(e: unknown, login: string): Errors {
-  const out: Errors = {};
-  if (!(e instanceof ApiError) || e.status !== 422) return out;
-  const errs = (e.body as { errors?: { field?: string; code?: string; message?: string }[] } | null)?.errors ?? [];
-  for (const err of errs) {
-    const f = err.field as FieldName | undefined;
-    if (f !== 'login' && f !== 'email' && f !== 'password') continue;
-    if (err.code === 'already_exists') out[f] = f === 'login' ? `Username ${login} is not available.` : 'Email is invalid or already taken.';
-    else if (err.code === 'missing_field') out[f] = `${f === 'login' ? 'Username' : f === 'email' ? 'Email' : 'Password'} is required.`;
-    else if (err.message) out[f] = err.message.charAt(0).toUpperCase() + err.message.slice(1) + (err.message.endsWith('.') ? '' : '.');
-    else out[f] = f === 'login' ? `Username ${login} is not available.` : f === 'email' ? 'Email is invalid or already taken.' : 'Password is invalid.';
+  const taken: Record<FieldName, string> = { login: `Username ${login} is not available.`, email: 'Email is invalid or already taken.', password: 'Password is invalid.' };
+  const labels: FieldErrorLabels = {};
+  for (const f of FIELDS) {
+    labels[f] = { already_exists: taken[f], missing_field: `${FIELD_LABEL[f]} is required.`, '*': (err) => (err.message ? sentence(err.message) : taken[f]) };
   }
+  const all = fieldErrors(e, labels);
+  const out: Errors = {};
+  for (const f of FIELDS) if (all[f]) out[f] = all[f];
   return out;
 }
 
