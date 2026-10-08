@@ -153,3 +153,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 03:16Z: main CI 08ad195 (#377+#372) GREEN; c19ac1f (#374) in progress. #379 fix in progress.
 - 03:20Z: #379 fix pushed @aab536b (lock held 2s via select!; fails 4/4 vs pre-#372 helper); CI running (~03:42Z); re-review requested from session_01EJFrgfEermuAzyYjSP2ip8.
 - 03:32Z: main CI c19ac1f (#374) GREEN — main green through all merges this shift. #379 awaiting re-review on aab536b + CI.
+- 03:44Z: #379 re-review APPROVE @aab536b (=head), CI green; sent to coordinator. Optional nit: bgh-notify probe-based settle.
