@@ -5,7 +5,7 @@ Foreman: session_013BAw4vJVDBeTY5fj4G8BmX (FOREMAN9; prev FOREMAN8 session_01PM4
 | Lane | Worker | Current item | Open PR | Reviewer |
 |---|---|---|---|---|
 | A backend | session_01Nxezvn8wLKbBzCeE2gjekB | #5 PR1/4 (branch protection + rulesets) | — | — |
-| B frontend | session_01LxeZ2H6K6CWF4y9HAkQHxa | #233 | #373 | session_01Q36FrwUk7vqRxzDkW23e1Y (opus) |
+| B frontend | session_01MEwAYhDftCiBV5uWWXbvqt | #189 | — | — |
 | C #150+flakes | session_018dCXjMFpbE2aTaTUgaRMBs | #343 | #372 | session_01Wxf4ssodfe5Hs5gCzvUqKe (opus) |
 
 ## Rule (user, 21:33Z)
@@ -13,7 +13,7 @@ New worker session per PR/task, archived on merge/close; still one active worker
 
 ## Queues
 A: #362 (AdvisoryLock connect timeout, P-High) → #5 (P44 GraphQL org/repo/git; user-confirmed 01:0xZ; 4 sequential PRs, fresh worker each, opus reviewers + authz check on every new mutation, acceptance = Terraform+Backstage fixtures from the issue: (1) branch protection rules+rulesets, (2) commit history/trees/createCommitOnBranch, (3) org/team members+deployments+environments, (4) label mutations+cloneTemplateRepository+node() coverage) → #371 (LDAP slot-before-lock bug) → #158, then #286 items in order (done: #220, #226; #161 closed via #273; next #181→#158 OrgAccess, #173, #196, #167, #172, #185, #212, #216+#209, ...) → backend of #324 #325 #326 #333 #281 #282 #157 #262 → #336 → #319 notes (file issue from #46 final status comment).
-B: #280 items in order (done: #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367, #370 → web of the backlog.
+B: #280 items in order (done: #233, #258, #256, #203-part; #213, #257, #154, #247, #162; now #156; next #154, #247, #162, #156, #255, #229, #233, #189, ...) → #349, #350, #360, #358, #365, #367, #370 → web of the backlog.
 C: #150 DONE (owner merged 22:05) → #341 DONE (#355) → #343 → other open flaky-test issues.
 
 ## Log
@@ -135,3 +135,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:12Z: FOREMAN9 active; A/B/C + #372 reviewer told to report to FOREMAN9; status sent to coordinator. #372 green @55c9eb4, no review posted yet.
 - 02:13Z: B opened #373 (Fixes #233; + RouterView layout-chunk race fix), green @b6d65e6; opus reviewer session_01Q36FrwUk7vqRxzDkW23e1Y (permission selectors).
 - 02:17Z: #373 APPROVE @b6d65e6 (=head), CI green; sent to coordinator. Nits to file after merge: CodePage.tsx:65 inline canPush; inline admin checks (RunsPage:36, CachesPage:48, ImportProgressPage:53, RepoLayout:131) → canAdmin selector; releases canPushTo alias; import order.
+- 02:18Z: #373 merged as b1f71fe (closes #233); B worker+reviewer archived; filed #375 (nits, queued in B). Fresh B worker session_01MEwAYhDftCiBV5uWWXbvqt for #189.
