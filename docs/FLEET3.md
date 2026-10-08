@@ -138,3 +138,4 @@ Merged this shift: #366 (02b8d98), #369 (27fe31a), #368 (fd0d9f2).
 - 02:18Z: #373 merged as b1f71fe (closes #233); B worker+reviewer archived; filed #375 (nits, queued in B). Fresh B worker session_01MEwAYhDftCiBV5uWWXbvqt for #189.
 - 02:18Z: Coordinator relayed user request: wind down from 03:20Z (no new items/workers/reviewers; finish #372 + #5 PR1, park PR1 as draft if not approved+green by ~04:30Z; idle lanes archived; final status on #46; archive all, delete triggers, send #46 link). Workers A/B warned. Triggers: trig_018WsqbM1oNGJR6bDQqKxVqd (02:25 check-in), trig_01SMYcWyEURJiGv5HpLJz4pp (03:20 wind-down).
 - 02:19Z: A: #5 PR1/4 open as #374, CI running.
+- 02:22Z: #372 APPROVE @55c9eb4 (=head), CI green; sent to coordinator. Nits to file after merge: 500 ms lock-hold in regression test; unify settle (bgh-repos metadata.rs drain-only, bgh-security fixed 3 rounds, bgh-pulls 40 ms sleep) into TestApp::settle.
