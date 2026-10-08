@@ -9,10 +9,11 @@ import { threadSubs } from '../pages/notifications/actions';
 import { paletteSearch, peekPalette } from '../search/api';
 import { setViewerReaction, viewerReactions } from '../sync/viewerReactions';
 import { arrivals } from './unread';
+import { navigate } from '../router';
 import { session } from './session';
 
 // Session teardown without a real sync client, IndexedDB or router.
-vi.mock('../router', () => ({ navigate: vi.fn(), prefetch: vi.fn() }));
+vi.mock('../router', () => ({ navigate: vi.fn(), prefetch: vi.fn(), loginHref: () => '/login?return_to=here' }));
 vi.mock('../sync/persistence', () => ({
   openPersistence: () => Promise.resolve({ close: () => undefined }),
   IdbPersistence: { destroy: () => Promise.resolve() },
@@ -136,6 +137,8 @@ describe('resetClientState on sign-out', () => {
 
     session.expired();
 
+    // Back to the full current URL (query string included) after signing in again.
+    expect(navigate).toHaveBeenLastCalledWith('/login?return_to=here');
     expect(session.user).toBeNull();
     expect(peek('orgs:settings')).toBeUndefined();
     expect(peekPalette('mine', { kind: 'global' })).toBeUndefined();

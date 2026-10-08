@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { matchPath, navigate, prefetch } from '../router';
+import { navigate, prefetch, useCurrentMatch } from '../router';
 import type { SearchScope } from '../search/api';
 import { recordPerf } from '../search/perf';
 import { usePaletteSearch } from '../search/usePaletteSearch';
@@ -110,8 +110,9 @@ const PaletteBody = observer(function PaletteBody() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typedAt = useRef(0);
-  const here = currentRepo();
-  const pageOwner = matchPath(window.location.pathname)?.params.owner;
+  const match = useCurrentMatch();
+  const here = currentRepo(match);
+  const pageOwner = match?.params.owner;
   const scopes = useMemo(() => scopeOptions(here, pageOwner && (orgByLogin(pageOwner) || userByLogin(pageOwner)) ? pageOwner : undefined), [here, pageOwner]);
   const [scopeId, setScopeId] = useState('global');
   const scope = scopes.find((s) => s.id === scopeId) ?? scopes[0]!;

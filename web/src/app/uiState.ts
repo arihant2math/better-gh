@@ -1,5 +1,5 @@
 import { makeAutoObservable } from 'mobx';
-import { matchPath } from '../router';
+import { currentMatch } from '../router';
 import { repoByName } from '../sync/selectors';
 import type { Repo } from '../sync/models';
 
@@ -70,8 +70,7 @@ export function repoPath(suffix: string, fallback: string): string {
 }
 
 /** The repo of the current URL, if any (for contextual commands). */
-export function currentRepo(): Repo | undefined {
-  const m = matchPath(window.location.pathname);
+export function currentRepo(m = currentMatch()): Repo | undefined {
   const { owner, repo } = m?.params ?? {};
   return owner && repo ? repoByName(owner, repo) : undefined;
 }

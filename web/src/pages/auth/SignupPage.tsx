@@ -4,7 +4,7 @@ import { fieldErrors, type FieldErrorLabels } from '../../api/errors';
 import { invitationTarget, invitationTargetLabel } from '../invitations/model';
 import { session } from '../../app/session';
 import { getBoot } from '../../boot';
-import { Link, navigate, returnTo } from '../../router';
+import { Link, loginHref as loginHrefFor, navigate, returnTo } from '../../router';
 import { Button } from '../../ui/Button';
 import { Input } from '../../ui/Input';
 import { CheckIcon, CircleSlashIcon } from '../../ui/icons';
@@ -44,7 +44,7 @@ export default function SignupPage() {
   const [busy, setBusy] = useState(false);
   const target = returnTo();
   const invite = invitationTarget(target);
-  const loginHref = target === '/' ? '/login' : `/login?return_to=${encodeURIComponent(target)}`;
+  const loginHref = loginHrefFor(target);
   const refs = { email: useRef<HTMLInputElement>(null), password: useRef<HTMLInputElement>(null), login: useRef<HTMLInputElement>(null) };
 
   const client: Errors = {

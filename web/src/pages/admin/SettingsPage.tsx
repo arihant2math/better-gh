@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { mutate, refresh, useResource } from '../../api/cache';
 import { validationErrors } from '../../api/errors';
 import { site } from '../../app/site';
+import { replaceHash } from '../../router';
 import styles from '../../components/admin/admin.module.css';
 import { ErrorState, PageHeader, Panel, errorMessage, useConfirm } from '../../components/admin/kit';
 import { formatKeys } from '../../shortcuts/manager';
@@ -321,7 +322,7 @@ export default function SettingsPage() {
                       onClick={(e) => {
                         e.preventDefault();
                         setActive(sec.key);
-                        history.replaceState(history.state, '', `#${sec.anchor}`);
+                        replaceHash(`#${sec.anchor}`);
                         scrollToSection(sec.key);
                       }}
                     >

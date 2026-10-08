@@ -3,7 +3,7 @@ import { ApiError, api, requestSudo } from '../api/client';
 import { resetClientState } from '../api/reset';
 import { transport } from '../api/transport';
 import { getBoot, isMockMode, setBoot, type BootData, type BootUser } from '../boot';
-import { navigate } from '../router';
+import { loginHref, navigate } from '../router';
 import { hasSync, setSyncClient, sync } from '../sync';
 import { SyncClient } from '../sync/client';
 import { IdbPersistence, openPersistence } from '../sync/persistence';
@@ -155,7 +155,7 @@ class Session {
     this.teardown();
     dropShellCache();
     toast({ title: 'Your session expired', description: 'Sign in again to continue.' });
-    navigate(`/login?return_to=${encodeURIComponent(location.pathname)}`);
+    navigate(loginHref());
   }
 
   /**

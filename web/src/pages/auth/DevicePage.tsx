@@ -2,7 +2,7 @@ import { observer } from 'mobx-react-lite';
 import { useRef, useState } from 'react';
 import { decideDevice, formatUserCode, getDeviceRequest, isCompleteUserCode, type DeviceInfo } from '../../api/auth';
 import { session } from '../../app/session';
-import { navigate, useLocation } from '../../router';
+import { loginHref, navigate, useLocation } from '../../router';
 import { Avatar } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { CheckCircleIcon, CircleSlashIcon, DeviceDesktopIcon, TerminalIcon } from '../../ui/icons';
@@ -160,7 +160,7 @@ const Device = observer(function Device({ pathname, search }: { pathname: string
       below={
         <span className={styles.small}>
           Signed in as <strong>@{user?.login}</strong>. Not you?{' '}
-          <button type="button" className={styles.linkButton} onClick={() => void session.logout().then(() => navigate(`/login?return_to=${encodeURIComponent(pathname + search)}`))}>
+          <button type="button" className={styles.linkButton} onClick={() => void session.logout().then(() => navigate(loginHref(pathname + search)))}>
             Sign out
           </button>
         </span>

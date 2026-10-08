@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { session } from '../../app/session';
-import { navigate, returnTo, useLocation } from '../../router';
+import { loginHref as loginHrefFor, navigate, returnTo, useLocation } from '../../router';
 import { Button } from '../../ui/Button';
 import { AlertIcon, ArrowLeftIcon, DeviceMobileIcon } from '../../ui/icons';
 import { AuthLayout, authStyles as styles, messageOf, StateBlock, statusOf } from './AuthPage';
@@ -15,7 +15,7 @@ export default function TwoFactorPage() {
   const { search } = useLocation();
   const token = new URLSearchParams(search).get('token') ?? '';
   const [expired, setExpired] = useState<string | null>(token ? null : 'This sign-in link is incomplete.');
-  const loginHref = `/login${returnTo(search) === '/' ? '' : `?return_to=${encodeURIComponent(returnTo(search))}`}`;
+  const loginHref = loginHrefFor(returnTo(search));
 
   const verify = async (code: string) => {
     try {
